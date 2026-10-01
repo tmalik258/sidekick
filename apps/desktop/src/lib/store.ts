@@ -9,6 +9,8 @@ interface SidekickState {
   suggestion: Suggestion | null;
   /** Cursor is over the island's interactive area (reported by Rust). */
   hovered: boolean;
+  /** False while a fullscreen app is in front; the island fades away. */
+  visible: boolean;
   ready: boolean;
   /** Outcome of the last action, shown while the mascot reports it. */
   lastResult: ActionResult | null;
@@ -19,6 +21,7 @@ export const useSidekick = create<SidekickState>(() => ({
   settings: DEFAULT_SETTINGS,
   suggestion: null,
   hovered: false,
+  visible: true,
   ready: false,
   lastResult: null,
 }));
@@ -63,6 +66,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       if (useSidekick.getState().suggestion?.id === id) useSidekick.setState({ suggestion: null });
     }),
     listen(EVENTS.islandHover, setHovered),
+    listen(EVENTS.islandVisible, (visible) => useSidekick.setState({ visible })),
   );
 
   return () => {

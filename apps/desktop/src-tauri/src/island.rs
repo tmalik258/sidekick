@@ -13,6 +13,7 @@ use crate::state::{AppState, lock};
 pub const LABEL: &str = "island";
 pub const HOVER_EVENT: &str = "island://hover";
 pub const CURSOR_EVENT: &str = "island://cursor";
+pub const VISIBLE_EVENT: &str = "island://visible";
 
 /// About 40 Hz. The UI smooths it with springs, so this reads as continuous.
 const CURSOR_POLL: Duration = Duration::from_millis(24);
@@ -71,14 +72,13 @@ pub fn follow_fullscreen(app: &AppHandle, payload: &serde_json::Value) {
         return;
     }
     *hidden = fullscreen;
-    let result = if fullscreen {
-        window.hide()
-    } else {
-        window.show()
-    };
-    if let Err(err) = result {
-        log::warn!("could not toggle island for fullscreen: {err}");
+    // The native window stays shown: hiding and showing it again on Windows
+    // activates it (stealing focus) and can drop it in the z-order. The UI
+    // fades out instead, and the hover tracker keeps it click-through.
+    if fullscreen {
+        let _ = window.set_ignore_cursor_events(true);
     }
+    let _ = app.emit_to(LABEL, VISIBLE_EVENT, !fullscreen);
 }
 
 /// Polls the global cursor. Streams its position to the UI (the mascot's eyes
@@ -99,12 +99,14 @@ fn spawn_hover_tracker(app: AppHandle, window: WebviewWindow) {
                 let _ = app.emit_to(LABEL, CURSOR_EVENT, pos);
             }
 
-            let now_inside = lock(&app.state::<AppState>().hit_rect).contains(pos.x, pos.y);
+            let state = app.state::<AppState>();
+            let now_inside =
+                !*lock(&state.island_hidden) && lock(&state.hit_rect).contains(pos.x, pos.y);
             if now_inside == inside {
                 continue;
             }
             inside = now_inside;
-            app.state::<AppState>()
+            state
                 .hovered
                 .store(inside, std::sync::atomic::Ordering::Relaxed);
             if let Err(err) = window.set_ignore_cursor_events(!inside) {
