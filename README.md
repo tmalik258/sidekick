@@ -79,4 +79,10 @@ pnpm build        # NSIS and MSI installers under target/release/bundle
 
 ## License
 
-Code: MIT (see `LICENSE`). Mascot art and sounds in `assets/` will ship under a separate asset license. The current mascot and cues are placeholders drawn and synthesized in code.
+Code: MIT (see `LICENSE`).
+
+Credits:
+
+- UI sounds: [SND](https://snd.dev/) by Dentsu Inc. and Starryworks Inc., installed from npm (`snd-lib`) and copied into `apps/desktop/public/sounds` at build time. Free to use; copyright of the audio belongs to the credited sound designers.
+- Interface icons: [Solar](https://www.figma.com/community/file/1166831539721848736) by 480 Design, CC BY 4.0, via Iconify.
+- The orb mascot is drawn with CSS and is original to this project.

@@ -3,10 +3,19 @@
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
-import { cueVolume, playCue } from "@/lib/sound";
+import { cueVolume, playCue, SOUND_KITS } from "@/lib/sound";
 import { connect, updateSettings, useSidekick } from "@/lib/store";
-import { type AppInfo, CUES, isPaused, MASCOT_STATES, type Pause, SENSOR_IDS, type StoredEvent } from "@/lib/types";
-import { Orb } from "./Orb";
+import {
+  type AppInfo,
+  CUES,
+  isPaused,
+  MASCOT_STATES,
+  type Pause,
+  SENSOR_IDS,
+  type StoredEvent,
+  THEMES,
+} from "@/lib/types";
+import { Orb, THEME_STYLES } from "./Orb";
 
 export function SettingsPanel() {
   const { settings, mascot, ready } = useSidekick();
@@ -33,7 +42,7 @@ export function SettingsPanel() {
     <main className="mx-auto flex max-w-2xl flex-col gap-6 px-6 py-8">
       <header className="flex items-center gap-4">
         <div className="grid size-20 place-items-center">
-          <Orb state={mascot} size={60} />
+          <Orb state={mascot} size={60} theme={settings.theme} />
         </div>
         <div>
           <h1 className="font-display text-[26px] leading-tight font-semibold tracking-[-0.02em]">Sidekick</h1>
@@ -52,6 +61,25 @@ export function SettingsPanel() {
         </p>
       )}
 
+      <Section title="Appearance">
+        <div className="grid grid-cols-3 gap-3">
+          {THEMES.map((t) => (
+            <button
+              key={t}
+              type="button"
+              aria-pressed={settings.theme === t}
+              onClick={() => run(() => updateSettings({ theme: t }))}
+              className={`chip flex flex-col items-center gap-2.5 rounded-xl bg-black py-4 text-[13px] font-medium text-white/90 ${
+                settings.theme === t ? "ring-2 ring-[#0a84ff]" : "ring-1 ring-white/10"
+              }`}
+            >
+              <Orb state="idle" size={40} theme={t} magnetic={false} />
+              {THEME_STYLES[t].label}
+            </button>
+          ))}
+        </div>
+      </Section>
+
       <Section title="Privacy" hint="Paused sensors do not run at all (FR-SET-01).">
         <PauseStatus pause={settings.pause} />
         <div className="flex flex-wrap gap-2">
@@ -64,7 +92,30 @@ export function SettingsPanel() {
         </div>
       </Section>
 
-      <Section title="Sound">
+      <Section title="Sound" hint="Sounds by SND (snd.dev), designed by Dentsu Inc. and Starryworks Inc.">
+        <div className="flex items-center justify-between gap-4 text-[14px]">
+          Sound kit
+          <div className="flex rounded-lg bg-black/5 p-0.5 dark:bg-white/10">
+            {SOUND_KITS.map((k) => (
+              <button
+                key={k.id}
+                type="button"
+                aria-pressed={settings.soundKit === k.id}
+                onClick={() =>
+                  run(async () => {
+                    await updateSettings({ soundKit: k.id });
+                    playCue("ding", cueVolume(settings, "ding"), k.id);
+                  })
+                }
+                className={`rounded-md px-3 py-1 text-[13px] transition-colors ${
+                  settings.soundKit === k.id ? "bg-white text-black shadow-sm dark:bg-white/90" : "text-(--muted)"
+                }`}
+              >
+                {k.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <Toggle
           label="Mute all sounds"
           checked={settings.muted}
@@ -83,7 +134,7 @@ export function SettingsPanel() {
                 value={settings.cueVolumes[cue] ?? 1}
                 onChange={(v) => run(() => updateSettings({ cueVolumes: { ...settings.cueVolumes, [cue]: v } }))}
               />
-              <Button small onClick={() => playCue(cue, cueVolume(settings, cue))}>
+              <Button small onClick={() => playCue(cue, cueVolume(settings, cue), settings.soundKit)}>
                 Test
               </Button>
             </div>

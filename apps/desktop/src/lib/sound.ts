@@ -1,78 +1,83 @@
-// Sound cues, synthesized with the Web Audio API so the repo ships no audio
-// files. Soft sine partials through a gentle low-pass and a short room
-// reflection, tuned to sit under the user's music rather than over it.
-// Replace with original recorded sounds before the public release.
+// UI sounds from SND (https://snd.dev/), professionally designed interface
+// sound kits by Dentsu Inc. and Starryworks Inc. Free to use; copyright of
+// the audio stays with the credited sound designers. Each kit is one audio
+// sprite (copied into public/sounds by scripts/sync-sounds.mjs) decoded once
+// and sliced per sound. If a kit cannot load, a quiet synthesized tone is
+// used instead so feedback never disappears.
 
 import type { Cue, Settings } from "./types";
 
-interface Note {
-  /** Start frequency, Hz. */
-  freq: number;
-  /** Optional glide target, Hz. */
-  to?: number;
-  /** Seconds after the cue starts. */
-  at?: number;
-  /** Seconds until silent. */
-  decay: number;
-  gain: number;
-  type?: OscillatorType;
-}
+/** Sound names inside an SND sprite. */
+export type SndSound =
+  | "button"
+  | "caution"
+  | "celebration"
+  | "disabled"
+  | "notification"
+  | "select"
+  | "toggle_on"
+  | "toggle_off"
+  | "transition_up"
+  | "transition_down";
 
-// Pitches from a pentatonic set so cues never clash with each other.
-const CUES: Record<Cue, Note[]> = {
-  // Something caught its eye: two soft rising notes.
-  chirp: [
-    { freq: 880, decay: 0.12, gain: 0.22 },
-    { freq: 1175, at: 0.07, decay: 0.16, gain: 0.18 },
-  ],
-  // A suggestion arrived: a rounded glass tap.
-  pop: [
-    { freq: 1318, to: 1240, decay: 0.18, gain: 0.26 },
-    { freq: 2637, decay: 0.08, gain: 0.05 },
-  ],
-  // Listening: an open, upward pair.
-  open: [
-    { freq: 659, decay: 0.14, gain: 0.2 },
-    { freq: 988, at: 0.08, decay: 0.2, gain: 0.18 },
-  ],
-  // Done: a bell with a long, quiet tail.
-  ding: [
-    { freq: 1568, decay: 0.9, gain: 0.2 },
-    { freq: 2349, at: 0.005, decay: 0.55, gain: 0.07 },
-    { freq: 3136, at: 0.01, decay: 0.3, gain: 0.03 },
-  ],
-  // Failed: a low, falling pair. Calm, not alarming.
-  boop: [
-    { freq: 523, to: 494, decay: 0.16, gain: 0.22, type: "triangle" },
-    { freq: 392, at: 0.11, decay: 0.24, gain: 0.2, type: "triangle" },
-  ],
-  // Going to rest: a slow, quiet sigh downward.
-  yawn: [{ freq: 440, to: 294, decay: 0.7, gain: 0.12 }],
+/** Which designed sound plays for each mascot cue. */
+const CUE_SOUND: Record<Cue, SndSound> = {
+  chirp: "notification",
+  pop: "transition_up",
+  open: "toggle_on",
+  ding: "celebration",
+  boop: "caution",
+  yawn: "transition_down",
 };
 
+export const SOUND_KITS = [
+  { id: "01", label: "Kit 1" },
+  { id: "02", label: "Kit 2" },
+  { id: "03", label: "Kit 3" },
+] as const;
+
+interface Kit {
+  buffer: AudioBuffer;
+  map: Record<string, { start: number; end: number }>;
+}
+
 let ctx: AudioContext | null = null;
-let bus: AudioNode | null = null;
+let out: GainNode | null = null;
+const kits = new Map<string, Promise<Kit | null>>();
 
-/** Lazily builds context, low-pass and a short room echo. */
-function output(): { ac: AudioContext; bus: AudioNode } {
-  if (!ctx || !bus) {
+function audio(): { ac: AudioContext; out: GainNode } {
+  if (!ctx || !out) {
     ctx = new AudioContext();
-    const lowpass = ctx.createBiquadFilter();
-    lowpass.type = "lowpass";
-    lowpass.frequency.value = 4200;
-    lowpass.Q.value = 0.3;
-
-    const room = ctx.createDelay();
-    room.delayTime.value = 0.09;
-    const roomGain = ctx.createGain();
-    roomGain.gain.value = 0.16;
-
-    lowpass.connect(ctx.destination);
-    lowpass.connect(room).connect(roomGain).connect(ctx.destination);
-    bus = lowpass;
+    out = ctx.createGain();
+    out.connect(ctx.destination);
   }
   if (ctx.state === "suspended") void ctx.resume();
-  return { ac: ctx, bus };
+  return { ac: ctx, out };
+}
+
+function loadKit(id: string): Promise<Kit | null> {
+  let kit = kits.get(id);
+  if (!kit) {
+    const { ac } = audio();
+    kit = Promise.all([
+      fetch(`/sounds/${id}/sprite.json`).then((r) => r.json()),
+      fetch(`/sounds/${id}/sprite.ogg`)
+        .then((r) => r.arrayBuffer())
+        .then((b) => ac.decodeAudioData(b)),
+    ])
+      .then(([json, buffer]) => ({ buffer, map: json.spritemap }))
+      .catch((err) => {
+        console.warn(`sound kit ${id} unavailable, using fallback tones`, err);
+        return null;
+      });
+    kits.set(id, kit);
+  }
+  return kit;
+}
+
+/** Starts decoding a kit ahead of the first cue so playback is instant. */
+export function preloadSounds(kitId: string): void {
+  if (typeof window !== "undefined") void loadKit(kitId);
 }
 
 export function cueVolume(settings: Settings, cue: Cue): number {
@@ -80,28 +85,35 @@ export function cueVolume(settings: Settings, cue: Cue): number {
   return settings.masterVolume * (settings.cueVolumes[cue] ?? 1);
 }
 
-export function playCue(cue: Cue, volume: number): void {
+export function playCue(cue: Cue, volume: number, kitId: string): void {
+  playSound(CUE_SOUND[cue], volume, kitId);
+}
+
+/** Plays one sound from a kit. Used for cues and for chip presses. */
+export function playSound(sound: SndSound, volume: number, kitId: string): void {
   if (volume <= 0 || typeof window === "undefined") return;
-  const { ac, bus } = output();
-  const now = ac.currentTime + 0.005;
+  void loadKit(kitId).then((kit) => {
+    const { ac, out } = audio();
+    const slice = kit?.map[sound];
+    if (!kit || !slice) return fallbackTone(ac, out, volume);
+    const src = ac.createBufferSource();
+    const gain = ac.createGain();
+    src.buffer = kit.buffer;
+    gain.gain.value = volume;
+    src.connect(gain).connect(out);
+    src.start(0, slice.start, slice.end - slice.start);
+  });
+}
 
-  for (const n of CUES[cue]) {
-    const start = now + (n.at ?? 0);
-    const end = start + n.decay;
-    const osc = ac.createOscillator();
-    const amp = ac.createGain();
-
-    osc.type = n.type ?? "sine";
-    osc.frequency.setValueAtTime(n.freq, start);
-    if (n.to) osc.frequency.exponentialRampToValueAtTime(n.to, end);
-
-    // 4 ms attack avoids clicks; exponential release sounds natural.
-    amp.gain.setValueAtTime(0.0001, start);
-    amp.gain.exponentialRampToValueAtTime(Math.max(n.gain * volume, 0.0002), start + 0.004);
-    amp.gain.exponentialRampToValueAtTime(0.0001, end);
-
-    osc.connect(amp).connect(bus);
-    osc.start(start);
-    osc.stop(end + 0.05);
-  }
+function fallbackTone(ac: AudioContext, out: AudioNode, volume: number) {
+  const now = ac.currentTime;
+  const osc = ac.createOscillator();
+  const amp = ac.createGain();
+  osc.frequency.value = 880;
+  amp.gain.setValueAtTime(0.0001, now);
+  amp.gain.exponentialRampToValueAtTime(Math.max(0.15 * volume, 0.0002), now + 0.005);
+  amp.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+  osc.connect(amp).connect(out);
+  osc.start(now);
+  osc.stop(now + 0.2);
 }
