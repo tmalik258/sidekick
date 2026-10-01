@@ -3,7 +3,19 @@
 // previewed without the desktop shell.
 
 import { mock } from "./mock";
-import type { AppInfo, HitRect, MascotState, Settings, StoredEvent, Suggestion, Transition } from "./types";
+import type {
+  ActionRecord,
+  ActionResult,
+  AppInfo,
+  CapabilityInfo,
+  HitRect,
+  MascotState,
+  Settings,
+  SkillInfo,
+  StoredEvent,
+  Suggestion,
+  Transition,
+} from "./types";
 
 export const EVENTS = {
   mascotState: "mascot://state",
@@ -11,6 +23,7 @@ export const EVENTS = {
   suggestionClear: "suggestion://clear",
   islandHover: "island://hover",
   islandCursor: "island://cursor",
+  actionResult: "action://result",
   settingsChanged: "settings://changed",
 } as const;
 
@@ -20,6 +33,7 @@ export interface EventPayloads {
   [EVENTS.suggestionClear]: string;
   [EVENTS.islandHover]: boolean;
   [EVENTS.islandCursor]: { x: number; y: number };
+  [EVENTS.actionResult]: ActionResult;
   [EVENTS.settingsChanged]: Settings;
 }
 
@@ -58,4 +72,10 @@ export const api = {
   debugSetState: (state: MascotState) => invoke<void>("debug_set_state", { state }),
   debugEmitEvent: () => invoke<void>("debug_emit_event"),
   debugDemoFlow: () => invoke<void>("debug_demo_flow"),
+  skillsList: () => invoke<SkillInfo[]>("skills_list"),
+  skillSet: (id: string, enabled: boolean, auto: boolean) => invoke<Settings>("skill_set", { id, enabled, auto }),
+  capabilitiesGet: (rescan = false) => invoke<CapabilityInfo>("capabilities_get", { rescan }),
+  choicesReset: () => invoke<number>("choices_reset"),
+  actionsRecent: (limit = 30) => invoke<ActionRecord[]>("actions_recent", { limit }),
+  revealPath: (path: string) => invoke<void>("reveal_path", { path }),
 };

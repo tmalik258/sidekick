@@ -15,5 +15,5 @@ pub mod storage;
 pub use bus::EventBus;
 pub use event::{Context, Event, Sensitivity};
 pub use mascot::{Cue, MascotEvent, MascotMachine, MascotState, Transition};
-pub use settings::{Pause, Settings};
-pub use storage::{Storage, StoredEvent};
+pub use settings::{Pause, Settings, SkillPref};
+pub use storage::{ActionRecord, Storage, StoredEvent};

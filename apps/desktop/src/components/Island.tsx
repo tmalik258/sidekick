@@ -97,7 +97,6 @@ export function Island() {
   }, [mascot, reduced, bump]);
 
   useSuggestionKeys(suggestion);
-  useSuggestionTimeout(suggestion, rawHover, settings.collapseAfterSecs);
 
   if (!ready) return null;
 
@@ -199,6 +198,11 @@ function ExpandedContent({
   paused: boolean;
   suggestion: Suggestion | null;
 }) {
+  const result = useSidekick((s) => s.lastResult);
+  const reporting = (mascot === "success" || mascot === "error" || mascot === "working") && !suggestion;
+  const detail =
+    suggestion?.detail ??
+    (reporting && result ? result.message : paused && mascot !== "sleeping" ? "Sensors are paused." : DETAIL[mascot]);
   return (
     <div className="flex flex-col">
       <div className="flex items-start gap-3">
@@ -207,10 +211,16 @@ function ExpandedContent({
             {suggestion?.title ?? TITLE[mascot]}
           </p>
           <p className="mt-0.5 line-clamp-2 text-[13px] leading-[18px] tracking-[-0.005em] text-[rgb(235_235_245/0.6)]">
-            {suggestion?.detail ?? (paused && mascot !== "sleeping" ? "Sensors are paused." : DETAIL[mascot])}
+            {detail}
           </p>
         </div>
-        {!suggestion && <QuickActions paused={paused} />}
+        {!suggestion && reporting && result?.path ? (
+          <RoundButton label="Show in folder" onClick={() => void api.revealPath(result.path ?? "")}>
+            <Icon name="folder" size={15} />
+          </RoundButton>
+        ) : (
+          !suggestion && <QuickActions paused={paused} />
+        )}
       </div>
 
       {suggestion && <Options suggestion={suggestion} />}
@@ -313,13 +323,4 @@ function useSuggestionKeys(suggestion: Suggestion | null) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [suggestion]);
-}
-
-/** An unattended suggestion dismisses itself after the configured time (FR-UI-02). */
-function useSuggestionTimeout(suggestion: Suggestion | null, hovered: boolean, seconds: number) {
-  useEffect(() => {
-    if (!suggestion || hovered) return;
-    const id = setTimeout(() => void api.suggestionDismiss(suggestion.id, "timeout"), seconds * 1000);
-    return () => clearTimeout(id);
-  }, [suggestion, hovered, seconds]);
 }

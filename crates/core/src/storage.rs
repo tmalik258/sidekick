@@ -6,7 +6,8 @@ use serde::Serialize;
 use crate::event::{Event, Sensitivity};
 
 /// Schema migrations, applied in order. Index + 1 is the `user_version`.
-const MIGRATIONS: &[&str] = &["CREATE TABLE events (
+const MIGRATIONS: &[&str] = &[
+    "CREATE TABLE events (
         id TEXT PRIMARY KEY,
         ts TEXT NOT NULL,
         kind TEXT NOT NULL,
@@ -16,7 +17,39 @@ const MIGRATIONS: &[&str] = &["CREATE TABLE events (
         sensitivity TEXT NOT NULL
     );
     CREATE INDEX events_ts ON events (ts);
-    CREATE INDEX events_kind ON events (kind);"];
+    CREATE INDEX events_kind ON events (kind);",
+    // Action log (FR-ACT-06) and learned choices (FR-DEV-02, FR-ACT-07).
+    "CREATE TABLE actions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts TEXT NOT NULL,
+        skill_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        label TEXT NOT NULL,
+        ok INTEGER NOT NULL,
+        message TEXT NOT NULL,
+        auto INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE choices (
+        key TEXT NOT NULL,
+        label TEXT NOT NULL,
+        count INTEGER NOT NULL,
+        last_ts TEXT NOT NULL,
+        PRIMARY KEY (key, label)
+    );",
+];
+
+/// One entry of the action log, newest first in [`Storage::recent_actions`].
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionRecord {
+    pub ts: String,
+    pub skill_id: String,
+    pub action: String,
+    pub label: String,
+    pub ok: bool,
+    pub message: String,
+    pub auto: bool,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -131,6 +164,65 @@ impl Storage {
         )?)
     }
 
+    pub fn log_action(&self, record: &ActionRecord) -> Result<(), StorageError> {
+        self.conn.execute(
+            "INSERT INTO actions (ts, skill_id, action, label, ok, message, auto) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                record.ts,
+                record.skill_id,
+                record.action,
+                record.label,
+                record.ok,
+                record.message,
+                record.auto
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn recent_actions(&self, limit: u32) -> Result<Vec<ActionRecord>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT ts, skill_id, action, label, ok, message, auto FROM actions ORDER BY id DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map([limit], |r| {
+            Ok(ActionRecord {
+                ts: r.get(0)?,
+                skill_id: r.get(1)?,
+                action: r.get(2)?,
+                label: r.get(3)?,
+                ok: r.get(4)?,
+                message: r.get(5)?,
+                auto: r.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Remembers that `label` was picked under `key`.
+    pub fn record_choice(&self, key: &str, label: &str, ts: &str) -> Result<(), StorageError> {
+        self.conn.execute(
+            "INSERT INTO choices (key, label, count, last_ts) VALUES (?1, ?2, 1, ?3)
+             ON CONFLICT (key, label) DO UPDATE SET count = count + 1, last_ts = excluded.last_ts",
+            params![key, label, ts],
+        )?;
+        Ok(())
+    }
+
+    pub fn choice_counts(
+        &self,
+        key: &str,
+    ) -> Result<std::collections::HashMap<String, u32>, StorageError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT label, count FROM choices WHERE key = ?1")?;
+        let rows = stmt.query_map([key], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn clear_choices(&self) -> Result<usize, StorageError> {
+        Ok(self.conn.execute("DELETE FROM choices", [])?)
+    }
+
     pub fn count_events(&self) -> Result<u64, StorageError> {
         let count: i64 = self
             .conn
@@ -187,6 +279,31 @@ mod tests {
         let stored = &s.recent_events(1).unwrap()[0];
         assert_eq!(stored.payload, None);
         assert_eq!(stored.sensitivity, "secret");
+    }
+
+    #[test]
+    fn logs_actions_and_learns_choices() {
+        let s = Storage::open_in_memory().unwrap();
+        let rec = ActionRecord {
+            ts: "2026-10-01T10:00:00Z".into(),
+            skill_id: "dev.open-in-browser".into(),
+            action: "open_url".into(),
+            label: "Zen".into(),
+            ok: true,
+            message: "Opened in Zen".into(),
+            auto: false,
+        };
+        s.log_action(&rec).unwrap();
+        assert_eq!(s.recent_actions(5).unwrap(), vec![rec]);
+
+        s.record_choice("dev:3000", "Zen", "t1").unwrap();
+        s.record_choice("dev:3000", "Zen", "t2").unwrap();
+        s.record_choice("dev:3000", "Chrome", "t3").unwrap();
+        let counts = s.choice_counts("dev:3000").unwrap();
+        assert_eq!(counts["Zen"], 2);
+        assert_eq!(counts["Chrome"], 1);
+        assert!(s.choice_counts("dev:8000").unwrap().is_empty());
+        assert_eq!(s.clear_choices().unwrap(), 2);
     }
 
     #[test]

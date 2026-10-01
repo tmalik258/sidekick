@@ -73,7 +73,15 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
     suggestion = null;
     emit("suggestion://clear", a.id);
     go("working");
-    later(1400, () => go(index === 2 ? "error" : "success"));
+    later(1400, () => {
+      emit("action://result", {
+        ok: index !== 2,
+        message: index === 2 ? "Simulated failure" : "Opened in Zen",
+        path: null,
+        auto: false,
+      });
+      go(index === 2 ? "error" : "success");
+    });
   },
   suggestion_dismiss: (a) => {
     suggestion = null;
@@ -81,6 +89,22 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
     go("idle");
   },
   events_recent: () => [],
+  skills_list: () => [
+    {
+      id: "dev.open-in-browser",
+      name: "Open dev servers in a browser",
+      description: "Mock skill for the browser preview.",
+      event: "port.listening",
+      enabled: true,
+      auto: false,
+      autoByDefault: false,
+    },
+  ],
+  skill_set: () => settings,
+  capabilities_get: () => ({ found: ["Chrome (mock)"], skillsDir: "-", skillErrors: [] }),
+  choices_reset: () => 0,
+  actions_recent: () => [],
+  reveal_path: () => undefined,
   open_settings: () => {
     window.open("/settings/", "_blank");
   },
@@ -94,6 +118,7 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
     later(900, () => {
       suggestion = {
         id: crypto.randomUUID(),
+        skillId: "debug.demo",
         title: "Dev server on localhost:3000",
         detail: "Demo suggestion (browser mock).",
         options: ["Open in Chrome", "Open in Zen", "Simulate failure"],

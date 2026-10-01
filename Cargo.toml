@@ -11,6 +11,8 @@ repository = "https://github.com/tmalik258/sidekick"
 [workspace.dependencies]
 sidekick-core = { path = "crates/core" }
 sidekick-sensors = { path = "crates/sensors" }
+sidekick-skills = { path = "crates/skills" }
+sidekick-actions = { path = "crates/actions" }
 chrono = { version = "0.4", features = ["serde"] }
 log = "0.4"
 rusqlite = { version = "0.40", features = ["bundled"] }

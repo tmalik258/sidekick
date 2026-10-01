@@ -1,0 +1,12 @@
+id: files.copy
+name: Copy downloaded file
+description: Put the downloaded file on the clipboard to paste it anywhere.
+priority: 10
+trigger:
+  event: file.download_completed
+suggestion:
+  title: "{{name}}"
+  options:
+    - label: Copy file
+      action: copy_file
+      args: { path: "{{path}}" }

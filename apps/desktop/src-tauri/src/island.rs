@@ -44,6 +44,43 @@ fn position_top_center(window: &WebviewWindow) -> tauri::Result<()> {
     window.set_position(PhysicalPosition::new(x, origin.y))
 }
 
+/// Hides the island while a fullscreen app (a game, a video, a slideshow) is
+/// in front, and brings it back afterwards (FR-UI-09).
+pub fn follow_fullscreen(app: &AppHandle, payload: &serde_json::Value) {
+    let Some(window) = app.get_webview_window(LABEL) else {
+        return;
+    };
+    // The sensor decides what is fullscreen (an exact monitor match, so
+    // maximized windows never count). Only hide for the island's own monitor.
+    let fullscreen = payload["fullscreen"].as_bool().unwrap_or(false)
+        && window
+            .current_monitor()
+            .ok()
+            .flatten()
+            .is_some_and(|monitor| {
+                let (pos, size) = (monitor.position(), monitor.size());
+                let m = &payload["monitor"];
+                m["x"].as_i64() == Some(i64::from(pos.x))
+                    && m["y"].as_i64() == Some(i64::from(pos.y))
+                    && m["width"].as_i64() == Some(i64::from(size.width))
+                    && m["height"].as_i64() == Some(i64::from(size.height))
+            });
+    let state = app.state::<AppState>();
+    let mut hidden = lock(&state.island_hidden);
+    if fullscreen == *hidden {
+        return;
+    }
+    *hidden = fullscreen;
+    let result = if fullscreen {
+        window.hide()
+    } else {
+        window.show()
+    };
+    if let Err(err) = result {
+        log::warn!("could not toggle island for fullscreen: {err}");
+    }
+}
+
 /// Polls the global cursor. Streams its position to the UI (the mascot's eyes
 /// follow it anywhere on screen) and toggles click-through when it enters or
 /// leaves the interactive rect. The webview gets no mouse events while
@@ -67,6 +104,9 @@ fn spawn_hover_tracker(app: AppHandle, window: WebviewWindow) {
                 continue;
             }
             inside = now_inside;
+            app.state::<AppState>()
+                .hovered
+                .store(inside, std::sync::atomic::Ordering::Relaxed);
             if let Err(err) = window.set_ignore_cursor_events(!inside) {
                 log::warn!("could not toggle click-through: {err}");
             }

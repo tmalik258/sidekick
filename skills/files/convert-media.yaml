@@ -1,0 +1,21 @@
+id: files.convert-media
+name: Convert video and audio
+description: Convert media with ffmpeg (FR-FILE-02).
+priority: 40
+trigger:
+  event: file.download_completed
+  where:
+    kind: { one_of: [video, audio] }
+suggestion:
+  title: "{{name}}"
+  options:
+    - label: Convert to MP4
+      action: convert
+      args: { path: "{{path}}", to: mp4 }
+      requires: ["tool:ffmpeg"]
+      when: { kind: { equals: video }, ext: { not_one_of: [mp4] } }
+    - label: Extract audio (MP3)
+      action: convert
+      args: { path: "{{path}}", to: mp3 }
+      requires: ["tool:ffmpeg"]
+      when: { ext: { not_one_of: [mp3] } }
