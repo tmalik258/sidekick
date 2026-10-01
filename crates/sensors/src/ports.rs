@@ -123,3 +123,45 @@ fn port_event(kind: &str, s: &Socket) -> Event {
         }),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::GateState;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn reports_a_new_server_and_its_shutdown() {
+        let bus = EventBus::default();
+        let mut rx = bus.subscribe();
+        let (_handle, gate) = SensorGate::new(GateState::default());
+        let task = Box::new(PortsSensor).spawn(bus, gate);
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let opened = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let e = rx.recv().await.unwrap();
+                if e.kind == PortsSensor::LISTENING && e.payload["port"] == port {
+                    return e;
+                }
+            }
+        })
+        .await
+        .expect("listening event in time");
+        assert_eq!(opened.payload["url"], format!("http://localhost:{port}"));
+
+        drop(listener);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let e = rx.recv().await.unwrap();
+                if e.kind == PortsSensor::CLOSED && e.payload["port"] == port {
+                    return;
+                }
+            }
+        })
+        .await
+        .expect("closed event in time");
+        task.abort();
+    }
+}

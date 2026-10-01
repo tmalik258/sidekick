@@ -3,7 +3,7 @@ use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Wry};
 
-use crate::{commands, demo, windows};
+use crate::{commands, suggestions, windows};
 
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
     let menu = Menu::with_items(
@@ -42,7 +42,10 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
         "pause_60" => commands::sensors_pause(app.clone(), Some(60)).map(drop),
         "pause_forever" => commands::sensors_pause(app.clone(), None).map(drop),
         "resume" => commands::set_pause(app, Pause::None).map(drop),
-        "demo" => demo::start(app),
+        "demo" => {
+            suggestions::demo(app);
+            Ok(())
+        }
         "settings" => windows::open_settings(app).map_err(|e| e.to_string()),
         "quit" => {
             app.exit(0);

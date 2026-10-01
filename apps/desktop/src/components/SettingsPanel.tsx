@@ -6,12 +6,15 @@ import { useNow } from "@/lib/hooks";
 import { checkKit, cueVolume, playCue } from "@/lib/sound";
 import { connect, updateSettings, useSidekick } from "@/lib/store";
 import {
+  type ActionRecord,
   type AppInfo,
+  type CapabilityInfo,
   CUES,
   isPaused,
   MASCOT_STATES,
   type Pause,
   SENSOR_IDS,
+  type SkillInfo,
   type StoredEvent,
   THEMES,
 } from "@/lib/types";
@@ -139,18 +142,33 @@ export function SettingsPanel() {
         />
       </Section>
 
+      <Section
+        title="Skills"
+        hint="Auto runs the first safe option without asking. Deleting files, running installers or stopping processes always ask first."
+      >
+        <SkillList onError={setError} />
+      </Section>
+
       <Section title="Sensors" hint="Each sensor can be switched off on its own (FR-SEN-12).">
-        {SENSOR_IDS.map(({ id, label }) => (
+        {SENSOR_IDS.map(({ id, label, hint }) => (
           <Toggle
             key={id}
             label={label}
-            checked={settings.sensors[id] ?? true}
+            hint={hint}
+            checked={settings.sensors[id] ?? id !== "heartbeat"}
             onChange={(on) => run(() => updateSettings({ sensors: { ...settings.sensors, [id]: on } }))}
           />
         ))}
       </Section>
 
-      <Section title="Debug" hint="P0 tools for checking the island, mascot, and pipeline.">
+      <Section
+        title="Found on this PC"
+        hint="Skills only offer what is installed. Install ffmpeg, ImageMagick, LibreOffice or pandoc for more conversions, then rescan."
+      >
+        <Capabilities onError={setError} />
+      </Section>
+
+      <Section title="Debug" hint="Tools for checking the island, mascot, and pipeline.">
         <div className="flex flex-wrap gap-2">
           {MASCOT_STATES.map((s) => (
             <Button key={s} small active={s === mascot} onClick={() => run(() => api.debugSetState(s))}>
@@ -162,6 +180,7 @@ export function SettingsPanel() {
           <Button onClick={() => run(() => api.debugEmitEvent())}>Emit test event</Button>
           <Button onClick={() => run(() => api.debugDemoFlow())}>Run demo suggestion</Button>
         </div>
+        <RecentActions />
         <RecentEvents />
       </Section>
 
@@ -207,6 +226,134 @@ function PauseStatus({ pause }: { pause: Pause }) {
     text = `Paused for about ${minutes} more min.`;
   }
   return <p className="text-sm">{text}</p>;
+}
+
+function SkillList({ onError }: { onError: (e: string) => void }) {
+  const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const refresh = useCallback(() => void api.skillsList().then(setSkills), []);
+  useEffect(refresh, [refresh]);
+  const change = (s: SkillInfo, enabled: boolean, auto: boolean) => {
+    setSkills((list) => list.map((x) => (x.id === s.id ? { ...x, enabled, auto } : x)));
+    api.skillSet(s.id, enabled, auto).catch((e) => {
+      onError(String(e));
+      refresh();
+    });
+  };
+  return (
+    <ul className="flex flex-col divide-y divide-(--border)">
+      {skills.map((s) => (
+        <li key={s.id} className="flex items-start justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
+          <div className="min-w-0">
+            <p className="text-[14px] font-medium">{s.name}</p>
+            <p className="text-[12px] text-(--muted)">{s.description}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-3 pt-0.5">
+            <label className="flex items-center gap-1.5 text-[12px] text-(--muted)">
+              Auto
+              <input
+                type="checkbox"
+                checked={s.auto}
+                disabled={!s.enabled}
+                onChange={(e) => change(s, s.enabled, e.target.checked)}
+                className="size-3.5 accent-[#0a84ff]"
+              />
+            </label>
+            <Switch checked={s.enabled} onChange={(on) => change(s, on, s.auto)} label={`Enable ${s.name}`} />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Capabilities({ onError }: { onError: (e: string) => void }) {
+  const [info, setInfo] = useState<CapabilityInfo | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const load = useCallback(
+    (rescan: boolean) => {
+      setBusy(true);
+      api
+        .capabilitiesGet(rescan)
+        .then(setInfo)
+        .catch((e) => onError(String(e)))
+        .finally(() => setBusy(false));
+    },
+    [onError],
+  );
+  useEffect(() => load(false), [load]);
+  return (
+    <div className="flex flex-col gap-3 text-[13px]">
+      <div className="flex flex-wrap gap-1.5">
+        {info?.found.length ? (
+          info.found.map((f) => (
+            <span key={f} className="rounded-full bg-black/5 px-2.5 py-1 dark:bg-white/10">
+              {f}
+            </span>
+          ))
+        ) : (
+          <span className="text-(--muted)">Nothing found yet.</span>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button small onClick={() => load(true)} disabled={busy}>
+          {busy ? "Scanning…" : "Rescan"}
+        </Button>
+        <Button
+          small
+          onClick={() =>
+            void api
+              .choicesReset()
+              .then((n) => setNotice(n ? `Forgot ${n} learned choices.` : "No learned choices yet."))
+          }
+        >
+          Forget learned choices
+        </Button>
+      </div>
+      {notice && <p className="text-[12px] text-(--muted)">{notice}</p>}
+      {info && (
+        <p className="text-[12px] text-(--muted)">
+          Your own skills: <span className="font-mono break-all">{info.skillsDir}</span>
+        </p>
+      )}
+      {info?.skillErrors.map((e) => (
+        <p key={e} className="text-[12px] text-red-500">
+          {e}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function RecentActions() {
+  const [actions, setActions] = useState<ActionRecord[]>([]);
+  const refresh = useCallback(() => void api.actionsRecent(10).then(setActions), []);
+  useEffect(refresh, [refresh]);
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium">Recent actions</h3>
+        <Button small onClick={refresh}>
+          Refresh
+        </Button>
+      </div>
+      {actions.length === 0 ? (
+        <p className="text-sm text-(--muted)">No actions yet.</p>
+      ) : (
+        <ul className="divide-y divide-(--border) rounded-lg border border-(--border) text-xs">
+          {actions.map((a) => (
+            <li key={`${a.ts}-${a.label}`} className="flex justify-between gap-3 px-3 py-1.5">
+              <span className={a.ok ? "" : "text-red-500"}>
+                {a.label}
+                {a.auto ? " (auto)" : ""}: {a.message}
+              </span>
+              <span className="shrink-0 text-(--muted)">{new Date(a.ts).toLocaleTimeString()}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 function RecentEvents() {
@@ -279,25 +426,45 @@ function Button({
   );
 }
 
-function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+function Toggle({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
   return (
-    <label className="flex cursor-pointer items-center justify-between gap-4 text-[14px]">
-      {label}
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        className={`relative h-6.5 w-11 shrink-0 rounded-full transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) ${
-          checked ? "bg-(--accent)" : "bg-black/15 dark:bg-white/20"
-        }`}
-      >
-        <span
-          className="absolute top-0.5 left-0.5 size-5.5 rounded-full bg-white shadow-[0_2px_6px_rgb(0_0_0/0.2)] transition-transform duration-260 ease-out-strong"
-          style={{ transform: checked ? "translateX(18px)" : "translateX(0)" }}
-        />
-      </button>
-    </label>
+    <div className="flex items-center justify-between gap-4 text-[14px]">
+      <div className="min-w-0">
+        <p>{label}</p>
+        {hint && <p className="text-[12px] text-(--muted)">{hint}</p>}
+      </div>
+      <Switch checked={checked} onChange={onChange} label={label} />
+    </div>
+  );
+}
+
+function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className={`relative h-[26px] w-[44px] shrink-0 rounded-full transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff] ${
+        checked ? "bg-[#30d158]" : "bg-black/15 dark:bg-white/20"
+      }`}
+    >
+      <span
+        className="absolute top-[2px] left-[2px] size-[22px] rounded-full bg-white shadow-[0_2px_6px_rgb(0_0_0/0.2)] transition-transform duration-[260ms] ease-(--ease-out-strong)"
+        style={{ transform: checked ? "translateX(18px)" : "translateX(0)" }}
+      />
+    </button>
   );
 }
 

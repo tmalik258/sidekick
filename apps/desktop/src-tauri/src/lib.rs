@@ -1,19 +1,24 @@
 mod commands;
-mod demo;
 mod island;
 mod mascot;
 mod pipeline;
 mod state;
+mod suggestions;
 mod tray;
 mod windows;
 
 use std::error::Error;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use chrono::Utc;
+use sidekick_actions::{Capabilities, Executor};
 use sidekick_core::{EventBus, MascotEvent, Settings, Storage};
-use sidekick_sensors::{HeartbeatSensor, Sensor, SensorGate};
+use sidekick_sensors::{
+    ClipboardSensor, DownloadsSensor, HeartbeatSensor, PortsSensor, Sensor, SensorGate,
+    WindowSensor,
+};
+use sidekick_skills::Engine;
 use tauri::{AppHandle, Manager};
 
 use crate::state::AppState;
@@ -57,13 +62,29 @@ pub fn run() {
             commands::debug_set_state,
             commands::debug_emit_event,
             commands::debug_demo_flow,
+            commands::skills_list,
+            commands::skill_set,
+            commands::capabilities_get,
+            commands::choices_reset,
+            commands::actions_recent,
+            commands::reveal_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Sidekick");
 }
 
 fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
-    let settings_path = app.path().app_config_dir()?.join("settings.json");
+    let config_dir = app.path().app_config_dir()?;
+    let settings_path = config_dir.join("settings.json");
+    let skills_dir = config_dir.join("skills");
+    let _ = std::fs::create_dir_all(&skills_dir);
+    let (skills, skill_errors) = sidekick_skills::load_all(&skills_dir);
+    for err in &skill_errors {
+        log::warn!("skill not loaded: {err}");
+    }
+    log::info!("{} skills loaded", skills.len());
+    let caps = Capabilities::detect();
+    log::info!("found: {}", caps.summary().join(", "));
     let db_path = app.path().app_data_dir()?.join("sidekick.db");
 
     let settings = Settings::load(&settings_path);
@@ -77,18 +98,30 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         settings_path,
         storage: Arc::new(Mutex::new(storage)),
         db_path,
+        skills_dir,
         bus: bus.clone(),
         gate: gate_handle,
         mascot: Mutex::default(),
         mascot_epoch: Default::default(),
         hit_rect: Mutex::default(),
-        suggestion: Mutex::default(),
+        engine: Mutex::new(Engine::new(skills)),
+        skill_errors: Mutex::new(skill_errors),
+        executor: RwLock::new(Arc::new(Executor::new(caps))),
+        active: Mutex::default(),
+        queue: Mutex::default(),
+        island_hidden: Mutex::default(),
+        hovered: Default::default(),
     });
 
     pipeline::start(app);
     tauri::async_runtime::spawn(async move {
-        let sensors: Vec<Box<dyn Sensor>> =
-            vec![Box::new(HeartbeatSensor::new(HEARTBEAT_INTERVAL))];
+        let sensors: Vec<Box<dyn Sensor>> = vec![
+            Box::new(DownloadsSensor::new()),
+            Box::new(PortsSensor),
+            Box::new(ClipboardSensor),
+            Box::new(WindowSensor),
+            Box::new(HeartbeatSensor::new(HEARTBEAT_INTERVAL)),
+        ];
         sidekick_sensors::spawn_all(sensors, &bus, &gate);
     });
 

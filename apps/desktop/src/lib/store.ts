@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { api, EVENTS, listen } from "./bridge";
 import { cueVolume, playCue, preloadSounds } from "./sound";
-import { DEFAULT_SETTINGS, type MascotState, type Settings, type Suggestion } from "./types";
+import { type ActionResult, DEFAULT_SETTINGS, type MascotState, type Settings, type Suggestion } from "./types";
 
 interface SidekickState {
   mascot: MascotState;
@@ -10,6 +10,8 @@ interface SidekickState {
   /** Cursor is over the island's interactive area (reported by Rust). */
   hovered: boolean;
   ready: boolean;
+  /** Outcome of the last action, shown while the mascot reports it. */
+  lastResult: ActionResult | null;
 }
 
 export const useSidekick = create<SidekickState>(() => ({
@@ -18,6 +20,7 @@ export const useSidekick = create<SidekickState>(() => ({
   suggestion: null,
   hovered: false,
   ready: false,
+  lastResult: null,
 }));
 
 export const setHovered = (hovered: boolean) => useSidekick.setState({ hovered });
@@ -54,7 +57,8 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       useSidekick.setState({ settings });
       if (sounds) preloadSounds(settings.soundKit);
     }),
-    listen(EVENTS.suggestionNew, (suggestion) => useSidekick.setState({ suggestion })),
+    listen(EVENTS.suggestionNew, (suggestion) => useSidekick.setState({ suggestion, lastResult: null })),
+    listen(EVENTS.actionResult, (lastResult) => useSidekick.setState({ lastResult })),
     listen(EVENTS.suggestionClear, (id) => {
       if (useSidekick.getState().suggestion?.id === id) useSidekick.setState({ suggestion: null });
     }),
