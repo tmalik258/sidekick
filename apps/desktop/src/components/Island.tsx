@@ -324,4 +324,3 @@ function useSuggestionKeys(suggestion: Suggestion | null) {
     return () => window.removeEventListener("keydown", onKey);
   }, [suggestion]);
 }
-
