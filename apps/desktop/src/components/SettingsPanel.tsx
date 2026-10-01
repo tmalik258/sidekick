@@ -4,7 +4,7 @@ import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
 import { checkKit, cueVolume, playCue } from "@/lib/sound";
-import { connect, updateSettings, useSidekick } from "@/lib/store";
+import { updateSettings, useSidekick } from "@/lib/store";
 import {
   type ActionRecord,
   AI_PROVIDERS,
@@ -31,12 +31,26 @@ import {
 } from "@/lib/types";
 import { Orb, THEME_STYLES } from "./Orb";
 
+export const SETTINGS_TABS = [
+  { id: "general", label: "General" },
+  { id: "ai", label: "AI" },
+  { id: "browser", label: "Browser" },
+  { id: "search", label: "Search" },
+  { id: "today", label: "Today" },
+  { id: "skills", label: "Skills" },
+  { id: "sensors", label: "Sensors" },
+  { id: "about", label: "About" },
+] as const;
+const TABS = SETTINGS_TABS;
+export type SettingsTab = (typeof SETTINGS_TABS)[number]["id"];
+
+/** Settings, shown inside the island (FR-UI-07): tabs over one scrolling page. */
 export function SettingsPanel() {
   const { settings, mascot, ready } = useSidekick();
+  const [tab, setTab] = useState<SettingsTab>("general");
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => connect({ sounds: false }), []);
   useEffect(() => {
     void api.appInfo().then(setInfo);
   }, []);
@@ -53,226 +67,260 @@ export function SettingsPanel() {
   if (!ready) return null;
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-6 px-6 py-8">
-      <header className="flex items-center gap-4">
-        <div className="grid size-20 place-items-center">
-          <Orb state={mascot} size={60} theme={settings.theme} />
-        </div>
-        <div>
-          <h1 className="font-display text-[26px] leading-tight font-semibold tracking-[-0.02em]">Sidekick</h1>
-          <p className="text-[13px] text-(--muted)">
-            Version {info?.version ?? "…"} · mascot is {mascot}
-          </p>
-        </div>
-      </header>
+    <div className="island-settings flex flex-col">
+      <nav aria-label="Settings sections" className="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1 pb-2.5">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            aria-pressed={tab === t.id}
+            onClick={() => setTab(t.id)}
+            className={`chip shrink-0 rounded-full px-3 py-1 text-[12.5px] font-medium ${
+              tab === t.id ? "bg-white text-black" : "bg-white/[0.08] text-[rgb(235_235_245/0.7)] hover:bg-white/[0.14]"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
 
       {error && (
         <p
           role="alert"
-          className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-300"
+          className="mb-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300"
         >
           {error}
         </p>
       )}
 
-      <Section title="Appearance">
-        <div className="grid grid-cols-3 gap-3">
-          {THEMES.map((t) => (
-            <button
-              key={t}
-              type="button"
-              aria-pressed={settings.theme === t}
-              onClick={() => run(() => updateSettings({ theme: t }))}
-              className={`chip flex flex-col items-center gap-2.5 rounded-xl bg-black py-4 text-[13px] font-medium text-white/90 ${
-                settings.theme === t ? "ring-2 ring-[#0a84ff]" : "ring-1 ring-white/10"
-              }`}
-            >
-              <Orb state="idle" size={40} theme={t} magnetic={false} />
-              {THEME_STYLES[t].label}
-            </button>
-          ))}
-        </div>
-      </Section>
-
-      <Section title="Privacy" hint="Paused sensors do not run at all (FR-SET-01).">
-        <PauseStatus pause={settings.pause} />
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => run(() => api.sensorsPause(15))}>Pause 15 min</Button>
-          <Button onClick={() => run(() => api.sensorsPause(60))}>Pause 1 hour</Button>
-          <Button onClick={() => run(() => api.sensorsPause(null))}>Pause until resumed</Button>
-          <Button onClick={() => run(() => api.sensorsResume())} disabled={!isPaused(settings.pause)}>
-            Resume
-          </Button>
-        </div>
-      </Section>
-
-      <Section title="Sound" hint="Sounds by SND (snd.dev), designed by Dentsu Inc. and Starryworks Inc.">
-        <KitStatus kit={settings.soundKit} />
-        <Toggle
-          label="Mute all sounds"
-          checked={settings.muted}
-          onChange={(muted) => run(() => updateSettings({ muted }))}
-        />
-        <Slider
-          label="Master volume"
-          value={settings.masterVolume}
-          onChange={(masterVolume) => run(() => updateSettings({ masterVolume }))}
-        />
-        <div className="grid gap-2 sm:grid-cols-2">
-          {CUES.map((cue) => (
-            <div key={cue} className="flex items-center gap-2">
-              <Slider
-                label={cue}
-                value={settings.cueVolumes[cue] ?? 1}
-                onChange={(v) => run(() => updateSettings({ cueVolumes: { ...settings.cueVolumes, [cue]: v } }))}
+      <div className="settings-scroll -mr-3 flex max-h-[430px] flex-col gap-5 overflow-y-auto pr-3 pb-3">
+        {tab === "general" && (
+          <>
+            <Section title="Appearance">
+              <div className="grid grid-cols-3 gap-3">
+                {THEMES.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    aria-pressed={settings.theme === t}
+                    onClick={() => run(() => updateSettings({ theme: t }))}
+                    className={`chip flex flex-col items-center gap-2.5 rounded-xl bg-black py-4 text-[13px] font-medium text-white/90 ${
+                      settings.theme === t ? "ring-2 ring-[#0a84ff]" : "ring-1 ring-white/10"
+                    }`}
+                  >
+                    <Orb state="idle" size={40} theme={t} magnetic={false} />
+                    {THEME_STYLES[t].label}
+                  </button>
+                ))}
+              </div>
+            </Section>
+            <Section title="Island">
+              <label className="flex items-center justify-between gap-4 text-sm">
+                Collapse after (seconds)
+                <input
+                  type="number"
+                  min={2}
+                  max={120}
+                  value={settings.collapseAfterSecs}
+                  onChange={(e) => run(() => updateSettings({ collapseAfterSecs: Number(e.target.value) }))}
+                  className="w-20 rounded-md border border-(--border) bg-transparent px-2 py-1 text-right"
+                />
+              </label>
+              <div className="flex items-center justify-between gap-4 text-sm">
+                <span>
+                  Ask shortcut
+                  <span className="block text-[12px] text-(--muted)">For example Alt+Space or Ctrl+Shift+K</span>
+                </span>
+                <TextField
+                  value={settings.paletteHotkey}
+                  onCommit={(paletteHotkey) => run(() => updateSettings({ paletteHotkey }))}
+                  className="w-40 text-right"
+                  label="Ask shortcut"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4 text-sm">
+                <span>
+                  Code folders
+                  <span className="block text-[12px] text-(--muted)">
+                    For the end of day repo check. Empty uses code, projects, source\\repos and similar. Restart to
+                    apply.
+                  </span>
+                </span>
+                <TextField
+                  value={settings.codeFolders.join("; ")}
+                  placeholder="C:\\Users\\you\\code"
+                  onCommit={(v) =>
+                    run(() =>
+                      updateSettings({
+                        codeFolders: v
+                          .split(";")
+                          .map((f) => f.trim())
+                          .filter(Boolean),
+                      }),
+                    )
+                  }
+                  className="w-56"
+                  label="Code folders"
+                />
+              </div>
+              <Toggle
+                label="Launch Sidekick when Windows starts"
+                checked={settings.launchAtLogin}
+                onChange={(launchAtLogin) => run(() => updateSettings({ launchAtLogin }))}
               />
-              <Button small onClick={() => playCue(cue, cueVolume(settings, cue), settings.soundKit)}>
-                Test
-              </Button>
-            </div>
-          ))}
-        </div>
-      </Section>
+            </Section>
+            <Section title="Privacy" hint="Paused sensors do not run at all (FR-SET-01).">
+              <PauseStatus pause={settings.pause} />
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => run(() => api.sensorsPause(15))}>Pause 15 min</Button>
+                <Button onClick={() => run(() => api.sensorsPause(60))}>Pause 1 hour</Button>
+                <Button onClick={() => run(() => api.sensorsPause(null))}>Pause until resumed</Button>
+                <Button onClick={() => run(() => api.sensorsResume())} disabled={!isPaused(settings.pause)}>
+                  Resume
+                </Button>
+              </div>
+            </Section>
+            <Section title="Sound" hint="Sounds by SND (snd.dev), designed by Dentsu Inc. and Starryworks Inc.">
+              <KitStatus kit={settings.soundKit} />
+              <Toggle
+                label="Mute all sounds"
+                checked={settings.muted}
+                onChange={(muted) => run(() => updateSettings({ muted }))}
+              />
+              <Slider
+                label="Master volume"
+                value={settings.masterVolume}
+                onChange={(masterVolume) => run(() => updateSettings({ masterVolume }))}
+              />
+              <div className="grid gap-2 sm:grid-cols-2">
+                {CUES.map((cue) => (
+                  <div key={cue} className="flex items-center gap-2">
+                    <Slider
+                      label={cue}
+                      value={settings.cueVolumes[cue] ?? 1}
+                      onChange={(v) => run(() => updateSettings({ cueVolumes: { ...settings.cueVolumes, [cue]: v } }))}
+                    />
+                    <Button small onClick={() => playCue(cue, cueVolume(settings, cue), settings.soundKit)}>
+                      Test
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          </>
+        )}
+        {tab === "ai" && (
+          <>
+            <Section
+              title="AI"
+              hint="Sidekick works fully without AI. Chat tries the providers top to bottom and falls back when one is not reachable. Ranking (T1) only ever uses SemIf or a model on this PC."
+            >
+              <AiSection ai={settings.ai} onError={setError} />
+            </Section>
+          </>
+        )}
+        {tab === "browser" && (
+          <>
+            <Section
+              title="Browser"
+              hint="The extension only talks to Sidekick on this PC. Logins are filled from your own 1Password or Bitwarden CLI and never stored or sent anywhere else."
+            >
+              <BrowserPairing />
+            </Section>
+          </>
+        )}
+        {tab === "search" && (
+          <>
+            <Section
+              title="Search"
+              hint="Text files in these folders become searchable in Ask mode (Search my stuff) and for Claude Code through MCP. Clipboard and web pages are searchable only by you. Everything stays on this PC."
+            >
+              <SearchSettings onError={setError} />
+            </Section>
+          </>
+        )}
+        {tab === "today" && (
+          <>
+            <Section
+              title="Today"
+              hint="Counted from the app in front, paused while you are away. Stored only on this PC."
+            >
+              <TimeToday />
+            </Section>
+            <Section
+              title="History"
+              hint="Files Sidekick created can be undone for 24 hours; they go to the Recycle Bin."
+            >
+              <RecentActions onError={setError} />
+            </Section>
+          </>
+        )}
+        {tab === "skills" && (
+          <>
+            <Section
+              title="Skills"
+              hint="Auto runs the first safe option without asking. Deleting files, running installers or stopping processes always ask first."
+            >
+              <SkillList onError={setError} />
+            </Section>
+          </>
+        )}
+        {tab === "sensors" && (
+          <>
+            <Section title="Sensors" hint="Each sensor can be switched off on its own (FR-SEN-12).">
+              {SENSOR_IDS.map(({ id, label, hint }) => (
+                <Toggle
+                  key={id}
+                  label={label}
+                  hint={hint}
+                  checked={settings.sensors[id] ?? id !== "heartbeat"}
+                  onChange={(on) => run(() => updateSettings({ sensors: { ...settings.sensors, [id]: on } }))}
+                />
+              ))}
+            </Section>
+            <Section
+              title="Found on this PC"
+              hint="Skills only offer what is installed. Install ffmpeg, ImageMagick, LibreOffice or pandoc for more conversions, then rescan."
+            >
+              <Capabilities onError={setError} />
+            </Section>
+          </>
+        )}
+        {tab === "about" && (
+          <>
+            {info && (
+              <Section title="About">
+                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+                  <dt className="text-(--muted)">Version</dt>
+                  <dd>{info.version}</dd>
+                  <dt className="text-(--muted)">Database</dt>
+                  <dd className="font-mono text-xs break-all">{info.dbPath}</dd>
+                  <dt className="text-(--muted)">Settings</dt>
+                  <dd className="font-mono text-xs break-all">{info.settingsPath}</dd>
+                  <dt className="text-(--muted)">Stored events</dt>
+                  <dd>{info.eventCount}</dd>
+                </dl>
+              </Section>
+            )}
+            <Section title="Debug" hint="Tools for checking the island, mascot, and pipeline.">
+              <div className="flex flex-wrap gap-2">
+                {MASCOT_STATES.map((s) => (
+                  <Button key={s} small active={s === mascot} onClick={() => run(() => api.debugSetState(s))}>
+                    {s}
+                  </Button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => run(() => api.debugEmitEvent())}>Emit test event</Button>
+                <Button onClick={() => run(() => api.debugDemoFlow())}>Run demo suggestion</Button>
+              </div>
 
-      <Section title="Island">
-        <label className="flex items-center justify-between gap-4 text-sm">
-          Collapse after (seconds)
-          <input
-            type="number"
-            min={2}
-            max={120}
-            value={settings.collapseAfterSecs}
-            onChange={(e) => run(() => updateSettings({ collapseAfterSecs: Number(e.target.value) }))}
-            className="w-20 rounded-md border border-(--border) bg-transparent px-2 py-1 text-right"
-          />
-        </label>
-        <div className="flex items-center justify-between gap-4 text-sm">
-          <span>
-            Ask shortcut
-            <span className="block text-[12px] text-(--muted)">For example Alt+Space or Ctrl+Shift+K</span>
-          </span>
-          <TextField
-            value={settings.paletteHotkey}
-            onCommit={(paletteHotkey) => run(() => updateSettings({ paletteHotkey }))}
-            className="w-40 text-right"
-            label="Ask shortcut"
-          />
-        </div>
-        <div className="flex items-center justify-between gap-4 text-sm">
-          <span>
-            Code folders
-            <span className="block text-[12px] text-(--muted)">
-              For the end of day repo check. Empty uses code, projects, source\\repos and similar. Restart to apply.
-            </span>
-          </span>
-          <TextField
-            value={settings.codeFolders.join("; ")}
-            placeholder="C:\\Users\\you\\code"
-            onCommit={(v) =>
-              run(() =>
-                updateSettings({
-                  codeFolders: v
-                    .split(";")
-                    .map((f) => f.trim())
-                    .filter(Boolean),
-                }),
-              )
-            }
-            className="w-56"
-            label="Code folders"
-          />
-        </div>
-        <Toggle
-          label="Launch Sidekick when Windows starts"
-          checked={settings.launchAtLogin}
-          onChange={(launchAtLogin) => run(() => updateSettings({ launchAtLogin }))}
-        />
-      </Section>
-
-      <Section
-        title="AI"
-        hint="Sidekick works fully without AI. Chat tries the providers top to bottom and falls back when one is not reachable. Ranking (T1) only ever uses SemIf or a model on this PC."
-      >
-        <AiSection ai={settings.ai} onError={setError} />
-      </Section>
-
-      <Section
-        title="Browser"
-        hint="The extension only talks to Sidekick on this PC. Logins are filled from your own 1Password or Bitwarden CLI and never stored or sent anywhere else."
-      >
-        <BrowserPairing />
-      </Section>
-
-      <Section
-        title="Search"
-        hint="Text files in these folders become searchable in Ask mode (Search my stuff) and for Claude Code through MCP. Clipboard and web pages are searchable only by you. Everything stays on this PC."
-      >
-        <SearchSettings onError={setError} />
-      </Section>
-
-      <Section title="Today" hint="Counted from the app in front, paused while you are away. Stored only on this PC.">
-        <TimeToday />
-      </Section>
-
-      <Section title="History" hint="Files Sidekick created can be undone for 24 hours; they go to the Recycle Bin.">
-        <RecentActions onError={setError} />
-      </Section>
-
-      <Section
-        title="Skills"
-        hint="Auto runs the first safe option without asking. Deleting files, running installers or stopping processes always ask first."
-      >
-        <SkillList onError={setError} />
-      </Section>
-
-      <Section title="Sensors" hint="Each sensor can be switched off on its own (FR-SEN-12).">
-        {SENSOR_IDS.map(({ id, label, hint }) => (
-          <Toggle
-            key={id}
-            label={label}
-            hint={hint}
-            checked={settings.sensors[id] ?? id !== "heartbeat"}
-            onChange={(on) => run(() => updateSettings({ sensors: { ...settings.sensors, [id]: on } }))}
-          />
-        ))}
-      </Section>
-
-      <Section
-        title="Found on this PC"
-        hint="Skills only offer what is installed. Install ffmpeg, ImageMagick, LibreOffice or pandoc for more conversions, then rescan."
-      >
-        <Capabilities onError={setError} />
-      </Section>
-
-      <Section title="Debug" hint="Tools for checking the island, mascot, and pipeline.">
-        <div className="flex flex-wrap gap-2">
-          {MASCOT_STATES.map((s) => (
-            <Button key={s} small active={s === mascot} onClick={() => run(() => api.debugSetState(s))}>
-              {s}
-            </Button>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => run(() => api.debugEmitEvent())}>Emit test event</Button>
-          <Button onClick={() => run(() => api.debugDemoFlow())}>Run demo suggestion</Button>
-        </div>
-
-        <RecentEvents />
-      </Section>
-
-      {info && (
-        <Section title="About">
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-            <dt className="text-(--muted)">Database</dt>
-            <dd className="font-mono text-xs break-all">{info.dbPath}</dd>
-            <dt className="text-(--muted)">Settings</dt>
-            <dd className="font-mono text-xs break-all">{info.settingsPath}</dd>
-            <dt className="text-(--muted)">Stored events</dt>
-            <dd>{info.eventCount}</dd>
-          </dl>
-        </Section>
-      )}
-    </main>
+              <RecentEvents />
+            </Section>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 

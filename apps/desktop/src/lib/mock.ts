@@ -106,9 +106,7 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   choices_reset: () => 0,
   actions_recent: () => [],
   reveal_path: () => undefined,
-  open_settings: () => {
-    window.open("/settings/", "_blank");
-  },
+  open_settings: () => commands.ask_open?.({ view: "settings" }),
   debug_set_state: (a) => go(a.state as MascotState),
   debug_emit_event: () => {
     go("noticing");
@@ -165,6 +163,7 @@ commands.ask_open = (a) =>
     ask: Boolean(a.ask),
     clipboard: false,
     page: null,
+    view: (a.view as string | undefined) ?? "ask",
   });
 commands.skill_install = () => "Screenshots";
 commands.search = (a) => [

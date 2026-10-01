@@ -81,7 +81,7 @@ export function AskPanel() {
           sendChat("What's on my screen? Explain it briefly and point out anything I should act on.", { screen: true }),
         stay: true,
       },
-      { id: "settings", label: "Open settings", icon: "settings", run: () => void api.openSettings() },
+      { id: "settings", label: "Open settings", icon: "settings", run: () => setAsk({ view: "settings" }), stay: true },
       ...(turns.length
         ? [
             {

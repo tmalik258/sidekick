@@ -48,6 +48,8 @@ pub struct Open {
     pub clipboard: bool,
     /// Text of the web page the question is about (from the extension).
     pub page: Option<String>,
+    /// "settings" opens the Settings panel instead of Ask.
+    pub view: Option<&'static str>,
 }
 
 pub fn is_open(app: &AppHandle) -> bool {

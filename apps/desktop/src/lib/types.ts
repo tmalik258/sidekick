@@ -109,6 +109,8 @@ export interface AskOpen {
   clipboard: boolean;
   /** Text of the web page the question is about. */
   page: string | null;
+  /** Which island panel to show. */
+  view?: "ask" | "settings";
 }
 
 export interface SearchHit {
