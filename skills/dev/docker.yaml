@@ -1,0 +1,16 @@
+id: dev.docker
+name: Start Docker
+description: When a project uses Docker Compose and Docker Desktop is not running, offer to start it (FR-DEV-07).
+priority: 45
+cooldown_secs: 3600
+dedupe: "{{path}}"
+trigger:
+  event: dev.repo_opened
+  where:
+    docker_needed: { equals: true }
+    docker_running: { equals: false }
+suggestion:
+  title: "{{name}} needs Docker"
+  detail: "Docker Desktop is not running."
+  options:
+    - { label: Start Docker Desktop, action: start_docker }

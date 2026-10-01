@@ -61,6 +61,14 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/clipboard/open-url.yaml"),
     ),
     (
+        "clipboard/color.yaml",
+        include_str!("../../../skills/clipboard/color.yaml"),
+    ),
+    (
+        "clipboard/long-text.yaml",
+        include_str!("../../../skills/clipboard/long-text.yaml"),
+    ),
+    (
         "clipboard/format-json.yaml",
         include_str!("../../../skills/clipboard/format-json.yaml"),
     ),
@@ -101,6 +109,70 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/browser/long-read.yaml"),
     ),
     (
+        "files/duplicate.yaml",
+        include_str!("../../../skills/files/duplicate.yaml"),
+    ),
+    (
+        "files/summarize.yaml",
+        include_str!("../../../skills/files/summarize.yaml"),
+    ),
+    (
+        "files/downloads-cleanup.yaml",
+        include_str!("../../../skills/files/downloads-cleanup.yaml"),
+    ),
+    (
+        "files/screenshot.yaml",
+        include_str!("../../../skills/files/screenshot.yaml"),
+    ),
+    (
+        "dev/repo-status.yaml",
+        include_str!("../../../skills/dev/repo-status.yaml"),
+    ),
+    (
+        "dev/env-file.yaml",
+        include_str!("../../../skills/dev/env-file.yaml"),
+    ),
+    (
+        "dev/docker.yaml",
+        include_str!("../../../skills/dev/docker.yaml"),
+    ),
+    (
+        "dev/claude-permission.yaml",
+        include_str!("../../../skills/dev/claude-permission.yaml"),
+    ),
+    (
+        "dev/unsaved-work.yaml",
+        include_str!("../../../skills/dev/unsaved-work.yaml"),
+    ),
+    (
+        "system/day-summary.yaml",
+        include_str!("../../../skills/system/day-summary.yaml"),
+    ),
+    (
+        "calendar/meeting-soon.yaml",
+        include_str!("../../../skills/calendar/meeting-soon.yaml"),
+    ),
+    (
+        "calendar/follow-up.yaml",
+        include_str!("../../../skills/calendar/follow-up.yaml"),
+    ),
+    (
+        "system/battery-low.yaml",
+        include_str!("../../../skills/system/battery-low.yaml"),
+    ),
+    (
+        "system/layout.yaml",
+        include_str!("../../../skills/system/layout.yaml"),
+    ),
+    (
+        "system/update.yaml",
+        include_str!("../../../skills/system/update.yaml"),
+    ),
+    (
+        "system/morning-brief.yaml",
+        include_str!("../../../skills/system/morning-brief.yaml"),
+    ),
+    (
         "system/focus.yaml",
         include_str!("../../../skills/system/focus.yaml"),
     ),
@@ -111,6 +183,7 @@ const BUILTIN: &[(&str, &str)] = &[
 pub const ACTIONS: &[&str] = &[
     "open_path",
     "open_folder",
+    "extract_text",
     "reveal_path",
     "copy_file",
     "copy_text",
@@ -124,6 +197,19 @@ pub const ACTIONS: &[&str] = &[
     "clear_clipboard_later",
     "format_json_clipboard",
     "ask_ai",
+    "fathom_followup",
+    "git_pull",
+    "install_deps",
+    "create_env",
+    "start_docker",
+    "launch_project",
+    "trash_download",
+    "clean_downloads",
+    "summarize_file",
+    "restore_layout",
+    "claude_allow",
+    "claude_deny",
+    "claude_pass",
     "browser_fill",
     "browser_close_duplicates",
     "browser_save_session",

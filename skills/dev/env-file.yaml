@@ -1,0 +1,16 @@
+id: dev.env-file
+name: Missing .env
+description: When a project has .env.example but no .env, offer to create it (FR-DEV-05).
+priority: 50
+cooldown_secs: 86400
+dedupe: "{{path}}"
+trigger:
+  event: dev.repo_opened
+  where:
+    env_missing: { equals: true }
+suggestion:
+  title: "{{name}} has no .env"
+  detail: "There is a .env.example to start from."
+  options:
+    - { label: Create .env, action: create_env, args: { path: "{{path}}" } }
+    - { label: Open in VS Code, action: open_in_editor, args: { path: "{{path}}" }, requires: ["tool:code"] }

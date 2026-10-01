@@ -208,6 +208,7 @@ fn decision_prompt(d: &Decision) -> ChatRequest {
             "Situation: {}\nQuestion: {}\nOptions:\n{options}",
             d.state, d.question
         ))],
+        image: None,
     }
 }
 

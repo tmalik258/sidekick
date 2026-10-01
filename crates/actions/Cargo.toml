@@ -9,6 +9,7 @@ license.workspace = true
 arboard = { version = "3", default-features = false }
 listeners = "0.6"
 log.workspace = true
+dirs = "7"
 open = "5"
 serde.workspace = true
 serde_json.workspace = true
@@ -17,6 +18,7 @@ sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["process"] }
 ulid.workspace = true
+trash = "5"
 which = "8"
 
 [target.'cfg(windows)'.dependencies]

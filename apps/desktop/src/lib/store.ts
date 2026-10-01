@@ -10,6 +10,7 @@ import {
   type Settings,
   type Suggestion,
   type Turn,
+  type VoiceStatus,
 } from "./types";
 
 interface SidekickState {
@@ -33,9 +34,14 @@ interface SidekickState {
   chatPage: string | null;
   /** The conversation is about writing a new skill. */
   chatSkill: boolean;
+  /** Voice: what is being heard right now, while listening. */
+  hearing: string | null;
+  voiceStatus: VoiceStatus | null;
 }
 
 export interface AskState {
+  /** Ask (commands and chat) or Settings. */
+  view: "ask" | "settings" | "welcome";
   context: AskContext;
   /** Text to start the input with. */
   prompt: string;
@@ -43,6 +49,8 @@ export interface AskState {
   seq: number;
   attachWindow: boolean;
   attachClip: boolean;
+  /** Send a screenshot with the next question only. */
+  attachScreen: boolean;
   localOnly: boolean;
 }
 
@@ -59,6 +67,8 @@ export const useSidekick = create<SidekickState>(() => ({
   chatId: null,
   chatPage: null,
   chatSkill: false,
+  hearing: null,
+  voiceStatus: null,
 }));
 
 export const setAsk = (patch: Partial<AskState>) => {
@@ -67,7 +77,7 @@ export const setAsk = (patch: Partial<AskState>) => {
 };
 
 /** Sends a message in the Ask conversation; answers stream into the last turn. */
-export function sendChat(prompt: string, attach?: { clipboard?: boolean }) {
+export function sendChat(prompt: string, attach?: { clipboard?: boolean; screen?: boolean; speak?: boolean }) {
   const { ask, turns, chatId, chatPage, chatSkill } = useSidekick.getState();
   const q = prompt.trim();
   if (!q || chatId) return;
@@ -76,10 +86,12 @@ export function sendChat(prompt: string, attach?: { clipboard?: boolean }) {
     ...turns.filter((t) => !t.error).map(({ role, content }) => ({ role, content })),
     { role: "user", content: q },
   ];
+  const screen = attach?.screen ?? ask?.attachScreen ?? false;
   useSidekick.setState({
     chatId: id,
-    turns: [...turns, { role: "user", content: q }, { role: "assistant", content: "", streaming: true }],
+    turns: [...turns, { role: "user", content: q, screen }, { role: "assistant", content: "", streaming: true }],
   });
+  if (ask?.attachScreen) setAsk({ attachScreen: false });
   void api.aiChat(
     id,
     history,
@@ -88,6 +100,8 @@ export function sendChat(prompt: string, attach?: { clipboard?: boolean }) {
       clipboard: attach?.clipboard ?? ask?.attachClip ?? false,
       page: chatPage,
       skill: chatSkill,
+      screen,
+      speak: attach?.speak ?? false,
     },
     ask?.localOnly ?? false,
   );
@@ -103,6 +117,21 @@ export function startSkill(description: string) {
 export function cancelChat() {
   const { chatId } = useSidekick.getState();
   if (chatId) void api.aiCancel(chatId);
+  void api.voiceStop();
+}
+
+/** Push to talk: listen now, no wake word needed. */
+export function startListening() {
+  useSidekick.setState({ hearing: "" });
+  api.voiceListen().catch((e) => {
+    const { turns } = useSidekick.getState();
+    useSidekick.setState({ hearing: null, turns: [...turns, { role: "assistant", content: "", error: String(e) }] });
+  });
+}
+
+export function stopListening() {
+  useSidekick.setState({ hearing: null });
+  void api.voiceStop();
 }
 
 export function newChat() {
@@ -140,6 +169,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       if (sounds) preloadSounds(settings.soundKit);
     },
   );
+  void api.voiceStatus().then((voiceStatus) => !disposed && useSidekick.setState({ voiceStatus }));
 
   unlisteners.push(
     listen(EVENTS.mascotState, (t) => {
@@ -168,17 +198,36 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       }
       useSidekick.setState({
         ask: {
+          view: open.view ?? "ask",
           context: open.context,
           prompt: open.ask ? "" : (open.prompt ?? ""),
           seq,
           attachWindow: false,
           attachClip: clip,
+          attachScreen: false,
           localOnly: false,
         },
       });
       if (open.ask && open.prompt) sendChat(open.prompt, { clipboard: clip });
     }),
-    listen(EVENTS.askClose, () => useSidekick.setState({ ask: null })),
+    listen(EVENTS.askClose, () => {
+      if (useSidekick.getState().hearing !== null) stopListening();
+      useSidekick.setState({ ask: null });
+    }),
+    listen(EVENTS.voiceState, (voiceStatus) => useSidekick.setState({ voiceStatus })),
+    listen(EVENTS.voiceHeard, ({ text, final, byVoice }) => {
+      if (!final) {
+        useSidekick.setState({ hearing: text });
+        return;
+      }
+      useSidekick.setState({ hearing: null });
+      const { settings, turns } = useSidekick.getState();
+      if (text.trim()) {
+        sendChat(text, { speak: settings.voice.speakAnswers });
+      } else if (byVoice && turns.length === 0) {
+        void api.askClose();
+      }
+    }),
     listen(EVENTS.aiDelta, ({ id, text }) => updateLastTurn(id, (t) => ({ ...t, content: t.content + text }))),
     listen(EVENTS.aiDone, ({ id, provider, error }) => {
       updateLastTurn(id, (t) => ({ ...t, provider, error, streaming: false }));

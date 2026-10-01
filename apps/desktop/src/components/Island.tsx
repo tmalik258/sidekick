@@ -14,6 +14,8 @@ import { connect, setHovered, uiVolume, useSidekick } from "@/lib/store";
 import { isPaused, type MascotState, type Suggestion } from "@/lib/types";
 import { ASK_ORB, AskPanel } from "./AskPanel";
 import { Icon } from "./Icon";
+import { IslandSettings } from "./IslandSettings";
+import { IslandWelcome } from "./IslandWelcome";
 import { Orb } from "./Orb";
 
 const TITLE: Record<MascotState, string> = {
@@ -59,6 +61,7 @@ const morphClose = { type: "spring", bounce: 0.12, duration: 0.42 } as const;
 export function Island() {
   const { mascot, settings, suggestion, hovered: rawHover, visible, ready } = useSidekick();
   const asking = useSidekick((s) => s.ask !== null);
+  const view = useSidekick((s) => s.ask?.view);
   const chatting = useSidekick((s) => s.chatId !== null);
   const reduced = useReducedMotion() ?? false;
   const now = useNow(15_000);
@@ -161,7 +164,7 @@ export function Island() {
               exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
               transition={{ duration: 0.28, delay: 0.06, ease: [0.23, 1, 0.32, 1] }}
             >
-              <AskPanel />
+              {view === "settings" ? <IslandSettings /> : view === "welcome" ? <IslandWelcome /> : <AskPanel />}
             </motion.div>
           ) : (
             expanded && (

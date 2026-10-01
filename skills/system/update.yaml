@@ -1,0 +1,13 @@
+id: system.update
+name: Updates
+description: When a new Sidekick release is out, say so once and link to it. Nothing installs on its own.
+priority: 20
+cooldown_secs: 86400
+dedupe: "{{version}}"
+trigger:
+  event: app.update_available
+suggestion:
+  title: "Sidekick {{version}} is out"
+  detail: "You have {{current}}."
+  options:
+    - { label: "See what's new", action: open_url, args: { url: "{{url}}" } }

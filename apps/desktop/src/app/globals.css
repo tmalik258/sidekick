@@ -70,30 +70,6 @@ body {
   overflow: hidden;
 }
 
-/* Full-viewport scroller for settings and other non-island pages. */
-.page-scroll {
-  height: 100dvh;
-  overflow-y: auto;
-  overflow-x: hidden;
-  background: var(--bg);
-  color: var(--text);
-  scrollbar-width: thin;
-  scrollbar-color: var(--muted) transparent;
-}
-
-.page-scroll::-webkit-scrollbar {
-  width: 8px;
-}
-
-.page-scroll::-webkit-scrollbar-thumb {
-  background: color-mix(in oklab, var(--muted) 55%, transparent);
-  border-radius: 999px;
-}
-
-.page-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -245,4 +221,36 @@ body {
 .ask-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgb(255 255 255 / 0.18) transparent;
+}
+
+/* ---------- Settings inside the island ---------- */
+
+/* The island is always dark, whatever the Windows theme. */
+.island-settings {
+  --bg: #000;
+  --surface: rgb(255 255 255 / 0.06);
+  --text: #fff;
+  --muted: rgb(235 235 245 / 0.55);
+  --border: rgb(255 255 255 / 0.1);
+  --hover: rgb(255 255 255 / 0.1);
+  --accent: #0a84ff;
+  color: var(--text);
+  color-scheme: dark;
+}
+
+.island-settings [role="switch"][aria-checked="false"] {
+  background-color: rgb(255 255 255 / 0.2);
+}
+
+.settings-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.2) transparent;
+  overscroll-behavior: contain;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }

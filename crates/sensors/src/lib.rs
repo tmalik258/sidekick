@@ -5,26 +5,32 @@
 //! enforced in one place.
 
 mod browser;
+pub mod calendar;
 pub mod classify;
 mod claude_code;
 mod clipboard;
+pub mod color;
 mod downloads;
+pub mod file_info;
 mod gate;
 mod heartbeat;
 pub mod http;
 mod idle;
 mod ports;
+pub mod repos;
 mod system;
 mod window;
 
 pub use browser::{BrowserBridge, BrowserSensor};
-pub use claude_code::ClaudeCodeSensor;
+pub use calendar::{Calendar, CalendarSensor};
+pub use claude_code::{Approvals, ClaudeCodeSensor};
 pub use clipboard::ClipboardSensor;
 pub use downloads::DownloadsSensor;
 pub use gate::{GateState, SensorGate, SensorGateHandle};
 pub use heartbeat::HeartbeatSensor;
 pub use idle::IdleSensor;
 pub use ports::PortsSensor;
+pub use repos::ReposSensor;
 pub use system::SystemSensor;
 pub use window::WindowSensor;
 

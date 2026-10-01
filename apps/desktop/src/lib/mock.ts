@@ -44,6 +44,7 @@ function later(ms: number, fn: () => void) {
 function saveSettings(next: Settings): Settings {
   settings = next;
   emit("settings://changed", settings);
+  emit("voice://state", commands.voice_status?.({}));
   return settings;
 }
 
@@ -106,9 +107,7 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   choices_reset: () => 0,
   actions_recent: () => [],
   reveal_path: () => undefined,
-  open_settings: () => {
-    window.open("/settings/", "_blank");
-  },
+  open_settings: () => commands.ask_open?.({ view: "settings" }),
   debug_set_state: (a) => go(a.state as MascotState),
   debug_emit_event: () => {
     go("noticing");
@@ -165,8 +164,89 @@ commands.ask_open = (a) =>
     ask: Boolean(a.ask),
     clipboard: false,
     page: null,
+    view: (a.view as string | undefined) ?? "ask",
   });
 commands.skill_install = () => "Screenshots";
+const voiceStatus = () => ({
+  models: [
+    { id: "wake", label: "Wake word", size: 17_626_723, installed: settings.voice.enabled },
+    { id: "speech", label: "Speech to text", size: 57_267_600, installed: settings.voice.enabled },
+    { id: "kokoro", label: "Kokoro voice", size: 103_248_205, installed: settings.voice.enabled },
+  ],
+  missingBytes: settings.voice.enabled ? 0 : 178_142_528,
+  downloading: false,
+  listening: settings.voice.enabled,
+  error: null,
+  voices: [
+    { id: "af_bella", label: "Bella (American)" },
+    { id: "bm_george", label: "George (British)" },
+  ],
+});
+commands.voice_status = voiceStatus;
+commands.clipboard_history = () => [
+  { text: "npm run dev -- --port 3001", ts: new Date().toISOString() },
+  { text: "https://github.com/tmalik258/sidekick/pull/5", ts: new Date().toISOString() },
+  { text: "#0ea5e9", ts: new Date().toISOString() },
+];
+commands.clipboard_copy = () => undefined;
+commands.search_clear = () => 0;
+commands.backup_export = () => "C:/Users/you/Documents/Sidekick backup.json";
+commands.backup_import = () => "Restored settings and 2 skills";
+commands.projects_list = () => [
+  { name: "sidekick", path: "C:/Users/you/code/sidekick" },
+  { name: "falconxoft-api", path: "C:/Users/you/code/falconxoft-api" },
+];
+commands.project_launch = () => "Opened sidekick in VS Code and a terminal";
+commands.search_status = () => ({ items: 1240, embedded: 1240, embedError: null });
+commands.calendar_today = () => ({
+  meetings: settings.calendar.feeds.length
+    ? [
+        { title: "Standup", start: "10:00", end: "10:15", joinUrl: "https://meet.google.com/abc-defg-hij" },
+        { title: "Design review", start: "15:00", end: "15:45", joinUrl: null },
+      ]
+    : [],
+  error: null,
+});
+commands.voice_download = () => {
+  let done = 0;
+  const total = 178_142_528;
+  const tick = () => {
+    done = Math.min(total, done + 30_000_000);
+    emit("voice://download", { label: "Kokoro voice", done, total, finished: done >= total, error: null });
+    if (done < total) later(300, tick);
+  };
+  tick();
+};
+commands.voice_cancel_download = () => undefined;
+commands.voice_listen = () => {
+  const words = ["What", "What time", "What time is it", "What time is it in London?"];
+  for (const [i, w] of words.entries()) {
+    later(400 * (i + 1), () => emit("voice://heard", { text: w, final: false, byVoice: false }));
+  }
+  later(2200, () => emit("voice://heard", { text: words[3], final: true, byVoice: false }));
+};
+commands.voice_stop = () => undefined;
+commands.voice_test = () => undefined;
+commands.search = (a) => [
+  {
+    source: "file",
+    reference: "C:/Users/you/notes/acme.md",
+    title: "acme.md",
+    snippet: `Invoice for [${a.query}] Corp, due Friday ... rate 45 USD per hour`,
+    ts: "2026-10-01T09:00:00Z",
+  },
+  {
+    source: "chat",
+    reference: "c1",
+    title: "How do I free port 3000",
+    snippet: `Use netstat -ano to find the [${a.query}] process`,
+    ts: "2026-10-01T10:00:00Z",
+  },
+];
+commands.search_status = () => ({ items: 1284 });
+commands.search_reindex = () => undefined;
+commands.open_reference = () => undefined;
+commands.mcp_info = () => ({ url: "http://127.0.0.1:47823/mcp", token: "browser-preview-mcp-token" });
 commands.time_today = () => [
   { app: "Visual Studio Code", project: "sidekick", secs: 9420 },
   { app: "Google Chrome", project: "", secs: 4310 },

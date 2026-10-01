@@ -41,6 +41,7 @@ fn providers(app: &AppHandle, ai: &AiSettings, all: bool) -> Vec<Arc<dyn AiProvi
                     .map(Into::into),
                 model: Some(ai.claude_code.model.clone()).filter(|m| !m.is_empty()),
                 workdir: state.ai_workdir.clone(),
+                mcp_config: Some(state.ai_workdir.join(crate::mcp::CONFIG_FILE)),
             })),
             "anthropic" if all || ai.anthropic.enabled => {
                 out.push(Arc::new(Anthropic::new(Some(ai.anthropic.model.clone()))))
@@ -133,21 +134,38 @@ pub struct Attach {
     /// The user is describing a new skill for Sidekick to learn.
     #[serde(default)]
     pub skill: bool,
+    /// Send a screenshot of the window the user was in.
+    #[serde(default)]
+    pub screen: bool,
+    /// The question was spoken; read the answer aloud.
+    #[serde(default)]
+    pub speak: bool,
 }
 
 /// What Sidekick can notice, for AI writing skills. Keep in sync with the
 /// sensors.
 const EVENT_CATALOG: &str = "\
-file.download_completed: path, dir, name, ext, kind (image|video|audio|document|archive|installer|code|other), size, size_human, stem
+file.download_completed: path, dir, name, ext, kind (image|video|audio|document|archive|installer|code|other), size, size_human, stem, duplicate_of, duplicate_name, signature (installers)
 port.listening / port.closed: port, pid, process (lowercase, no .exe), address, url
 clipboard.changed: kind (url|json|color|email|path|stack_trace|code|text|secret), preview, text (never for secret)
 window.focused: app, exe, title, pid
 claude.stop / claude.notification: project, cwd, session, message
+claude.permission: id, project, tool, summary, seconds
 browser.login_form / browser.long_read / browser.upwork_job: url, domain, title, text, words, tab
 browser.many_tabs: count, duplicates
 system.disk_low: mount, free_human, total_human, percent_free
 system.memory_high: percent, process, process_mb
 focus.long_session: app, project, minutes
+file.screenshot: path, dir, name, ext, kind, size
+dev.unsaved_work: count, names, first, first_path, changed, unpushed
+time.day_summary: total_human, top, text
+day.morning_brief: headline, text, reviews, first_url, first_title
+calendar.meeting_soon: title, minutes, start, join_url, location, attendees, details
+calendar.meeting_ended: title, start, start_utc, attendees
+dev.repo_opened: name, path, branch, behind, ahead, changed, env_missing, docker_needed, docker_running
+files.downloads_old: count, mb, dir
+system.monitor_connected: monitors
+system.battery_low: percent
 user.idle / user.active: idle_secs / away_secs";
 
 const SKILL_SYSTEM: &str = "You write skills for Sidekick, a desktop assistant on Windows. \
@@ -207,6 +225,11 @@ fn system_prompt(app: &AppHandle, attach: &Attach) -> String {
         );
     }
     let mut system = SYSTEM.to_owned();
+    if attach.speak {
+        system.push_str(
+            "\n\nThe user asked by voice and your answer is read aloud. Answer in one to three short spoken sentences. No markdown, lists, tables or links unless they ask for them; if code is needed, keep it to one short block.",
+        );
+    }
     if let Some(page) = attach.page.as_deref().filter(|p| !p.trim().is_empty()) {
         let clipped: String = page.chars().take(MAX_PAGE).collect();
         system.push_str(&format!(
@@ -256,17 +279,46 @@ pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach,
     lock(&app.state::<AppState>().chats).insert(id.clone(), cancel.clone());
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        let question = messages
+            .iter()
+            .rev()
+            .find(|m| m.role == sidekick_ai::Role::User)
+            .map(|m| m.content.clone());
+        let image = if attach.screen {
+            match screenshot(&app).await {
+                Ok(png) => Some(png),
+                Err(err) => {
+                    lock(&app.state::<AppState>().chats).remove(&id);
+                    let _ = app.emit(
+                        DONE_EVENT,
+                        Done {
+                            id,
+                            provider: None,
+                            error: Some(format!("Could not capture the screen: {err}")),
+                        },
+                    );
+                    return;
+                }
+            }
+        } else {
+            None
+        };
         let req = ChatRequest {
             system: system_prompt(&app, &attach),
             messages,
+            image,
         };
         let router = router(&app);
+        let speak = attach.speak && crate::voice::begin_answer(&app, &id);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
         let forward = {
             let app = app.clone();
             let id = id.clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(text) = rx.recv().await {
+                    if speak {
+                        crate::voice::answer_text(&app, &id, &text);
+                    }
                     let _ = app.emit(DELTA_EVENT, Delta { id: &id, text });
                 }
             })
@@ -276,6 +328,9 @@ pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach,
         drop(sink);
         let _ = forward.await;
         lock(&app.state::<AppState>().chats).remove(&id);
+        if let (Ok(answer), Some(q)) = (&result, &question) {
+            crate::search::index_chat(&app, &id, q, &answer.text);
+        }
         let done = match result {
             Ok(answer) => Done {
                 id,
@@ -291,8 +346,22 @@ pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach,
                 }),
             },
         };
+        if speak {
+            crate::voice::answer_done(&app, &done.id, done.error.as_deref());
+        }
         let _ = app.emit(DONE_EVENT, done);
     });
+}
+
+/// Captures the window the user was in before Sidekick took focus.
+async fn screenshot(app: &AppHandle) -> Result<Vec<u8>, String> {
+    let pid = lock(&app.state::<AppState>().last_window)
+        .as_ref()
+        .and_then(|w| w["pid"].as_u64())
+        .and_then(|p| u32::try_from(p).ok());
+    tokio::task::spawn_blocking(move || crate::screen::capture(pid))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 fn no_provider_hint(local_only: bool) -> String {

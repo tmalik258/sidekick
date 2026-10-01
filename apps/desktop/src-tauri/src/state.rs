@@ -12,14 +12,17 @@ use sidekick_sensors::{GateState, SensorGateHandle};
 use sidekick_skills::{Engine, Env, Proposal, Skill, Trust};
 
 /// Every sensor the app can run, in the order shown in settings.
-pub const SENSOR_IDS: [&str; 9] = [
+pub const SENSOR_IDS: [&str; 12] = [
+    "calendar",
     "downloads",
+    "screenshots",
     "ports",
     "clipboard",
     "window",
     "claude_code",
     "browser",
     "system",
+    "repos",
     "idle",
     "heartbeat",
 ];
@@ -66,6 +69,8 @@ pub struct AppState {
     pub browser: sidekick_sensors::BrowserBridge,
     /// The pairing code the extension must send.
     pub browser_token: String,
+    /// Bearer token for the MCP server.
+    pub mcp_token: String,
     /// The island is in Ask mode (input, commands, chat).
     pub ask_open: AtomicBool,
     /// The next success has buttons (Undo, Show in folder); hold it longer.
@@ -74,6 +79,10 @@ pub struct AppState {
     pub away: AtomicBool,
     /// T1 picks per skill and app, from earlier decisions.
     pub decisions: Mutex<crate::decide::Cache>,
+    pub voice: crate::voice::Voice,
+    pub calendar: sidekick_sensors::Calendar,
+    /// Claude Code permission requests waiting on the island (FR-DEV-06).
+    pub approvals: sidekick_sensors::Approvals,
 }
 
 /// The interactive part of the island window, in logical pixels relative to

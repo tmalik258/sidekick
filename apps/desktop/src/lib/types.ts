@@ -37,7 +37,53 @@ export interface Settings {
   soundKit: string;
   skills?: Record<string, { enabled?: boolean | null; auto?: boolean | null }>;
   paletteHotkey: string;
+  codeFolders: string[];
+  indexFolders: string[];
+  endOfDayHour: number;
   ai: AiSettings;
+  voice: VoiceSettings;
+  calendar: { feeds: string[]; remindMinutes: number };
+  semanticSearch: { enabled: boolean; model: string };
+  onboarded: boolean;
+  checkUpdates: boolean;
+  denyApps: string[];
+  denySites: string[];
+}
+
+export interface CalendarToday {
+  meetings: { title: string; start: string; end: string; joinUrl: string | null }[];
+  error: string | null;
+}
+
+export interface VoiceSettings {
+  enabled: boolean;
+  wakeWord: boolean;
+  speakAnswers: boolean;
+  voice: string;
+  speed: number;
+}
+
+export interface VoiceStatus {
+  models: { id: string; label: string; size: number; installed: boolean }[];
+  missingBytes: number;
+  downloading: boolean;
+  listening: boolean;
+  error: string | null;
+  voices: { id: string; label: string }[];
+}
+
+export interface VoiceHeard {
+  text: string;
+  final: boolean;
+  byVoice: boolean;
+}
+
+export interface VoiceDownload {
+  label: string;
+  done: number;
+  total: number;
+  finished: boolean;
+  error: string | null;
 }
 
 export const AI_PROVIDERS = ["claude_code", "anthropic", "local"] as const;
@@ -86,6 +132,8 @@ export interface Turn extends ChatMessage {
   provider?: string | null;
   error?: string | null;
   streaming?: boolean;
+  /** A screenshot went with this question. */
+  screen?: boolean;
 }
 
 export interface AskContext {
@@ -104,6 +152,21 @@ export interface AskOpen {
   clipboard: boolean;
   /** Text of the web page the question is about. */
   page: string | null;
+  /** Which island panel to show. */
+  view?: "ask" | "settings" | "welcome";
+}
+
+export interface SearchHit {
+  source: string;
+  reference: string;
+  title: string;
+  snippet: string;
+  ts: string;
+}
+
+export interface McpInfo {
+  url: string;
+  token: string;
 }
 
 export interface AppTime {
@@ -168,6 +231,9 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "pearl",
   soundKit: "01",
   paletteHotkey: "Alt+Space",
+  codeFolders: [],
+  indexFolders: [],
+  endOfDayHour: 18,
   ai: {
     order: ["claude_code", "anthropic", "local"],
     claudeCode: { enabled: true, path: "", model: "" },
@@ -184,10 +250,19 @@ export const DEFAULT_SETTINGS: Settings = {
     },
     decisions: true,
   },
+  calendar: { feeds: [], remindMinutes: 5 },
+  semanticSearch: { enabled: true, model: "nomic-embed-text" },
+  onboarded: false,
+  checkUpdates: true,
+  denyApps: ["1password.exe", "bitwarden.exe", "keepass.exe", "keepassxc.exe"],
+  denySites: [],
+  voice: { enabled: false, wakeWord: true, speakAnswers: true, voice: "af_bella", speed: 1 },
 };
 
 export const SENSOR_IDS = [
+  { id: "calendar", label: "Calendar", hint: "Reads your calendar's private iCal link for meeting reminders." },
   { id: "downloads", label: "Downloads", hint: "Notices finished downloads the moment they land." },
+  { id: "screenshots", label: "Screenshots", hint: "Notices new screenshots in Pictures\\Screenshots." },
   { id: "ports", label: "Dev servers", hint: "Notices local servers starting, checked every second." },
   { id: "clipboard", label: "Clipboard", hint: "Notices copied text. Secrets are never stored." },
   { id: "window", label: "Active window", hint: "Knows which app is in front; hides the island in fullscreen." },

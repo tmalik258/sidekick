@@ -79,12 +79,19 @@ fn clip_event(text: &str) -> Event {
         serde_json::json!({ "kind": kind.as_str(), "length": trimmed.chars().count() })
     } else {
         let body: String = trimmed.chars().take(MAX_TEXT).collect();
-        serde_json::json!({
+        let mut payload = serde_json::json!({
             "kind": kind.as_str(),
             "length": trimmed.chars().count(),
             "preview": preview,
             "text": body,
-        })
+        });
+        if kind == ClipKind::Color
+            && let (Some(obj), Some(serde_json::Value::Object(extra))) =
+                (payload.as_object_mut(), crate::color::info(trimmed))
+        {
+            obj.extend(extra);
+        }
+        payload
     };
     let sensitivity = if kind == ClipKind::Secret {
         Sensitivity::Secret

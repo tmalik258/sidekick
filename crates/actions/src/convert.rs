@@ -104,6 +104,45 @@ pub async fn extract(caps: &Capabilities, archive: &Path) -> Result<Outcome, Act
 
 /// `dir/stem.ext`, or `dir/stem (2).ext` and so on when taken. An empty ext
 /// makes a folder name.
+/// Reads the text in an image with Tesseract and puts it on the clipboard.
+pub async fn ocr(caps: &Capabilities, image: &Path) -> Result<Outcome, ActionError> {
+    let tesseract = caps
+        .tesseract
+        .as_ref()
+        .ok_or_else(|| missing("Tesseract"))?;
+    let mut cmd = Command::new(tesseract);
+    cmd.arg(image)
+        .arg("stdout")
+        .kill_on_drop(true)
+        .stdin(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(0x0800_0000);
+    }
+    let out = tokio::time::timeout(TIMEOUT, cmd.output())
+        .await
+        .map_err(|_| ActionError::Failed("reading the text took too long".into()))?
+        .map_err(fail)?;
+    if !out.status.success() {
+        return Err(ActionError::Failed(
+            "Tesseract could not read the image".into(),
+        ));
+    }
+    let text = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    if text.is_empty() {
+        return Ok(Outcome {
+            message: "No text found".into(),
+            path: None,
+        });
+    }
+    crate::system::set_clipboard_text(&text)?;
+    let words = text.split_whitespace().count();
+    Ok(Outcome {
+        message: format!("Copied {words} words of text"),
+        path: None,
+    })
+}
+
 pub fn unique_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
     let make = |n: u32| {
         let base = if n == 1 {

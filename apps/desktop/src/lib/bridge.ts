@@ -10,16 +10,22 @@ import type {
   AppTime,
   AskOpen,
   BrowserInfo,
+  CalendarToday,
   CapabilityInfo,
   ChatMessage,
   HitRect,
   MascotState,
+  McpInfo,
   ProviderStatus,
+  SearchHit,
   Settings,
   SkillInfo,
   StoredEvent,
   Suggestion,
   Transition,
+  VoiceDownload,
+  VoiceHeard,
+  VoiceStatus,
 } from "./types";
 
 export const EVENTS = {
@@ -35,6 +41,9 @@ export const EVENTS = {
   askClose: "ask://close",
   actionResult: "action://result",
   settingsChanged: "settings://changed",
+  voiceState: "voice://state",
+  voiceHeard: "voice://heard",
+  voiceDownload: "voice://download",
 } as const;
 
 export interface EventPayloads {
@@ -50,6 +59,9 @@ export interface EventPayloads {
   [EVENTS.askClose]: null;
   [EVENTS.actionResult]: ActionResult;
   [EVENTS.settingsChanged]: Settings;
+  [EVENTS.voiceState]: VoiceStatus;
+  [EVENTS.voiceHeard]: VoiceHeard;
+  [EVENTS.voiceDownload]: VoiceDownload;
 }
 
 export function isTauri(): boolean {
@@ -97,7 +109,14 @@ export const api = {
   aiChat: (
     id: string,
     messages: ChatMessage[],
-    attach: { window: boolean; clipboard: boolean; page?: string | null; skill?: boolean },
+    attach: {
+      window: boolean;
+      clipboard: boolean;
+      page?: string | null;
+      skill?: boolean;
+      screen?: boolean;
+      speak?: boolean;
+    },
     localOnly: boolean,
   ) => invoke<void>("ai_chat", { id, messages, attach, localOnly }),
   aiCancel: (id: string) => invoke<void>("ai_cancel", { id }),
@@ -105,6 +124,25 @@ export const api = {
   browserInfo: () => invoke<BrowserInfo>("browser_info"),
   timeToday: () => invoke<AppTime[]>("time_today"),
   skillInstall: (yaml: string) => invoke<string>("skill_install", { yaml }),
+  search: (query: string) => invoke<SearchHit[]>("search", { query }),
+  searchStatus: () => invoke<{ items: number; embedded: number; embedError: string | null }>("search_status"),
+  searchReindex: () => invoke<void>("search_reindex"),
+  openReference: (source: string, reference: string) => invoke<void>("open_reference", { source, reference }),
+  mcpInfo: () => invoke<McpInfo>("mcp_info"),
   actionUndo: (id: number) => invoke<string>("action_undo", { id }),
+  clipboardHistory: (limit = 60) => invoke<{ text: string; ts: string }[]>("clipboard_history", { limit }),
+  clipboardCopy: (text: string) => invoke<void>("clipboard_copy", { text }),
+  projectsList: () => invoke<{ name: string; path: string }[]>("projects_list"),
+  projectLaunch: (path: string) => invoke<string>("project_launch", { path }),
+  searchClear: () => invoke<number>("search_clear"),
+  backupExport: () => invoke<string>("backup_export"),
+  backupImport: (text: string) => invoke<string>("backup_import", { text }),
+  calendarToday: () => invoke<CalendarToday>("calendar_today"),
+  voiceStatus: () => invoke<VoiceStatus>("voice_status"),
+  voiceDownload: () => invoke<void>("voice_download"),
+  voiceCancelDownload: () => invoke<void>("voice_cancel_download"),
+  voiceListen: () => invoke<void>("voice_listen"),
+  voiceStop: () => invoke<void>("voice_stop"),
+  voiceTest: () => invoke<void>("voice_test"),
   askOpen: (prompt: string | null = null, ask = false) => invoke<void>("ask_open", { prompt, ask }),
 };

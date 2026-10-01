@@ -17,6 +17,9 @@ pub struct ClaudeCode {
     pub model: Option<String>,
     /// Folder the CLI runs in. Kept empty so it has no project to touch.
     pub workdir: PathBuf,
+    /// An MCP config file (Sidekick's own server) to load for the chat. Its
+    /// tools are pre-approved; they only search, notify and open links.
+    pub mcp_config: Option<PathBuf>,
 }
 
 impl ClaudeCode {
@@ -41,9 +44,17 @@ impl ClaudeCode {
             args.push("--model".into());
             args.push(model.into());
         }
+        if let Some(config) = self.mcp_config.as_ref().filter(|p| p.is_file()) {
+            args.push("--mcp-config".into());
+            args.push(config.to_string_lossy().into_owned());
+            args.push("--allowedTools".into());
+            args.push("mcp__sidekick".into());
+        }
         args
     }
 }
+
+const SCREENSHOT: &str = "screen.png";
 
 fn valid_model(m: &str) -> bool {
     !m.is_empty()
@@ -146,7 +157,15 @@ impl AiProvider for ClaudeCode {
             .spawn()
             .map_err(|e| AiError::Failed(format!("could not start Claude Code: {e}")))?;
 
-        let prompt = transcript(req);
+        let mut prompt = transcript(req);
+        if let Some(png) = &req.image {
+            // Claude Code reads images from files; it runs in this folder.
+            std::fs::write(self.workdir.join(SCREENSHOT), png)
+                .map_err(|e| AiError::Failed(format!("could not save the screenshot: {e}")))?;
+            prompt = format!(
+                "A screenshot of the user's screen is saved as {SCREENSHOT} in the current folder. Read it first.\n\n{prompt}"
+            );
+        }
         let mut stdin = child.stdin.take().expect("piped stdin");
         stdin
             .write_all(prompt.as_bytes())

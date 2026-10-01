@@ -1,16 +1,28 @@
 mod ai;
 mod ask;
+mod brief;
 mod browser;
 mod commands;
 mod decide;
+mod fathom;
+mod files;
 mod island;
+mod layout;
+mod learn;
 mod mascot;
+mod mcp;
 mod pipeline;
+mod privacy;
+mod projects;
+mod screen;
+mod search;
 mod state;
 mod suggestions;
 mod timetrack;
 mod tray;
 mod undo;
+mod updates;
+mod voice;
 mod windows;
 
 use std::error::Error;
@@ -22,7 +34,8 @@ use sidekick_actions::{Capabilities, Executor};
 use sidekick_core::{EventBus, MascotEvent, Settings, Storage};
 use sidekick_sensors::{
     BrowserBridge, BrowserSensor, ClaudeCodeSensor, ClipboardSensor, DownloadsSensor,
-    HeartbeatSensor, IdleSensor, PortsSensor, Sensor, SensorGate, SystemSensor, WindowSensor,
+    HeartbeatSensor, IdleSensor, PortsSensor, ReposSensor, Sensor, SensorGate, SystemSensor,
+    WindowSensor,
 };
 use sidekick_skills::Engine;
 use tauri::{AppHandle, Manager};
@@ -66,6 +79,20 @@ pub fn run() {
             commands::suggestion_dismiss,
             commands::events_recent,
             commands::open_settings,
+            commands::calendar_today,
+            commands::search_clear,
+            commands::backup_export,
+            commands::backup_import,
+            commands::projects_list,
+            commands::project_launch,
+            commands::clipboard_history,
+            commands::clipboard_copy,
+            commands::voice_status,
+            commands::voice_download,
+            commands::voice_cancel_download,
+            commands::voice_listen,
+            commands::voice_stop,
+            commands::voice_test,
             commands::debug_set_state,
             commands::debug_emit_event,
             commands::debug_demo_flow,
@@ -83,6 +110,11 @@ pub fn run() {
             commands::browser_info,
             commands::time_today,
             commands::skill_install,
+            commands::search,
+            commands::search_status,
+            commands::search_reindex,
+            commands::open_reference,
+            commands::mcp_info,
             commands::action_undo,
         ])
         .run(tauri::generate_context!())
@@ -111,8 +143,20 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     let (gate_handle, gate) = SensorGate::new(state::gate_state(&settings, Utc::now()));
     let paused = settings.pause.is_active(Utc::now());
     let hotkey = settings.palette_hotkey.clone();
+    let repos = ReposSensor {
+        roots: if settings.code_folders.is_empty() {
+            ReposSensor::default_roots()
+        } else {
+            settings.code_folders.iter().map(Into::into).collect()
+        },
+        hour: settings.end_of_day_hour,
+    };
     let browser_token = browser::load_or_create_token(&data_dir);
+    let mcp_token = browser::load_or_create_secret(&data_dir, "mcp-token");
     let bridge = BrowserBridge::default();
+    let calendar = sidekick_sensors::Calendar::default();
+    let approvals = sidekick_sensors::Approvals::default();
+    commands::sync_calendar(&calendar, &settings);
 
     app.manage(AppState {
         settings: Mutex::new(settings),
@@ -135,6 +179,9 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         last_window: Mutex::default(),
         chats: Mutex::default(),
         ai_workdir: data_dir.join("claude-workspace"),
+        voice: voice::Voice::new(data_dir.join("voice-models")),
+        calendar: calendar.clone(),
+        approvals: approvals.clone(),
         scratch_dir,
         decisions: Mutex::default(),
         ai_ready: Default::default(),
@@ -145,18 +192,43 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         tracker: Default::default(),
         browser: bridge.clone(),
         browser_token: browser_token.clone(),
+        mcp_token: mcp_token.clone(),
     });
 
     pipeline::start(app);
     timetrack::start(app);
+    voice::refresh(app);
+    if !settings_onboarded(app) {
+        // Give the island a moment to load before it grows into the welcome.
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            ask::open(
+                &app,
+                ask::Open {
+                    view: Some("welcome"),
+                    ..Default::default()
+                },
+            );
+        });
+    }
+    brief::start(app, data_dir.join("last-brief"), repos.roots.clone());
+    search::reindex_folders(app);
+    search::start_embedder(app);
+    updates::start(app);
+    files::start_weekly_check(app);
+    layout::start(app);
+    mcp::start(app, mcp_token);
     tauri::async_runtime::spawn(async move {
         let sensors: Vec<Box<dyn Sensor>> = vec![
             Box::new(DownloadsSensor::new()),
+            Box::new(DownloadsSensor::screenshots()),
             Box::new(PortsSensor),
             Box::new(ClipboardSensor),
             Box::new(WindowSensor),
             Box::new(ClaudeCodeSensor {
                 port: ClaudeCodeSensor::DEFAULT_PORT,
+                approvals,
             }),
             Box::new(BrowserSensor {
                 port: BrowserSensor::DEFAULT_PORT,
@@ -164,6 +236,8 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
                 bridge,
             }),
             Box::new(SystemSensor),
+            Box::new(sidekick_sensors::CalendarSensor { state: calendar }),
+            Box::new(repos),
             Box::new(IdleSensor::default()),
             Box::new(HeartbeatSensor::new(HEARTBEAT_INTERVAL)),
         ];
@@ -180,4 +254,8 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     }
     log::info!("Sidekick started");
     Ok(())
+}
+
+fn settings_onboarded(app: &tauri::AppHandle) -> bool {
+    state::lock(&app.state::<AppState>().settings).onboarded
 }

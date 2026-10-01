@@ -222,6 +222,7 @@ fn run_choice(app: &AppHandle, id: &str, index: usize, auto: bool) -> Result<(),
         }
     }
     mascot::dispatch(app, MascotEvent::Picked);
+    let follow_up = crate::learn::on_accept(app, &active.proposal, index, auto);
 
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -264,6 +265,9 @@ fn run_choice(app: &AppHandle, id: &str, index: usize, auto: bool) -> Result<(),
                 MascotEvent::ActionFailed
             },
         );
+        if let Some(offer) = follow_up {
+            offer_later(&app, offer);
+        }
         schedule_next(&app, NEXT_AFTER_ACTION);
     });
     Ok(())
@@ -289,6 +293,61 @@ async fn execute(
             );
             return Ok(sidekick_actions::Outcome {
                 message: "Asking Sidekick".into(),
+                path: None,
+            });
+        }
+        "claude_allow" | "claude_deny" | "claude_pass" => {
+            let id = arg("id").ok_or("no request id")?;
+            let answer = match option.action.as_str() {
+                "claude_allow" => Some(true),
+                "claude_deny" => Some(false),
+                _ => None,
+            };
+            let state = app.state::<AppState>();
+            if !state.approvals.decide(id, answer) {
+                return Err("Claude Code already moved on; answer in the terminal.".into());
+            }
+            return Ok(sidekick_actions::Outcome {
+                message: match answer {
+                    Some(true) => "Allowed".into(),
+                    Some(false) => "Denied".into(),
+                    None => "Answer in the terminal".into(),
+                },
+                path: None,
+            });
+        }
+        "restore_layout" => {
+            return crate::layout::restore(app)
+                .await
+                .map(|message| sidekick_actions::Outcome {
+                    message,
+                    path: None,
+                });
+        }
+        "summarize_file" => {
+            return crate::files::summarize(app, arg("path").unwrap_or_default())
+                .await
+                .map(|message| sidekick_actions::Outcome {
+                    message,
+                    path: None,
+                });
+        }
+        "fathom_followup" => {
+            return crate::fathom::follow_up(
+                app,
+                arg("start").unwrap_or_default(),
+                arg("title").unwrap_or("the meeting"),
+            )
+            .await
+            .map(|message| sidekick_actions::Outcome {
+                message,
+                path: None,
+            });
+        }
+        "skill_auto" => {
+            let skill = arg("skill").ok_or("no skill")?;
+            return crate::learn::make_auto(app, skill).map(|message| sidekick_actions::Outcome {
+                message,
                 path: None,
             });
         }
@@ -335,6 +394,13 @@ fn log_action(
         record.action,
         record.message
     );
+    crate::search::index_action(
+        app,
+        &record.label,
+        &record.message,
+        &record.skill_id,
+        &record.ts,
+    );
     match lock(&app.state::<AppState>().storage).log_action(&record) {
         Ok(id) => Some(id),
         Err(err) => {
@@ -350,6 +416,7 @@ pub fn dismiss(app: &AppHandle, id: &str, reason: &str) -> Result<(), String> {
         "suggestion from {} dismissed: {reason}",
         active.proposal.skill_id
     );
+    crate::learn::on_dismiss(app, &active.proposal.skill_id, reason);
     mascot::dispatch(app, MascotEvent::Dismissed);
     schedule_next(app, NEXT_AFTER_DISMISS);
     Ok(())
@@ -393,6 +460,14 @@ pub fn is_own_file(app: &AppHandle, path: &str) -> bool {
     lock(&app.state::<AppState>().own_files)
         .get(std::path::Path::new(path))
         .is_some_and(|at| at.elapsed() < OWN_FILE_FOR)
+}
+
+/// Queues a follow-up so it shows after the current result.
+fn offer_later(app: &AppHandle, proposal: Proposal) {
+    lock(&app.state::<AppState>().queue).push_back(Queued {
+        proposal,
+        at: Instant::now(),
+    });
 }
 
 /// Shows the next queued suggestion, if any (after a held result).

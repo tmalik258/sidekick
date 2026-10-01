@@ -5,7 +5,9 @@
 //! string built from event data (NFR-SEC-06).
 
 mod capabilities;
+pub mod cleanup;
 mod convert;
+pub mod dev;
 pub mod passwords;
 mod system;
 
@@ -60,7 +62,11 @@ const SAFE: &[&str] = &[
     "format_json_clipboard",
     "open_in_editor",
     "open_folder",
+    "extract_text",
     "open_system_page",
+    "create_env",
+    "launch_project",
+    "restore_layout",
     "noop",
 ];
 
@@ -172,6 +178,29 @@ impl Executor {
                 )))
             }
             "open_system_page" => system::open_system_page(arg(args, "page")?),
+            "git_pull" => {
+                let path = existing_path(args)?;
+                tokio::task::spawn_blocking(move || dev::pull(&path))
+                    .await
+                    .map_err(fail)?
+            }
+            "install_deps" => {
+                let path = existing_path(args)?;
+                tokio::task::spawn_blocking(move || dev::install(&path))
+                    .await
+                    .map_err(fail)?
+            }
+            "create_env" => dev::create_env(&existing_path(args)?),
+            "start_docker" => dev::start_docker(),
+            "trash_download" => cleanup::trash_download(&existing_path(args)?),
+            "clean_downloads" => tokio::task::spawn_blocking(cleanup::clean_downloads)
+                .await
+                .map_err(fail)?,
+            "launch_project" => dev::launch(&existing_path(args)?, self.caps.code.as_deref()),
+            "extract_text" => {
+                let path = existing_path(args)?;
+                convert::ocr(&self.caps, &path).await
+            }
             "noop" => Ok(Outcome::msg(
                 arg(args, "message").unwrap_or("Done").to_string(),
             )),
