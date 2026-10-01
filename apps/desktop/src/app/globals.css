@@ -128,9 +128,9 @@ body {
 }
 
 .orb-halo {
-  inset: -22%;
+  inset: -14.5%;
   background: conic-gradient(from 0turn, var(--g1), var(--g2), var(--g3), var(--g1));
-  filter: blur(calc(var(--size) * 0.16));
+  filter: blur(calc(var(--size) * 0.2));
   opacity: var(--halo);
   will-change: transform;
 }
