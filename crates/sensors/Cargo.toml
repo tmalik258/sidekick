@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 active-win-pos-rs = "0.11"
 arboard = { version = "3", default-features = false }
+chrono.workspace = true
 dirs = "7"
 listeners = "0.6"
 log.workspace = true

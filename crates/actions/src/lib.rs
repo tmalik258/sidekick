@@ -60,6 +60,7 @@ const SAFE: &[&str] = &[
     "format_json_clipboard",
     "open_in_editor",
     "open_folder",
+    "extract_text",
     "open_system_page",
     "noop",
 ];
@@ -172,6 +173,10 @@ impl Executor {
                 )))
             }
             "open_system_page" => system::open_system_page(arg(args, "page")?),
+            "extract_text" => {
+                let path = existing_path(args)?;
+                convert::ocr(&self.caps, &path).await
+            }
             "noop" => Ok(Outcome::msg(
                 arg(args, "message").unwrap_or("Done").to_string(),
             )),

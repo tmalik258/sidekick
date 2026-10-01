@@ -12,14 +12,16 @@ use sidekick_sensors::{GateState, SensorGateHandle};
 use sidekick_skills::{Engine, Env, Proposal, Skill, Trust};
 
 /// Every sensor the app can run, in the order shown in settings.
-pub const SENSOR_IDS: [&str; 9] = [
+pub const SENSOR_IDS: [&str; 11] = [
     "downloads",
+    "screenshots",
     "ports",
     "clipboard",
     "window",
     "claude_code",
     "browser",
     "system",
+    "repos",
     "idle",
     "heartbeat",
 ];

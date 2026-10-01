@@ -157,6 +157,30 @@ export function SettingsPanel() {
             label="Ask shortcut"
           />
         </div>
+        <div className="flex items-center justify-between gap-4 text-sm">
+          <span>
+            Code folders
+            <span className="block text-[12px] text-(--muted)">
+              For the end of day repo check. Empty uses code, projects, source\\repos and similar. Restart to apply.
+            </span>
+          </span>
+          <TextField
+            value={settings.codeFolders.join("; ")}
+            placeholder="C:\\Users\\you\\code"
+            onCommit={(v) =>
+              run(() =>
+                updateSettings({
+                  codeFolders: v
+                    .split(";")
+                    .map((f) => f.trim())
+                    .filter(Boolean),
+                }),
+              )
+            }
+            className="w-56"
+            label="Code folders"
+          />
+        </div>
         <Toggle
           label="Launch Sidekick when Windows starts"
           checked={settings.launchAtLogin}

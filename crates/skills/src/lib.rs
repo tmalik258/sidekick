@@ -101,6 +101,14 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/browser/long-read.yaml"),
     ),
     (
+        "files/screenshot.yaml",
+        include_str!("../../../skills/files/screenshot.yaml"),
+    ),
+    (
+        "dev/unsaved-work.yaml",
+        include_str!("../../../skills/dev/unsaved-work.yaml"),
+    ),
+    (
         "system/focus.yaml",
         include_str!("../../../skills/system/focus.yaml"),
     ),
@@ -111,6 +119,7 @@ const BUILTIN: &[(&str, &str)] = &[
 pub const ACTIONS: &[&str] = &[
     "open_path",
     "open_folder",
+    "extract_text",
     "reveal_path",
     "copy_file",
     "copy_text",

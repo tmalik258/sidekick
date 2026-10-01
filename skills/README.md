@@ -28,8 +28,8 @@ suggestion:
       when: { port: { not_one_of: [9229] } }
 ```
 
-Actions: `open_path`, `open_folder`, `reveal_path`, `copy_file`, `copy_text`, `open_url`, `open_in_editor`, `open_system_page`, `convert`, `extract_archive`, `run_installer`, `kill_port`, `clear_clipboard_later`, `format_json_clipboard`, `ask_ai` (`prompt`, optional `page` text and `clipboard: "false"`), `browser_fill`, `browser_close_duplicates`, `browser_save_session`.
+Actions: `open_path`, `open_folder`, `reveal_path`, `copy_file`, `copy_text`, `open_url`, `open_in_editor`, `open_system_page`, `extract_text` (OCR to clipboard), `convert`, `extract_archive`, `run_installer`, `kill_port`, `clear_clipboard_later`, `format_json_clipboard`, `ask_ai` (`prompt`, optional `page` text and `clipboard: "false"`), `browser_fill`, `browser_close_duplicates`, `browser_save_session`.
 
 Use `open_folder`, never `open_path`, for paths that come from outside Sidekick (hooks, the browser): `open_path` opens files, which runs programs.
 
-Capabilities for `requires`: `browser:chrome|edge|firefox|zen|brave`, `tool:ffmpeg`, `tool:image` (ImageMagick or ffmpeg), `tool:soffice`, `tool:pandoc`, `tool:tar`, `tool:code` (VS Code), `tool:op` (1Password CLI), `tool:bw` (Bitwarden CLI), `ai` (a reachable AI provider).
+Capabilities for `requires`: `browser:chrome|edge|firefox|zen|brave`, `tool:ffmpeg`, `tool:image` (ImageMagick or ffmpeg), `tool:soffice`, `tool:pandoc`, `tool:tar`, `tool:code` (VS Code), `tool:op` (1Password CLI), `tool:bw` (Bitwarden CLI), `tool:tesseract` (OCR), `ai` (a reachable AI provider).

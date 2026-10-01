@@ -22,7 +22,8 @@ use sidekick_actions::{Capabilities, Executor};
 use sidekick_core::{EventBus, MascotEvent, Settings, Storage};
 use sidekick_sensors::{
     BrowserBridge, BrowserSensor, ClaudeCodeSensor, ClipboardSensor, DownloadsSensor,
-    HeartbeatSensor, IdleSensor, PortsSensor, Sensor, SensorGate, SystemSensor, WindowSensor,
+    HeartbeatSensor, IdleSensor, PortsSensor, ReposSensor, Sensor, SensorGate, SystemSensor,
+    WindowSensor,
 };
 use sidekick_skills::Engine;
 use tauri::{AppHandle, Manager};
@@ -111,6 +112,14 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     let (gate_handle, gate) = SensorGate::new(state::gate_state(&settings, Utc::now()));
     let paused = settings.pause.is_active(Utc::now());
     let hotkey = settings.palette_hotkey.clone();
+    let repos = ReposSensor {
+        roots: if settings.code_folders.is_empty() {
+            ReposSensor::default_roots()
+        } else {
+            settings.code_folders.iter().map(Into::into).collect()
+        },
+        hour: settings.end_of_day_hour,
+    };
     let browser_token = browser::load_or_create_token(&data_dir);
     let bridge = BrowserBridge::default();
 
@@ -152,6 +161,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     tauri::async_runtime::spawn(async move {
         let sensors: Vec<Box<dyn Sensor>> = vec![
             Box::new(DownloadsSensor::new()),
+            Box::new(DownloadsSensor::screenshots()),
             Box::new(PortsSensor),
             Box::new(ClipboardSensor),
             Box::new(WindowSensor),
@@ -164,6 +174,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
                 bridge,
             }),
             Box::new(SystemSensor),
+            Box::new(repos),
             Box::new(IdleSensor::default()),
             Box::new(HeartbeatSensor::new(HEARTBEAT_INTERVAL)),
         ];

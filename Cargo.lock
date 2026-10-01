@@ -4306,6 +4306,7 @@ version = "0.1.0"
 dependencies = [
  "active-win-pos-rs",
  "arboard",
+ "chrono",
  "dirs 7.0.0",
  "listeners",
  "log",

@@ -37,6 +37,8 @@ export interface Settings {
   soundKit: string;
   skills?: Record<string, { enabled?: boolean | null; auto?: boolean | null }>;
   paletteHotkey: string;
+  codeFolders: string[];
+  endOfDayHour: number;
   ai: AiSettings;
 }
 
@@ -168,6 +170,8 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "pearl",
   soundKit: "01",
   paletteHotkey: "Alt+Space",
+  codeFolders: [],
+  endOfDayHour: 18,
   ai: {
     order: ["claude_code", "anthropic", "local"],
     claudeCode: { enabled: true, path: "", model: "" },
@@ -188,6 +192,7 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export const SENSOR_IDS = [
   { id: "downloads", label: "Downloads", hint: "Notices finished downloads the moment they land." },
+  { id: "screenshots", label: "Screenshots", hint: "Notices new screenshots in Pictures\\Screenshots." },
   { id: "ports", label: "Dev servers", hint: "Notices local servers starting, checked every second." },
   { id: "clipboard", label: "Clipboard", hint: "Notices copied text. Secrets are never stored." },
   { id: "window", label: "Active window", hint: "Knows which app is in front; hides the island in fullscreen." },

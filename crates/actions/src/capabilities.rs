@@ -45,6 +45,8 @@ pub struct Capabilities {
     pub op: Option<PathBuf>,
     /// Bitwarden CLI.
     pub bw: Option<PathBuf>,
+    /// Tesseract, for text in screenshots.
+    pub tesseract: Option<PathBuf>,
 }
 
 impl Capabilities {
@@ -72,6 +74,7 @@ impl Capabilities {
             code: find_vscode(),
             op: which::which("op").ok(),
             bw: which::which("bw").ok(),
+            tesseract: which::which("tesseract").ok().or_else(find_tesseract),
         }
     }
 
@@ -92,6 +95,7 @@ impl Capabilities {
             Some(("tool", "code")) => self.code.is_some(),
             Some(("tool", "op")) => self.op.is_some(),
             Some(("tool", "bw")) => self.bw.is_some(),
+            Some(("tool", "tesseract")) => self.tesseract.is_some(),
             _ => false,
         }
     }
@@ -112,6 +116,7 @@ impl Capabilities {
             ("VS Code", self.code.is_some()),
             ("1Password CLI", self.op.is_some()),
             ("Bitwarden CLI", self.bw.is_some()),
+            ("Tesseract OCR", self.tesseract.is_some()),
         ] {
             if found {
                 out.push(name.to_string());
@@ -119,6 +124,17 @@ impl Capabilities {
         }
         out
     }
+}
+
+/// The UB Mannheim installer does not add Tesseract to PATH.
+fn find_tesseract() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        let p = env_path("ProgramFiles", r"Tesseract-OCR\tesseract.exe")?;
+        return p.is_file().then_some(p);
+    }
+    #[cfg(not(windows))]
+    None
 }
 
 /// Prefers `Code.exe` itself over the `code.cmd` wrapper on PATH.

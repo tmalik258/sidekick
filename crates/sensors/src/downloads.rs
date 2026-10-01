@@ -13,23 +13,49 @@ use crate::{Sensor, SensorGate};
 /// Watches the Downloads folder through OS file notifications
 /// (ReadDirectoryChangesW on Windows), so a finished download is noticed as
 /// soon as its size settles, not on a timer (FR-SEN-01, FR-SEN-02).
+///
+/// The same watcher also serves the Screenshots folder (FR-SCR-01), with its
+/// own sensor id and event kind.
 pub struct DownloadsSensor {
     dir: Option<PathBuf>,
+    id: &'static str,
+    kind: &'static str,
 }
 
 impl DownloadsSensor {
     pub const ID: &'static str = "downloads";
     pub const EVENT_KIND: &'static str = "file.download_completed";
+    pub const SCREENSHOTS_ID: &'static str = "screenshots";
+    pub const SCREENSHOT_KIND: &'static str = "file.screenshot";
 
     /// Watches the user's Downloads folder.
     pub fn new() -> Self {
         Self {
             dir: dirs::download_dir(),
+            id: Self::ID,
+            kind: Self::EVENT_KIND,
         }
     }
 
     pub fn with_dir(dir: PathBuf) -> Self {
-        Self { dir: Some(dir) }
+        Self {
+            dir: Some(dir),
+            ..Self::new()
+        }
+    }
+
+    /// Watches Pictures\Screenshots, where Win+PrtScn and the Snipping Tool
+    /// save. The folder is created if it does not exist yet.
+    pub fn screenshots() -> Self {
+        let dir = dirs::picture_dir().map(|p| p.join("Screenshots"));
+        if let Some(d) = &dir {
+            let _ = std::fs::create_dir_all(d);
+        }
+        Self {
+            dir,
+            id: Self::SCREENSHOTS_ID,
+            kind: Self::SCREENSHOT_KIND,
+        }
     }
 }
 
@@ -47,13 +73,14 @@ const REPEAT_WINDOW: Duration = Duration::from_secs(15);
 
 impl Sensor for DownloadsSensor {
     fn id(&self) -> &'static str {
-        Self::ID
+        self.id
     }
 
     fn spawn(self: Box<Self>, bus: EventBus, gate: SensorGate) -> JoinHandle<()> {
+        let (id, kind) = (self.id, self.kind);
         tokio::spawn(async move {
             let Some(dir) = self.dir else {
-                log::warn!("downloads sensor: no Downloads folder found");
+                log::warn!("{id} sensor: no folder found");
                 return;
             };
             let (tx, mut rx) = mpsc::unbounded_channel::<PathBuf>();
@@ -69,15 +96,15 @@ impl Sensor for DownloadsSensor {
                 }) {
                     Ok(w) => w,
                     Err(err) => {
-                        log::error!("downloads sensor: cannot create watcher: {err}");
+                        log::error!("{id} sensor: cannot create watcher: {err}");
                         return;
                     }
                 };
             if let Err(err) = watcher.watch(&dir, RecursiveMode::NonRecursive) {
-                log::error!("downloads sensor: cannot watch {}: {err}", dir.display());
+                log::error!("{id} sensor: cannot watch {}: {err}", dir.display());
                 return;
             }
-            log::info!("downloads sensor watching {}", dir.display());
+            log::info!("{id} sensor watching {}", dir.display());
 
             // path -> (last seen size, when it last changed)
             let mut pending: HashMap<PathBuf, (u64, Instant)> = HashMap::new();
@@ -110,9 +137,9 @@ impl Sensor for DownloadsSensor {
                                 *since = now;
                             } else if now.duration_since(*since) >= SETTLE {
                                 done.push(path.clone());
-                                if meta.len() > 0 && !reported.contains_key(path) && gate.allows(Self::ID) {
+                                if meta.len() > 0 && !reported.contains_key(path) && gate.allows(id) {
                                     reported.insert(path.clone(), now);
-                                    bus.publish(download_event(path, meta.len()));
+                                    bus.publish(file_event(id, kind, path, meta.len()));
                                 }
                             }
                         }
@@ -126,7 +153,7 @@ impl Sensor for DownloadsSensor {
     }
 }
 
-fn download_event(path: &Path, size: u64) -> Event {
+fn file_event(id: &'static str, kind: &'static str, path: &Path, size: u64) -> Event {
     let name = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -137,8 +164,8 @@ fn download_event(path: &Path, size: u64) -> Event {
         .map(str::to_ascii_lowercase)
         .unwrap_or_default();
     Event::new(
-        DownloadsSensor::EVENT_KIND,
-        DownloadsSensor::ID,
+        kind,
+        id,
         serde_json::json!({
             "path": path.display().to_string(),
             "dir": path.parent().map(|p| p.display().to_string()).unwrap_or_default(),

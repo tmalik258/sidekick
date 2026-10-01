@@ -148,6 +148,8 @@ browser.many_tabs: count, duplicates
 system.disk_low: mount, free_human, total_human, percent_free
 system.memory_high: percent, process, process_mb
 focus.long_session: app, project, minutes
+file.screenshot: path, dir, name, ext, kind, size
+dev.unsaved_work: count, names, first, first_path, changed, unpushed
 user.idle / user.active: idle_secs / away_secs";
 
 const SKILL_SYSTEM: &str = "You write skills for Sidekick, a desktop assistant on Windows. \

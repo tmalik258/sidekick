@@ -51,6 +51,11 @@ pub struct Settings {
     pub skills: BTreeMap<String, SkillPref>,
     /// Global shortcut that turns the island into Ask mode (FR-UI-07).
     pub palette_hotkey: String,
+    /// Folders with git repos to check at the end of the day (FR-DEV-09).
+    /// Empty means the usual places (code, projects, source/repos, ...).
+    pub code_folders: Vec<String>,
+    /// Local hour after which unsaved work is reported.
+    pub end_of_day_hour: u32,
     pub ai: AiSettings,
 }
 
@@ -224,6 +229,8 @@ impl Default for Settings {
             sound_kit: SOUND_KITS[0].to_string(),
             skills: BTreeMap::new(),
             palette_hotkey: DEFAULT_PALETTE_HOTKEY.into(),
+            code_folders: Vec::new(),
+            end_of_day_hour: 18,
             ai: AiSettings::default(),
         }
     }
@@ -286,6 +293,8 @@ impl Settings {
             self.palette_hotkey = DEFAULT_PALETTE_HOTKEY.into();
         }
         self.ai = self.ai.sanitized();
+        self.end_of_day_hour = self.end_of_day_hour.min(23);
+        self.code_folders.retain(|f| !f.trim().is_empty());
         self
     }
 

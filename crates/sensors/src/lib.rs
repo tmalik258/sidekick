@@ -14,6 +14,7 @@ mod heartbeat;
 pub mod http;
 mod idle;
 mod ports;
+mod repos;
 mod system;
 mod window;
 
@@ -25,6 +26,7 @@ pub use gate::{GateState, SensorGate, SensorGateHandle};
 pub use heartbeat::HeartbeatSensor;
 pub use idle::IdleSensor;
 pub use ports::PortsSensor;
+pub use repos::ReposSensor;
 pub use system::SystemSensor;
 pub use window::WindowSensor;
 
