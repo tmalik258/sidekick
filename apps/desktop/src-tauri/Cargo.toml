@@ -1,0 +1,27 @@
+[package]
+name = "sidekick-desktop"
+description = "Sidekick desktop app (Tauri 2)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "sidekick_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+chrono.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sidekick-core.workspace = true
+sidekick-sensors.workspace = true
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-log = "2"
+tauri-plugin-single-instance = "2"
+tokio.workspace = true
+ulid.workspace = true

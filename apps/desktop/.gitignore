@@ -1,0 +1,6 @@
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+src-tauri/gen/
+public/sounds/
