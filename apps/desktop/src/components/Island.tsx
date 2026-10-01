@@ -170,12 +170,14 @@ function CompactTrailing({ mascot, paused }: { mascot: MascotState; paused: bool
     >
       {busy ? (
         <Activity />
-      ) : paused && (
-        <span
-          className={`size-1.5 rounded-full ${paused ? "bg-[#ffd60a]" : "bg-[#30d158]"}`}
-          style={{ boxShadow: `0 0 8px ${paused ? "#ffd60a" : "#30d158"}` }}
-          title={paused ? "Paused" : "Watching"}
-        />
+      ) : (
+        paused && (
+          <span
+            className={`size-1.5 rounded-full ${paused ? "bg-[#ffd60a]" : "bg-[#30d158]"}`}
+            style={{ boxShadow: `0 0 8px ${paused ? "#ffd60a" : "#30d158"}` }}
+            title={paused ? "Paused" : "Watching"}
+          />
+        )
       )}
     </motion.div>
   );
