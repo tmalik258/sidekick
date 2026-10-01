@@ -1,0 +1,23 @@
+[package]
+name = "sidekick-actions"
+description = "Built-in actions Sidekick can run, and detection of installed browsers and tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+arboard = { version = "3", default-features = false }
+listeners = "0.6"
+log.workspace = true
+open = "5"
+serde.workspace = true
+serde_json.workspace = true
+sidekick-sensors.workspace = true
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["process"] }
+ulid.workspace = true
+which = "8"
+
+[target.'cfg(windows)'.dependencies]
+clipboard-win = "5"

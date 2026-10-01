@@ -1,0 +1,44 @@
+id: dev.open-in-browser
+name: Open dev servers in a browser
+description: When a dev server starts, open it in the browser you pick. Your choice moves to the front next time (FR-DEV-01, FR-DEV-02).
+priority: 60
+cooldown_secs: 45
+dedupe: "{{port}}"
+remember: "dev:{{port}}"
+trigger:
+  event: port.listening
+  where:
+    process:
+      one_of: [node, bun, deno, python, python3, py, pythonw, uvicorn, gunicorn, hypercorn, ruby, php, dotnet, java, wslrelay, com.docker.backend, hugo, caddy]
+    port: { range: [1024, 65535] }
+suggestion:
+  title: "Server on port {{port}}"
+  detail: "{{process}} is serving {{url}}"
+  options:
+    - label: Chrome
+      action: open_url
+      args: { url: "{{url}}", browser: chrome }
+      requires: ["browser:chrome"]
+    - label: Incognito
+      action: open_url
+      args: { url: "{{url}}", browser: chrome, private: "true" }
+      requires: ["browser:chrome"]
+    - label: Zen
+      action: open_url
+      args: { url: "{{url}}", browser: zen }
+      requires: ["browser:zen"]
+    - label: Edge
+      action: open_url
+      args: { url: "{{url}}", browser: edge }
+      requires: ["browser:edge"]
+    - label: Firefox
+      action: open_url
+      args: { url: "{{url}}", browser: firefox }
+      requires: ["browser:firefox"]
+    - label: API docs
+      action: open_url
+      args: { url: "{{url}}/docs" }
+      when: { process: { one_of: [python, python3, py, pythonw, uvicorn, gunicorn, hypercorn] } }
+    - label: Default browser
+      action: open_url
+      args: { url: "{{url}}" }

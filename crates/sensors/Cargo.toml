@@ -6,7 +6,13 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+active-win-pos-rs = "0.11"
+arboard = { version = "3", default-features = false }
+dirs = "7"
+listeners = "0.6"
 log.workspace = true
+notify = "8"
+regex = "1"
 serde_json.workspace = true
 sidekick-core.workspace = true
 tokio.workspace = true

@@ -4,11 +4,20 @@
 //! emitting, so pausing (FR-SET-01) and per-sensor switches (FR-SEN-12) are
 //! enforced in one place.
 
+pub mod classify;
+mod clipboard;
+mod downloads;
 mod gate;
 mod heartbeat;
+mod ports;
+mod window;
 
+pub use clipboard::ClipboardSensor;
+pub use downloads::DownloadsSensor;
 pub use gate::{GateState, SensorGate, SensorGateHandle};
 pub use heartbeat::HeartbeatSensor;
+pub use ports::PortsSensor;
+pub use window::WindowSensor;
 
 use sidekick_core::EventBus;
 use tokio::task::JoinHandle;

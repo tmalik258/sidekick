@@ -1,0 +1,21 @@
+id: files.convert-document
+name: Convert documents
+description: Turn office files into PDF with LibreOffice, Markdown into Word with pandoc (FR-FILE-02).
+priority: 40
+trigger:
+  event: file.download_completed
+  where:
+    ext: { one_of: [doc, docx, odt, rtf, ppt, pptx, xls, xlsx, md] }
+suggestion:
+  title: "{{name}}"
+  options:
+    - label: Convert to PDF
+      action: convert
+      args: { path: "{{path}}", to: pdf }
+      requires: ["tool:soffice"]
+      when: { ext: { not_one_of: [md] } }
+    - label: Convert to DOCX
+      action: convert
+      args: { path: "{{path}}", to: docx }
+      requires: ["tool:pandoc"]
+      when: { ext: { equals: md } }

@@ -1,0 +1,27 @@
+id: files.convert-image
+name: Convert images
+description: Convert a downloaded image with ImageMagick or ffmpeg (FR-FILE-02).
+priority: 40
+trigger:
+  event: file.download_completed
+  where:
+    kind: { equals: image }
+    ext: { not_one_of: [svg, heic] }
+suggestion:
+  title: "{{name}}"
+  options:
+    - label: Convert to WebP
+      action: convert
+      args: { path: "{{path}}", to: webp }
+      requires: ["tool:image"]
+      when: { ext: { not_one_of: [webp] } }
+    - label: Convert to PNG
+      action: convert
+      args: { path: "{{path}}", to: png }
+      requires: ["tool:image"]
+      when: { ext: { not_one_of: [png] } }
+    - label: Convert to JPG
+      action: convert
+      args: { path: "{{path}}", to: jpg }
+      requires: ["tool:image"]
+      when: { ext: { not_one_of: [jpg, jpeg] } }
