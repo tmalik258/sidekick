@@ -34,7 +34,8 @@ impl MascotState {
     /// The sound cue played when entering this state.
     pub fn cue(self) -> Option<Cue> {
         match self {
-            MascotState::Idle | MascotState::Working => None,
+            MascotState::Working => None,
+            MascotState::Idle => Some(Cue::Settle),
             MascotState::Sleeping => Some(Cue::Yawn),
             MascotState::Noticing => Some(Cue::Chirp),
             MascotState::Suggesting => Some(Cue::Pop),
@@ -49,6 +50,7 @@ impl MascotState {
 #[serde(rename_all = "snake_case")]
 pub enum Cue {
     Yawn,
+    Settle,
     Chirp,
     Pop,
     Open,
@@ -227,7 +229,11 @@ mod tests {
         assert_eq!(t.previous, S::Idle);
         assert_eq!(t.state, S::Noticing);
         assert_eq!(t.cue, Some(Cue::Chirp));
-        assert_eq!(m.dispatch(E::ConditionsFailed).unwrap().cue, None);
+        assert_eq!(
+            m.dispatch(E::ConditionsFailed).unwrap().cue,
+            Some(Cue::Settle)
+        );
+        assert_eq!(m.dispatch(E::ListenStart).unwrap().cue, Some(Cue::Open));
     }
 
     #[test]

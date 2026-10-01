@@ -12,6 +12,7 @@ let suggestion: Suggestion | null = null;
 let epoch = 0;
 
 const CUE_BY_STATE: Partial<Record<MascotState, Cue>> = {
+  idle: "settle",
   sleeping: "yawn",
   noticing: "chirp",
   suggesting: "pop",
@@ -129,6 +130,48 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   },
 };
 
+// A fake streamed answer, so Ask mode can be developed in a browser.
+function mockChat(a: Record<string, unknown>) {
+  const id = a.id as string;
+  const messages = a.messages as { content: string }[];
+  const last = messages[messages.length - 1]?.content ?? "";
+  const answer = `This is the browser preview, so no AI is connected.\n\nYou asked: "${last}"\n\n\`\`\`powershell\nwinget install Ollama.Ollama\nollama pull qwen3:4b\n\`\`\``;
+  const words = answer.split(/(?<=\s)/);
+  let i = 0;
+  const tick = () => {
+    if (i < words.length) {
+      emit("ai://delta", { id, text: words[i++] });
+      setTimeout(tick, 28);
+    } else {
+      emit("ai://done", { id, provider: "local", error: null });
+    }
+  };
+  setTimeout(tick, 300);
+}
+
+commands.ai_chat = (a) => mockChat(a);
+commands.ai_cancel = () => undefined;
+commands.ask_close = () => emit("ask://close", null);
+commands.ask_open = (a) =>
+  emit("ask://open", {
+    context: {
+      app: "Visual Studio Code",
+      title: "Island.tsx - sidekick",
+      clipboardKind: "stack_trace",
+      clipboardPreview: "Error: listen EADDRINUSE: address already in use :::3000",
+      clipboardSecret: false,
+    },
+    prompt: (a.prompt as string | null) ?? null,
+    ask: Boolean(a.ask),
+  });
+commands.action_undo = () => "Moved photo.webp to the Recycle Bin";
+commands.ai_status = () => [
+  { id: "claude_code", available: false, local: false },
+  { id: "anthropic", available: false, local: false },
+  { id: "local", available: true, local: true },
+  { id: "semif", available: false, local: true },
+];
+
 export const mock = {
   async invoke<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
     const fn = commands[cmd];
@@ -148,5 +191,5 @@ export const mock = {
 
 // Exposed for console debugging in the browser preview.
 if (typeof window !== "undefined") {
-  (window as unknown as { sidekickMock: unknown }).sidekickMock = { go, cues: CUES, invoke: mock.invoke };
+  (window as unknown as { sidekickMock: unknown }).sidekickMock = { go, cues: CUES, invoke: mock.invoke, emit };
 }

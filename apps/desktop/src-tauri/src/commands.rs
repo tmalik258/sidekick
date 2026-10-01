@@ -7,6 +7,9 @@ use sidekick_skills::Trust;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
 
+use crate::ai;
+use crate::ask;
+use crate::decide;
 use crate::island;
 use crate::mascot;
 use crate::pipeline::DEBUG_MANUAL_KIND;
@@ -204,7 +207,8 @@ pub async fn capabilities_get(app: AppHandle, rescan: bool) -> CmdResult<Capabil
 
 /// Forgets which options the user picked before (FR-DEV-02).
 #[tauri::command]
-pub fn choices_reset(state: State<'_, AppState>) -> CmdResult<usize> {
+pub fn choices_reset(app: AppHandle, state: State<'_, AppState>) -> CmdResult<usize> {
+    decide::clear(&app);
     lock(&state.storage)
         .clear_choices()
         .map_err(|e| e.to_string())
@@ -254,9 +258,20 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
         result.map_err(|e| format!("could not change launch at login: {e}"))?;
     }
 
+    if previous.palette_hotkey != next.palette_hotkey
+        && let Err(err) = ask::register(app, &next.palette_hotkey)
+    {
+        let _ = ask::register(app, &previous.palette_hotkey);
+        return Err(err);
+    }
+
     next.save(&state.settings_path).map_err(|e| e.to_string())?;
     *lock(&state.settings) = next.clone();
     state.gate.set(gate_state(&next, now));
+    if previous.ai != next.ai {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move { ai::refresh_readiness(&app).await });
+    }
     // Without the window sensor nothing would bring a hidden island back.
     if next.pause.is_active(now) || !next.sensor_enabled("window") {
         island::follow_fullscreen(app, &serde_json::Value::Null);
@@ -276,4 +291,49 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
         log::warn!("could not emit settings change: {err}");
     }
     Ok(next)
+}
+
+#[tauri::command]
+pub async fn ai_status(app: AppHandle) -> Vec<ai::ProviderStatus> {
+    ai::status(&app).await
+}
+
+#[tauri::command]
+pub fn ai_chat(
+    app: AppHandle,
+    id: String,
+    messages: Vec<sidekick_ai::Message>,
+    attach: ai::Attach,
+    local_only: bool,
+) {
+    ai::chat(&app, id, messages, attach, local_only);
+}
+
+#[tauri::command]
+pub fn ai_cancel(app: AppHandle, id: String) {
+    ai::cancel(&app, &id);
+}
+
+/// Turns the island into Ask mode, optionally with a prompt.
+#[tauri::command]
+pub fn ask_open(app: AppHandle, prompt: Option<String>, ask: bool) {
+    ask::open(
+        &app,
+        ask::Open {
+            prompt,
+            ask,
+            ..Default::default()
+        },
+    );
+}
+
+#[tauri::command]
+pub fn ask_close(app: AppHandle) {
+    ask::close(&app);
+}
+
+/// Moves what an earlier action created to the Recycle Bin.
+#[tauri::command]
+pub fn action_undo(app: AppHandle, id: i64) -> CmdResult<String> {
+    crate::undo::undo(&app, id)
 }

@@ -5,11 +5,12 @@ use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use sidekick_core::{Event, MascotEvent, Pause};
-use sidekick_sensors::WindowSensor;
+use sidekick_sensors::{DownloadsSensor, IdleSensor, WindowSensor};
 use tauri::{AppHandle, Manager};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::commands;
+use crate::decide;
 use crate::island;
 use crate::mascot;
 use crate::state::{AppEnv, AppState, executor, lock};
@@ -47,8 +48,20 @@ fn spawn_consumer(app: AppHandle) {
 async fn handle(app: &AppHandle, event: Event) {
     store(app, event.clone()).await;
 
+    if event.kind == IdleSensor::IDLE || event.kind == IdleSensor::ACTIVE {
+        let away = event.kind == IdleSensor::IDLE;
+        app.state::<AppState>()
+            .away
+            .store(away, std::sync::atomic::Ordering::Relaxed);
+        if !away {
+            // Anything that came in while the user was away shows now.
+            suggestions::welcome_back(app);
+        }
+    }
+
     if event.kind == WindowSensor::EVENT_KIND {
         island::follow_fullscreen(app, &event.payload);
+        *lock(&app.state::<AppState>().last_window) = Some(event.payload.clone());
     }
 
     if event.kind == DEBUG_MANUAL_KIND && mascot::dispatch(app, MascotEvent::SkillMatched).is_some()
@@ -57,8 +70,22 @@ async fn handle(app: &AppHandle, event: Event) {
         return;
     }
 
+    // A conversion saved into Downloads is not a new download.
+    if event.kind == DownloadsSensor::EVENT_KIND
+        && event.payload["path"]
+            .as_str()
+            .is_some_and(|p| suggestions::is_own_file(app, p))
+    {
+        return;
+    }
+
     if let Some(proposal) = evaluate(app, &event) {
-        suggestions::offer(app, proposal);
+        // Ranking may ask a model, so it runs beside the event loop.
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let proposal = decide::rank(&app, proposal).await;
+            suggestions::offer(&app, proposal);
+        });
     }
 }
 
@@ -68,6 +95,7 @@ fn evaluate(app: &AppHandle, event: &Event) -> Option<sidekick_skills::Proposal>
     let exec = executor(&state);
     let env = AppEnv {
         settings: &settings,
+        ai_ready: state.ai_ready.load(std::sync::atomic::Ordering::Relaxed),
         caps: exec.capabilities(),
         storage: &state.storage,
     };

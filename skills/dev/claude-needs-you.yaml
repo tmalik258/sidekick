@@ -1,0 +1,14 @@
+id: dev.claude-needs-you
+name: Claude Code needs you
+description: Tell you when Claude Code is waiting for a permission or an answer (FR-DEV-10). Needs the Claude Code hook from Settings.
+priority: 80
+cooldown_secs: 15
+dedupe: "{{session}}"
+trigger:
+  event: claude.notification
+suggestion:
+  title: "Claude needs you in {{project}}"
+  detail: "{{message}}"
+  options:
+    - { label: Open in VS Code, action: open_in_editor, args: { path: "{{cwd}}" }, requires: ["tool:code"] }
+    - { label: Got it, action: noop, args: { message: "OK" } }

@@ -25,6 +25,8 @@ const MAX_QUEUE: usize = 5;
 const NEXT_AFTER_DISMISS: Duration = Duration::from_millis(450);
 const NEXT_AFTER_ACTION: Duration = Duration::from_millis(1900);
 const EXPIRY_TICK: Duration = Duration::from_millis(250);
+/// Give the user a moment after they return before showing anything.
+const WELCOME_BACK: Duration = Duration::from_millis(1500);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,12 +35,18 @@ pub struct ActionResult {
     pub message: String,
     pub path: Option<String>,
     pub auto: bool,
+    /// Set when the action can be undone (it created a file).
+    pub undo_id: Option<i64>,
 }
 
 /// Shows a proposal now, or queues it while the island is busy.
 pub fn offer(app: &AppHandle, proposal: Proposal) {
     let state = app.state::<AppState>();
-    let busy = lock(&state.active).is_some() || mascot::current(app) != MascotState::Idle;
+    // While the user is away, suggestions wait instead of showing to no one.
+    let busy = lock(&state.active).is_some()
+        || mascot::current(app) != MascotState::Idle
+        || state.away.load(std::sync::atomic::Ordering::Relaxed)
+        || state.ask_open.load(std::sync::atomic::Ordering::SeqCst);
     if busy {
         let mut queue = lock(&state.queue);
         // A newer copy of the same suggestion replaces the waiting one;
@@ -151,22 +159,36 @@ fn run_choice(app: &AppHandle, id: &str, index: usize, auto: bool) -> Result<(),
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let result = execute(&app, &option).await;
-        log_action(&app, &active.proposal, &option, &result, auto);
+        if let Ok(sidekick_actions::Outcome {
+            path: Some(path), ..
+        }) = &result
+        {
+            remember_own_file(&app, path);
+        }
+        let id = log_action(&app, &active.proposal, &option, &result, auto);
         let payload = match &result {
             Ok(outcome) => ActionResult {
                 ok: true,
                 message: outcome.message.clone(),
                 path: outcome.path.clone(),
                 auto,
+                undo_id: id.filter(|_| {
+                    crate::undo::undo_path(&option.action, outcome.path.as_deref()).is_some()
+                }),
             },
             Err(message) => ActionResult {
                 ok: false,
                 message: message.clone(),
                 path: None,
                 auto,
+                undo_id: None,
             },
         };
         let _ = app.emit(ACTION_RESULT, &payload);
+        app.state::<AppState>().linger.store(
+            payload.ok && (payload.path.is_some() || payload.undo_id.is_some()),
+            std::sync::atomic::Ordering::SeqCst,
+        );
         mascot::dispatch(
             &app,
             if payload.ok {
@@ -184,6 +206,25 @@ async fn execute(
     app: &AppHandle,
     option: &ProposedOption,
 ) -> Result<sidekick_actions::Outcome, String> {
+    // App-level actions that need the window system rather than the OS.
+    if option.action == "ask_ai" {
+        let prompt = option.args["prompt"]
+            .as_str()
+            .unwrap_or("Help me with this.")
+            .to_owned();
+        crate::ask::open(
+            app,
+            crate::ask::Open {
+                prompt: Some(prompt),
+                ask: true,
+                ..Default::default()
+            },
+        );
+        return Ok(sidekick_actions::Outcome {
+            message: "Asking Sidekick".into(),
+            path: None,
+        });
+    }
     let exec = executor(&app.state::<AppState>());
     exec.run(&option.action, &option.args)
         .await
@@ -196,8 +237,9 @@ fn log_action(
     option: &ProposedOption,
     result: &Result<sidekick_actions::Outcome, String>,
     auto: bool,
-) {
+) -> Option<i64> {
     let record = ActionRecord {
+        id: 0,
         ts: Utc::now().to_rfc3339(),
         skill_id: option.skill_id.clone(),
         action: option.action.clone(),
@@ -208,6 +250,11 @@ fn log_action(
             Err(e) => e.clone(),
         },
         auto,
+        undo_path: result
+            .as_ref()
+            .ok()
+            .and_then(|o| crate::undo::undo_path(&option.action, o.path.as_deref())),
+        undone: false,
     };
     log::info!(
         "{} -> {} ({}): {}",
@@ -216,8 +263,12 @@ fn log_action(
         record.action,
         record.message
     );
-    if let Err(err) = lock(&app.state::<AppState>().storage).log_action(&record) {
-        log::warn!("could not log action: {err}");
+    match lock(&app.state::<AppState>().storage).log_action(&record) {
+        Ok(id) => Some(id),
+        Err(err) => {
+            log::warn!("could not log action: {err}");
+            None
+        }
     }
 }
 
@@ -254,11 +305,47 @@ pub fn current(app: &AppHandle) -> Option<Suggestion> {
 }
 
 /// Shows the next queued proposal once the island is free again.
+/// How long a file Sidekick made is ignored by the downloads sensor.
+const OWN_FILE_FOR: Duration = Duration::from_secs(120);
+
+fn remember_own_file(app: &AppHandle, path: &str) {
+    let state = app.state::<AppState>();
+    let mut own = lock(&state.own_files);
+    own.retain(|_, at| at.elapsed() < OWN_FILE_FOR);
+    own.insert(std::path::PathBuf::from(path), Instant::now());
+}
+
+/// True for a file one of Sidekick's own actions just created.
+pub fn is_own_file(app: &AppHandle, path: &str) -> bool {
+    lock(&app.state::<AppState>().own_files)
+        .get(std::path::Path::new(path))
+        .is_some_and(|at| at.elapsed() < OWN_FILE_FOR)
+}
+
+/// Shows the next queued suggestion, if any (after a held result).
+pub fn resume(app: &AppHandle) {
+    schedule_next(app, NEXT_AFTER_DISMISS);
+}
+
+/// The user is back: what arrived while they were away counts as fresh.
+pub fn welcome_back(app: &AppHandle) {
+    let now = Instant::now();
+    for q in lock(&app.state::<AppState>().queue).iter_mut() {
+        q.at = now;
+    }
+    schedule_next(app, WELCOME_BACK);
+}
+
 fn schedule_next(app: &AppHandle, after: Duration) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(after).await;
         let state = app.state::<AppState>();
+        if state.away.load(std::sync::atomic::Ordering::Relaxed)
+            || state.ask_open.load(std::sync::atomic::Ordering::SeqCst)
+        {
+            return;
+        }
         if lock(&state.active).is_some() || mascot::current(&app) != MascotState::Idle {
             // Still busy: the action that finishes will schedule again.
             if mascot::current(&app) == MascotState::Sleeping {

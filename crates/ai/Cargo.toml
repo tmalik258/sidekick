@@ -1,0 +1,21 @@
+[package]
+name = "sidekick-ai"
+description = "AI tiers for Sidekick: Claude Code CLI, local models, the Anthropic API, and SemIf decisions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+log.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["process", "io-util", "fs"] }
+tokio-util = { version = "0.7", default-features = false }
+which = "8"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["net", "test-util"] }

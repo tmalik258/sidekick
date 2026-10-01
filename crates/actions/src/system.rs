@@ -133,3 +133,28 @@ pub fn kill_port(port: u16) -> Result<Outcome, ActionError> {
         path: None,
     })
 }
+
+/// Opens a Windows settings page or tool from a fixed list; skills can
+/// never pass an arbitrary URI or program here.
+pub fn open_system_page(page: &str) -> Result<Outcome, ActionError> {
+    let uri = match page {
+        "storage" => "ms-settings:storagesense",
+        "apps" => "ms-settings:appsfeatures",
+        "power" => "ms-settings:powersleep",
+        "taskmgr" => {
+            if !cfg!(windows) {
+                return Err(ActionError::Failed("Task Manager is a Windows tool".into()));
+            }
+            spawn_detached(std::process::Command::new("taskmgr.exe"))?;
+            return Ok(Outcome::msg("Opened Task Manager"));
+        }
+        other => return Err(ActionError::Invalid(format!("unknown system page {other}"))),
+    };
+    if !cfg!(windows) {
+        return Err(ActionError::Failed(
+            "Windows settings pages need Windows".into(),
+        ));
+    }
+    open::that_detached(uri).map_err(|e| ActionError::Failed(e.to_string()))?;
+    Ok(Outcome::msg("Opened Settings"))
+}

@@ -57,6 +57,8 @@ const SAFE: &[&str] = &[
     "extract_archive",
     "clear_clipboard_later",
     "format_json_clipboard",
+    "open_in_editor",
+    "open_system_page",
     "noop",
 ];
 
@@ -139,6 +141,22 @@ impl Executor {
                 let minify = args.get("minify").and_then(Value::as_str) == Some("true");
                 system::format_json_clipboard(minify)
             }
+            "open_in_editor" => {
+                let path = existing_path(args)?;
+                let code = self
+                    .caps
+                    .code
+                    .as_ref()
+                    .ok_or_else(|| ActionError::Failed("VS Code is not installed".into()))?;
+                let mut cmd = std::process::Command::new(code);
+                cmd.arg(&path);
+                system::spawn_detached(cmd)?;
+                Ok(Outcome::msg(format!(
+                    "Opened {} in VS Code",
+                    file_name(&path)
+                )))
+            }
+            "open_system_page" => system::open_system_page(arg(args, "page")?),
             "noop" => Ok(Outcome::msg(
                 arg(args, "message").unwrap_or("Done").to_string(),
             )),
@@ -216,6 +234,20 @@ pub(crate) fn file_name(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn system_pages_come_from_a_fixed_list() {
+        let err = exec()
+            .run(
+                "open_system_page",
+                &serde_json::json!({ "page": "cmd.exe" }),
+            )
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("unknown system page"));
+        assert!(is_safe("open_system_page"));
+        assert!(!is_safe("kill_port"));
+    }
 
     fn exec() -> Executor {
         Executor::new(Capabilities::default())

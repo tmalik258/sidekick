@@ -5,18 +5,24 @@
 //! enforced in one place.
 
 pub mod classify;
+mod claude_code;
 mod clipboard;
 mod downloads;
 mod gate;
 mod heartbeat;
+mod idle;
 mod ports;
+mod system;
 mod window;
 
+pub use claude_code::ClaudeCodeSensor;
 pub use clipboard::ClipboardSensor;
 pub use downloads::DownloadsSensor;
 pub use gate::{GateState, SensorGate, SensorGateHandle};
 pub use heartbeat::HeartbeatSensor;
+pub use idle::IdleSensor;
 pub use ports::PortsSensor;
+pub use system::SystemSensor;
 pub use window::WindowSensor;
 
 use sidekick_core::EventBus;

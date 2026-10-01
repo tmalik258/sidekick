@@ -13,17 +13,21 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+arboard = { version = "3", default-features = false }
 chrono.workspace = true
 log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sidekick-actions.workspace = true
+sidekick-ai.workspace = true
 sidekick-core.workspace = true
 sidekick-sensors.workspace = true
 sidekick-skills.workspace = true
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
+tauri-plugin-global-shortcut = "2"
 tauri-plugin-log = "2"
 tauri-plugin-single-instance = "2"
+trash = "5"
 tokio.workspace = true
 ulid.workspace = true
