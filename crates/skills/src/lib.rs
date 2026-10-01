@@ -68,6 +68,22 @@ const BUILTIN: &[(&str, &str)] = &[
         "dev/explain-error.yaml",
         include_str!("../../../skills/dev/explain-error.yaml"),
     ),
+    (
+        "system/disk-low.yaml",
+        include_str!("../../../skills/system/disk-low.yaml"),
+    ),
+    (
+        "system/memory-high.yaml",
+        include_str!("../../../skills/system/memory-high.yaml"),
+    ),
+    (
+        "dev/claude-finished.yaml",
+        include_str!("../../../skills/dev/claude-finished.yaml"),
+    ),
+    (
+        "dev/claude-needs-you.yaml",
+        include_str!("../../../skills/dev/claude-needs-you.yaml"),
+    ),
 ];
 
 pub fn builtin() -> Vec<Skill> {

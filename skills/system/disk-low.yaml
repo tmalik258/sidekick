@@ -1,0 +1,15 @@
+id: system.disk-low
+name: Low disk space
+description: Warn when a drive runs low on space (FR-SYS-01) and offer a way to free some.
+priority: 60
+cooldown_secs: 21600
+dedupe: "{{mount}}"
+trigger:
+  event: system.disk_low
+suggestion:
+  title: "Drive {{mount}} is almost full"
+  detail: "{{free_human}} free of {{total_human}}."
+  options:
+    - { label: Storage settings, action: open_system_page, args: { page: storage } }
+    - { label: Installed apps, action: open_system_page, args: { page: apps } }
+    - { label: Show drive, action: open_path, args: { path: "{{mount}}" } }

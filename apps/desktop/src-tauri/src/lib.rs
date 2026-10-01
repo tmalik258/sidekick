@@ -18,8 +18,8 @@ use chrono::Utc;
 use sidekick_actions::{Capabilities, Executor};
 use sidekick_core::{EventBus, MascotEvent, Settings, Storage};
 use sidekick_sensors::{
-    ClipboardSensor, DownloadsSensor, HeartbeatSensor, PortsSensor, Sensor, SensorGate,
-    WindowSensor,
+    ClaudeCodeSensor, ClipboardSensor, DownloadsSensor, HeartbeatSensor, IdleSensor, PortsSensor,
+    Sensor, SensorGate, SystemSensor, WindowSensor,
 };
 use sidekick_skills::Engine;
 use tauri::{AppHandle, Manager};
@@ -129,6 +129,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         scratch_dir,
         decisions: Mutex::default(),
         ai_ready: Default::default(),
+        away: Default::default(),
     });
 
     pipeline::start(app);
@@ -138,6 +139,11 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
             Box::new(PortsSensor),
             Box::new(ClipboardSensor),
             Box::new(WindowSensor),
+            Box::new(ClaudeCodeSensor {
+                port: ClaudeCodeSensor::DEFAULT_PORT,
+            }),
+            Box::new(SystemSensor),
+            Box::new(IdleSensor::default()),
             Box::new(HeartbeatSensor::new(HEARTBEAT_INTERVAL)),
         ];
         sidekick_sensors::spawn_all(sensors, &bus, &gate);

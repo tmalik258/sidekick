@@ -25,6 +25,8 @@ const MAX_QUEUE: usize = 5;
 const NEXT_AFTER_DISMISS: Duration = Duration::from_millis(450);
 const NEXT_AFTER_ACTION: Duration = Duration::from_millis(1900);
 const EXPIRY_TICK: Duration = Duration::from_millis(250);
+/// Give the user a moment after they return before showing anything.
+const WELCOME_BACK: Duration = Duration::from_millis(1500);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,7 +40,10 @@ pub struct ActionResult {
 /// Shows a proposal now, or queues it while the island is busy.
 pub fn offer(app: &AppHandle, proposal: Proposal) {
     let state = app.state::<AppState>();
-    let busy = lock(&state.active).is_some() || mascot::current(app) != MascotState::Idle;
+    // While the user is away, suggestions wait instead of showing to no one.
+    let busy = lock(&state.active).is_some()
+        || mascot::current(app) != MascotState::Idle
+        || state.away.load(std::sync::atomic::Ordering::Relaxed);
     if busy {
         let mut queue = lock(&state.queue);
         // A newer copy of the same suggestion replaces the waiting one;
@@ -273,11 +278,23 @@ pub fn current(app: &AppHandle) -> Option<Suggestion> {
 }
 
 /// Shows the next queued proposal once the island is free again.
+/// The user is back: what arrived while they were away counts as fresh.
+pub fn welcome_back(app: &AppHandle) {
+    let now = Instant::now();
+    for q in lock(&app.state::<AppState>().queue).iter_mut() {
+        q.at = now;
+    }
+    schedule_next(app, WELCOME_BACK);
+}
+
 fn schedule_next(app: &AppHandle, after: Duration) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(after).await;
         let state = app.state::<AppState>();
+        if state.away.load(std::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
         if lock(&state.active).is_some() || mascot::current(&app) != MascotState::Idle {
             // Still busy: the action that finishes will schedule again.
             if mascot::current(&app) == MascotState::Sleeping {

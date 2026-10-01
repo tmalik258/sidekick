@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use sidekick_core::{Event, MascotEvent, Pause};
-use sidekick_sensors::WindowSensor;
+use sidekick_sensors::{IdleSensor, WindowSensor};
 use tauri::{AppHandle, Manager};
 use tokio::sync::broadcast::error::RecvError;
 
@@ -47,6 +47,17 @@ fn spawn_consumer(app: AppHandle) {
 
 async fn handle(app: &AppHandle, event: Event) {
     store(app, event.clone()).await;
+
+    if event.kind == IdleSensor::IDLE || event.kind == IdleSensor::ACTIVE {
+        let away = event.kind == IdleSensor::IDLE;
+        app.state::<AppState>()
+            .away
+            .store(away, std::sync::atomic::Ordering::Relaxed);
+        if !away {
+            // Anything that came in while the user was away shows now.
+            suggestions::welcome_back(app);
+        }
+    }
 
     if event.kind == WindowSensor::EVENT_KIND {
         island::follow_fullscreen(app, &event.payload);

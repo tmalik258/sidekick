@@ -67,6 +67,9 @@ export const PROVIDER_LABELS: Record<string, string> = {
   semif: "SemIf",
 };
 
+/** Where Sidekick listens for Claude Code hooks (ClaudeCodeSensor::DEFAULT_PORT). */
+export const CLAUDE_HOOK_URL = "http://127.0.0.1:47821/claude-code";
+
 export interface ProviderStatus {
   id: string;
   available: boolean;
@@ -160,6 +163,17 @@ export const SENSOR_IDS = [
   { id: "ports", label: "Dev servers", hint: "Notices local servers starting, checked every second." },
   { id: "clipboard", label: "Clipboard", hint: "Notices copied text. Secrets are never stored." },
   { id: "window", label: "Active window", hint: "Knows which app is in front; hides the island in fullscreen." },
+  {
+    id: "claude_code",
+    label: "Claude Code",
+    hint: "Hears when a Claude Code session finishes or needs you (add the hook under AI).",
+  },
+  { id: "system", label: "Disk and memory", hint: "Warns when a drive is almost full or memory stays high." },
+  {
+    id: "idle",
+    label: "Away detection",
+    hint: "Holds suggestions while you are away and shows them when you are back.",
+  },
   { id: "heartbeat", label: "Heartbeat (debug)", hint: "A test event every 30 seconds." },
 ] as const;
 
