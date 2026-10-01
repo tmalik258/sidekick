@@ -277,7 +277,7 @@ function Button({
       disabled={disabled}
       className={`rounded-lg border border-(--border) font-medium transition-colors hover:bg-(--hover) disabled:opacity-40 ${
         small ? "px-2 py-0.5 text-xs" : "px-3 py-1.5 text-sm"
-      } ${active ? "bg-(--hover) ring-1 ring-sky-500" : ""}`}
+      } ${active ? "bg-(--hover) ring-1 ring-(--accent)" : ""}`}
     >
       {children}
     </button>
@@ -293,12 +293,12 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className={`relative h-[26px] w-[44px] shrink-0 rounded-full transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff] ${
-          checked ? "bg-[#30d158]" : "bg-black/15 dark:bg-white/20"
+        className={`relative h-6.5 w-11 shrink-0 rounded-full transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent) ${
+          checked ? "bg-(--accent)" : "bg-black/15 dark:bg-white/20"
         }`}
       >
         <span
-          className="absolute top-[2px] left-[2px] size-[22px] rounded-full bg-white shadow-[0_2px_6px_rgb(0_0_0/0.2)] transition-transform duration-[260ms] ease-(--ease-out-strong)"
+          className="absolute top-0.5 left-0.5 size-5.5 rounded-full bg-white shadow-[0_2px_6px_rgb(0_0_0/0.2)] transition-transform duration-260 ease-out-strong"
           style={{ transform: checked ? "translateX(18px)" : "translateX(0)" }}
         />
       </button>
@@ -317,7 +317,7 @@ function Slider({ label, value, onChange }: { label: string; value: number; onCh
         step={0.05}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-36 accent-sky-500"
+        className="w-36 accent-(--accent)"
       />
     </label>
   );

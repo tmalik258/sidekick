@@ -39,23 +39,25 @@
 }
 
 :root {
-  --bg: #f7f7f9;
+  --bg: #f4f4f8;
   --surface: #ffffff;
-  --text: #16161d;
+  --text: #12121a;
   --muted: #6b6b7b;
-  --border: #e3e3ea;
-  --hover: #f0f0f5;
+  --border: #e0e0e8;
+  --hover: #ececf2;
+  --accent: #5e5ce6;
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #101015;
-    --surface: #17171f;
-    --text: #ececf2;
+    --bg: #0c0c10;
+    --surface: #1a1a22;
+    --text: #f0f0f5;
     --muted: #9a9aab;
-    --border: #2a2a36;
-    --hover: #22222c;
+    --border: #2e2e3a;
+    --hover: #262630;
+    --accent: #8b7cf6;
   }
 }
 
@@ -68,10 +70,28 @@ body {
   overflow: hidden;
 }
 
-body.page {
+/* Full-viewport scroller for settings and other non-island pages. */
+.page-scroll {
+  height: 100dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
   background: var(--bg);
   color: var(--text);
-  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted) transparent;
+}
+
+.page-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.page-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--muted) 55%, transparent);
+  border-radius: 999px;
+}
+
+.page-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 @media (prefers-reduced-motion: reduce) {
