@@ -113,6 +113,18 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/files/screenshot.yaml"),
     ),
     (
+        "dev/repo-status.yaml",
+        include_str!("../../../skills/dev/repo-status.yaml"),
+    ),
+    (
+        "dev/env-file.yaml",
+        include_str!("../../../skills/dev/env-file.yaml"),
+    ),
+    (
+        "dev/docker.yaml",
+        include_str!("../../../skills/dev/docker.yaml"),
+    ),
+    (
         "dev/unsaved-work.yaml",
         include_str!("../../../skills/dev/unsaved-work.yaml"),
     ),
@@ -162,6 +174,11 @@ pub const ACTIONS: &[&str] = &[
     "format_json_clipboard",
     "ask_ai",
     "fathom_followup",
+    "git_pull",
+    "install_deps",
+    "create_env",
+    "start_docker",
+    "launch_project",
     "browser_fill",
     "browser_close_duplicates",
     "browser_save_session",

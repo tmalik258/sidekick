@@ -50,6 +50,7 @@ export function AskPanel() {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [hits, setHits] = useState<{ query: string; items: SearchHit[] } | null>(null);
   const [clips, setClips] = useState<{ text: string; ts: string }[] | null>(null);
+  const [projects, setProjects] = useState<{ name: string; path: string }[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const seq = ask?.seq;
@@ -61,6 +62,7 @@ export function AskPanel() {
     setSelected(0);
     setClips(null);
     void api.aiStatus().then(setProviders);
+    void api.projectsList().then(setProjects);
     const id = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(id);
   }, [seq]);
@@ -118,8 +120,20 @@ export function AskPanel() {
         : []),
     ];
     const q = text.trim().toLowerCase();
-    return q ? all.filter((c) => c.label.toLowerCase().includes(q)) : all;
-  }, [paused, settings.muted, turns.length, text]);
+    if (!q) return all;
+    // Typing a project's name offers to open it (FR-DEV-10).
+    const launch: Command[] = projects
+      .filter((p) => p.name.toLowerCase().includes(q.replace(/^open\s+/, "")))
+      .slice(0, 4)
+      .map((p) => ({
+        id: `project:${p.path}`,
+        label: `Open ${p.name}`,
+        hint: "Editor and terminal",
+        icon: "folder",
+        run: () => void api.projectLaunch(p.path),
+      }));
+    return [...all.filter((c) => c.label.toLowerCase().includes(q)), ...launch];
+  }, [paused, settings.muted, turns.length, text, projects]);
 
   if (!ask) return null;
 

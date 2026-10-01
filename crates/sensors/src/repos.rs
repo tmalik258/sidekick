@@ -93,6 +93,89 @@ fn git(repo: &Path, args: &[&str]) -> Option<String> {
         .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// Runs `git fetch` quietly, giving up after `timeout` (no prompts: a repo
+/// that needs a password just stays stale).
+fn fetch(repo: &Path, timeout: Duration) {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(repo)
+        .args(["fetch", "--quiet", "--no-tags"])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let Ok(mut child) = cmd.spawn() else { return };
+    let start = std::time::Instant::now();
+    while start.elapsed() < timeout {
+        if let Ok(Some(_)) = child.try_wait() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// What a developer wants to know when a project comes to the front
+/// (FR-DEV-04, 05, 07): branch, how far behind and ahead of its upstream,
+/// uncommitted files, a missing `.env`, and whether it needs Docker.
+pub fn status(repo: &Path) -> serde_json::Value {
+    fetch(repo, Duration::from_secs(10));
+    let count = |args: &[&str]| -> u64 {
+        git(repo, args)
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0)
+    };
+    let branch = git(repo, &["rev-parse", "--abbrev-ref", "HEAD"])
+        .map(|s| s.trim().to_owned())
+        .unwrap_or_default();
+    let behind = count(&["rev-list", "--count", "HEAD..@{u}"]);
+    let ahead = count(&["rev-list", "--count", "@{u}..HEAD"]);
+    let changed = git(repo, &["status", "--porcelain"]).map_or(0, |s| s.lines().count());
+    let env_missing = !repo.join(".env").exists() && repo.join(".env.example").exists();
+    let docker_needed = [
+        "docker-compose.yml",
+        "docker-compose.yaml",
+        "compose.yml",
+        "compose.yaml",
+    ]
+    .iter()
+    .any(|f| repo.join(f).exists());
+    let name = repo
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    serde_json::json!({
+        "name": name,
+        "path": repo.to_string_lossy(),
+        "branch": branch,
+        "behind": behind,
+        "ahead": ahead,
+        "changed": changed,
+        "env_missing": env_missing,
+        "docker_needed": docker_needed,
+    })
+}
+
+/// The GitHub page of a repo's `origin`, if it is on github.com.
+pub fn github_url(repo: &Path) -> Option<String> {
+    let url = git(repo, &["remote", "get-url", "origin"])?;
+    let url = url.trim().trim_end_matches(".git");
+    let path = url
+        .strip_prefix("https://github.com/")
+        .or_else(|| url.strip_prefix("git@github.com:"))?;
+    let valid = path.split('/').count() == 2
+        && path
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '-' | '_' | '.'));
+    valid.then(|| format!("https://github.com/{path}"))
+}
+
 /// Uncommitted file count and unpushed commit count, or None when the repo
 /// is clean.
 pub fn unsaved(repo: &Path) -> Option<(usize, usize)> {
@@ -231,6 +314,42 @@ mod tests {
         assert_eq!(e.payload["count"], 1);
         assert_eq!(e.payload["first"], "dirty");
         assert!(unsaved_event(&[]).is_none());
+
+        // Status: a clone that is one commit behind, with a missing .env.
+        let upstream = clean.clone();
+        let clone = root.join("clone");
+        run(
+            &root,
+            &[
+                "clone",
+                "-q",
+                upstream.to_str().unwrap(),
+                clone.to_str().unwrap(),
+            ],
+        );
+        run(
+            &upstream,
+            &[
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=t",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "next",
+            ],
+        );
+        std::fs::write(clone.join(".env.example"), "KEY=").unwrap();
+        std::fs::write(clone.join("compose.yaml"), "services: {}").unwrap();
+        let st = status(&clone);
+        assert_eq!(st["name"], "clone");
+        assert_eq!(st["behind"], 1);
+        assert_eq!(st["ahead"], 0);
+        assert_eq!(st["env_missing"], true);
+        assert_eq!(st["docker_needed"], true);
+        assert_eq!(github_url(&clone), None, "a local remote is not GitHub");
         let _ = std::fs::remove_dir_all(root);
     }
 }

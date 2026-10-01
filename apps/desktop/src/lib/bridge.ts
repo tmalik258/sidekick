@@ -132,6 +132,8 @@ export const api = {
   actionUndo: (id: number) => invoke<string>("action_undo", { id }),
   clipboardHistory: (limit = 60) => invoke<{ text: string; ts: string }[]>("clipboard_history", { limit }),
   clipboardCopy: (text: string) => invoke<void>("clipboard_copy", { text }),
+  projectsList: () => invoke<{ name: string; path: string }[]>("projects_list"),
+  projectLaunch: (path: string) => invoke<string>("project_launch", { path }),
   calendarToday: () => invoke<CalendarToday>("calendar_today"),
   voiceStatus: () => invoke<VoiceStatus>("voice_status"),
   voiceDownload: () => invoke<void>("voice_download"),

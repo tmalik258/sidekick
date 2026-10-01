@@ -6,6 +6,7 @@
 
 mod capabilities;
 mod convert;
+pub mod dev;
 pub mod passwords;
 mod system;
 
@@ -62,6 +63,8 @@ const SAFE: &[&str] = &[
     "open_folder",
     "extract_text",
     "open_system_page",
+    "create_env",
+    "launch_project",
     "noop",
 ];
 
@@ -173,6 +176,21 @@ impl Executor {
                 )))
             }
             "open_system_page" => system::open_system_page(arg(args, "page")?),
+            "git_pull" => {
+                let path = existing_path(args)?;
+                tokio::task::spawn_blocking(move || dev::pull(&path))
+                    .await
+                    .map_err(fail)?
+            }
+            "install_deps" => {
+                let path = existing_path(args)?;
+                tokio::task::spawn_blocking(move || dev::install(&path))
+                    .await
+                    .map_err(fail)?
+            }
+            "create_env" => dev::create_env(&existing_path(args)?),
+            "start_docker" => dev::start_docker(),
+            "launch_project" => dev::launch(&existing_path(args)?, self.caps.code.as_deref()),
             "extract_text" => {
                 let path = existing_path(args)?;
                 convert::ocr(&self.caps, &path).await

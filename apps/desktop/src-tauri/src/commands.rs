@@ -539,3 +539,35 @@ pub async fn clipboard_copy(app: AppHandle, text: String) -> CmdResult<()> {
         .map(|_| ())
         .map_err(|e| e.to_string())
 }
+
+/// Repos in the code folders, for the project launcher (FR-DEV-10).
+#[tauri::command]
+pub async fn projects_list(app: AppHandle) -> Vec<crate::projects::ProjectInfo> {
+    tauri::async_runtime::spawn_blocking(move || crate::projects::infos(&app))
+        .await
+        .unwrap_or_default()
+}
+
+/// Opens a project: editor and terminal. Only paths from the repo list.
+#[tauri::command]
+pub async fn project_launch(app: AppHandle, path: String) -> CmdResult<String> {
+    let known = {
+        let app = app.clone();
+        let path = path.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::projects::list(&app)
+                .iter()
+                .any(|p| p.to_string_lossy() == path)
+        })
+        .await
+        .unwrap_or(false)
+    };
+    if !known {
+        return Err("not a project in your code folders".into());
+    }
+    executor(&app.state::<AppState>())
+        .run("launch_project", &serde_json::json!({ "path": path }))
+        .await
+        .map(|o| o.message)
+        .map_err(|e| e.to_string())
+}

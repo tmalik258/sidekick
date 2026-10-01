@@ -71,6 +71,7 @@ async fn handle(app: &AppHandle, event: Event) {
         island::follow_fullscreen(app, &event.payload);
         *lock(&app.state::<AppState>().last_window) = Some(event.payload.clone());
         timetrack::on_window(app, &event.payload);
+        crate::projects::on_window(app, &event.payload);
     }
 
     if event.kind == DEBUG_MANUAL_KIND && mascot::dispatch(app, MascotEvent::SkillMatched).is_some()

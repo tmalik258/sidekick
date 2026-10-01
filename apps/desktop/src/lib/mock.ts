@@ -189,6 +189,11 @@ commands.clipboard_history = () => [
   { text: "#0ea5e9", ts: new Date().toISOString() },
 ];
 commands.clipboard_copy = () => undefined;
+commands.projects_list = () => [
+  { name: "sidekick", path: "C:/Users/you/code/sidekick" },
+  { name: "falconxoft-api", path: "C:/Users/you/code/falconxoft-api" },
+];
+commands.project_launch = () => "Opened sidekick in VS Code and a terminal";
 commands.search_status = () => ({ items: 1240, embedded: 1240, embedError: null });
 commands.calendar_today = () => ({
   meetings: settings.calendar.feeds.length

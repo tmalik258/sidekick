@@ -1,0 +1,16 @@
+id: dev.repo-status
+name: Project status
+description: When a repo comes to the front in your editor and it is behind its remote, offer to pull, then install dependencies if they changed (FR-DEV-04).
+priority: 55
+cooldown_secs: 3600
+dedupe: "{{path}}"
+trigger:
+  event: dev.repo_opened
+  where:
+    behind: { range: [1, 100000] }
+suggestion:
+  title: "{{name}} is {{behind}} behind"
+  detail: "On {{branch}}"
+  options:
+    - { label: Pull, action: git_pull, args: { path: "{{path}}" } }
+    - { label: Install dependencies, action: install_deps, args: { path: "{{path}}" } }

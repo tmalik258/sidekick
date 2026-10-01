@@ -161,6 +161,7 @@ time.day_summary: total_human, top, text
 day.morning_brief: headline, text, reviews, first_url, first_title
 calendar.meeting_soon: title, minutes, start, join_url, location, attendees, details
 calendar.meeting_ended: title, start, start_utc, attendees
+dev.repo_opened: name, path, branch, behind, ahead, changed, env_missing, docker_needed, docker_running
 user.idle / user.active: idle_secs / away_secs";
 
 const SKILL_SYSTEM: &str = "You write skills for Sidekick, a desktop assistant on Windows. \
