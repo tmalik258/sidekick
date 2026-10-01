@@ -26,6 +26,7 @@ sidekick-actions.workspace = true
 sidekick-ai.workspace = true
 sidekick-core.workspace = true
 sidekick-sensors.workspace = true
+sidekick-layout.workspace = true
 sidekick-skills.workspace = true
 sidekick-voice.workspace = true
 tauri = { version = "2", features = ["tray-icon"] }

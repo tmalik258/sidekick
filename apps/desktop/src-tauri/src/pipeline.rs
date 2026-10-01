@@ -68,6 +68,7 @@ async fn handle(app: &AppHandle, event: Event) {
     }
 
     if event.kind == WindowSensor::EVENT_KIND {
+        island::follow_active_monitor(app, &event.payload);
         island::follow_fullscreen(app, &event.payload);
         *lock(&app.state::<AppState>().last_window) = Some(event.payload.clone());
         timetrack::on_window(app, &event.payload);

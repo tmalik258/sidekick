@@ -163,6 +163,7 @@ calendar.meeting_soon: title, minutes, start, join_url, location, attendees, det
 calendar.meeting_ended: title, start, start_utc, attendees
 dev.repo_opened: name, path, branch, behind, ahead, changed, env_missing, docker_needed, docker_running
 files.downloads_old: count, mb, dir
+system.monitor_connected: monitors
 user.idle / user.active: idle_secs / away_secs";
 
 const SKILL_SYSTEM: &str = "You write skills for Sidekick, a desktop assistant on Windows. \

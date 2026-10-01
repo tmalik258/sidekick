@@ -296,6 +296,14 @@ async fn execute(
                 path: None,
             });
         }
+        "restore_layout" => {
+            return crate::layout::restore(app)
+                .await
+                .map(|message| sidekick_actions::Outcome {
+                    message,
+                    path: None,
+                });
+        }
         "summarize_file" => {
             return crate::files::summarize(app, arg("path").unwrap_or_default())
                 .await

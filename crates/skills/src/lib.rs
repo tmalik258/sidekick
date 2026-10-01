@@ -153,6 +153,10 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/calendar/follow-up.yaml"),
     ),
     (
+        "system/layout.yaml",
+        include_str!("../../../skills/system/layout.yaml"),
+    ),
+    (
         "system/update.yaml",
         include_str!("../../../skills/system/update.yaml"),
     ),
@@ -194,6 +198,7 @@ pub const ACTIONS: &[&str] = &[
     "trash_download",
     "clean_downloads",
     "summarize_file",
+    "restore_layout",
     "browser_fill",
     "browser_close_duplicates",
     "browser_save_session",

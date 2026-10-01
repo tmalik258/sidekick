@@ -15,6 +15,7 @@ sidekick-skills = { path = "crates/skills" }
 sidekick-actions = { path = "crates/actions" }
 sidekick-ai = { path = "crates/ai" }
 sidekick-voice = { path = "crates/voice" }
+sidekick-layout = { path = "crates/layout" }
 chrono = { version = "0.4", features = ["serde"] }
 log = "0.4"
 rusqlite = { version = "0.40", features = ["bundled"] }

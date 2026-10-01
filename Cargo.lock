@@ -5122,6 +5122,7 @@ dependencies = [
  "sidekick-actions",
  "sidekick-ai",
  "sidekick-core",
+ "sidekick-layout",
  "sidekick-sensors",
  "sidekick-skills",
  "sidekick-voice",
@@ -5136,6 +5137,14 @@ dependencies = [
  "trash",
  "ulid",
  "xcap",
+]
+
+[[package]]
+name = "sidekick-layout"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

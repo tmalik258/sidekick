@@ -66,6 +66,7 @@ const SAFE: &[&str] = &[
     "open_system_page",
     "create_env",
     "launch_project",
+    "restore_layout",
     "noop",
 ];
 
