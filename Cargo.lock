@@ -4019,9 +4019,11 @@ dependencies = [
  "log",
  "notify",
  "regex",
+ "serde",
  "serde_json",
  "sidekick-core",
  "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
