@@ -1,12 +1,8 @@
 "use client";
 
-import { type ReactNode, useEffect } from "react";
+import type { ReactNode } from "react";
 
-/** Gives normal pages an opaque, scrollable body; the island stays transparent. */
+/** Opaque, scrollable shell for normal pages; the island stays transparent. */
 export function PageBody({ children }: { children: ReactNode }) {
-  useEffect(() => {
-    document.body.classList.add("page");
-    return () => document.body.classList.remove("page");
-  }, []);
-  return children;
+  return <div className="page-scroll">{children}</div>;
 }
