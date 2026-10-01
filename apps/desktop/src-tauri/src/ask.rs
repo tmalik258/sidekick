@@ -90,6 +90,8 @@ pub fn register(app: &AppHandle, hotkey: &str) -> Result<(), String> {
         .map_err(|e| format!("{hotkey} is not a valid shortcut: {e}"))?;
     let gs = app.global_shortcut();
     let _ = gs.unregister_all();
+    // unregister_all also dropped the Alt+N keys of a suggestion on screen.
+    suggestions::rebind_keys(app);
     gs.on_shortcut(shortcut, |app, _shortcut, event| {
         if event.state == ShortcutState::Pressed {
             toggle(app);

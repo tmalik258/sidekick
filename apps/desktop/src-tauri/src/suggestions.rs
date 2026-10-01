@@ -10,6 +10,7 @@ use sidekick_actions::is_safe;
 use sidekick_core::{ActionRecord, MascotEvent, MascotState};
 use sidekick_skills::{Proposal, ProposedOption, Trust};
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 use crate::mascot;
 use crate::state::{Active, AppState, Queued, Suggestion, executor, lock};
@@ -37,6 +38,71 @@ pub struct ActionResult {
     pub auto: bool,
     /// Set when the action can be undone (it created a file).
     pub undo_id: Option<i64>,
+}
+
+const DIGITS: [Code; 10] = [
+    Code::Digit0,
+    Code::Digit1,
+    Code::Digit2,
+    Code::Digit3,
+    Code::Digit4,
+    Code::Digit5,
+    Code::Digit6,
+    Code::Digit7,
+    Code::Digit8,
+    Code::Digit9,
+];
+
+/// Alt+1..9 pick an option and Alt+0 is "Not now". They are global, because
+/// the island never takes focus, and exist only while a suggestion is showing
+/// so they never steal keys otherwise.
+fn bind_keys(app: &AppHandle, options: usize) {
+    let gs = app.global_shortcut();
+    for (n, code) in DIGITS.iter().enumerate().take(options.min(9) + 1) {
+        let shortcut = Shortcut::new(Some(Modifiers::ALT), *code);
+        let result = gs.on_shortcut(shortcut, move |app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                // Off the handler's thread: picking unregisters these very
+                // shortcuts, which must not happen from inside their callback.
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move { pick(&app, n) });
+            }
+        });
+        if let Err(err) = result {
+            log::warn!("could not register Alt+{n} (another app may use it): {err}");
+        }
+    }
+}
+
+fn unbind_keys(app: &AppHandle) {
+    let gs = app.global_shortcut();
+    for digit in DIGITS {
+        let _ = gs.unregister(Shortcut::new(Some(Modifiers::ALT), digit));
+    }
+}
+
+/// Registers the keys again for the active suggestion, after something else
+/// cleared every shortcut (changing the Ask shortcut does).
+pub fn rebind_keys(app: &AppHandle) {
+    if let Some(s) = current(app) {
+        bind_keys(app, s.options.len());
+    }
+}
+
+/// Alt+N: option N, or "Not now" for 0.
+fn pick(app: &AppHandle, n: usize) {
+    log::info!("shortcut Alt+{n}");
+    let Some(s) = current(app) else { return };
+    let result = if n == 0 {
+        dismiss(app, &s.id, "shortcut")
+    } else if n <= s.options.len() {
+        choose(app, &s.id, n - 1)
+    } else {
+        return;
+    };
+    if let Err(err) = result {
+        log::debug!("shortcut ignored: {err}");
+    }
 }
 
 /// Shows a proposal now, or queues it while the island is busy.
@@ -97,11 +163,12 @@ fn show(app: &AppHandle, proposal: Proposal) {
         ui: ui.clone(),
         proposal,
     });
-    let _ = app.emit(SUGGESTION_NEW, ui);
+    let _ = app.emit(SUGGESTION_NEW, &ui);
     mascot::dispatch(app, MascotEvent::SuggestionReady);
     if auto {
         let _ = run_choice(app, &id, 0, true);
     } else {
+        bind_keys(app, ui.options.len());
         expire_when_ignored(app, id);
     }
 }
@@ -299,6 +366,7 @@ fn take(app: &AppHandle, id: &str) -> Result<Active, String> {
         }
     };
     let active = taken.ok_or("suggestion is no longer active")?;
+    unbind_keys(app);
     let _ = app.emit(SUGGESTION_CLEAR, &active.ui.id);
     Ok(active)
 }
