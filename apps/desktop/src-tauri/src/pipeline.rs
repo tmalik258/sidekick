@@ -10,6 +10,7 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::commands;
+use crate::decide;
 use crate::island;
 use crate::mascot;
 use crate::state::{AppEnv, AppState, executor, lock};
@@ -49,6 +50,7 @@ async fn handle(app: &AppHandle, event: Event) {
 
     if event.kind == WindowSensor::EVENT_KIND {
         island::follow_fullscreen(app, &event.payload);
+        *lock(&app.state::<AppState>().last_window) = Some(event.payload.clone());
     }
 
     if event.kind == DEBUG_MANUAL_KIND && mascot::dispatch(app, MascotEvent::SkillMatched).is_some()
@@ -58,7 +60,12 @@ async fn handle(app: &AppHandle, event: Event) {
     }
 
     if let Some(proposal) = evaluate(app, &event) {
-        suggestions::offer(app, proposal);
+        // Ranking may ask a model, so it runs beside the event loop.
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let proposal = decide::rank(&app, proposal).await;
+            suggestions::offer(&app, proposal);
+        });
     }
 }
 
@@ -68,6 +75,7 @@ fn evaluate(app: &AppHandle, event: &Event) -> Option<sidekick_skills::Proposal>
     let exec = executor(&state);
     let env = AppEnv {
         settings: &settings,
+        ai_ready: state.ai_ready.load(std::sync::atomic::Ordering::Relaxed),
         caps: exec.capabilities(),
         storage: &state.storage,
     };

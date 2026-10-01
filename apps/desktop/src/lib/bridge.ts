@@ -8,8 +8,11 @@ import type {
   ActionResult,
   AppInfo,
   CapabilityInfo,
+  ChatMessage,
   HitRect,
   MascotState,
+  PaletteOpen,
+  ProviderStatus,
   Settings,
   SkillInfo,
   StoredEvent,
@@ -24,6 +27,9 @@ export const EVENTS = {
   islandHover: "island://hover",
   islandCursor: "island://cursor",
   islandVisible: "island://visible",
+  aiDelta: "ai://delta",
+  aiDone: "ai://done",
+  paletteOpen: "palette://open",
   actionResult: "action://result",
   settingsChanged: "settings://changed",
 } as const;
@@ -35,6 +41,9 @@ export interface EventPayloads {
   [EVENTS.islandHover]: boolean;
   [EVENTS.islandCursor]: { x: number; y: number };
   [EVENTS.islandVisible]: boolean;
+  [EVENTS.aiDelta]: { id: string; text: string };
+  [EVENTS.aiDone]: { id: string; provider: string | null; error: string | null };
+  [EVENTS.paletteOpen]: PaletteOpen;
   [EVENTS.actionResult]: ActionResult;
   [EVENTS.settingsChanged]: Settings;
 }
@@ -80,4 +89,10 @@ export const api = {
   choicesReset: () => invoke<number>("choices_reset"),
   actionsRecent: (limit = 30) => invoke<ActionRecord[]>("actions_recent", { limit }),
   revealPath: (path: string) => invoke<void>("reveal_path", { path }),
+  aiStatus: () => invoke<ProviderStatus[]>("ai_status"),
+  aiChat: (id: string, messages: ChatMessage[], attach: { window: boolean; clipboard: boolean }, localOnly: boolean) =>
+    invoke<void>("ai_chat", { id, messages, attach, localOnly }),
+  aiCancel: (id: string) => invoke<void>("ai_cancel", { id }),
+  paletteHide: () => invoke<void>("palette_hide"),
+  paletteOpen: (prompt: string | null, ask: boolean) => invoke<void>("palette_open", { prompt, ask }),
 };

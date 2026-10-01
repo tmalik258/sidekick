@@ -49,6 +49,150 @@ pub struct Settings {
     pub sound_kit: String,
     /// Per-skill switches set by the user (FR-SKL-06).
     pub skills: BTreeMap<String, SkillPref>,
+    /// Global shortcut that opens the command palette (FR-UI-07).
+    pub palette_hotkey: String,
+    pub ai: AiSettings,
+}
+
+/// AI tiers (FR-AI-09: each can be switched off; Sidekick works without any).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AiSettings {
+    /// Chat providers in the order they are tried: ids from [`AI_PROVIDERS`].
+    pub order: Vec<String>,
+    pub claude_code: ClaudeCodePref,
+    pub local: LocalModelPref,
+    pub anthropic: AnthropicPref,
+    pub semif: SemIfPref,
+    /// Let T1 (SemIf or the local model) rank suggestion options.
+    pub decisions: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ClaudeCodePref {
+    pub enabled: bool,
+    /// Path to `claude`; empty means look it up on PATH.
+    pub path: String,
+    /// Empty means Claude Code's own default.
+    pub model: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LocalModelPref {
+    pub enabled: bool,
+    /// OpenAI-compatible base URL (Ollama by default).
+    pub base_url: String,
+    /// Empty means the first model the server lists.
+    pub model: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AnthropicPref {
+    /// Uses `ANTHROPIC_API_KEY` from the environment; the key is never stored.
+    pub enabled: bool,
+    pub model: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SemIfPref {
+    pub enabled: bool,
+    /// Program and leading arguments, e.g. `["wsl.exe", "--", "semif-score"]`.
+    pub command: Vec<String>,
+    pub mode: String,
+    pub backend: String,
+    pub model: String,
+    pub revision: String,
+    /// GGUF file for the llama.cpp backend (CPU or small GPUs).
+    pub gguf: String,
+}
+
+pub const AI_PROVIDERS: [&str; 3] = ["claude_code", "anthropic", "local"];
+
+impl Default for AiSettings {
+    fn default() -> Self {
+        Self {
+            order: AI_PROVIDERS.map(String::from).to_vec(),
+            claude_code: ClaudeCodePref::default(),
+            local: LocalModelPref::default(),
+            anthropic: AnthropicPref::default(),
+            semif: SemIfPref::default(),
+            decisions: true,
+        }
+    }
+}
+
+impl Default for ClaudeCodePref {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            path: String::new(),
+            model: String::new(),
+        }
+    }
+}
+
+impl Default for LocalModelPref {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            base_url: "http://localhost:11434/v1".into(),
+            model: String::new(),
+        }
+    }
+}
+
+impl Default for AnthropicPref {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            model: String::new(),
+        }
+    }
+}
+
+impl Default for SemIfPref {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            command: vec!["semif-score".into()],
+            mode: "direct".into(),
+            backend: "llamacpp".into(),
+            model: "openbmb/MiniCPM5-2B".into(),
+            revision: "main".into(),
+            gguf: String::new(),
+        }
+    }
+}
+
+impl AiSettings {
+    fn sanitized(mut self) -> Self {
+        let mut order: Vec<String> = Vec::new();
+        for id in self
+            .order
+            .iter()
+            .chain(AI_PROVIDERS.map(String::from).iter())
+        {
+            if AI_PROVIDERS.contains(&id.as_str()) && !order.contains(id) {
+                order.push(id.clone());
+            }
+        }
+        self.order = order;
+        if self.local.base_url.trim().is_empty() {
+            self.local.base_url = LocalModelPref::default().base_url;
+        }
+        self.semif.command.retain(|a| !a.trim().is_empty());
+        if !["direct", "serial", "shared"].contains(&self.semif.mode.as_str()) {
+            self.semif.mode = "direct".into();
+        }
+        if !["torch", "mlx", "llamacpp"].contains(&self.semif.backend.as_str()) {
+            self.semif.backend = "llamacpp".into();
+        }
+        self
+    }
 }
 
 /// The user's overrides for one skill. `None` keeps the skill's default.
@@ -79,9 +223,13 @@ impl Default for Settings {
             theme: THEMES[0].to_string(),
             sound_kit: SOUND_KITS[0].to_string(),
             skills: BTreeMap::new(),
+            palette_hotkey: DEFAULT_PALETTE_HOTKEY.into(),
+            ai: AiSettings::default(),
         }
     }
 }
+
+pub const DEFAULT_PALETTE_HOTKEY: &str = "Alt+Space";
 
 #[derive(Debug, thiserror::Error)]
 pub enum SettingsError {
@@ -134,6 +282,10 @@ impl Settings {
         if !SOUND_KITS.contains(&self.sound_kit.as_str()) {
             self.sound_kit = SOUND_KITS[0].to_string();
         }
+        if self.palette_hotkey.trim().is_empty() {
+            self.palette_hotkey = DEFAULT_PALETTE_HOTKEY.into();
+        }
+        self.ai = self.ai.sanitized();
         self
     }
 
@@ -148,6 +300,27 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ai_order_keeps_known_ids_once_and_adds_missing() {
+        let mut s = Settings::default();
+        s.ai.order = vec!["local".into(), "bogus".into(), "local".into()];
+        s.ai.semif.mode = "weird".into();
+        s.palette_hotkey = " ".into();
+        let s = s.sanitized();
+        assert_eq!(s.ai.order, ["local", "claude_code", "anthropic"]);
+        assert_eq!(s.ai.semif.mode, "direct");
+        assert_eq!(s.palette_hotkey, DEFAULT_PALETTE_HOTKEY);
+    }
+
+    #[test]
+    fn old_settings_files_get_ai_defaults() {
+        let s: Settings = serde_json::from_str(r#"{"muted":true}"#).unwrap();
+        assert!(s.muted);
+        assert!(s.ai.claude_code.enabled);
+        assert_eq!(s.ai.local.base_url, "http://localhost:11434/v1");
+        assert!(!s.ai.semif.enabled);
+    }
 
     #[test]
     fn pause_until_expires() {

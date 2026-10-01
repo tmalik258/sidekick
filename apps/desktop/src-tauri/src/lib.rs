@@ -1,6 +1,9 @@
+mod ai;
 mod commands;
+mod decide;
 mod island;
 mod mascot;
+mod palette;
 mod pipeline;
 mod state;
 mod suggestions;
@@ -38,6 +41,7 @@ pub fn run() {
                 .max_file_size(10 * 1024 * 1024)
                 .build(),
         )
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -68,6 +72,11 @@ pub fn run() {
             commands::choices_reset,
             commands::actions_recent,
             commands::reveal_path,
+            commands::ai_status,
+            commands::ai_chat,
+            commands::ai_cancel,
+            commands::palette_hide,
+            commands::palette_open,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Sidekick");
@@ -85,13 +94,16 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     log::info!("{} skills loaded", skills.len());
     let caps = Capabilities::detect();
     log::info!("found: {}", caps.summary().join(", "));
-    let db_path = app.path().app_data_dir()?.join("sidekick.db");
+    let data_dir = app.path().app_data_dir()?;
+    let db_path = data_dir.join("sidekick.db");
+    let scratch_dir = app.path().app_cache_dir()?;
 
     let settings = Settings::load(&settings_path);
     let storage = Storage::open(&db_path)?;
     let bus = EventBus::default();
     let (gate_handle, gate) = SensorGate::new(state::gate_state(&settings, Utc::now()));
     let paused = settings.pause.is_active(Utc::now());
+    let hotkey = settings.palette_hotkey.clone();
 
     app.manage(AppState {
         settings: Mutex::new(settings),
@@ -111,6 +123,12 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         queue: Mutex::default(),
         island_hidden: Mutex::default(),
         hovered: Default::default(),
+        last_window: Mutex::default(),
+        chats: Mutex::default(),
+        ai_workdir: data_dir.join("claude-workspace"),
+        scratch_dir,
+        decisions: Mutex::default(),
+        ai_ready: Default::default(),
     });
 
     pipeline::start(app);
@@ -126,6 +144,8 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     });
 
     island::setup(app)?;
+    palette::setup(app, &hotkey);
+    ai::watch_readiness(app);
     tray::create(app)?;
 
     if paused {
