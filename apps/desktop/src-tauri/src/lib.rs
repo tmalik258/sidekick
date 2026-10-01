@@ -12,6 +12,7 @@ mod learn;
 mod mascot;
 mod mcp;
 mod pipeline;
+mod privacy;
 mod projects;
 mod screen;
 mod search;
@@ -79,6 +80,9 @@ pub fn run() {
             commands::events_recent,
             commands::open_settings,
             commands::calendar_today,
+            commands::search_clear,
+            commands::backup_export,
+            commands::backup_import,
             commands::projects_list,
             commands::project_launch,
             commands::clipboard_history,

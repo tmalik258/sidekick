@@ -46,6 +46,8 @@ export interface Settings {
   semanticSearch: { enabled: boolean; model: string };
   onboarded: boolean;
   checkUpdates: boolean;
+  denyApps: string[];
+  denySites: string[];
 }
 
 export interface CalendarToday {
@@ -252,6 +254,8 @@ export const DEFAULT_SETTINGS: Settings = {
   semanticSearch: { enabled: true, model: "nomic-embed-text" },
   onboarded: false,
   checkUpdates: true,
+  denyApps: ["1password.exe", "bitwarden.exe", "keepass.exe", "keepassxc.exe"],
+  denySites: [],
   voice: { enabled: false, wakeWord: true, speakAnswers: true, voice: "af_bella", speed: 1 },
 };
 

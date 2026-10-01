@@ -66,7 +66,23 @@ pub struct Settings {
     pub onboarded: bool,
     /// Look for a newer release once a day.
     pub check_updates: bool,
+    /// Programs whose windows and copies Sidekick ignores (FR-SET-02).
+    pub deny_apps: Vec<String>,
+    /// Sites (and their subdomains) Sidekick ignores.
+    pub deny_sites: Vec<String>,
 }
+
+/// Password managers are ignored from the start (FR-RAG-08).
+pub const DEFAULT_DENY_APPS: &[&str] = &[
+    "1password.exe",
+    "bitwarden.exe",
+    "keepass.exe",
+    "keepassxc.exe",
+    "lastpass.exe",
+    "dashlane.exe",
+    "enpass.exe",
+    "proton pass.exe",
+];
 
 /// Search by meaning with an embedding model on this PC (FR-RAG-03).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -311,6 +327,8 @@ impl Default for Settings {
             semantic_search: SemanticSearch::default(),
             onboarded: false,
             check_updates: true,
+            deny_apps: DEFAULT_DENY_APPS.iter().map(|s| (*s).to_owned()).collect(),
+            deny_sites: Vec::new(),
         }
     }
 }
@@ -393,6 +411,8 @@ impl Settings {
         }
         self.end_of_day_hour = self.end_of_day_hour.min(23);
         self.code_folders.retain(|f| !f.trim().is_empty());
+        self.deny_apps.retain(|a| !a.trim().is_empty());
+        self.deny_sites.retain(|s| !s.trim().is_empty());
         self.index_folders.retain(|f| !f.trim().is_empty());
         self
     }

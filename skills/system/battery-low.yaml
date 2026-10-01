@@ -1,0 +1,13 @@
+id: system.battery-low
+name: Low battery
+description: On battery below 20 percent, offer Battery saver and show what uses the most (FR-SYS-03).
+priority: 65
+cooldown_secs: 3600
+trigger:
+  event: system.battery_low
+suggestion:
+  title: "Battery at {{percent}}%"
+  detail: "Not plugged in."
+  options:
+    - { label: Battery saver, action: open_system_page, args: { page: battery } }
+    - { label: What uses power, action: open_system_page, args: { page: taskmgr } }

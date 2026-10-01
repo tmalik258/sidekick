@@ -189,6 +189,9 @@ commands.clipboard_history = () => [
   { text: "#0ea5e9", ts: new Date().toISOString() },
 ];
 commands.clipboard_copy = () => undefined;
+commands.search_clear = () => 0;
+commands.backup_export = () => "C:/Users/you/Documents/Sidekick backup.json";
+commands.backup_import = () => "Restored settings and 2 skills";
 commands.projects_list = () => [
   { name: "sidekick", path: "C:/Users/you/code/sidekick" },
   { name: "falconxoft-api", path: "C:/Users/you/code/falconxoft-api" },

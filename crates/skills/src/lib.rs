@@ -157,6 +157,10 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/calendar/follow-up.yaml"),
     ),
     (
+        "system/battery-low.yaml",
+        include_str!("../../../skills/system/battery-low.yaml"),
+    ),
+    (
         "system/layout.yaml",
         include_str!("../../../skills/system/layout.yaml"),
     ),

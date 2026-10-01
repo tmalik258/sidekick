@@ -48,6 +48,16 @@ fn spawn_consumer(app: AppHandle) {
 }
 
 async fn handle(app: &AppHandle, event: Event) {
+    if crate::privacy::check(app, &event) {
+        // Still remember which app is in front, so its copies are ignored
+        // too, and keep the island out of fullscreen apps.
+        if event.kind == WindowSensor::EVENT_KIND {
+            island::follow_fullscreen(app, &event.payload);
+            *lock(&app.state::<AppState>().last_window) = Some(event.payload.clone());
+            timetrack::on_away(app);
+        }
+        return;
+    }
     store(app, event.clone()).await;
     search::index_event(app, &event);
 

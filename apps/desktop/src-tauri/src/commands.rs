@@ -571,3 +571,115 @@ pub async fn project_launch(app: AppHandle, path: String) -> CmdResult<String> {
         .map(|o| o.message)
         .map_err(|e| e.to_string())
 }
+
+/// Deletes everything in the search index (FR-RAG-12). Folders are indexed
+/// again on the next re-index.
+#[tauri::command]
+pub fn search_clear(state: State<'_, AppState>) -> CmdResult<usize> {
+    lock(&state.storage)
+        .clear_search(None)
+        .map_err(|e| e.to_string())
+}
+
+const BACKUP_VERSION: u32 = 1;
+
+/// Saves settings, your own skills and the action history to one file in
+/// Documents and shows it (FR-SET-04). Calendar links are secrets, so they
+/// are left out.
+#[tauri::command]
+pub async fn backup_export(app: AppHandle) -> CmdResult<String> {
+    let path = write_backup(&app)?;
+    let _ = executor(&app.state::<AppState>())
+        .run("reveal_path", &serde_json::json!({ "path": path }))
+        .await;
+    Ok(path)
+}
+
+fn write_backup(app: &AppHandle) -> CmdResult<String> {
+    let state = app.state::<AppState>();
+    let mut settings = lock(&state.settings).clone();
+    settings.calendar.feeds.clear();
+    let mut skills = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&state.skills_dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().is_some_and(|x| x == "yaml" || x == "yml")
+                && let Ok(yaml) = std::fs::read_to_string(&p)
+            {
+                skills.push(serde_json::json!({
+                    "file": p.file_name().map(|n| n.to_string_lossy().into_owned()),
+                    "yaml": yaml,
+                }));
+            }
+        }
+    }
+    let history = lock(&state.storage)
+        .recent_actions(5000)
+        .map_err(|e| e.to_string())?;
+    let bundle = serde_json::json!({
+        "sidekickBackup": BACKUP_VERSION,
+        "created": chrono::Utc::now().to_rfc3339(),
+        "settings": settings,
+        "skills": skills,
+        "history": history,
+    });
+    let dir = dirs::document_dir().ok_or("no Documents folder")?;
+    let path = dir.join(format!(
+        "Sidekick backup {}.json",
+        chrono::Local::now().format("%Y-%m-%d %H%M")
+    ));
+    let text = serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())?;
+    std::fs::write(&path, text).map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
+}
+
+/// Restores settings and skills from a backup's text. Every skill is
+/// checked first; the action history is kept for reference only.
+#[tauri::command]
+pub fn backup_import(app: AppHandle, text: String) -> CmdResult<String> {
+    let bundle: serde_json::Value =
+        serde_json::from_str(&text).map_err(|_| "This is not a Sidekick backup.".to_string())?;
+    if bundle["sidekickBackup"].as_u64().is_none() {
+        return Err("This is not a Sidekick backup.".into());
+    }
+    let state = app.state::<AppState>();
+    let mut installed = 0;
+    if let Some(skills) = bundle["skills"].as_array() {
+        std::fs::create_dir_all(&state.skills_dir).map_err(|e| e.to_string())?;
+        for s in skills {
+            let Some(yaml) = s["yaml"].as_str() else {
+                continue;
+            };
+            let Ok(skill) = sidekick_skills::Skill::parse("backup", yaml) else {
+                continue;
+            };
+            let safe_id: String = skill
+                .id
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+                .collect();
+            if safe_id.is_empty() {
+                continue;
+            }
+            if std::fs::write(state.skills_dir.join(format!("{safe_id}.yaml")), yaml).is_ok() {
+                installed += 1;
+            }
+        }
+        let (skills, errors) = sidekick_skills::load_all(&state.skills_dir);
+        *lock(&state.engine) = sidekick_skills::Engine::new(skills);
+        *lock(&state.skill_errors) = errors;
+    }
+    let mut restored = false;
+    if let Ok(mut settings) = serde_json::from_value::<Settings>(bundle["settings"].clone()) {
+        // Keep this PC's calendar links and onboarding state.
+        let current = lock(&state.settings).clone();
+        settings.calendar.feeds = current.calendar.feeds;
+        settings.onboarded = true;
+        apply_settings(&app, settings)?;
+        restored = true;
+    }
+    Ok(format!(
+        "Restored {}{installed} skills",
+        if restored { "settings and " } else { "" }
+    ))
+}

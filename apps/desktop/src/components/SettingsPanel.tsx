@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
 import { checkKit, cueVolume, playCue } from "@/lib/sound";
@@ -303,6 +303,46 @@ export function SettingsPanel() {
               ))}
             </Section>
             <Section
+              title="Ignored apps and sites"
+              hint="Sidekick drops everything from these: windows, copies made in them, and pages. Password managers are on the list from the start."
+            >
+              <Field label="Apps" hint="Program names, for example keepassxc.exe">
+                <TextField
+                  label="Ignored apps"
+                  value={settings.denyApps.join(", ")}
+                  className="w-56"
+                  onCommit={(v) =>
+                    run(() =>
+                      updateSettings({
+                        denyApps: v
+                          .split(/[,\s]+/)
+                          .map((a) => a.trim())
+                          .filter(Boolean),
+                      }),
+                    )
+                  }
+                />
+              </Field>
+              <Field label="Sites" hint="Domains, for example mybank.com">
+                <TextField
+                  label="Ignored sites"
+                  value={settings.denySites.join(", ")}
+                  placeholder="mybank.com"
+                  className="w-56"
+                  onCommit={(v) =>
+                    run(() =>
+                      updateSettings({
+                        denySites: v
+                          .split(/[,\s]+/)
+                          .map((a) => a.trim())
+                          .filter(Boolean),
+                      }),
+                    )
+                  }
+                />
+              </Field>
+            </Section>
+            <Section
               title="Found on this PC"
               hint="Skills only offer what is installed. Install ffmpeg, ImageMagick, LibreOffice or pandoc for more conversions, then rescan."
             >
@@ -312,6 +352,12 @@ export function SettingsPanel() {
         )}
         {tab === "about" && (
           <>
+            <Section
+              title="Backup"
+              hint="One file with your settings, your own skills and the action history. Calendar links are left out."
+            >
+              <Backup onError={setError} />
+            </Section>
             {info && (
               <Section title="About">
                 <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
@@ -1134,6 +1180,66 @@ function CalendarSettings({ onError }: { onError: (e: string) => void }) {
   );
 }
 
+function ClearIndex({ onDone }: { onDone: () => void }) {
+  const [sure, setSure] = useState(false);
+  useEffect(() => {
+    if (!sure) return;
+    const id = setTimeout(() => setSure(false), 4000);
+    return () => clearTimeout(id);
+  }, [sure]);
+  return (
+    <Button
+      small
+      onClick={() => {
+        if (!sure) return setSure(true);
+        setSure(false);
+        void api.searchClear().then(onDone);
+      }}
+    >
+      {sure ? "Delete everything?" : "Clear index"}
+    </Button>
+  );
+}
+
+function Backup({ onError }: { onError: (e: string) => void }) {
+  const [note, setNote] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  return (
+    <div className="flex flex-col gap-2 text-[13px]">
+      <div className="flex gap-2">
+        <Button
+          onClick={() =>
+            api
+              .backupExport()
+              .then((p) => setNote(`Saved to ${p}`))
+              .catch((e) => onError(String(e)))
+          }
+        >
+          Export
+        </Button>
+        <Button onClick={() => input.current?.click()}>Import</Button>
+        <input
+          ref={input}
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (!file) return;
+            void file
+              .text()
+              .then((text) => api.backupImport(text))
+              .then(setNote)
+              .catch((err) => onError(String(err)));
+          }}
+        />
+      </div>
+      {note && <p className="text-[12px] text-(--muted) break-all">{note}</p>}
+    </div>
+  );
+}
+
 function SearchSettings({ onError }: { onError: (e: string) => void }) {
   const folders = useSidekick((s) => s.settings.indexFolders);
   const semantic = useSidekick((s) => s.settings.semanticSearch);
@@ -1180,6 +1286,7 @@ function SearchSettings({ onError }: { onError: (e: string) => void }) {
           >
             Re-index folders
           </Button>
+          <ClearIndex onDone={refresh} />
         </div>
       </div>
       <Toggle
