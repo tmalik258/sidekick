@@ -4,17 +4,20 @@
 //! emitting, so pausing (FR-SET-01) and per-sensor switches (FR-SEN-12) are
 //! enforced in one place.
 
+mod browser;
 pub mod classify;
 mod claude_code;
 mod clipboard;
 mod downloads;
 mod gate;
 mod heartbeat;
+pub mod http;
 mod idle;
 mod ports;
 mod system;
 mod window;
 
+pub use browser::{BrowserBridge, BrowserSensor};
 pub use claude_code::ClaudeCodeSensor;
 pub use clipboard::ClipboardSensor;
 pub use downloads::DownloadsSensor;

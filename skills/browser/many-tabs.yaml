@@ -1,0 +1,16 @@
+id: browser.many-tabs
+name: Too many tabs
+description: When more than 25 tabs are open, offer to close duplicates or save them all as bookmarks (FR-BRW-04). Needs the Sidekick browser extension.
+priority: 40
+cooldown_secs: 1800
+trigger:
+  event: browser.many_tabs
+suggestion:
+  title: "{{count}} tabs open"
+  detail: "{{duplicates}} of them are duplicates."
+  options:
+    - label: Close duplicates
+      action: browser_close_duplicates
+      when: { duplicates: { range: [1, 100000] } }
+    - label: Save all to bookmarks
+      action: browser_save_session

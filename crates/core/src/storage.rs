@@ -39,7 +39,24 @@ const MIGRATIONS: &[&str] = &[
     // Undo for actions that created a file (FR-ACT-04).
     "ALTER TABLE actions ADD COLUMN undo_path TEXT;
     ALTER TABLE actions ADD COLUMN undone INTEGER NOT NULL DEFAULT 0;",
+    // Time per app and project, per local day (FR-SYS-06). Local only.
+    "CREATE TABLE app_time (
+        day TEXT NOT NULL,
+        app TEXT NOT NULL,
+        project TEXT NOT NULL DEFAULT '',
+        secs INTEGER NOT NULL,
+        PRIMARY KEY (day, app, project)
+    );",
 ];
+
+/// Seconds spent in one app (and project, when known) on one day.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppTime {
+    pub app: String,
+    pub project: String,
+    pub secs: i64,
+}
 
 /// One entry of the action log, newest first in [`Storage::recent_actions`].
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -227,6 +244,43 @@ impl Storage {
         Ok(rows.next().transpose()?)
     }
 
+    pub fn add_time(
+        &self,
+        day: &str,
+        app: &str,
+        project: &str,
+        secs: i64,
+    ) -> Result<(), StorageError> {
+        if secs <= 0 {
+            return Ok(());
+        }
+        self.conn.execute(
+            "INSERT INTO app_time (day, app, project, secs) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (day, app, project) DO UPDATE SET secs = secs + excluded.secs",
+            params![day, app, project, secs],
+        )?;
+        Ok(())
+    }
+
+    /// Time for one day, largest first.
+    pub fn time_for_day(&self, day: &str) -> Result<Vec<AppTime>, StorageError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT app, project, secs FROM app_time WHERE day = ?1 ORDER BY secs DESC")?;
+        let rows = stmt.query_map([day], |r| {
+            Ok(AppTime {
+                app: r.get(0)?,
+                project: r.get(1)?,
+                secs: r.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn clear_time(&self) -> Result<usize, StorageError> {
+        Ok(self.conn.execute("DELETE FROM app_time", [])?)
+    }
+
     pub fn mark_undone(&self, id: i64) -> Result<(), StorageError> {
         self.conn
             .execute("UPDATE actions SET undone = 1 WHERE id = ?1", [id])?;
@@ -358,6 +412,28 @@ mod tests {
         assert_eq!(counts["Chrome"], 1);
         assert!(s.choice_counts("dev:8000").unwrap().is_empty());
         assert_eq!(s.clear_choices().unwrap(), 2);
+    }
+
+    #[test]
+    fn adds_up_time_per_day_app_and_project() {
+        let s = Storage::open_in_memory().unwrap();
+        s.add_time("2026-10-01", "Code", "sidekick", 60).unwrap();
+        s.add_time("2026-10-01", "Code", "sidekick", 90).unwrap();
+        s.add_time("2026-10-01", "Chrome", "", 30).unwrap();
+        s.add_time("2026-10-02", "Code", "sidekick", 5).unwrap();
+        s.add_time("2026-10-01", "Code", "sidekick", 0).unwrap();
+        let day = s.time_for_day("2026-10-01").unwrap();
+        assert_eq!(
+            day[0],
+            AppTime {
+                app: "Code".into(),
+                project: "sidekick".into(),
+                secs: 150
+            }
+        );
+        assert_eq!(day[1].secs, 30);
+        assert_eq!(day.len(), 2);
+        assert_eq!(s.clear_time().unwrap(), 3);
     }
 
     #[test]
