@@ -184,6 +184,20 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     pipeline::start(app);
     timetrack::start(app);
     voice::refresh(app);
+    if !settings_onboarded(app) {
+        // Give the island a moment to load before it grows into the welcome.
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            ask::open(
+                &app,
+                ask::Open {
+                    view: Some("welcome"),
+                    ..Default::default()
+                },
+            );
+        });
+    }
     brief::start(app, data_dir.join("last-brief"), repos.roots.clone());
     search::reindex_folders(app);
     search::start_embedder(app);
@@ -222,4 +236,8 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     }
     log::info!("Sidekick started");
     Ok(())
+}
+
+fn settings_onboarded(app: &tauri::AppHandle) -> bool {
+    state::lock(&app.state::<AppState>().settings).onboarded
 }

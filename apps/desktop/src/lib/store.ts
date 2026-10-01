@@ -41,7 +41,7 @@ interface SidekickState {
 
 export interface AskState {
   /** Ask (commands and chat) or Settings. */
-  view: "ask" | "settings";
+  view: "ask" | "settings" | "welcome";
   context: AskContext;
   /** Text to start the input with. */
   prompt: string;
@@ -198,7 +198,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       }
       useSidekick.setState({
         ask: {
-          view: open.view === "settings" ? "settings" : "ask",
+          view: open.view ?? "ask",
           context: open.context,
           prompt: open.ask ? "" : (open.prompt ?? ""),
           seq,

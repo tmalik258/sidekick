@@ -62,6 +62,8 @@ pub struct Settings {
     pub voice: VoiceSettings,
     pub calendar: CalendarSettings,
     pub semantic_search: SemanticSearch,
+    /// The first-run welcome was finished or skipped.
+    pub onboarded: bool,
 }
 
 /// Search by meaning with an embedding model on this PC (FR-RAG-03).
@@ -305,6 +307,7 @@ impl Default for Settings {
             voice: VoiceSettings::default(),
             calendar: CalendarSettings::default(),
             semantic_search: SemanticSearch::default(),
+            onboarded: false,
         }
     }
 }

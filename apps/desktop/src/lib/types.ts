@@ -44,6 +44,7 @@ export interface Settings {
   voice: VoiceSettings;
   calendar: { feeds: string[]; remindMinutes: number };
   semanticSearch: { enabled: boolean; model: string };
+  onboarded: boolean;
 }
 
 export interface CalendarToday {
@@ -149,7 +150,7 @@ export interface AskOpen {
   /** Text of the web page the question is about. */
   page: string | null;
   /** Which island panel to show. */
-  view?: "ask" | "settings";
+  view?: "ask" | "settings" | "welcome";
 }
 
 export interface SearchHit {
@@ -248,6 +249,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   calendar: { feeds: [], remindMinutes: 5 },
   semanticSearch: { enabled: true, model: "nomic-embed-text" },
+  onboarded: false,
   voice: { enabled: false, wakeWord: true, speakAnswers: true, voice: "af_bella", speed: 1 },
 };
 
