@@ -127,13 +127,13 @@ impl Capabilities {
 }
 
 /// The UB Mannheim installer does not add Tesseract to PATH.
+#[cfg(windows)]
 fn find_tesseract() -> Option<PathBuf> {
-    #[cfg(windows)]
-    {
-        let p = env_path("ProgramFiles", r"Tesseract-OCR\tesseract.exe")?;
-        return p.is_file().then_some(p);
-    }
-    #[cfg(not(windows))]
+    env_path("ProgramFiles", r"Tesseract-OCR\tesseract.exe").filter(|p| p.is_file())
+}
+
+#[cfg(not(windows))]
+fn find_tesseract() -> Option<PathBuf> {
     None
 }
 
