@@ -16,4 +16,4 @@ pub use bus::EventBus;
 pub use event::{Context, Event, Sensitivity};
 pub use mascot::{Cue, MascotEvent, MascotMachine, MascotState, Transition};
 pub use settings::{AI_PROVIDERS, AiSettings, Pause, Settings, SkillPref};
-pub use storage::{ActionRecord, AppTime, Storage, StoredEvent};
+pub use storage::{ActionRecord, AppTime, Habit, SearchHit, Storage, StoredEvent};

@@ -14,6 +14,8 @@ Spec: the SRS linked in README.md. Requirement IDs (FR-UI-01, NFR-SEC-05, ...) i
 - Destructive or outward-facing actions can never run at Auto trust level.
 - All AI goes through `crates/ai` (`AiProvider` for chat, `Decider` for T1). Prompts reach Claude Code on stdin, never as arguments. T1 decisions only use SemIf or a local model, never a cloud provider. A clipboard classified as a secret is never attached to a prompt.
 - The Claude Code hook endpoint binds to 127.0.0.1 only. Sidekick never edits `~/.claude/settings.json` and never reads transcripts or credentials.
+- Localhost endpoints (hooks 47821, browser 47822, MCP 47823) bind to 127.0.0.1, refuse requests with a web page origin, and the browser and MCP ones need their token. Use `open_folder`, never `open_path`, for paths from outside Sidekick.
+- MCP search only returns shareable sources (`search::SHAREABLE`): never clipboard or page text.
 - Undo only touches paths an action itself produced (`undo::UNDOABLE`), sends them to the Recycle Bin, and only within 24 hours.
 
 ## Frontend rules

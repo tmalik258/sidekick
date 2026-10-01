@@ -38,6 +38,7 @@ export interface Settings {
   skills?: Record<string, { enabled?: boolean | null; auto?: boolean | null }>;
   paletteHotkey: string;
   codeFolders: string[];
+  indexFolders: string[];
   endOfDayHour: number;
   ai: AiSettings;
 }
@@ -108,6 +109,19 @@ export interface AskOpen {
   page: string | null;
 }
 
+export interface SearchHit {
+  source: string;
+  reference: string;
+  title: string;
+  snippet: string;
+  ts: string;
+}
+
+export interface McpInfo {
+  url: string;
+  token: string;
+}
+
 export interface AppTime {
   app: string;
   project: string;
@@ -171,6 +185,7 @@ export const DEFAULT_SETTINGS: Settings = {
   soundKit: "01",
   paletteHotkey: "Alt+Space",
   codeFolders: [],
+  indexFolders: [],
   endOfDayHour: 18,
   ai: {
     order: ["claude_code", "anthropic", "local"],

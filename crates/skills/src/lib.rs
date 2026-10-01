@@ -109,6 +109,10 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/dev/unsaved-work.yaml"),
     ),
     (
+        "system/day-summary.yaml",
+        include_str!("../../../skills/system/day-summary.yaml"),
+    ),
+    (
         "system/focus.yaml",
         include_str!("../../../skills/system/focus.yaml"),
     ),

@@ -47,7 +47,58 @@ const MIGRATIONS: &[&str] = &[
         secs INTEGER NOT NULL,
         PRIMARY KEY (day, app, project)
     );",
+    // Keyword search over history and chosen folders (FR-RAG, P4 part 1).
+    // `ref` is the path, URL or id a result opens.
+    "CREATE VIRTUAL TABLE search USING fts5(
+        source UNINDEXED, ref UNINDEXED, title, body, ts UNINDEXED,
+        tokenize = 'porter unicode61'
+    );",
+    // How the user treats each skill (FR-ACT-07).
+    "CREATE TABLE skill_habits (
+        skill_id TEXT PRIMARY KEY,
+        dismiss_streak INTEGER NOT NULL DEFAULT 0,
+        muted_until TEXT,
+        last_label TEXT NOT NULL DEFAULT '',
+        accept_streak INTEGER NOT NULL DEFAULT 0,
+        offered INTEGER NOT NULL DEFAULT 0
+    );",
 ];
+
+/// How the user has treated one skill lately.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Habit {
+    pub skill_id: String,
+    pub dismiss_streak: i64,
+    pub muted_until: Option<String>,
+    pub last_label: String,
+    pub accept_streak: i64,
+    /// The "do this automatically?" offer was already made.
+    pub offered: bool,
+}
+
+/// One search hit, with where it came from so it can be opened.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    pub source: String,
+    pub reference: String,
+    pub title: String,
+    /// The matching part of the text, with matches between [ and ].
+    pub snippet: String,
+    pub ts: String,
+}
+
+/// Turns what the user typed into an FTS5 query: each word is matched as a
+/// prefix, and nothing they type can be read as FTS5 syntax.
+pub fn fts_query(input: &str) -> Option<String> {
+    let words: Vec<String> = input
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .take(12)
+        .map(|w| format!("\"{}\"*", w.to_lowercase()))
+        .collect();
+    (!words.is_empty()).then(|| words.join(" "))
+}
 
 /// Seconds spent in one app (and project, when known) on one day.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -281,6 +332,106 @@ impl Storage {
         Ok(self.conn.execute("DELETE FROM app_time", [])?)
     }
 
+    pub fn habit(&self, skill_id: &str) -> Result<Habit, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT dismiss_streak, muted_until, last_label, accept_streak, offered
+             FROM skill_habits WHERE skill_id = ?1",
+        )?;
+        let mut rows = stmt.query_map([skill_id], |r| {
+            Ok(Habit {
+                skill_id: skill_id.to_owned(),
+                dismiss_streak: r.get(0)?,
+                muted_until: r.get(1)?,
+                last_label: r.get(2)?,
+                accept_streak: r.get(3)?,
+                offered: r.get(4)?,
+            })
+        })?;
+        Ok(rows.next().transpose()?.unwrap_or_else(|| Habit {
+            skill_id: skill_id.to_owned(),
+            ..Habit::default()
+        }))
+    }
+
+    pub fn save_habit(&self, h: &Habit) -> Result<(), StorageError> {
+        self.conn.execute(
+            "INSERT INTO skill_habits (skill_id, dismiss_streak, muted_until, last_label, accept_streak, offered)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT (skill_id) DO UPDATE SET dismiss_streak = excluded.dismiss_streak,
+               muted_until = excluded.muted_until, last_label = excluded.last_label,
+               accept_streak = excluded.accept_streak, offered = excluded.offered",
+            params![h.skill_id, h.dismiss_streak, h.muted_until, h.last_label, h.accept_streak, h.offered],
+        )?;
+        Ok(())
+    }
+
+    /// Adds or replaces one searchable item (same source and ref replace).
+    pub fn index(
+        &self,
+        source: &str,
+        reference: &str,
+        title: &str,
+        body: &str,
+        ts: &str,
+    ) -> Result<(), StorageError> {
+        self.conn.execute(
+            "DELETE FROM search WHERE source = ?1 AND ref = ?2",
+            params![source, reference],
+        )?;
+        self.conn.execute(
+            "INSERT INTO search (source, ref, title, body, ts) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![source, reference, title, body, ts],
+        )?;
+        Ok(())
+    }
+
+    /// Best matches first. `sources` limits where to look (empty = everywhere).
+    pub fn search(
+        &self,
+        input: &str,
+        sources: &[&str],
+        limit: u32,
+    ) -> Result<Vec<SearchHit>, StorageError> {
+        let Some(q) = fts_query(input) else {
+            return Ok(Vec::new());
+        };
+        let mut stmt = self.conn.prepare(
+            "SELECT source, ref, title, snippet(search, 3, '[', ']', ' ... ', 12), ts
+             FROM search WHERE search MATCH ?1 ORDER BY bm25(search, 0, 0, 4.0, 1.0) LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![q, limit * 3], |r| {
+            Ok(SearchHit {
+                source: r.get(0)?,
+                reference: r.get(1)?,
+                title: r.get(2)?,
+                snippet: r.get(3)?,
+                ts: r.get(4)?,
+            })
+        })?;
+        let mut hits: Vec<SearchHit> = rows.collect::<Result<_, _>>()?;
+        if !sources.is_empty() {
+            hits.retain(|h| sources.contains(&h.source.as_str()));
+        }
+        hits.truncate(limit as usize);
+        Ok(hits)
+    }
+
+    pub fn search_count(&self) -> Result<u64, StorageError> {
+        let n: i64 = self
+            .conn
+            .query_row("SELECT count(*) FROM search", [], |r| r.get(0))?;
+        Ok(n as u64)
+    }
+
+    pub fn clear_search(&self, source: Option<&str>) -> Result<usize, StorageError> {
+        Ok(match source {
+            Some(s) => self
+                .conn
+                .execute("DELETE FROM search WHERE source = ?1", [s])?,
+            None => self.conn.execute("DELETE FROM search", [])?,
+        })
+    }
+
     pub fn mark_undone(&self, id: i64) -> Result<(), StorageError> {
         self.conn
             .execute("UPDATE actions SET undone = 1 WHERE id = ?1", [id])?;
@@ -434,6 +585,69 @@ mod tests {
         assert_eq!(day[1].secs, 30);
         assert_eq!(day.len(), 2);
         assert_eq!(s.clear_time().unwrap(), 3);
+    }
+
+    #[test]
+    fn searches_by_words_and_prefixes_safely() {
+        let s = Storage::open_in_memory().unwrap();
+        s.index(
+            "file",
+            "C:/notes/acme.md",
+            "acme.md",
+            "Invoice for ACME Corp, due Friday. Rate 45 USD per hour.",
+            "t1",
+        )
+        .unwrap();
+        s.index(
+            "chat",
+            "c1",
+            "How do I free port 3000",
+            "Use netstat -ano to find the process",
+            "t2",
+        )
+        .unwrap();
+        s.index(
+            "file",
+            "C:/notes/acme.md",
+            "acme.md",
+            "Replaced: proposal draft for ACME",
+            "t3",
+        )
+        .unwrap();
+        let hits = s.search("acme", &[], 10).unwrap();
+        assert_eq!(hits.len(), 1, "same source and ref replace");
+        assert!(hits[0].snippet.contains("[ACME]"));
+        assert_eq!(
+            s.search("propos", &[], 10).unwrap().len(),
+            1,
+            "prefix match"
+        );
+        assert_eq!(
+            s.search("netstat", &["file"], 10).unwrap().len(),
+            0,
+            "source filter"
+        );
+        assert_eq!(s.search("netstat", &["chat"], 10).unwrap().len(), 1);
+        // FTS5 syntax in the input is treated as plain words.
+        assert!(s.search("\"acme\" OR body:*", &[], 10).is_ok());
+        assert!(s.search("  ", &[], 10).unwrap().is_empty());
+        assert_eq!(s.search_count().unwrap(), 2);
+        assert_eq!(s.clear_search(Some("chat")).unwrap(), 1);
+    }
+
+    #[test]
+    fn keeps_skill_habits() {
+        let s = Storage::open_in_memory().unwrap();
+        let mut h = s.habit("files.download").unwrap();
+        assert_eq!(h.dismiss_streak, 0);
+        h.dismiss_streak = 2;
+        h.last_label = "Open".into();
+        s.save_habit(&h).unwrap();
+        h.accept_streak = 4;
+        s.save_habit(&h).unwrap();
+        let back = s.habit("files.download").unwrap();
+        assert_eq!((back.dismiss_streak, back.accept_streak), (2, 4));
+        assert_eq!(back.last_label, "Open");
     }
 
     #[test]

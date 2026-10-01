@@ -4,8 +4,11 @@ mod browser;
 mod commands;
 mod decide;
 mod island;
+mod learn;
 mod mascot;
+mod mcp;
 mod pipeline;
+mod search;
 mod state;
 mod suggestions;
 mod timetrack;
@@ -84,6 +87,11 @@ pub fn run() {
             commands::browser_info,
             commands::time_today,
             commands::skill_install,
+            commands::search,
+            commands::search_status,
+            commands::search_reindex,
+            commands::open_reference,
+            commands::mcp_info,
             commands::action_undo,
         ])
         .run(tauri::generate_context!())
@@ -121,6 +129,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         hour: settings.end_of_day_hour,
     };
     let browser_token = browser::load_or_create_token(&data_dir);
+    let mcp_token = browser::load_or_create_secret(&data_dir, "mcp-token");
     let bridge = BrowserBridge::default();
 
     app.manage(AppState {
@@ -154,10 +163,13 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         tracker: Default::default(),
         browser: bridge.clone(),
         browser_token: browser_token.clone(),
+        mcp_token: mcp_token.clone(),
     });
 
     pipeline::start(app);
     timetrack::start(app);
+    search::reindex_folders(app);
+    mcp::start(app, mcp_token);
     tauri::async_runtime::spawn(async move {
         let sensors: Vec<Box<dyn Sensor>> = vec![
             Box::new(DownloadsSensor::new()),

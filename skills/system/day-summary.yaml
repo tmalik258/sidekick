@@ -1,0 +1,12 @@
+id: system.day-summary
+name: End of day summary
+description: At the end of the day, show where your time went, ready to paste into a standup or timesheet (FR-COMM-04).
+priority: 45
+cooldown_secs: 43200
+trigger:
+  event: time.day_summary
+suggestion:
+  title: "Today: {{total_human}}"
+  detail: "{{top}}"
+  options:
+    - { label: Copy for standup, action: copy_text, args: { text: "{{text}}" } }

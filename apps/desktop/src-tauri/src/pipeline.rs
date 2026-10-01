@@ -13,6 +13,7 @@ use crate::commands;
 use crate::decide;
 use crate::island;
 use crate::mascot;
+use crate::search;
 use crate::state::{AppEnv, AppState, executor, lock};
 use crate::suggestions;
 use crate::timetrack;
@@ -48,6 +49,7 @@ fn spawn_consumer(app: AppHandle) {
 
 async fn handle(app: &AppHandle, event: Event) {
     store(app, event.clone()).await;
+    search::index_event(app, &event);
 
     if event.kind == IdleSensor::IDLE || event.kind == IdleSensor::ACTIVE {
         let away = event.kind == IdleSensor::IDLE;
@@ -86,7 +88,9 @@ async fn handle(app: &AppHandle, event: Event) {
         return;
     }
 
-    if let Some(proposal) = evaluate(app, &event) {
+    if let Some(proposal) = evaluate(app, &event)
+        && !crate::learn::is_muted(app, &proposal.skill_id)
+    {
         // Ranking may ask a model, so it runs beside the event loop.
         let app = app.clone();
         tauri::async_runtime::spawn(async move {

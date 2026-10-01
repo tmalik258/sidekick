@@ -18,6 +18,9 @@ const FLUSH_EVERY: Duration = Duration::from_secs(60);
 /// Continuous editor time before Focus mode is offered.
 const FOCUS_AFTER: Duration = Duration::from_secs(20 * 60);
 pub const LONG_SESSION: &str = "focus.long_session";
+pub const DAY_SUMMARY: &str = "time.day_summary";
+/// A summary is only worth showing after this much time at the computer.
+const MIN_SUMMARY_SECS: i64 = 60 * 60;
 
 const EDITORS: &[&str] = &[
     "code.exe",
@@ -124,9 +127,57 @@ pub fn on_away(app: &AppHandle) {
 }
 
 /// Writes the running span every minute and raises a long editor session.
+fn human(secs: i64) -> String {
+    let (h, m) = (secs / 3600, (secs % 3600) / 60);
+    if h > 0 {
+        format!("{h} h {m} min")
+    } else {
+        format!("{m} min")
+    }
+}
+
+/// The day's summary event (FR-COMM-04): time per project (or app), with a
+/// plain-text version ready to paste into a standup or timesheet.
+pub fn day_summary(rows: &[sidekick_core::AppTime]) -> Option<Event> {
+    let total: i64 = rows.iter().map(|r| r.secs).sum();
+    if total < MIN_SUMMARY_SECS {
+        return None;
+    }
+    let mut by_name: Vec<(String, i64)> = Vec::new();
+    for r in rows {
+        let name = if r.project.is_empty() {
+            r.app.clone()
+        } else {
+            r.project.clone()
+        };
+        match by_name.iter_mut().find(|(n, _)| *n == name) {
+            Some((_, s)) => *s += r.secs,
+            None => by_name.push((name, r.secs)),
+        }
+    }
+    by_name.sort_by_key(|(_, s)| std::cmp::Reverse(*s));
+    let top: Vec<String> = by_name
+        .iter()
+        .take(3)
+        .map(|(n, s)| format!("{n} {}", human(*s)))
+        .collect();
+    let lines: Vec<String> = by_name
+        .iter()
+        .filter(|(_, s)| *s >= 5 * 60)
+        .map(|(n, s)| format!("- {n}: {}", human(*s)))
+        .collect();
+    let text = format!("Today ({} total)\n{}", human(total), lines.join("\n"));
+    Some(Event::new(
+        DAY_SUMMARY,
+        "time",
+        serde_json::json!({ "total_human": human(total), "top": top.join(", "), "text": text }),
+    ))
+}
+
 pub fn start(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        let mut summarized: Option<chrono::NaiveDate> = None;
         loop {
             tokio::time::sleep(FLUSH_EVERY).await;
             let now = Instant::now();
@@ -147,6 +198,18 @@ pub fn start(app: &AppHandle) {
                     }
                 }
             }
+            // Once a day, after the end-of-day hour, offer the summary.
+            let local = Local::now();
+            let eod = lock(&state.settings).end_of_day_hour;
+            if chrono::Timelike::hour(&local) >= eod && summarized != Some(local.date_naive()) {
+                summarized = Some(local.date_naive());
+                let rows = lock(&state.storage)
+                    .time_for_day(&today())
+                    .unwrap_or_default();
+                if let Some(e) = day_summary(&rows) {
+                    state.bus.publish(e);
+                }
+            }
             if let Some((name, project)) = long_session {
                 let minutes = FOCUS_AFTER.as_secs() / 60;
                 state.bus.publish(Event::new(
@@ -162,6 +225,31 @@ pub fn start(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn summarizes_the_day_by_project() {
+        let row = |app: &str, project: &str, secs| sidekick_core::AppTime {
+            app: app.into(),
+            project: project.into(),
+            secs,
+        };
+        let rows = [
+            row("Code", "sidekick", 7200),
+            row("Cursor", "sidekick", 1800),
+            row("Chrome", "", 2400),
+            row("Slack", "", 120),
+        ];
+        let e = day_summary(&rows).unwrap();
+        assert_eq!(e.payload["total_human"], "3 h 12 min");
+        assert_eq!(
+            e.payload["top"],
+            "sidekick 2 h 30 min, Chrome 40 min, Slack 2 min"
+        );
+        let text = e.payload["text"].as_str().unwrap();
+        assert!(text.contains("- sidekick: 2 h 30 min"));
+        assert!(!text.contains("Slack"), "under five minutes is left out");
+        assert!(day_summary(&[row("Code", "x", 600)]).is_none());
+    }
 
     #[test]
     fn reads_projects_from_editor_titles() {

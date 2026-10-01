@@ -20,6 +20,7 @@ import {
   formatDuration,
   isPaused,
   MASCOT_STATES,
+  type McpInfo,
   type Pause,
   PROVIDER_LABELS,
   type ProviderStatus,
@@ -200,6 +201,13 @@ export function SettingsPanel() {
         hint="The extension only talks to Sidekick on this PC. Logins are filled from your own 1Password or Bitwarden CLI and never stored or sent anywhere else."
       >
         <BrowserPairing />
+      </Section>
+
+      <Section
+        title="Search"
+        hint="Text files in these folders become searchable in Ask mode (Search my stuff) and for Claude Code through MCP. Clipboard and web pages are searchable only by you. Everything stays on this PC."
+      >
+        <SearchSettings onError={setError} />
       </Section>
 
       <Section title="Today" hint="Counted from the app in front, paused while you are away. Stored only on this PC.">
@@ -828,6 +836,8 @@ function AiSection({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
 
       <ClaudeHook />
 
+      <McpSetup />
+
       <Toggle
         label="Rank suggestion options with T1"
         hint="SemIf or the local model guesses which option you want and puts it first. Your past picks always win."
@@ -984,6 +994,91 @@ function TimeToday() {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+function SearchSettings({ onError }: { onError: (e: string) => void }) {
+  const folders = useSidekick((s) => s.settings.indexFolders);
+  const [items, setItems] = useState<number | null>(null);
+  const refresh = useCallback(() => void api.searchStatus().then((s) => setItems(s.items)), []);
+  useEffect(refresh, [refresh]);
+  return (
+    <div className="flex flex-col gap-3 text-[13px]">
+      <Field label="Folders to search" hint="Separate with ; (for example C:\\Users\\you\\notes)">
+        <TextField
+          label="Folders to search"
+          value={folders.join("; ")}
+          className="w-64"
+          onCommit={(v) =>
+            updateSettings({
+              indexFolders: v
+                .split(";")
+                .map((f) => f.trim())
+                .filter(Boolean),
+            })
+              .then(() => api.searchReindex())
+              .catch((e: unknown) => onError(String(e)))
+          }
+        />
+      </Field>
+      <div className="flex items-center justify-between">
+        <span className="text-(--muted)">{items === null ? "…" : `${items.toLocaleString()} items indexed`}</span>
+        <div className="flex gap-1.5">
+          <Button small onClick={refresh}>
+            Refresh
+          </Button>
+          <Button
+            small
+            onClick={() => {
+              void api.searchReindex();
+              setTimeout(refresh, 15_000);
+            }}
+          >
+            Re-index folders
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The command that adds Sidekick to Claude Code as an MCP server. */
+function McpSetup() {
+  const [info, setInfo] = useState<McpInfo | null>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    void api.mcpInfo().then(setInfo);
+  }, []);
+  const command = info
+    ? `claude mcp add --scope user --transport http sidekick ${info.url} --header "Authorization: Bearer ${info.token}"`
+    : "";
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard access can be refused; the text is selectable anyway.
+    }
+  };
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-(--border) p-3">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-medium">Sidekick in Claude Code (MCP)</p>
+          <p className="text-[12px] text-(--muted)">
+            Run this once in a terminal. Claude Code can then search your files and history, show notes on the island,
+            open links, and read today&apos;s time. It only works on this PC.
+          </p>
+        </div>
+        <Button small onClick={copy}>
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+      <pre className="overflow-x-auto rounded-lg bg-black/5 p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap select-all dark:bg-white/5">
+        {command || "…"}
+      </pre>
     </div>
   );
 }

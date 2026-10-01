@@ -71,6 +71,12 @@ In the browser preview, `window.sidekickMock.go("success")` switches mascot stat
 - **Undo**: files Sidekick creates (conversions, extracted folders) can be sent to the Recycle Bin from the island or Settings > History for 24 hours.
 - **Low disk or memory**: the island warns once and offers Storage settings or Task Manager.
 - **Step away** for 5 minutes and suggestions wait for you instead of expiring unseen.
+- **Browser**: load `apps/extension` unpacked in Chrome, Edge or Zen and paste the pairing code from Settings > Browser. Sign-in pages offer a fill from 1Password or Bitwarden, too many tabs offer cleanup, Upwork jobs offer a proposal draft.
+- **Screenshots** (Win+PrtScn): Copy, Copy text (with Tesseract), Show in folder.
+- **Search my stuff**: type in Ask mode and pick Search. Add folders under Settings > Search.
+- **Claude Code can use Sidekick** through MCP: copy the command from Settings > AI and run it once.
+- **End of day**: a time summary to paste into your standup, and repos with unsaved work.
+- **Learns**: three Not nows in a row quiet a skill for a day; five identical picks offer to make it automatic.
 
 ## AI setup
 

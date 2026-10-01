@@ -68,6 +68,8 @@ pub struct AppState {
     pub browser: sidekick_sensors::BrowserBridge,
     /// The pairing code the extension must send.
     pub browser_token: String,
+    /// Bearer token for the MCP server.
+    pub mcp_token: String,
     /// The island is in Ask mode (input, commands, chat).
     pub ask_open: AtomicBool,
     /// The next success has buttons (Undo, Show in folder); hold it longer.

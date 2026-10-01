@@ -167,6 +167,26 @@ commands.ask_open = (a) =>
     page: null,
   });
 commands.skill_install = () => "Screenshots";
+commands.search = (a) => [
+  {
+    source: "file",
+    reference: "C:/Users/you/notes/acme.md",
+    title: "acme.md",
+    snippet: `Invoice for [${a.query}] Corp, due Friday ... rate 45 USD per hour`,
+    ts: "2026-10-01T09:00:00Z",
+  },
+  {
+    source: "chat",
+    reference: "c1",
+    title: "How do I free port 3000",
+    snippet: `Use netstat -ano to find the [${a.query}] process`,
+    ts: "2026-10-01T10:00:00Z",
+  },
+];
+commands.search_status = () => ({ items: 1284 });
+commands.search_reindex = () => undefined;
+commands.open_reference = () => undefined;
+commands.mcp_info = () => ({ url: "http://127.0.0.1:47823/mcp", token: "browser-preview-mcp-token" });
 commands.time_today = () => [
   { app: "Visual Studio Code", project: "sidekick", secs: 9420 },
   { app: "Google Chrome", project: "", secs: 4310 },

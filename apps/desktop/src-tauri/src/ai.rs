@@ -150,6 +150,7 @@ system.memory_high: percent, process, process_mb
 focus.long_session: app, project, minutes
 file.screenshot: path, dir, name, ext, kind, size
 dev.unsaved_work: count, names, first, first_path, changed, unpushed
+time.day_summary: total_human, top, text
 user.idle / user.active: idle_secs / away_secs";
 
 const SKILL_SYSTEM: &str = "You write skills for Sidekick, a desktop assistant on Windows. \
@@ -258,6 +259,11 @@ pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach,
     lock(&app.state::<AppState>().chats).insert(id.clone(), cancel.clone());
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        let question = messages
+            .iter()
+            .rev()
+            .find(|m| m.role == sidekick_ai::Role::User)
+            .map(|m| m.content.clone());
         let req = ChatRequest {
             system: system_prompt(&app, &attach),
             messages,
@@ -278,6 +284,9 @@ pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach,
         drop(sink);
         let _ = forward.await;
         lock(&app.state::<AppState>().chats).remove(&id);
+        if let (Ok(answer), Some(q)) = (&result, &question) {
+            crate::search::index_chat(&app, &id, q, &answer.text);
+        }
         let done = match result {
             Ok(answer) => Done {
                 id,

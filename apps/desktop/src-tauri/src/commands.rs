@@ -377,3 +377,62 @@ pub fn skill_install(state: State<'_, AppState>, yaml: String) -> CmdResult<Stri
     log::info!("installed skill {} at {}", skill.id, path.display());
     Ok(skill.name)
 }
+
+#[tauri::command]
+pub fn search(app: AppHandle, query: String) -> Vec<sidekick_core::SearchHit> {
+    crate::search::search(&app, &query, &[], 30)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchStatus {
+    items: u64,
+}
+
+#[tauri::command]
+pub fn search_status(state: State<'_, AppState>) -> CmdResult<SearchStatus> {
+    Ok(SearchStatus {
+        items: lock(&state.storage)
+            .search_count()
+            .map_err(|e| e.to_string())?,
+    })
+}
+
+#[tauri::command]
+pub fn search_reindex(app: AppHandle) {
+    crate::search::reindex_folders(&app);
+}
+
+/// Opens a search result: files are shown in Explorer, web pages open in the
+/// default browser; nothing else is opened.
+#[tauri::command]
+pub async fn open_reference(app: AppHandle, source: String, reference: String) -> CmdResult<()> {
+    let exec = executor(&app.state::<AppState>());
+    let (action, args) = match source.as_str() {
+        "file" | "download" | "screenshot" => {
+            ("reveal_path", serde_json::json!({ "path": reference }))
+        }
+        "page" => ("open_url", serde_json::json!({ "url": reference })),
+        _ => return Ok(()),
+    };
+    exec.run(action, &args)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpInfo {
+    url: String,
+    token: String,
+}
+
+/// How to add Sidekick to Claude Code as an MCP server.
+#[tauri::command]
+pub fn mcp_info(state: State<'_, AppState>) -> McpInfo {
+    McpInfo {
+        url: format!("http://127.0.0.1:{}/mcp", crate::mcp::PORT),
+        token: state.mcp_token.clone(),
+    }
+}

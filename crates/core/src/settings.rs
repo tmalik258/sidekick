@@ -56,6 +56,8 @@ pub struct Settings {
     pub code_folders: Vec<String>,
     /// Local hour after which unsaved work is reported.
     pub end_of_day_hour: u32,
+    /// Folders whose text files are searchable (opt in, FR-RAG-05).
+    pub index_folders: Vec<String>,
     pub ai: AiSettings,
 }
 
@@ -231,6 +233,7 @@ impl Default for Settings {
             palette_hotkey: DEFAULT_PALETTE_HOTKEY.into(),
             code_folders: Vec::new(),
             end_of_day_hour: 18,
+            index_folders: Vec::new(),
             ai: AiSettings::default(),
         }
     }
@@ -295,6 +298,7 @@ impl Settings {
         self.ai = self.ai.sanitized();
         self.end_of_day_hour = self.end_of_day_hour.min(23);
         self.code_folders.retain(|f| !f.trim().is_empty());
+        self.index_folders.retain(|f| !f.trim().is_empty());
         self
     }
 

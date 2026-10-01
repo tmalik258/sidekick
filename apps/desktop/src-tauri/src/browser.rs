@@ -9,10 +9,14 @@ use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, executor};
 
-/// Reads the pairing code, creating a random one on first run. It lives in
+/// Reads a pairing code, creating a random one on first run. It lives in
 /// the app's data folder, readable only by this user.
 pub fn load_or_create_token(dir: &Path) -> String {
-    let path = dir.join("browser-token");
+    load_or_create_secret(dir, "browser-token")
+}
+
+pub fn load_or_create_secret(dir: &Path, name: &str) -> String {
+    let path = dir.join(name);
     if let Ok(t) = std::fs::read_to_string(&path) {
         let t = t.trim().to_owned();
         if t.len() >= 32 {

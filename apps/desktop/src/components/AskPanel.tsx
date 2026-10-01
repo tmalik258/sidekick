@@ -10,7 +10,7 @@ import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useStat
 import { api } from "@/lib/bridge";
 import { Markdown } from "@/lib/markdown";
 import { cancelChat, newChat, sendChat, setAsk, startSkill, updateSettings, useSidekick } from "@/lib/store";
-import { isPaused, PROVIDER_LABELS, type ProviderStatus, type Turn } from "@/lib/types";
+import { isPaused, PROVIDER_LABELS, type ProviderStatus, type SearchHit, type Turn } from "@/lib/types";
 import { Icon, type IconName } from "./Icon";
 
 interface Command {
@@ -36,6 +36,7 @@ export function AskPanel() {
   const [text, setText] = useState(ask?.prompt ?? "");
   const [selected, setSelected] = useState(0);
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
+  const [hits, setHits] = useState<{ query: string; items: SearchHit[] } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const seq = ask?.seq;
@@ -94,10 +95,11 @@ export function AskPanel() {
   const streaming = chatId !== null;
   const asking = text.trim().length > 0;
   // With a conversation going, the body shows it; commands show only while typing.
-  const showChat = turns.length > 0 && !asking;
-  // While typing, the first two rows are "Ask" and "Teach a skill".
-  const lead = asking ? 2 : 0;
-  const rows = asking ? commands.length + lead : showChat ? 0 : commands.length;
+  const showHits = hits !== null && !asking;
+  const showChat = turns.length > 0 && !asking && !showHits;
+  // While typing, the first rows are "Ask", "Search" and "Teach a skill".
+  const lead = asking ? 3 : 0;
+  const rows = asking ? commands.length + lead : showChat || showHits ? 0 : commands.length;
   const best = providers.find((p) => p.available && (!ask.localOnly || p.local) && p.id !== "semif");
 
   const runRow = (i: number) => {
@@ -107,6 +109,12 @@ export function AskPanel() {
       return;
     }
     if (asking && i === 1) {
+      const query = text.trim();
+      void api.search(query).then((items) => setHits({ query, items }));
+      setText("");
+      return;
+    }
+    if (asking && i === 2) {
       startSkill(text.trim());
       setText("");
       return;
@@ -132,6 +140,7 @@ export function AskPanel() {
       e.preventDefault();
       if (streaming) cancelChat();
       else if (text) setText("");
+      else if (hits) setHits(null);
       else void api.askClose();
     }
   };
@@ -157,7 +166,17 @@ export function AskPanel() {
       <ContextChips />
 
       <AnimatePresence initial={false} mode="popLayout">
-        {showChat ? (
+        {showHits && hits ? (
+          <motion.div
+            key="hits"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.08 } }}
+            className="ask-scroll mt-2 max-h-[330px] overflow-y-auto pr-1"
+          >
+            <Results query={hits.query} items={hits.items} />
+          </motion.div>
+        ) : showChat ? (
           <motion.div
             key="chat"
             ref={scrollRef}
@@ -190,6 +209,16 @@ export function AskPanel() {
               )}
               {asking && (
                 <Row active={selected === 1} onHover={() => setSelected(1)} onClick={() => runRow(1)}>
+                  <span className="grid size-6 place-items-center rounded-full bg-white/[0.12] text-white/85">
+                    <Icon name="ask" size={13} />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">
+                    Search my stuff for <span className="text-[rgb(235_235_245/0.6)]">{text.trim()}</span>
+                  </span>
+                </Row>
+              )}
+              {asking && (
+                <Row active={selected === 2} onHover={() => setSelected(2)} onClick={() => runRow(2)}>
                   <span className="grid size-6 place-items-center rounded-full bg-white/[0.12] text-white/85">
                     <Icon name="settings" size={13} />
                   </span>
@@ -341,6 +370,72 @@ function Row({
         {children}
       </button>
     </li>
+  );
+}
+
+const SOURCE_LABELS: Record<string, string> = {
+  file: "File",
+  download: "Download",
+  screenshot: "Screenshot",
+  clipboard: "Copied",
+  page: "Web page",
+  claude: "Claude Code",
+  action: "Action",
+  chat: "Ask",
+};
+
+/** Matches come back between [ and ]; show them bold. */
+function Snippet({ text }: { text: string }) {
+  const parts = text.split(/(\[[^\]]*\])/g);
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.startsWith("[") && p.endsWith("]") ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: parts have no identity beyond order
+          <strong key={i} className="font-semibold text-white">
+            {p.slice(1, -1)}
+          </strong>
+        ) : (
+          p
+        ),
+      )}
+    </>
+  );
+}
+
+function Results({ query, items }: { query: string; items: SearchHit[] }) {
+  if (items.length === 0)
+    return (
+      <p className="py-2 text-[13px] text-[rgb(235_235_245/0.6)]">
+        Nothing found for &quot;{query}&quot;. Add folders under Settings &gt; Search to find your files.
+      </p>
+    );
+  return (
+    <ul className="-mx-1.5 py-1">
+      {items.map((h) => {
+        const opens = ["file", "download", "screenshot", "page"].includes(h.source);
+        return (
+          <li key={`${h.source}|${h.reference}`}>
+            <button
+              type="button"
+              disabled={!opens}
+              onClick={() => void api.openReference(h.source, h.reference)}
+              className="flex w-full flex-col gap-0.5 rounded-[14px] px-1.5 py-1.5 text-left transition-colors duration-100 enabled:hover:bg-white/[0.1]"
+            >
+              <span className="flex items-center gap-2 text-[13px]">
+                <span className="rounded-full bg-white/[0.12] px-1.5 py-px text-[10.5px] text-white/70">
+                  {SOURCE_LABELS[h.source] ?? h.source}
+                </span>
+                <span className="truncate text-white/90">{h.title || h.reference}</span>
+              </span>
+              <span className="line-clamp-2 text-[12px] text-[rgb(235_235_245/0.55)]">
+                <Snippet text={h.snippet} />
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
