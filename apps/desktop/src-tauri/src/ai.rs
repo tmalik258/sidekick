@@ -145,7 +145,7 @@ pub struct Attach {
 /// What Sidekick can notice, for AI writing skills. Keep in sync with the
 /// sensors.
 const EVENT_CATALOG: &str = "\
-file.download_completed: path, dir, name, ext, kind (image|video|audio|document|archive|installer|code|other), size, size_human, stem
+file.download_completed: path, dir, name, ext, kind (image|video|audio|document|archive|installer|code|other), size, size_human, stem, duplicate_of, duplicate_name, signature (installers)
 port.listening / port.closed: port, pid, process (lowercase, no .exe), address, url
 clipboard.changed: kind (url|json|color|email|path|stack_trace|code|text|secret), preview, text (never for secret)
 window.focused: app, exe, title, pid
@@ -162,6 +162,7 @@ day.morning_brief: headline, text, reviews, first_url, first_title
 calendar.meeting_soon: title, minutes, start, join_url, location, attendees, details
 calendar.meeting_ended: title, start, start_utc, attendees
 dev.repo_opened: name, path, branch, behind, ahead, changed, env_missing, docker_needed, docker_running
+files.downloads_old: count, mb, dir
 user.idle / user.active: idle_secs / away_secs";
 
 const SKILL_SYSTEM: &str = "You write skills for Sidekick, a desktop assistant on Windows. \

@@ -296,6 +296,14 @@ async fn execute(
                 path: None,
             });
         }
+        "summarize_file" => {
+            return crate::files::summarize(app, arg("path").unwrap_or_default())
+                .await
+                .map(|message| sidekick_actions::Outcome {
+                    message,
+                    path: None,
+                });
+        }
         "fathom_followup" => {
             return crate::fathom::follow_up(
                 app,

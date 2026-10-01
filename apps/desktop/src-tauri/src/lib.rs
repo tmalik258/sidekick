@@ -5,6 +5,7 @@ mod browser;
 mod commands;
 mod decide;
 mod fathom;
+mod files;
 mod island;
 mod learn;
 mod mascot;
@@ -208,6 +209,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     search::reindex_folders(app);
     search::start_embedder(app);
     updates::start(app);
+    files::start_weekly_check(app);
     mcp::start(app, mcp_token);
     tauri::async_runtime::spawn(async move {
         let sensors: Vec<Box<dyn Sensor>> = vec![

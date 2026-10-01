@@ -139,7 +139,20 @@ impl Sensor for DownloadsSensor {
                                 done.push(path.clone());
                                 if meta.len() > 0 && !reported.contains_key(path) && gate.allows(id) {
                                     reported.insert(path.clone(), now);
-                                    bus.publish(file_event(id, kind, path, meta.len()));
+                                    let event = file_event(id, kind, path, meta.len());
+                                    if kind == Self::EVENT_KIND {
+                                        // Hashing and signature checks take a moment.
+                                        let (bus, path) = (bus.clone(), path.clone());
+                                        tokio::spawn(async move {
+                                            let event = tokio::task::spawn_blocking(move || enrich(event, &path))
+                                                .await;
+                                            if let Ok(e) = event {
+                                                bus.publish(e);
+                                            }
+                                        });
+                                    } else {
+                                        bus.publish(event);
+                                    }
                                 }
                             }
                         }
@@ -151,6 +164,22 @@ impl Sensor for DownloadsSensor {
             }
         })
     }
+}
+
+/// Adds `duplicate_of` and, for installers, `signature`.
+fn enrich(mut event: Event, path: &Path) -> Event {
+    if let Some(dup) = crate::file_info::duplicate_of(path) {
+        event.payload["duplicate_of"] = dup.display().to_string().into();
+        event.payload["duplicate_name"] = dup
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+            .into();
+    }
+    if event.payload["kind"] == "installer" {
+        event.payload["signature"] = crate::file_info::signature(path).into();
+    }
+    event
 }
 
 fn file_event(id: &'static str, kind: &'static str, path: &Path, size: u64) -> Event {

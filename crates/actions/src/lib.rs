@@ -5,6 +5,7 @@
 //! string built from event data (NFR-SEC-06).
 
 mod capabilities;
+pub mod cleanup;
 mod convert;
 pub mod dev;
 pub mod passwords;
@@ -190,6 +191,10 @@ impl Executor {
             }
             "create_env" => dev::create_env(&existing_path(args)?),
             "start_docker" => dev::start_docker(),
+            "trash_download" => cleanup::trash_download(&existing_path(args)?),
+            "clean_downloads" => tokio::task::spawn_blocking(cleanup::clean_downloads)
+                .await
+                .map_err(fail)?,
             "launch_project" => dev::launch(&existing_path(args)?, self.caps.code.as_deref()),
             "extract_text" => {
                 let path = existing_path(args)?;

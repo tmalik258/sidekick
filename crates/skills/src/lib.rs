@@ -109,6 +109,18 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/browser/long-read.yaml"),
     ),
     (
+        "files/duplicate.yaml",
+        include_str!("../../../skills/files/duplicate.yaml"),
+    ),
+    (
+        "files/summarize.yaml",
+        include_str!("../../../skills/files/summarize.yaml"),
+    ),
+    (
+        "files/downloads-cleanup.yaml",
+        include_str!("../../../skills/files/downloads-cleanup.yaml"),
+    ),
+    (
         "files/screenshot.yaml",
         include_str!("../../../skills/files/screenshot.yaml"),
     ),
@@ -179,6 +191,9 @@ pub const ACTIONS: &[&str] = &[
     "create_env",
     "start_docker",
     "launch_project",
+    "trash_download",
+    "clean_downloads",
+    "summarize_file",
     "browser_fill",
     "browser_close_duplicates",
     "browser_save_session",

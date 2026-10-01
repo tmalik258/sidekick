@@ -5061,6 +5061,7 @@ version = "0.1.0"
 dependencies = [
  "arboard",
  "clipboard-win",
+ "dirs 7.0.0",
  "listeners",
  "log",
  "open",
@@ -5070,6 +5071,7 @@ dependencies = [
  "sysinfo",
  "thiserror 2.0.21",
  "tokio",
+ "trash",
  "ulid",
  "which 8.0.6",
 ]
@@ -5111,6 +5113,7 @@ version = "0.1.0"
 dependencies = [
  "arboard",
  "chrono",
+ "dirs 7.0.0",
  "getrandom 0.3.4",
  "log",
  "reqwest 0.12.28",
@@ -5152,6 +5155,7 @@ dependencies = [
  "rrule",
  "serde",
  "serde_json",
+ "sha2",
  "sidekick-core",
  "sysinfo",
  "tokio",
