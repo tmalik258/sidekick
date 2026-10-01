@@ -4,6 +4,7 @@ mod brief;
 mod browser;
 mod commands;
 mod decide;
+mod fathom;
 mod island;
 mod learn;
 mod mascot;
@@ -73,6 +74,7 @@ pub fn run() {
             commands::suggestion_dismiss,
             commands::events_recent,
             commands::open_settings,
+            commands::calendar_today,
             commands::voice_status,
             commands::voice_download,
             commands::voice_cancel_download,
@@ -140,6 +142,8 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     let browser_token = browser::load_or_create_token(&data_dir);
     let mcp_token = browser::load_or_create_secret(&data_dir, "mcp-token");
     let bridge = BrowserBridge::default();
+    let calendar = sidekick_sensors::Calendar::default();
+    commands::sync_calendar(&calendar, &settings);
 
     app.manage(AppState {
         settings: Mutex::new(settings),
@@ -163,6 +167,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         chats: Mutex::default(),
         ai_workdir: data_dir.join("claude-workspace"),
         voice: voice::Voice::new(data_dir.join("voice-models")),
+        calendar: calendar.clone(),
         scratch_dir,
         decisions: Mutex::default(),
         ai_ready: Default::default(),
@@ -198,6 +203,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
                 bridge,
             }),
             Box::new(SystemSensor),
+            Box::new(sidekick_sensors::CalendarSensor { state: calendar }),
             Box::new(repos),
             Box::new(IdleSensor::default()),
             Box::new(HeartbeatSensor::new(HEARTBEAT_INTERVAL)),

@@ -12,7 +12,8 @@ use sidekick_sensors::{GateState, SensorGateHandle};
 use sidekick_skills::{Engine, Env, Proposal, Skill, Trust};
 
 /// Every sensor the app can run, in the order shown in settings.
-pub const SENSOR_IDS: [&str; 11] = [
+pub const SENSOR_IDS: [&str; 12] = [
+    "calendar",
     "downloads",
     "screenshots",
     "ports",
@@ -79,6 +80,7 @@ pub struct AppState {
     /// T1 picks per skill and app, from earlier decisions.
     pub decisions: Mutex<crate::decide::Cache>,
     pub voice: crate::voice::Voice,
+    pub calendar: sidekick_sensors::Calendar,
 }
 
 /// The interactive part of the island window, in logical pixels relative to

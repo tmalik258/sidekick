@@ -113,6 +113,14 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/system/day-summary.yaml"),
     ),
     (
+        "calendar/meeting-soon.yaml",
+        include_str!("../../../skills/calendar/meeting-soon.yaml"),
+    ),
+    (
+        "calendar/follow-up.yaml",
+        include_str!("../../../skills/calendar/follow-up.yaml"),
+    ),
+    (
         "system/morning-brief.yaml",
         include_str!("../../../skills/system/morning-brief.yaml"),
     ),
@@ -141,6 +149,7 @@ pub const ACTIONS: &[&str] = &[
     "clear_clipboard_later",
     "format_json_clipboard",
     "ask_ai",
+    "fathom_followup",
     "browser_fill",
     "browser_close_duplicates",
     "browser_save_session",

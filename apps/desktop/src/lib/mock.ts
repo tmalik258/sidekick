@@ -183,6 +183,15 @@ const voiceStatus = () => ({
   ],
 });
 commands.voice_status = voiceStatus;
+commands.calendar_today = () => ({
+  meetings: settings.calendar.feeds.length
+    ? [
+        { title: "Standup", start: "10:00", end: "10:15", joinUrl: "https://meet.google.com/abc-defg-hij" },
+        { title: "Design review", start: "15:00", end: "15:45", joinUrl: null },
+      ]
+    : [],
+  error: null,
+});
 commands.voice_download = () => {
   let done = 0;
   const total = 178_142_528;

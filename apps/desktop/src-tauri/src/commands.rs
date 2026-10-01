@@ -287,6 +287,9 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
         _ => {}
     }
 
+    if previous.calendar != next.calendar {
+        sync_calendar(&state.calendar, &next);
+    }
     if previous.voice != next.voice || previous.pause != next.pause {
         crate::voice::refresh(app);
     }
@@ -469,4 +472,36 @@ pub fn voice_stop(app: AppHandle) {
 #[tauri::command]
 pub fn voice_test(app: AppHandle) -> CmdResult<()> {
     crate::voice::test(&app)
+}
+
+/// Hands the calendar links and reminder lead time to the calendar sensor.
+pub fn sync_calendar(calendar: &sidekick_sensors::Calendar, settings: &Settings) {
+    let mut c = calendar
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    c.feeds = settings.calendar.feeds.clone();
+    c.remind_minutes = i64::from(settings.calendar.remind_minutes);
+}
+
+/// Today's meetings for Settings > Today.
+#[tauri::command]
+pub fn calendar_today(app: AppHandle) -> serde_json::Value {
+    let state = app.state::<AppState>();
+    let c = state
+        .calendar
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let today = chrono::Local::now().date_naive();
+    let meetings: Vec<serde_json::Value> = sidekick_sensors::calendar::on_day(&c.meetings, today)
+        .iter()
+        .map(|m| {
+            serde_json::json!({
+                "title": m.title,
+                "start": m.start.with_timezone(&chrono::Local).format("%H:%M").to_string(),
+                "end": m.end.with_timezone(&chrono::Local).format("%H:%M").to_string(),
+                "joinUrl": m.join_url,
+            })
+        })
+        .collect();
+    serde_json::json!({ "meetings": meetings, "error": c.error })
 }

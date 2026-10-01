@@ -13,6 +13,7 @@ import {
   type AppInfo,
   type AppTime,
   type BrowserInfo,
+  type CalendarToday,
   type CapabilityInfo,
   CLAUDE_HOOK_URL,
   CUES,
@@ -257,6 +258,12 @@ export function SettingsPanel() {
               hint="Counted from the app in front, paused while you are away. Stored only on this PC."
             >
               <TimeToday />
+            </Section>
+            <Section
+              title="Calendar"
+              hint="In Google Calendar: Settings > your calendar > Secret address in iCal format. In Outlook: Settings > Calendar > Shared calendars > Publish, then the ICS link. The link is a secret; it stays in your settings on this PC. Fathom notes need FATHOM_API_KEY in your environment."
+            >
+              <CalendarSettings onError={setError} />
             </Section>
             <Section
               title="History"
@@ -1054,6 +1061,65 @@ function TimeToday() {
         ))}
       </ul>
     </div>
+  );
+}
+
+function CalendarSettings({ onError }: { onError: (e: string) => void }) {
+  const calendar = useSidekick((s) => s.settings.calendar);
+  const [today, setToday] = useState<CalendarToday | null>(null);
+  useEffect(() => {
+    const load = () => void api.calendarToday().then(setToday);
+    load();
+    const id = setInterval(load, 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const set = (patch: Partial<typeof calendar>) =>
+    updateSettings({ calendar: { ...calendar, ...patch } }).catch((e) => onError(String(e)));
+  return (
+    <>
+      <Field label="Calendar links" hint="One or more, separated by spaces">
+        <TextField
+          value={calendar.feeds.join(" ")}
+          placeholder="https://calendar.google.com/calendar/ical/..."
+          onCommit={(v) => void set({ feeds: v.split(/\s+/).filter(Boolean) })}
+          className="w-56"
+          label="Calendar links"
+        />
+      </Field>
+      <Field label="Remind me before" hint="Minutes before a meeting">
+        <input
+          type="number"
+          min={1}
+          max={30}
+          value={calendar.remindMinutes}
+          onChange={(e) => void set({ remindMinutes: Number(e.target.value) })}
+          className="w-20 rounded-md border border-(--border) bg-transparent px-2 py-1 text-right text-[13px]"
+        />
+      </Field>
+      {today?.error && <p className="text-[12px] text-red-400">{today.error}</p>}
+      {calendar.feeds.length > 0 &&
+        (today && today.meetings.length > 0 ? (
+          <ul className="flex flex-col gap-1.5">
+            {today.meetings.map((m) => (
+              <li key={`${m.start}${m.title}`} className="flex items-center justify-between gap-3 text-[13px]">
+                <span className="min-w-0 truncate">
+                  <span className="text-(--muted) tabular-nums">
+                    {m.start} to {m.end}
+                  </span>{" "}
+                  {m.title}
+                </span>
+                {m.joinUrl && (
+                  <Button small onClick={() => void api.openReference("page", m.joinUrl ?? "")}>
+                    Join
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[12px] text-(--muted)">No more meetings today.</p>
+        ))}
+    </>
   );
 }
 

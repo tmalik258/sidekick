@@ -42,6 +42,12 @@ export interface Settings {
   endOfDayHour: number;
   ai: AiSettings;
   voice: VoiceSettings;
+  calendar: { feeds: string[]; remindMinutes: number };
+}
+
+export interface CalendarToday {
+  meetings: { title: string; start: string; end: string; joinUrl: string | null }[];
+  error: string | null;
 }
 
 export interface VoiceSettings {
@@ -239,10 +245,12 @@ export const DEFAULT_SETTINGS: Settings = {
     },
     decisions: true,
   },
+  calendar: { feeds: [], remindMinutes: 5 },
   voice: { enabled: false, wakeWord: true, speakAnswers: true, voice: "af_bella", speed: 1 },
 };
 
 export const SENSOR_IDS = [
+  { id: "calendar", label: "Calendar", hint: "Reads your calendar's private iCal link for meeting reminders." },
   { id: "downloads", label: "Downloads", hint: "Notices finished downloads the moment they land." },
   { id: "screenshots", label: "Screenshots", hint: "Notices new screenshots in Pictures\\Screenshots." },
   { id: "ports", label: "Dev servers", hint: "Notices local servers starting, checked every second." },

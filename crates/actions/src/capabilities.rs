@@ -47,6 +47,8 @@ pub struct Capabilities {
     pub bw: Option<PathBuf>,
     /// Tesseract, for text in screenshots.
     pub tesseract: Option<PathBuf>,
+    /// FATHOM_API_KEY is set, so meeting notes can be fetched.
+    pub fathom: bool,
 }
 
 impl Capabilities {
@@ -75,6 +77,7 @@ impl Capabilities {
             op: which::which("op").ok(),
             bw: which::which("bw").ok(),
             tesseract: which::which("tesseract").ok().or_else(find_tesseract),
+            fathom: std::env::var("FATHOM_API_KEY").is_ok_and(|k| !k.trim().is_empty()),
         }
     }
 
@@ -96,6 +99,7 @@ impl Capabilities {
             Some(("tool", "op")) => self.op.is_some(),
             Some(("tool", "bw")) => self.bw.is_some(),
             Some(("tool", "tesseract")) => self.tesseract.is_some(),
+            Some(("tool", "fathom")) => self.fathom,
             _ => false,
         }
     }

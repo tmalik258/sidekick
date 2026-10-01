@@ -60,6 +60,26 @@ pub struct Settings {
     pub index_folders: Vec<String>,
     pub ai: AiSettings,
     pub voice: VoiceSettings,
+    pub calendar: CalendarSettings,
+}
+
+/// Calendars read through their private iCal links (FR-COMM-02).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CalendarSettings {
+    /// Private iCal (ICS) links. They are secrets: stored only here.
+    pub feeds: Vec<String>,
+    /// Minutes before a meeting to offer Join and Prep.
+    pub remind_minutes: u32,
+}
+
+impl Default for CalendarSettings {
+    fn default() -> Self {
+        Self {
+            feeds: Vec::new(),
+            remind_minutes: 5,
+        }
+    }
 }
 
 /// Voice (FR-VOICE): off until the user turns it on and downloads the models.
@@ -264,6 +284,7 @@ impl Default for Settings {
             index_folders: Vec::new(),
             ai: AiSettings::default(),
             voice: VoiceSettings::default(),
+            calendar: CalendarSettings::default(),
         }
     }
 }
@@ -330,6 +351,14 @@ impl Settings {
         } else {
             1.0
         };
+        self.calendar.feeds = self
+            .calendar
+            .feeds
+            .iter()
+            .map(|f| f.trim().to_owned())
+            .filter(|f| f.starts_with("https://") || f.starts_with("webcal://"))
+            .collect();
+        self.calendar.remind_minutes = self.calendar.remind_minutes.clamp(1, 30);
         if self.voice.voice.trim().is_empty() {
             self.voice.voice = VoiceSettings::default().voice;
         }

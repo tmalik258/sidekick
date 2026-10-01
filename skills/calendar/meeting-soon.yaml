@@ -1,0 +1,20 @@
+id: calendar.meeting-soon
+name: Meeting reminders
+description: A few minutes before a meeting, offer to join the call or prepare with AI (FR-COMM-02). Add your calendar's private iCal link in Settings > Today.
+priority: 70
+cooldown_secs: 600
+dedupe: "{{title}} {{start}}"
+trigger:
+  event: calendar.meeting_soon
+suggestion:
+  title: "{{title}} in {{minutes}} min"
+  detail: "{{start}} {{attendees}}"
+  options:
+    - { label: Join call, action: open_url, args: { url: "{{join_url}}" }, when: { join_url: { regex: "^https://" } } }
+    - label: Prep with AI
+      action: ask_ai
+      args:
+        prompt: "I have this meeting soon. Give me a short prep: the purpose, what I should bring up, and two good questions to ask."
+        page: "{{details}}"
+        clipboard: "false"
+      requires: ["ai"]

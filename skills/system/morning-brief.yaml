@@ -1,6 +1,6 @@
 id: system.morning-brief
 name: Morning brief
-description: The first time you sit down each morning, show yesterday's time, repos with unsaved work and pull requests waiting on you (GitHub CLI, if signed in) (FR-COMM-01).
+description: The first time you sit down each morning, show yesterday's time, today's meetings, repos with unsaved work and pull requests waiting on you (GitHub CLI, if signed in) (FR-COMM-01).
 priority: 55
 cooldown_secs: 43200
 trigger:

@@ -38,8 +38,10 @@ pub struct Repo {
 }
 
 /// Builds the brief, or None when there is nothing worth saying.
+/// `meetings` are today's, as (local start time, title).
 pub fn compose(
     yesterday: &[AppTime],
+    meetings: &[(String, String)],
     repos: &[Repo],
     reviews: &[Pr],
     mine: &[Pr],
@@ -60,6 +62,13 @@ pub fn compose(
                 .collect::<Vec<_>>()
                 .join(", ")
         ));
+    }
+    if !meetings.is_empty() {
+        parts.push(plural(meetings.len(), "meeting", "meetings"));
+        lines.push("Meetings today:".into());
+        for (at, title) in meetings {
+            lines.push(format!("- {at} {title}"));
+        }
     }
     if !repos.is_empty() {
         parts.push(plural(repos.len(), "repo", "repos") + " unsaved");
@@ -199,10 +208,26 @@ fn gather(app: &AppHandle, roots: &[PathBuf]) -> Option<Event> {
     let rows = lock(&app.state::<AppState>().storage)
         .time_for_day(&yesterday)
         .unwrap_or_default();
+    let meetings: Vec<(String, String)> = {
+        let state = app.state::<AppState>();
+        let c = state
+            .calendar
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        sidekick_sensors::calendar::on_day(&c.meetings, Local::now().date_naive())
+            .iter()
+            .map(|m| {
+                (
+                    m.start.with_timezone(&Local).format("%H:%M").to_string(),
+                    m.title.clone(),
+                )
+            })
+            .collect()
+    };
     let repos = unsaved_repos(roots);
     let reviews = gh("--review-requested=@me");
     let mine = gh("--author=@me");
-    compose(&rows, &repos, &reviews, &mine)
+    compose(&rows, &meetings, &repos, &reviews, &mine)
 }
 
 /// The day the last brief was shown, kept in a small file so a restart does
@@ -267,13 +292,15 @@ mod tests {
             changed: 3,
             ahead: 1,
         }];
-        let e = compose(&rows, &repos, &[pr("me/api", "Fix login")], &[]).unwrap();
+        let meetings = [("15:00".to_owned(), "Design review".to_owned())];
+        let e = compose(&rows, &meetings, &repos, &[pr("me/api", "Fix login")], &[]).unwrap();
         assert_eq!(
             e.payload["headline"],
-            "Yesterday 1 h 30 min · 1 repo unsaved · 1 review waiting"
+            "Yesterday 1 h 30 min · 1 meeting · 1 repo unsaved · 1 review waiting"
         );
         let text = e.payload["text"].as_str().unwrap();
         assert!(text.contains("- api: 3 changed, 1 unpushed"));
+        assert!(text.contains("- 15:00 Design review"));
         assert!(text.contains("- me/api: Fix login (https://github.com/me/api/pull/1)"));
         assert_eq!(e.payload["first_url"], "https://github.com/me/api/pull/1");
     }
@@ -285,7 +312,7 @@ mod tests {
             project: String::new(),
             secs: 600,
         }];
-        assert!(compose(&short, &[], &[], &[]).is_none());
+        assert!(compose(&short, &[], &[], &[], &[]).is_none());
     }
 
     #[test]

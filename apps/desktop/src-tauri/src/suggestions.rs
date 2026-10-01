@@ -296,6 +296,18 @@ async fn execute(
                 path: None,
             });
         }
+        "fathom_followup" => {
+            return crate::fathom::follow_up(
+                app,
+                arg("start").unwrap_or_default(),
+                arg("title").unwrap_or("the meeting"),
+            )
+            .await
+            .map(|message| sidekick_actions::Outcome {
+                message,
+                path: None,
+            });
+        }
         "skill_auto" => {
             let skill = arg("skill").ok_or("no skill")?;
             return crate::learn::make_auto(app, skill).map(|message| sidekick_actions::Outcome {

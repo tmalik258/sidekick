@@ -5,6 +5,7 @@
 //! enforced in one place.
 
 mod browser;
+pub mod calendar;
 pub mod classify;
 mod claude_code;
 mod clipboard;
@@ -19,6 +20,7 @@ mod system;
 mod window;
 
 pub use browser::{BrowserBridge, BrowserSensor};
+pub use calendar::{Calendar, CalendarSensor};
 pub use claude_code::ClaudeCodeSensor;
 pub use clipboard::ClipboardSensor;
 pub use downloads::DownloadsSensor;
