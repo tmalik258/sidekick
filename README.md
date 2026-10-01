@@ -86,11 +86,11 @@ In the browser preview, `window.sidekickMock.go("success")` switches mascot stat
 
 ## AI setup
 
-Everything works without AI. Set up any of these, in any order (Settings > AI shows which are reachable):
+Everything works without AI. The full checklist (AI, connections and tools, with every command) is in [docs/setup.md](docs/setup.md) and in the app under Settings > Setup. In short:
 
 ```powershell
 # Claude Code: answers come from your own Claude subscription
-npm install -g @anthropic-ai/claude-code
+irm https://claude.ai/install.ps1 | iex
 claude   # sign in once
 
 # Local model through Ollama (stays on this PC; also ranks suggestions)
@@ -132,6 +132,7 @@ Credits:
 
 ## More
 
+- [Setup](docs/setup.md)
 - [Privacy](docs/privacy.md)
 - [Contributing and writing skills](CONTRIBUTING.md)
 - [Releasing](docs/releasing.md)
