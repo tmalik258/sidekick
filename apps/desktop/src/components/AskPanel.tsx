@@ -9,7 +9,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
 import { Markdown } from "@/lib/markdown";
-import { cancelChat, newChat, sendChat, setAsk, updateSettings, useSidekick } from "@/lib/store";
+import { cancelChat, newChat, sendChat, setAsk, startSkill, updateSettings, useSidekick } from "@/lib/store";
 import { isPaused, PROVIDER_LABELS, type ProviderStatus, type Turn } from "@/lib/types";
 import { Icon, type IconName } from "./Icon";
 
@@ -95,7 +95,9 @@ export function AskPanel() {
   const asking = text.trim().length > 0;
   // With a conversation going, the body shows it; commands show only while typing.
   const showChat = turns.length > 0 && !asking;
-  const rows = asking ? commands.length + 1 : showChat ? 0 : commands.length;
+  // While typing, the first two rows are "Ask" and "Teach a skill".
+  const lead = asking ? 2 : 0;
+  const rows = asking ? commands.length + lead : showChat ? 0 : commands.length;
   const best = providers.find((p) => p.available && (!ask.localOnly || p.local) && p.id !== "semif");
 
   const runRow = (i: number) => {
@@ -104,7 +106,12 @@ export function AskPanel() {
       setText("");
       return;
     }
-    const cmd = commands[asking ? i - 1 : i];
+    if (asking && i === 1) {
+      startSkill(text.trim());
+      setText("");
+      return;
+    }
+    const cmd = commands[i - lead];
     if (!cmd) return;
     cmd.run();
     setText("");
@@ -181,8 +188,18 @@ export function AskPanel() {
                   <Kbd>Enter</Kbd>
                 </Row>
               )}
+              {asking && (
+                <Row active={selected === 1} onHover={() => setSelected(1)} onClick={() => runRow(1)}>
+                  <span className="grid size-6 place-items-center rounded-full bg-white/[0.12] text-white/85">
+                    <Icon name="settings" size={13} />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">
+                    Teach Sidekick a skill <span className="text-[rgb(235_235_245/0.6)]">{text.trim()}</span>
+                  </span>
+                </Row>
+              )}
               {commands.map((c, i) => {
-                const row = asking ? i + 1 : i;
+                const row = i + lead;
                 return (
                   <Row
                     key={c.id}
@@ -327,7 +344,37 @@ function Row({
   );
 }
 
+/** The YAML block of an answer, if it has one. */
+function yamlBlock(text: string): string | null {
+  const m = text.match(/```ya?ml\s*\n([\s\S]*?)```/);
+  return m ? m[1].trim() : null;
+}
+
+function AddSkill({ yaml }: { yaml: string }) {
+  const [state, setState] = useState<{ ok: boolean; message: string } | null>(null);
+  const install = async () => {
+    try {
+      const name = await api.skillInstall(yaml);
+      setState({ ok: true, message: `Added "${name}". Manage it in Settings > Skills.` });
+    } catch (err) {
+      setState({ ok: false, message: String(err) });
+    }
+  };
+  if (state)
+    return <p className={`mt-1.5 text-[12.5px] ${state.ok ? "text-[#30d158]" : "text-[#ffb4ae]"}`}>{state.message}</p>;
+  return (
+    <button
+      type="button"
+      onClick={() => void install()}
+      className="chip mt-1.5 h-8 rounded-full bg-white px-3.5 text-[13px] font-medium text-black hover:bg-white/90"
+    >
+      Add skill
+    </button>
+  );
+}
+
 function Chat({ turns }: { turns: Turn[] }) {
+  const skillMode = useSidekick((s) => s.chatSkill);
   return (
     <div className="space-y-2.5 py-1">
       {turns.map((t, i) => (
@@ -349,6 +396,7 @@ function Chat({ turns }: { turns: Turn[] }) {
               {t.error && (
                 <p className="mt-1 rounded-xl bg-[#ff453a]/15 px-3 py-2 text-[12.5px] text-[#ffb4ae]">{t.error}</p>
               )}
+              {skillMode && !t.streaming && yamlBlock(t.content) && <AddSkill yaml={yamlBlock(t.content) ?? ""} />}
               {!t.streaming && t.provider && (
                 <p className="mt-0.5 text-[11px] text-[rgb(235_235_245/0.35)]">
                   {PROVIDER_LABELS[t.provider] ?? t.provider}

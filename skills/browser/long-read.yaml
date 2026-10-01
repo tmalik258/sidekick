@@ -1,0 +1,19 @@
+id: browser.long-read
+name: Summarize long reads
+description: On a long article or doc, offer a summary with AI (FR-BRW-02). Needs the Sidekick browser extension.
+priority: 30
+cooldown_secs: 600
+dedupe: "{{url}}"
+trigger:
+  event: browser.long_read
+suggestion:
+  title: "Long read"
+  detail: "{{title}} ({{words}} words)"
+  options:
+    - label: Summarize
+      action: ask_ai
+      args:
+        prompt: "Summarize this page in five bullet points, then one line on why it matters to me."
+        page: "{{text}}"
+        clipboard: "false"
+      requires: ["ai"]

@@ -11,4 +11,4 @@ suggestion:
   detail: "Ready for your review."
   options:
     - { label: Open in VS Code, action: open_in_editor, args: { path: "{{cwd}}" }, requires: ["tool:code"] }
-    - { label: Open folder, action: open_path, args: { path: "{{cwd}}" } }
+    - { label: Open folder, action: open_folder, args: { path: "{{cwd}}" } }

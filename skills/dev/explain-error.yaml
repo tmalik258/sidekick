@@ -13,5 +13,5 @@ suggestion:
   options:
     - label: Explain and fix
       action: ask_ai
-      args: { prompt: "Explain this error in two or three sentences, then give the most likely fix." }
+      args: { prompt: "Explain this error in two or three sentences, then give the most likely fix.", clipboard: "true" }
       requires: ["ai"]

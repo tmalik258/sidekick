@@ -41,6 +41,10 @@ pub struct Capabilities {
     pub tar: Option<PathBuf>,
     /// VS Code, for opening projects.
     pub code: Option<PathBuf>,
+    /// 1Password CLI.
+    pub op: Option<PathBuf>,
+    /// Bitwarden CLI.
+    pub bw: Option<PathBuf>,
 }
 
 impl Capabilities {
@@ -66,6 +70,8 @@ impl Capabilities {
             pandoc: which::which("pandoc").ok(),
             tar: which::which("tar").ok(),
             code: find_vscode(),
+            op: which::which("op").ok(),
+            bw: which::which("bw").ok(),
         }
     }
 
@@ -84,6 +90,8 @@ impl Capabilities {
             Some(("tool", "pandoc")) => self.pandoc.is_some(),
             Some(("tool", "tar")) => self.tar.is_some(),
             Some(("tool", "code")) => self.code.is_some(),
+            Some(("tool", "op")) => self.op.is_some(),
+            Some(("tool", "bw")) => self.bw.is_some(),
             _ => false,
         }
     }
@@ -102,6 +110,8 @@ impl Capabilities {
             ("pandoc", self.pandoc.is_some()),
             ("tar", self.tar.is_some()),
             ("VS Code", self.code.is_some()),
+            ("1Password CLI", self.op.is_some()),
+            ("Bitwarden CLI", self.bw.is_some()),
         ] {
             if found {
                 out.push(name.to_string());

@@ -6,6 +6,7 @@
 
 mod capabilities;
 mod convert;
+pub mod passwords;
 mod system;
 
 use std::path::{Path, PathBuf};
@@ -58,6 +59,7 @@ const SAFE: &[&str] = &[
     "clear_clipboard_later",
     "format_json_clipboard",
     "open_in_editor",
+    "open_folder",
     "open_system_page",
     "noop",
 ];
@@ -140,6 +142,19 @@ impl Executor {
             "format_json_clipboard" => {
                 let minify = args.get("minify").and_then(Value::as_str) == Some("true");
                 system::format_json_clipboard(minify)
+            }
+            // Opens a folder in Explorer. Unlike open_path it never runs a
+            // file, so it is the one to use with paths from outside sources.
+            "open_folder" => {
+                let path = existing_path(args)?;
+                if !path.is_dir() {
+                    return Err(ActionError::Invalid(format!(
+                        "{} is not a folder",
+                        path.display()
+                    )));
+                }
+                open::that_detached(&path).map_err(fail)?;
+                Ok(Outcome::msg(format!("Opened {}", file_name(&path))))
             }
             "open_in_editor" => {
                 let path = existing_path(args)?;
@@ -234,6 +249,22 @@ pub(crate) fn file_name(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn open_folder_refuses_files() {
+        let file =
+            std::env::temp_dir().join(format!("sidekick-not-a-folder-{}.exe", std::process::id()));
+        std::fs::write(&file, b"x").unwrap();
+        let err = exec()
+            .run(
+                "open_folder",
+                &serde_json::json!({ "path": file.to_string_lossy() }),
+            )
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("not a folder"));
+        let _ = std::fs::remove_file(file);
+    }
 
     #[tokio::test]
     async fn system_pages_come_from_a_fixed_list() {

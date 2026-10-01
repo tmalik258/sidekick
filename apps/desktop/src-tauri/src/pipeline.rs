@@ -15,6 +15,7 @@ use crate::island;
 use crate::mascot;
 use crate::state::{AppEnv, AppState, executor, lock};
 use crate::suggestions;
+use crate::timetrack;
 
 /// Event kind published by the debug panel's "Emit test event" button.
 pub const DEBUG_MANUAL_KIND: &str = "debug.manual";
@@ -53,15 +54,21 @@ async fn handle(app: &AppHandle, event: Event) {
         app.state::<AppState>()
             .away
             .store(away, std::sync::atomic::Ordering::Relaxed);
-        if !away {
+        if away {
+            timetrack::on_away(app);
+        } else {
             // Anything that came in while the user was away shows now.
             suggestions::welcome_back(app);
+            if let Some(w) = lock(&app.state::<AppState>().last_window).clone() {
+                timetrack::on_window(app, &w);
+            }
         }
     }
 
     if event.kind == WindowSensor::EVENT_KIND {
         island::follow_fullscreen(app, &event.payload);
         *lock(&app.state::<AppState>().last_window) = Some(event.payload.clone());
+        timetrack::on_window(app, &event.payload);
     }
 
     if event.kind == DEBUG_MANUAL_KIND && mascot::dispatch(app, MascotEvent::SkillMatched).is_some()
