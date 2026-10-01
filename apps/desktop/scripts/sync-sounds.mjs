@@ -13,7 +13,7 @@ const require = createRequire(import.meta.url);
 const pkg = dirname(require.resolve("snd-lib/package.json"));
 const out = join(dirname(fileURLToPath(import.meta.url)), "..", "public", "sounds");
 
-for (const kit of ["01", "02", "03"]) {
+for (const kit of ["01"]) {
   const src = join(pkg, "assets", "sounds", "sprite", kit);
   const dest = join(out, kit);
   mkdirSync(dest, { recursive: true });

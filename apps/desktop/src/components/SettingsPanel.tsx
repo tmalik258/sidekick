@@ -3,7 +3,7 @@
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
-import { checkKit, cueVolume, playCue, SOUND_KITS } from "@/lib/sound";
+import { checkKit, cueVolume, playCue } from "@/lib/sound";
 import { connect, updateSettings, useSidekick } from "@/lib/store";
 import {
   type AppInfo,
@@ -93,29 +93,6 @@ export function SettingsPanel() {
       </Section>
 
       <Section title="Sound" hint="Sounds by SND (snd.dev), designed by Dentsu Inc. and Starryworks Inc.">
-        <div className="flex items-center justify-between gap-4 text-[14px]">
-          Sound kit
-          <div className="flex rounded-lg bg-black/5 p-0.5 dark:bg-white/10">
-            {SOUND_KITS.map((k) => (
-              <button
-                key={k.id}
-                type="button"
-                aria-pressed={settings.soundKit === k.id}
-                onClick={() =>
-                  run(async () => {
-                    await updateSettings({ soundKit: k.id });
-                    playCue("ding", cueVolume(settings, "ding"), k.id);
-                  })
-                }
-                className={`rounded-md px-3 py-1 text-[13px] transition-colors ${
-                  settings.soundKit === k.id ? "bg-white text-black shadow-sm dark:bg-white/90" : "text-(--muted)"
-                }`}
-              >
-                {k.label}
-              </button>
-            ))}
-          </div>
-        </div>
         <KitStatus kit={settings.soundKit} />
         <Toggle
           label="Mute all sounds"
