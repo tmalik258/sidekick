@@ -1,0 +1,17 @@
+id: files.archive
+name: Extract archives
+description: Extract a downloaded archive next to it (FR-FILE-03).
+priority: 60
+trigger:
+  event: file.download_completed
+  where:
+    ext: { one_of: [zip, tar, gz, tgz, bz2, xz, 7z, rar] }
+suggestion:
+  title: "{{name}}"
+  detail: "Archive · {{size_human}}"
+  options:
+    - label: Extract here
+      action: extract_archive
+      args: { path: "{{path}}" }
+      requires: ["tool:tar"]
+      when: { ext: { one_of: [zip, tar, gz, tgz, bz2, xz] } }

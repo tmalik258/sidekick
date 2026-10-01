@@ -4,7 +4,7 @@ A proactive desktop companion for Windows. Sidekick lives in a small "island" at
 
 Local-first: events, history, and settings stay on your machine. AI runs in tiers: rules first, a local decision model (SemIf) next, and Claude Code for real work.
 
-> Status: **P0 Foundation**. The island, mascot state machine, sound cues, settings, pause control, event bus, SQLite storage, and a test sensor work end to end. Real sensors and skills arrive in P1.
+> Status: **P1 MVP**. Real sensors (downloads, dev servers, clipboard, active window), a rule-based skill engine, and built-in actions work end to end. AI tiers (SemIf, local model, Claude Code) arrive in P2.
 
 Full spec: [Desktop AI Assistant SRS](https://claude.ai/code/artifact/2f76a151-4e3f-4d9b-ab0c-bd1239d8ff69)
 
@@ -53,12 +53,15 @@ pnpm web          # then open http://localhost:3000/island/ or /settings/
 
 In the browser preview, `window.sidekickMock.go("success")` switches mascot states from the console.
 
-## Try P0
+## Try it
 
-- Hover the island to expand it. It collapses when the cursor leaves.
-- Every 30 s the heartbeat sensor emits a test event: the mascot notices it, then settles.
-- Tray menu: pause 15 min, 1 hour, or until resumed; run a demo suggestion; open settings.
-- Settings > Debug: switch mascot states, emit a test event, run the demo suggestion, see stored events.
+- **Download a file.** The moment it finishes, the island offers Open, Show in folder, Copy file, and conversions that fit the file (images to WebP, PNG or JPG; videos to MP4 or MP3; Office files to PDF; archives extracted) when ffmpeg, ImageMagick, LibreOffice or tar are installed.
+- **Start a dev server** (`pnpm dev`, `uvicorn`, `python -m http.server`, also from WSL). Within a second it offers Chrome, Incognito, Zen, Edge, Firefox or your default browser, and FastAPI docs for Python servers. The browser you pick moves to the front next time.
+- **Copy an `EADDRINUSE` error.** It offers to free the port.
+- **Copy a password or API key.** The clipboard clears itself after 30 seconds.
+- **Go fullscreen** (video, game, slides). The island hides and comes back after.
+- **Settings > Skills**: switch skills on or off, or set them to Auto. Destructive actions always ask.
+- **Your own skills**: drop YAML files into the folder shown in Settings > Found on this PC (format in `skills/README.md`).
 
 ## Checks
 

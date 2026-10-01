@@ -1,0 +1,16 @@
+id: dev.port-conflict
+name: Free a busy port
+description: When you copy an "address already in use" error, offer to stop whatever holds the port (FR-DEV-03).
+priority: 90
+trigger:
+  event: clipboard.changed
+  where:
+    text:
+      regex: "(?i)(EADDRINUSE|address already in use|port (is )?already in use|only one usage of each socket address)[^\\d]*?(?P<port>\\d{2,5})"
+suggestion:
+  title: "Port {{port}} is busy"
+  detail: "Something is already listening on {{port}}."
+  options:
+    - label: "Free port {{port}}"
+      action: kill_port
+      args: { port: "{{port}}" }

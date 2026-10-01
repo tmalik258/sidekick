@@ -1,0 +1,150 @@
+use std::time::Duration;
+
+use sidekick_core::{Event, EventBus, Sensitivity};
+use tokio::task::JoinHandle;
+
+use crate::{Sensor, SensorGate};
+
+/// Notices which app and window the user is in (FR-SEN-05).
+pub struct WindowSensor;
+
+impl WindowSensor {
+    pub const ID: &'static str = "window";
+    pub const EVENT_KIND: &'static str = "window.focused";
+}
+
+const CHECK_EVERY: Duration = Duration::from_millis(500);
+
+impl Sensor for WindowSensor {
+    fn id(&self) -> &'static str {
+        Self::ID
+    }
+
+    fn spawn(self: Box<Self>, bus: EventBus, gate: SensorGate) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            let own_pid = u64::from(std::process::id());
+            let mut last: Option<(String, String, Option<Rect>)> = None;
+            let mut tick = tokio::time::interval(CHECK_EVERY);
+            loop {
+                tick.tick().await;
+                let Ok(Ok(win)) =
+                    tokio::task::spawn_blocking(active_win_pos_rs::get_active_window).await
+                else {
+                    continue;
+                };
+                if win.process_id == own_pid {
+                    continue;
+                }
+                // Fullscreen is part of the key: pressing F11 or Esc changes
+                // nothing else about the window.
+                let fullscreen = tokio::task::spawn_blocking(fullscreen_monitor)
+                    .await
+                    .unwrap_or_default();
+                let key = (win.app_name.clone(), win.title.clone(), fullscreen);
+                if !gate.allows(Self::ID) {
+                    // Report the window again when resumed.
+                    last = None;
+                    continue;
+                }
+                if last.as_ref() == Some(&key) {
+                    continue;
+                }
+                last = Some(key);
+                let exe = win
+                    .process_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or_default()
+                    .to_ascii_lowercase();
+                bus.publish(
+                    Event::new(
+                        Self::EVENT_KIND,
+                        Self::ID,
+                        serde_json::json!({
+                            "app": win.app_name,
+                            "exe": exe,
+                            "title": win.title,
+                            "pid": win.process_id,
+                            "x": win.position.x,
+                            "y": win.position.y,
+                            "width": win.position.width,
+                            "height": win.position.height,
+                            "fullscreen": fullscreen.is_some(),
+                            "monitor": fullscreen,
+                        }),
+                    )
+                    .with_sensitivity(Sensitivity::Personal),
+                );
+            }
+        })
+    }
+}
+
+/// A rectangle in physical screen pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct Rect {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+/// The monitor the foreground window fills, if it is truly fullscreen (a
+/// video, a game, a browser after F11, slides). A maximized window is not:
+/// Windows reports it 8px past every monitor edge (its invisible resize
+/// borders), so only an exact match with the monitor counts.
+#[cfg(windows)]
+fn fullscreen_monitor() -> Option<Rect> {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONULL, MONITORINFO, MonitorFromWindow,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetClassNameW, GetForegroundWindow, GetShellWindow, GetWindowRect,
+    };
+
+    // SAFETY: plain Win32 queries on the foreground window with properly
+    // sized out-parameters; nothing is retained after the calls.
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.is_null() || hwnd == GetShellWindow() {
+            return None;
+        }
+        // The desktop (wallpaper) is a screen-sized window, not a fullscreen app.
+        let mut class = [0u16; 32];
+        let len = GetClassNameW(hwnd, class.as_mut_ptr(), class.len() as i32);
+        let class = String::from_utf16_lossy(&class[..len.max(0) as usize]);
+        if class == "WorkerW" || class == "Progman" {
+            return None;
+        }
+        let mut rect: RECT = std::mem::zeroed();
+        if GetWindowRect(hwnd, &mut rect) == 0 {
+            return None;
+        }
+        let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL);
+        if monitor.is_null() {
+            return None;
+        }
+        let mut info: MONITORINFO = std::mem::zeroed();
+        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        if GetMonitorInfoW(monitor, &mut info) == 0 {
+            return None;
+        }
+        let m = info.rcMonitor;
+        let exact = rect.left == m.left
+            && rect.top == m.top
+            && rect.right == m.right
+            && rect.bottom == m.bottom;
+        exact.then_some(Rect {
+            x: m.left,
+            y: m.top,
+            width: m.right - m.left,
+            height: m.bottom - m.top,
+        })
+    }
+}
+
+#[cfg(not(windows))]
+fn fullscreen_monitor() -> Option<Rect> {
+    None
+}

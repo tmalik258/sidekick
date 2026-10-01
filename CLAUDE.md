@@ -7,6 +7,8 @@ Spec: the SRS linked in README.md. Requirement IDs (FR-UI-01, NFR-SEC-05, ...) i
 - Rust owns everything that touches the OS and all state machines. The UI only renders state and calls named commands.
 - Every OS signal becomes an `Event` on the `EventBus` (`crates/core`). Sensors check `SensorGate` before emitting, so pause and per-sensor switches are enforced in one place.
 - Settings change only through `commands::apply_settings` (sanitize, side effects, save, gate update, `settings://changed`).
+- Skills are YAML in `skills/` (compiled in via `crates/skills/src/lib.rs`). Actions live in `crates/actions`; add new ones there and to `SAFE` only if they are non-destructive.
+- Suggestions go through `suggestions::offer`, which queues while the island is busy and expires ignored ones in Rust.
 - Mascot transitions only through `mascot::dispatch` (or `force` for debug). Delayed follow-ups use `mascot::after`, which is cancelled by any newer transition.
 - Never read browser password stores, cookies, or Claude credential files. Never pass event data to a shell as a string.
 - Destructive or outward-facing actions can never run at Auto trust level.

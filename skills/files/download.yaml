@@ -1,0 +1,17 @@
+id: files.download
+name: Downloaded file
+description: Open or find a file the moment its download finishes (FR-FILE-01).
+priority: 50
+trigger:
+  event: file.download_completed
+suggestion:
+  title: "{{name}}"
+  detail: "Downloaded · {{size_human}}"
+  options:
+    - label: Open
+      action: open_path
+      args: { path: "{{path}}" }
+      when: { kind: { not_one_of: [installer] } }
+    - label: Show in folder
+      action: reveal_path
+      args: { path: "{{path}}" }

@@ -1,0 +1,15 @@
+id: clipboard.format-json
+name: Format copied JSON
+description: Pretty-print JSON on the clipboard (FR-CLIP-03). Off by default.
+priority: 30
+enabled_by_default: false
+trigger:
+  event: clipboard.changed
+  where:
+    kind: { equals: json }
+suggestion:
+  title: "JSON copied"
+  detail: "{{length}} characters"
+  options:
+    - { label: Format JSON, action: format_json_clipboard }
+    - { label: Minify JSON, action: format_json_clipboard, args: { minify: "true" } }

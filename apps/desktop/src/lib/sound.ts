@@ -71,7 +71,9 @@ async function decodeFirst(ac: AudioContext, id: string): Promise<AudioBuffer> {
 async function fetchSpriteMap(id: string): Promise<Record<string, { start: number; end: number }>> {
   const res = await fetch(`/sounds/${id}/sprite.json`);
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status} for /sounds/${id}/sprite.json (run pnpm install or pnpm --filter desktop dev to sync kits)`);
+    throw new Error(
+      `HTTP ${res.status} for /sounds/${id}/sprite.json (run pnpm install or pnpm --filter desktop dev to sync kits)`,
+    );
   }
   const json: { spritemap: Record<string, { start: number; end: number }> } = await res.json();
   return json.spritemap;
