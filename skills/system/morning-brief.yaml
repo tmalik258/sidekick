@@ -1,0 +1,20 @@
+id: system.morning-brief
+name: Morning brief
+description: The first time you sit down each morning, show yesterday's time, today's meetings, repos with unsaved work and pull requests waiting on you (GitHub CLI, if signed in) (FR-COMM-01).
+priority: 55
+cooldown_secs: 43200
+trigger:
+  event: day.morning_brief
+suggestion:
+  title: "Good morning"
+  detail: "{{headline}}"
+  options:
+    - label: Plan my day
+      action: ask_ai
+      args:
+        prompt: "Here is my morning brief. Suggest the order to tackle things today in at most five short bullets."
+        page: "{{text}}"
+        clipboard: "false"
+      requires: ["ai"]
+    - { label: "Open {{first_title}}", action: open_url, args: { url: "{{first_url}}" }, when: { first_url: { regex: "^https://github.com/" } } }
+    - { label: Copy, action: copy_text, args: { text: "{{text}}" } }

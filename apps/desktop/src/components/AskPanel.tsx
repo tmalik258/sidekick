@@ -9,8 +9,18 @@ import { AnimatePresence, motion } from "motion/react";
 import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
 import { Markdown } from "@/lib/markdown";
-import { cancelChat, newChat, sendChat, setAsk, startSkill, updateSettings, useSidekick } from "@/lib/store";
-import { isPaused, PROVIDER_LABELS, type ProviderStatus, type Turn } from "@/lib/types";
+import {
+  cancelChat,
+  newChat,
+  sendChat,
+  setAsk,
+  startListening,
+  startSkill,
+  stopListening,
+  updateSettings,
+  useSidekick,
+} from "@/lib/store";
+import { isPaused, PROVIDER_LABELS, type ProviderStatus, type SearchHit, type Turn } from "@/lib/types";
 import { Icon, type IconName } from "./Icon";
 
 interface Command {
@@ -32,10 +42,15 @@ export function AskPanel() {
   const ask = useSidekick((s) => s.ask);
   const turns = useSidekick((s) => s.turns);
   const chatId = useSidekick((s) => s.chatId);
+  const hearing = useSidekick((s) => s.hearing);
+  const voiceReady = useSidekick((s) => s.settings.voice.enabled && (s.voiceStatus?.listening ?? false));
   const settings = useSidekick((s) => s.settings);
   const [text, setText] = useState(ask?.prompt ?? "");
   const [selected, setSelected] = useState(0);
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
+  const [hits, setHits] = useState<{ query: string; items: SearchHit[] } | null>(null);
+  const [clips, setClips] = useState<{ text: string; ts: string }[] | null>(null);
+  const [projects, setProjects] = useState<{ name: string; path: string }[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const seq = ask?.seq;
@@ -45,7 +60,9 @@ export function AskPanel() {
     if (seq === undefined) return;
     setText(useSidekick.getState().ask?.prompt ?? "");
     setSelected(0);
+    setClips(null);
     void api.aiStatus().then(setProviders);
+    void api.projectsList().then(setProjects);
     const id = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(id);
   }, [seq]);
@@ -71,7 +88,24 @@ export function AskPanel() {
         icon: settings.muted ? "play" : "pause",
         run: () => void updateSettings({ muted: !settings.muted }),
       },
-      { id: "settings", label: "Open settings", icon: "settings", run: () => void api.openSettings() },
+      {
+        id: "screen",
+        label: "What's on my screen?",
+        hint: "Sends a screenshot to your AI",
+        icon: "screen",
+        run: () =>
+          sendChat("What's on my screen? Explain it briefly and point out anything I should act on.", { screen: true }),
+        stay: true,
+      },
+      {
+        id: "clipboard",
+        label: "Clipboard history",
+        hint: "Copy something again",
+        icon: "undo",
+        run: () => void api.clipboardHistory().then(setClips),
+        stay: true,
+      },
+      { id: "settings", label: "Open settings", icon: "settings", run: () => setAsk({ view: "settings" }), stay: true },
       ...(turns.length
         ? [
             {
@@ -86,18 +120,33 @@ export function AskPanel() {
         : []),
     ];
     const q = text.trim().toLowerCase();
-    return q ? all.filter((c) => c.label.toLowerCase().includes(q)) : all;
-  }, [paused, settings.muted, turns.length, text]);
+    if (!q) return all;
+    // Typing a project's name offers to open it (FR-DEV-10).
+    const launch: Command[] = projects
+      .filter((p) => p.name.toLowerCase().includes(q.replace(/^open\s+/, "")))
+      .slice(0, 4)
+      .map((p) => ({
+        id: `project:${p.path}`,
+        label: `Open ${p.name}`,
+        hint: "Editor and terminal",
+        icon: "folder",
+        run: () => void api.projectLaunch(p.path),
+      }));
+    return [...all.filter((c) => c.label.toLowerCase().includes(q)), ...launch];
+  }, [paused, settings.muted, turns.length, text, projects]);
 
   if (!ask) return null;
 
   const streaming = chatId !== null;
   const asking = text.trim().length > 0;
   // With a conversation going, the body shows it; commands show only while typing.
-  const showChat = turns.length > 0 && !asking;
-  // While typing, the first two rows are "Ask" and "Teach a skill".
-  const lead = asking ? 2 : 0;
-  const rows = asking ? commands.length + lead : showChat ? 0 : commands.length;
+  const showClips = clips !== null && !asking;
+  const showHits = hits !== null && !asking && !showClips;
+  const showChat = turns.length > 0 && !asking && !showHits && !showClips;
+  // While typing, the first rows are "Ask", "Search" and "Teach a skill".
+  const lead = asking ? 3 : 0;
+  const rows =
+    hearing !== null ? 0 : asking ? commands.length + lead : showChat || showHits || showClips ? 0 : commands.length;
   const best = providers.find((p) => p.available && (!ask.localOnly || p.local) && p.id !== "semif");
 
   const runRow = (i: number) => {
@@ -107,6 +156,12 @@ export function AskPanel() {
       return;
     }
     if (asking && i === 1) {
+      const query = text.trim();
+      void api.search(query).then((items) => setHits({ query, items }));
+      setText("");
+      return;
+    }
+    if (asking && i === 2) {
       startSkill(text.trim());
       setText("");
       return;
@@ -130,8 +185,11 @@ export function AskPanel() {
       if (rows) runRow(selected);
     } else if (e.key === "Escape") {
       e.preventDefault();
-      if (streaming) cancelChat();
+      if (hearing !== null) stopListening();
+      else if (streaming) cancelChat();
       else if (text) setText("");
+      else if (clips) setClips(null);
+      else if (hits) setHits(null);
       else void api.askClose();
     }
   };
@@ -139,25 +197,70 @@ export function AskPanel() {
   return (
     <div className="flex flex-col">
       <div className="flex h-[30px] items-center gap-2" style={{ paddingLeft: ASK_ORB + 10 }}>
-        <input
-          ref={inputRef}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            setSelected(0);
-          }}
-          onKeyDown={onKey}
-          placeholder={turns.length ? "Ask a follow-up" : "Ask Sidekick or type a command"}
-          spellCheck={false}
-          className="min-w-0 flex-1 bg-transparent font-display text-[17px] tracking-[-0.015em] text-white outline-none placeholder:text-[rgb(235_235_245/0.4)]"
-        />
-        {streaming ? <Pill onClick={cancelChat}>Stop</Pill> : turns.length > 0 && <Pill onClick={newChat}>New</Pill>}
+        {hearing !== null ? (
+          <Hearing text={hearing} />
+        ) : (
+          <input
+            ref={inputRef}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              setSelected(0);
+            }}
+            onKeyDown={onKey}
+            placeholder={turns.length ? "Ask a follow-up" : "Ask Sidekick or type a command"}
+            spellCheck={false}
+            className="min-w-0 flex-1 bg-transparent font-display text-[17px] tracking-[-0.015em] text-white outline-none placeholder:text-[rgb(235_235_245/0.4)]"
+          />
+        )}
+        {hearing !== null ? (
+          <Pill onClick={stopListening}>Stop</Pill>
+        ) : (
+          <>
+            {voiceReady && !streaming && (
+              <button
+                type="button"
+                aria-label="Talk (or say Hey Sidekick)"
+                title="Talk (or say Hey Sidekick)"
+                onClick={startListening}
+                className="chip grid size-7 shrink-0 place-items-center rounded-full bg-white/[0.12] text-white/85 hover:bg-white/[0.2]"
+              >
+                <Icon name="mic" size={14} />
+              </button>
+            )}
+            {streaming ? (
+              <Pill onClick={cancelChat}>Stop</Pill>
+            ) : (
+              turns.length > 0 && <Pill onClick={newChat}>New</Pill>
+            )}
+          </>
+        )}
       </div>
 
       <ContextChips />
 
       <AnimatePresence initial={false} mode="popLayout">
-        {showChat ? (
+        {showClips && clips ? (
+          <motion.div
+            key="clips"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.08 } }}
+            className="ask-scroll mt-2 max-h-[330px] overflow-y-auto pr-1"
+          >
+            <Clips items={clips} />
+          </motion.div>
+        ) : showHits && hits ? (
+          <motion.div
+            key="hits"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.08 } }}
+            className="ask-scroll mt-2 max-h-[330px] overflow-y-auto pr-1"
+          >
+            <Results query={hits.query} items={hits.items} />
+          </motion.div>
+        ) : showChat ? (
           <motion.div
             key="chat"
             ref={scrollRef}
@@ -190,6 +293,16 @@ export function AskPanel() {
               )}
               {asking && (
                 <Row active={selected === 1} onHover={() => setSelected(1)} onClick={() => runRow(1)}>
+                  <span className="grid size-6 place-items-center rounded-full bg-white/[0.12] text-white/85">
+                    <Icon name="ask" size={13} />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">
+                    Search my stuff for <span className="text-[rgb(235_235_245/0.6)]">{text.trim()}</span>
+                  </span>
+                </Row>
+              )}
+              {asking && (
+                <Row active={selected === 2} onHover={() => setSelected(2)} onClick={() => runRow(2)}>
                   <span className="grid size-6 place-items-center rounded-full bg-white/[0.12] text-white/85">
                     <Icon name="settings" size={13} />
                   </span>
@@ -269,6 +382,13 @@ function ContextChips() {
         )
       )}
       <Chip
+        on={ask.attachScreen}
+        onClick={() => setAsk({ attachScreen: !ask.attachScreen })}
+        title={`Send a screenshot of ${context.app ?? "the screen"} with the next question`}
+      >
+        Screenshot
+      </Chip>
+      <Chip
         on={ask.localOnly}
         onClick={() => setAsk({ localOnly: !ask.localOnly })}
         title="Only use a model on this PC"
@@ -302,6 +422,31 @@ function Chip({
     >
       {children}
     </button>
+  );
+}
+
+/** Live transcript while listening, with a breathing level bar. */
+function Hearing({ text }: { text: string }) {
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-2.5" aria-live="polite">
+      <span className="flex h-4 items-center gap-[3px]" role="img" aria-label="Listening">
+        {[0, 1, 2, 3].map((i) => (
+          <motion.span
+            key={i}
+            className="w-[3px] rounded-full bg-[#30d158]"
+            animate={{ height: [4, 14, 4] }}
+            transition={{ duration: 0.8, repeat: Number.POSITIVE_INFINITY, delay: i * 0.12, ease: "easeInOut" }}
+          />
+        ))}
+      </span>
+      <span
+        className={`min-w-0 flex-1 truncate font-display text-[17px] tracking-[-0.015em] ${
+          text ? "text-white" : "text-[rgb(235_235_245/0.4)]"
+        }`}
+      >
+        {text || "Listening..."}
+      </span>
+    </div>
   );
 }
 
@@ -341,6 +486,96 @@ function Row({
         {children}
       </button>
     </li>
+  );
+}
+
+const SOURCE_LABELS: Record<string, string> = {
+  file: "File",
+  download: "Download",
+  screenshot: "Screenshot",
+  clipboard: "Copied",
+  page: "Web page",
+  claude: "Claude Code",
+  action: "Action",
+  chat: "Ask",
+};
+
+/** Matches come back between [ and ]; show them bold. */
+function Snippet({ text }: { text: string }) {
+  const parts = text.split(/(\[[^\]]*\])/g);
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.startsWith("[") && p.endsWith("]") ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: parts have no identity beyond order
+          <strong key={i} className="font-semibold text-white">
+            {p.slice(1, -1)}
+          </strong>
+        ) : (
+          p
+        ),
+      )}
+    </>
+  );
+}
+
+/** Clipboard history: click to copy again (FR-CLIP-01). */
+function Clips({ items }: { items: { text: string; ts: string }[] }) {
+  if (items.length === 0)
+    return <p className="py-2 text-[13px] text-[rgb(235_235_245/0.6)]">Nothing copied yet. Secrets are never kept.</p>;
+  return (
+    <ul className="-mx-1.5 py-1">
+      {items.map((c) => (
+        <li key={`${c.ts}${c.text.slice(0, 40)}`}>
+          <button
+            type="button"
+            onClick={() => void api.clipboardCopy(c.text).then(() => api.askClose())}
+            className="flex w-full items-center gap-2 rounded-[14px] px-1.5 py-1.5 text-left transition-colors duration-100 hover:bg-white/[0.1]"
+          >
+            <span className="line-clamp-2 min-w-0 flex-1 font-mono text-[12px] break-all text-white/85">{c.text}</span>
+            <span className="shrink-0 text-[11px] text-[rgb(235_235_245/0.4)] tabular-nums">
+              {new Date(c.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Results({ query, items }: { query: string; items: SearchHit[] }) {
+  if (items.length === 0)
+    return (
+      <p className="py-2 text-[13px] text-[rgb(235_235_245/0.6)]">
+        Nothing found for &quot;{query}&quot;. Add folders under Settings &gt; Search to find your files.
+      </p>
+    );
+  return (
+    <ul className="-mx-1.5 py-1">
+      {items.map((h) => {
+        const opens = ["file", "download", "screenshot", "page"].includes(h.source);
+        return (
+          <li key={`${h.source}|${h.reference}`}>
+            <button
+              type="button"
+              disabled={!opens}
+              onClick={() => void api.openReference(h.source, h.reference)}
+              className="flex w-full flex-col gap-0.5 rounded-[14px] px-1.5 py-1.5 text-left transition-colors duration-100 enabled:hover:bg-white/[0.1]"
+            >
+              <span className="flex items-center gap-2 text-[13px]">
+                <span className="rounded-full bg-white/[0.12] px-1.5 py-px text-[10.5px] text-white/70">
+                  {SOURCE_LABELS[h.source] ?? h.source}
+                </span>
+                <span className="truncate text-white/90">{h.title || h.reference}</span>
+              </span>
+              <span className="line-clamp-2 text-[12px] text-[rgb(235_235_245/0.55)]">
+                <Snippet text={h.snippet} />
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -389,6 +624,9 @@ function Chat({ turns }: { turns: Turn[] }) {
           {t.role === "user" ? (
             <div className="max-w-[85%] rounded-[18px] rounded-br-md bg-white/[0.14] px-3 py-1.5 text-[13.5px] whitespace-pre-wrap">
               {t.content}
+              {t.screen && (
+                <span className="mt-0.5 block text-[11px] text-[rgb(235_235_245/0.5)]">with screenshot</span>
+              )}
             </div>
           ) : (
             <div className="text-[13.5px] leading-relaxed text-white/90">

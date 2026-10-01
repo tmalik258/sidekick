@@ -51,7 +51,101 @@ pub struct Settings {
     pub skills: BTreeMap<String, SkillPref>,
     /// Global shortcut that turns the island into Ask mode (FR-UI-07).
     pub palette_hotkey: String,
+    /// Folders with git repos to check at the end of the day (FR-DEV-09).
+    /// Empty means the usual places (code, projects, source/repos, ...).
+    pub code_folders: Vec<String>,
+    /// Local hour after which unsaved work is reported.
+    pub end_of_day_hour: u32,
+    /// Folders whose text files are searchable (opt in, FR-RAG-05).
+    pub index_folders: Vec<String>,
     pub ai: AiSettings,
+    pub voice: VoiceSettings,
+    pub calendar: CalendarSettings,
+    pub semantic_search: SemanticSearch,
+    /// The first-run welcome was finished or skipped.
+    pub onboarded: bool,
+    /// Look for a newer release once a day.
+    pub check_updates: bool,
+    /// Programs whose windows and copies Sidekick ignores (FR-SET-02).
+    pub deny_apps: Vec<String>,
+    /// Sites (and their subdomains) Sidekick ignores.
+    pub deny_sites: Vec<String>,
+}
+
+/// Password managers are ignored from the start (FR-RAG-08).
+pub const DEFAULT_DENY_APPS: &[&str] = &[
+    "1password.exe",
+    "bitwarden.exe",
+    "keepass.exe",
+    "keepassxc.exe",
+    "lastpass.exe",
+    "dashlane.exe",
+    "enpass.exe",
+    "proton pass.exe",
+];
+
+/// Search by meaning with an embedding model on this PC (FR-RAG-03).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SemanticSearch {
+    pub enabled: bool,
+    /// Embedding model on the local server, e.g. `nomic-embed-text`.
+    pub model: String,
+}
+
+impl Default for SemanticSearch {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            model: "nomic-embed-text".into(),
+        }
+    }
+}
+
+/// Calendars read through their private iCal links (FR-COMM-02).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CalendarSettings {
+    /// Private iCal (ICS) links. They are secrets: stored only here.
+    pub feeds: Vec<String>,
+    /// Minutes before a meeting to offer Join and Prep.
+    pub remind_minutes: u32,
+}
+
+impl Default for CalendarSettings {
+    fn default() -> Self {
+        Self {
+            feeds: Vec::new(),
+            remind_minutes: 5,
+        }
+    }
+}
+
+/// Voice (FR-VOICE): off until the user turns it on and downloads the models.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct VoiceSettings {
+    pub enabled: bool,
+    /// Listen for "Hey Sidekick". Off leaves push to talk in Ask mode.
+    pub wake_word: bool,
+    /// Read answers aloud when the question was spoken.
+    pub speak_answers: bool,
+    /// Kokoro voice id, e.g. "af_bella".
+    pub voice: String,
+    /// 0.5 to 2.0.
+    pub speed: f32,
+}
+
+impl Default for VoiceSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            wake_word: true,
+            speak_answers: true,
+            voice: "af_bella".into(),
+            speed: 1.0,
+        }
+    }
 }
 
 /// AI tiers (FR-AI-09: each can be switched off; Sidekick works without any).
@@ -224,7 +318,17 @@ impl Default for Settings {
             sound_kit: SOUND_KITS[0].to_string(),
             skills: BTreeMap::new(),
             palette_hotkey: DEFAULT_PALETTE_HOTKEY.into(),
+            code_folders: Vec::new(),
+            end_of_day_hour: 18,
+            index_folders: Vec::new(),
             ai: AiSettings::default(),
+            voice: VoiceSettings::default(),
+            calendar: CalendarSettings::default(),
+            semantic_search: SemanticSearch::default(),
+            onboarded: false,
+            check_updates: true,
+            deny_apps: DEFAULT_DENY_APPS.iter().map(|s| (*s).to_owned()).collect(),
+            deny_sites: Vec::new(),
         }
     }
 }
@@ -286,6 +390,30 @@ impl Settings {
             self.palette_hotkey = DEFAULT_PALETTE_HOTKEY.into();
         }
         self.ai = self.ai.sanitized();
+        self.voice.speed = if self.voice.speed.is_finite() {
+            self.voice.speed.clamp(0.5, 2.0)
+        } else {
+            1.0
+        };
+        self.calendar.feeds = self
+            .calendar
+            .feeds
+            .iter()
+            .map(|f| f.trim().to_owned())
+            .filter(|f| f.starts_with("https://") || f.starts_with("webcal://"))
+            .collect();
+        if self.semantic_search.model.trim().is_empty() {
+            self.semantic_search.model = SemanticSearch::default().model;
+        }
+        self.calendar.remind_minutes = self.calendar.remind_minutes.clamp(1, 30);
+        if self.voice.voice.trim().is_empty() {
+            self.voice.voice = VoiceSettings::default().voice;
+        }
+        self.end_of_day_hour = self.end_of_day_hour.min(23);
+        self.code_folders.retain(|f| !f.trim().is_empty());
+        self.deny_apps.retain(|a| !a.trim().is_empty());
+        self.deny_sites.retain(|s| !s.trim().is_empty());
+        self.index_folders.retain(|f| !f.trim().is_empty());
         self
     }
 

@@ -16,6 +16,7 @@ impl SystemSensor {
     pub const ID: &'static str = "system";
     pub const DISK_LOW: &'static str = "system.disk_low";
     pub const MEMORY_HIGH: &'static str = "system.memory_high";
+    pub const BATTERY_LOW: &'static str = "system.battery_low";
 }
 
 const CHECK_EVERY: Duration = Duration::from_secs(15);
@@ -59,6 +60,7 @@ impl Sensor for SystemSensor {
             let mut low_disks: HashSet<String> = HashSet::new();
             let mut streak: u32 = 0;
             let mut memory_reported = false;
+            let mut battery_reported = false;
             loop {
                 tick.tick().await;
                 n = n.wrapping_add(1);
@@ -91,6 +93,22 @@ impl Sensor for SystemSensor {
                     }
                 }
 
+                match battery() {
+                    Some((percent, false)) if percent < BATTERY_LOW_PCT => {
+                        if !battery_reported {
+                            battery_reported = true;
+                            bus.publish(Event::new(
+                                Self::BATTERY_LOW,
+                                Self::ID,
+                                serde_json::json!({ "percent": percent }),
+                            ));
+                        }
+                    }
+                    // Plugged in or charged again: the next low battery counts.
+                    Some(_) => battery_reported = false,
+                    None => {}
+                }
+
                 if let Some(mem) = snap.memory {
                     if mem.percent >= MEMORY_HIGH_PCT {
                         streak += 1;
@@ -117,6 +135,30 @@ impl Sensor for SystemSensor {
             }
         })
     }
+}
+
+/// Below this, on battery, power saving is offered (FR-SYS-03).
+const BATTERY_LOW_PCT: u8 = 20;
+
+/// Battery percent and whether it is on mains power; None without a battery.
+#[cfg(windows)]
+fn battery() -> Option<(u8, bool)> {
+    use windows_sys::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+    let mut s: SYSTEM_POWER_STATUS = unsafe { std::mem::zeroed() };
+    // SAFETY: a valid out pointer to a zeroed struct.
+    if unsafe { GetSystemPowerStatus(&mut s) } == 0 {
+        return None;
+    }
+    // 128: no system battery; 255: unknown percent.
+    if s.BatteryFlag & 128 != 0 || s.BatteryLifePercent > 100 {
+        return None;
+    }
+    Some((s.BatteryLifePercent, s.ACLineStatus == 1))
+}
+
+#[cfg(not(windows))]
+fn battery() -> Option<(u8, bool)> {
+    None
 }
 
 #[derive(Default)]

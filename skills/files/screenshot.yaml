@@ -1,0 +1,18 @@
+id: files.screenshot
+name: Screenshots
+description: When you take a screenshot (Win+PrtScn or the Snipping Tool), offer to copy it, pull the text out of it, or show it (FR-SCR-01).
+priority: 65
+cooldown_secs: 5
+dedupe: "{{path}}"
+trigger:
+  event: file.screenshot
+  where:
+    kind: { equals: image }
+suggestion:
+  title: "Screenshot taken"
+  detail: "{{name}}"
+  options:
+    - { label: Copy, action: copy_file, args: { path: "{{path}}" } }
+    - { label: Copy text, action: extract_text, args: { path: "{{path}}" }, requires: ["tool:tesseract"] }
+    - { label: Show in folder, action: reveal_path, args: { path: "{{path}}" } }
+    - { label: Open, action: open_path, args: { path: "{{path}}" } }

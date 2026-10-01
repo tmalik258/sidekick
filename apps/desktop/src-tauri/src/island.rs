@@ -34,15 +34,65 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
 }
 
 fn position_top_center(window: &WebviewWindow) -> tauri::Result<()> {
-    let monitor = match window.primary_monitor()? {
-        Some(m) => m,
-        None => return Ok(()),
-    };
+    match window.primary_monitor()? {
+        Some(m) => place_on(window, &m),
+        None => Ok(()),
+    }
+}
+
+fn place_on(window: &WebviewWindow, monitor: &tauri::Monitor) -> tauri::Result<()> {
     let screen = monitor.size();
     let origin = monitor.position();
     let size = window.outer_size()?;
     let x = origin.x + (screen.width as i32 - size.width as i32) / 2;
     window.set_position(PhysicalPosition::new(x, origin.y))
+}
+
+/// The monitor that holds point (x, y), in physical pixels.
+fn monitor_at(monitors: &[tauri::Monitor], x: i64, y: i64) -> Option<&tauri::Monitor> {
+    monitors.iter().find(|m| {
+        let (p, s) = (m.position(), m.size());
+        x >= i64::from(p.x)
+            && x < i64::from(p.x) + i64::from(s.width)
+            && y >= i64::from(p.y)
+            && y < i64::from(p.y) + i64::from(s.height)
+    })
+}
+
+/// Moves the island to the monitor of the window in front (FR-UI-06). Not
+/// while Ask mode is open, and not for fullscreen windows (the island stays
+/// put and visible on its own screen).
+pub fn follow_active_monitor(app: &AppHandle, payload: &serde_json::Value) {
+    if crate::ask::is_open(app) || payload["fullscreen"].as_bool().unwrap_or(false) {
+        return;
+    }
+    let (Some(x), Some(y), Some(w), Some(h)) = (
+        payload["x"].as_i64(),
+        payload["y"].as_i64(),
+        payload["width"].as_i64(),
+        payload["height"].as_i64(),
+    ) else {
+        return;
+    };
+    let Some(window) = app.get_webview_window(LABEL) else {
+        return;
+    };
+    let Ok(monitors) = window.available_monitors() else {
+        return;
+    };
+    if monitors.len() < 2 {
+        return;
+    }
+    let Some(target) = monitor_at(&monitors, x + w / 2, y + h / 2) else {
+        return;
+    };
+    let current = window.current_monitor().ok().flatten();
+    if current.is_some_and(|c| c.position() == target.position()) {
+        return;
+    }
+    if let Err(err) = place_on(&window, target) {
+        log::warn!("could not move the island: {err}");
+    }
 }
 
 /// Hides the island while a fullscreen app (a game, a video, a slideshow) is

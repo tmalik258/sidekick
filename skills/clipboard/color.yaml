@@ -1,0 +1,18 @@
+id: clipboard.color
+name: Copied colors
+description: For a copied color, copy it again as hex, rgb(), hsl() or the nearest Tailwind class (FR-CLIP-03).
+priority: 35
+cooldown_secs: 10
+dedupe: "{{hex}}"
+trigger:
+  event: clipboard.changed
+  where:
+    kind: { equals: color }
+suggestion:
+  title: "Color {{hex}}"
+  detail: "Closest Tailwind: {{tailwind}}"
+  options:
+    - { label: "Copy {{tailwind}}", action: copy_text, args: { text: "{{tailwind}}" } }
+    - { label: Copy hex, action: copy_text, args: { text: "{{hex}}" } }
+    - { label: Copy rgb, action: copy_text, args: { text: "{{rgb}}" } }
+    - { label: Copy hsl, action: copy_text, args: { text: "{{hsl}}" } }

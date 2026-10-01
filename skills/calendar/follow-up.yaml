@@ -1,0 +1,19 @@
+id: calendar.follow-up
+name: Meeting follow-up
+description: After a meeting, offer to draft the follow-up, from your Fathom notes when FATHOM_API_KEY is set (FR-COMM-03).
+priority: 55
+cooldown_secs: 600
+dedupe: "{{title}} {{start}}"
+trigger:
+  event: calendar.meeting_ended
+suggestion:
+  title: "Follow up on {{title}}?"
+  detail: "With {{attendees}}"
+  options:
+    - { label: Use Fathom notes, action: fathom_followup, args: { start: "{{start_utc}}", title: "{{title}}" }, requires: ["tool:fathom", "ai"] }
+    - label: Draft follow-up
+      action: ask_ai
+      args:
+        prompt: "Draft a short follow-up message for my meeting \"{{title}}\" with {{attendees}}. Leave placeholders for decisions and action items."
+        clipboard: "false"
+      requires: ["ai"]

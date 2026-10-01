@@ -45,6 +45,12 @@ pub struct Capabilities {
     pub op: Option<PathBuf>,
     /// Bitwarden CLI.
     pub bw: Option<PathBuf>,
+    /// Tesseract, for text in screenshots.
+    pub tesseract: Option<PathBuf>,
+    /// Poppler's pdftotext, for summarizing PDFs.
+    pub pdftotext: Option<PathBuf>,
+    /// FATHOM_API_KEY is set, so meeting notes can be fetched.
+    pub fathom: bool,
 }
 
 impl Capabilities {
@@ -72,6 +78,9 @@ impl Capabilities {
             code: find_vscode(),
             op: which::which("op").ok(),
             bw: which::which("bw").ok(),
+            tesseract: which::which("tesseract").ok().or_else(find_tesseract),
+            pdftotext: which::which("pdftotext").ok(),
+            fathom: std::env::var("FATHOM_API_KEY").is_ok_and(|k| !k.trim().is_empty()),
         }
     }
 
@@ -92,6 +101,8 @@ impl Capabilities {
             Some(("tool", "code")) => self.code.is_some(),
             Some(("tool", "op")) => self.op.is_some(),
             Some(("tool", "bw")) => self.bw.is_some(),
+            Some(("tool", "tesseract")) => self.tesseract.is_some(),
+            Some(("tool", "fathom")) => self.fathom,
             _ => false,
         }
     }
@@ -112,6 +123,7 @@ impl Capabilities {
             ("VS Code", self.code.is_some()),
             ("1Password CLI", self.op.is_some()),
             ("Bitwarden CLI", self.bw.is_some()),
+            ("Tesseract OCR", self.tesseract.is_some()),
         ] {
             if found {
                 out.push(name.to_string());
@@ -119,6 +131,17 @@ impl Capabilities {
         }
         out
     }
+}
+
+/// The UB Mannheim installer does not add Tesseract to PATH.
+#[cfg(windows)]
+fn find_tesseract() -> Option<PathBuf> {
+    env_path("ProgramFiles", r"Tesseract-OCR\tesseract.exe").filter(|p| p.is_file())
+}
+
+#[cfg(not(windows))]
+fn find_tesseract() -> Option<PathBuf> {
+    None
 }
 
 /// Prefers `Code.exe` itself over the `code.cmd` wrapper on PATH.

@@ -15,7 +15,10 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 arboard = { version = "3", default-features = false }
 chrono.workspace = true
+dirs = "7"
 getrandom = "0.3"
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -23,7 +26,9 @@ sidekick-actions.workspace = true
 sidekick-ai.workspace = true
 sidekick-core.workspace = true
 sidekick-sensors.workspace = true
+sidekick-layout.workspace = true
 sidekick-skills.workspace = true
+sidekick-voice.workspace = true
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-global-shortcut = "2"
@@ -32,3 +37,6 @@ tauri-plugin-single-instance = "2"
 trash = "5"
 tokio.workspace = true
 ulid.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+xcap = "0.9"

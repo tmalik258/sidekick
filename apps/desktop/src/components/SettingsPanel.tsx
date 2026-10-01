@@ -1,10 +1,10 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect, useState } from "react";
-import { api } from "@/lib/bridge";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { api, EVENTS, listen } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
 import { checkKit, cueVolume, playCue } from "@/lib/sound";
-import { connect, updateSettings, useSidekick } from "@/lib/store";
+import { updateSettings, useSidekick } from "@/lib/store";
 import {
   type ActionRecord,
   AI_PROVIDERS,
@@ -13,6 +13,7 @@ import {
   type AppInfo,
   type AppTime,
   type BrowserInfo,
+  type CalendarToday,
   type CapabilityInfo,
   CLAUDE_HOOK_URL,
   CUES,
@@ -20,6 +21,7 @@ import {
   formatDuration,
   isPaused,
   MASCOT_STATES,
+  type McpInfo,
   type Pause,
   PROVIDER_LABELS,
   type ProviderStatus,
@@ -27,15 +29,32 @@ import {
   type SkillInfo,
   type StoredEvent,
   THEMES,
+  type VoiceDownload,
+  type VoiceSettings,
 } from "@/lib/types";
 import { Orb, THEME_STYLES } from "./Orb";
 
+export const SETTINGS_TABS = [
+  { id: "general", label: "General" },
+  { id: "ai", label: "AI" },
+  { id: "voice", label: "Voice" },
+  { id: "browser", label: "Browser" },
+  { id: "search", label: "Search" },
+  { id: "today", label: "Today" },
+  { id: "skills", label: "Skills" },
+  { id: "sensors", label: "Sensors" },
+  { id: "about", label: "About" },
+] as const;
+const TABS = SETTINGS_TABS;
+export type SettingsTab = (typeof SETTINGS_TABS)[number]["id"];
+
+/** Settings, shown inside the island (FR-UI-07): tabs over one scrolling page. */
 export function SettingsPanel() {
   const { settings, mascot, ready } = useSidekick();
+  const [tab, setTab] = useState<SettingsTab>("general");
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => connect({ sounds: false }), []);
   useEffect(() => {
     void api.appInfo().then(setInfo);
   }, []);
@@ -52,195 +71,326 @@ export function SettingsPanel() {
   if (!ready) return null;
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-6 px-6 py-8">
-      <header className="flex items-center gap-4">
-        <div className="grid size-20 place-items-center">
-          <Orb state={mascot} size={60} theme={settings.theme} />
-        </div>
-        <div>
-          <h1 className="font-display text-[26px] leading-tight font-semibold tracking-[-0.02em]">Sidekick</h1>
-          <p className="text-[13px] text-(--muted)">
-            Version {info?.version ?? "…"} · mascot is {mascot}
-          </p>
-        </div>
-      </header>
+    <div className="island-settings flex flex-col">
+      <nav aria-label="Settings sections" className="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1 pb-2.5">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            aria-pressed={tab === t.id}
+            onClick={() => setTab(t.id)}
+            className={`chip shrink-0 rounded-full px-3 py-1 text-[12.5px] font-medium ${
+              tab === t.id ? "bg-white text-black" : "bg-white/[0.08] text-[rgb(235_235_245/0.7)] hover:bg-white/[0.14]"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
 
       {error && (
         <p
           role="alert"
-          className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-300"
+          className="mb-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300"
         >
           {error}
         </p>
       )}
 
-      <Section title="Appearance">
-        <div className="grid grid-cols-3 gap-3">
-          {THEMES.map((t) => (
-            <button
-              key={t}
-              type="button"
-              aria-pressed={settings.theme === t}
-              onClick={() => run(() => updateSettings({ theme: t }))}
-              className={`chip flex flex-col items-center gap-2.5 rounded-xl bg-black py-4 text-[13px] font-medium text-white/90 ${
-                settings.theme === t ? "ring-2 ring-[#0a84ff]" : "ring-1 ring-white/10"
-              }`}
-            >
-              <Orb state="idle" size={40} theme={t} magnetic={false} />
-              {THEME_STYLES[t].label}
-            </button>
-          ))}
-        </div>
-      </Section>
-
-      <Section title="Privacy" hint="Paused sensors do not run at all (FR-SET-01).">
-        <PauseStatus pause={settings.pause} />
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => run(() => api.sensorsPause(15))}>Pause 15 min</Button>
-          <Button onClick={() => run(() => api.sensorsPause(60))}>Pause 1 hour</Button>
-          <Button onClick={() => run(() => api.sensorsPause(null))}>Pause until resumed</Button>
-          <Button onClick={() => run(() => api.sensorsResume())} disabled={!isPaused(settings.pause)}>
-            Resume
-          </Button>
-        </div>
-      </Section>
-
-      <Section title="Sound" hint="Sounds by SND (snd.dev), designed by Dentsu Inc. and Starryworks Inc.">
-        <KitStatus kit={settings.soundKit} />
-        <Toggle
-          label="Mute all sounds"
-          checked={settings.muted}
-          onChange={(muted) => run(() => updateSettings({ muted }))}
-        />
-        <Slider
-          label="Master volume"
-          value={settings.masterVolume}
-          onChange={(masterVolume) => run(() => updateSettings({ masterVolume }))}
-        />
-        <div className="grid gap-2 sm:grid-cols-2">
-          {CUES.map((cue) => (
-            <div key={cue} className="flex items-center gap-2">
-              <Slider
-                label={cue}
-                value={settings.cueVolumes[cue] ?? 1}
-                onChange={(v) => run(() => updateSettings({ cueVolumes: { ...settings.cueVolumes, [cue]: v } }))}
+      <div className="settings-scroll -mr-3 flex max-h-[430px] flex-col gap-5 overflow-y-auto pr-3 pb-3">
+        {tab === "general" && (
+          <>
+            <Section title="Appearance">
+              <div className="grid grid-cols-3 gap-3">
+                {THEMES.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    aria-pressed={settings.theme === t}
+                    onClick={() => run(() => updateSettings({ theme: t }))}
+                    className={`chip flex flex-col items-center gap-2.5 rounded-xl bg-black py-4 text-[13px] font-medium text-white/90 ${
+                      settings.theme === t ? "ring-2 ring-[#0a84ff]" : "ring-1 ring-white/10"
+                    }`}
+                  >
+                    <Orb state="idle" size={40} theme={t} magnetic={false} />
+                    {THEME_STYLES[t].label}
+                  </button>
+                ))}
+              </div>
+            </Section>
+            <Section title="Island">
+              <label className="flex items-center justify-between gap-4 text-sm">
+                Collapse after (seconds)
+                <input
+                  type="number"
+                  min={2}
+                  max={120}
+                  value={settings.collapseAfterSecs}
+                  onChange={(e) => run(() => updateSettings({ collapseAfterSecs: Number(e.target.value) }))}
+                  className="w-20 rounded-md border border-(--border) bg-transparent px-2 py-1 text-right"
+                />
+              </label>
+              <div className="flex items-center justify-between gap-4 text-sm">
+                <span>
+                  Ask shortcut
+                  <span className="block text-[12px] text-(--muted)">For example Alt+Space or Ctrl+Shift+K</span>
+                </span>
+                <TextField
+                  value={settings.paletteHotkey}
+                  onCommit={(paletteHotkey) => run(() => updateSettings({ paletteHotkey }))}
+                  className="w-40 text-right"
+                  label="Ask shortcut"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4 text-sm">
+                <span>
+                  Code folders
+                  <span className="block text-[12px] text-(--muted)">
+                    For the end of day repo check. Empty uses code, projects, source\\repos and similar. Restart to
+                    apply.
+                  </span>
+                </span>
+                <TextField
+                  value={settings.codeFolders.join("; ")}
+                  placeholder="C:\\Users\\you\\code"
+                  onCommit={(v) =>
+                    run(() =>
+                      updateSettings({
+                        codeFolders: v
+                          .split(";")
+                          .map((f) => f.trim())
+                          .filter(Boolean),
+                      }),
+                    )
+                  }
+                  className="w-56"
+                  label="Code folders"
+                />
+              </div>
+              <Toggle
+                label="Launch Sidekick when Windows starts"
+                checked={settings.launchAtLogin}
+                onChange={(launchAtLogin) => run(() => updateSettings({ launchAtLogin }))}
               />
-              <Button small onClick={() => playCue(cue, cueVolume(settings, cue), settings.soundKit)}>
-                Test
-              </Button>
-            </div>
-          ))}
-        </div>
-      </Section>
+              <Toggle
+                label="Tell me about new versions"
+                hint="Checks GitHub once a day. Nothing installs on its own."
+                checked={settings.checkUpdates}
+                onChange={(checkUpdates) => run(() => updateSettings({ checkUpdates }))}
+              />
+            </Section>
+            <Section title="Privacy" hint="Paused sensors do not run at all (FR-SET-01).">
+              <PauseStatus pause={settings.pause} />
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => run(() => api.sensorsPause(15))}>Pause 15 min</Button>
+                <Button onClick={() => run(() => api.sensorsPause(60))}>Pause 1 hour</Button>
+                <Button onClick={() => run(() => api.sensorsPause(null))}>Pause until resumed</Button>
+                <Button onClick={() => run(() => api.sensorsResume())} disabled={!isPaused(settings.pause)}>
+                  Resume
+                </Button>
+              </div>
+            </Section>
+            <Section title="Sound" hint="Sounds by SND (snd.dev), designed by Dentsu Inc. and Starryworks Inc.">
+              <KitStatus kit={settings.soundKit} />
+              <Toggle
+                label="Mute all sounds"
+                checked={settings.muted}
+                onChange={(muted) => run(() => updateSettings({ muted }))}
+              />
+              <Slider
+                label="Master volume"
+                value={settings.masterVolume}
+                onChange={(masterVolume) => run(() => updateSettings({ masterVolume }))}
+              />
+              <div className="grid gap-2 sm:grid-cols-2">
+                {CUES.map((cue) => (
+                  <div key={cue} className="flex items-center gap-2">
+                    <Slider
+                      label={cue}
+                      value={settings.cueVolumes[cue] ?? 1}
+                      onChange={(v) => run(() => updateSettings({ cueVolumes: { ...settings.cueVolumes, [cue]: v } }))}
+                    />
+                    <Button small onClick={() => playCue(cue, cueVolume(settings, cue), settings.soundKit)}>
+                      Test
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          </>
+        )}
+        {tab === "ai" && (
+          <>
+            <Section
+              title="AI"
+              hint="Sidekick works fully without AI. Chat tries the providers top to bottom and falls back when one is not reachable. Ranking (T1) only ever uses SemIf or a model on this PC."
+            >
+              <AiSection ai={settings.ai} onError={setError} />
+            </Section>
+          </>
+        )}
+        {tab === "voice" && (
+          <Section
+            title="Voice"
+            hint="Speech runs on this PC with sherpa-onnx and Kokoro. Audio is never saved or sent anywhere; only the words you say go to your AI, like a typed question."
+          >
+            <VoiceSection voice={settings.voice} onError={setError} />
+          </Section>
+        )}
+        {tab === "browser" && (
+          <>
+            <Section
+              title="Browser"
+              hint="The extension only talks to Sidekick on this PC. Logins are filled from your own 1Password or Bitwarden CLI and never stored or sent anywhere else."
+            >
+              <BrowserPairing />
+            </Section>
+          </>
+        )}
+        {tab === "search" && (
+          <>
+            <Section
+              title="Search"
+              hint="Text files in these folders become searchable in Ask mode (Search my stuff) and for Claude Code through MCP. Clipboard and web pages are searchable only by you. Everything stays on this PC."
+            >
+              <SearchSettings onError={setError} />
+            </Section>
+          </>
+        )}
+        {tab === "today" && (
+          <>
+            <Section
+              title="Today"
+              hint="Counted from the app in front, paused while you are away. Stored only on this PC."
+            >
+              <TimeToday />
+            </Section>
+            <Section
+              title="Calendar"
+              hint="In Google Calendar: Settings > your calendar > Secret address in iCal format. In Outlook: Settings > Calendar > Shared calendars > Publish, then the ICS link. The link is a secret; it stays in your settings on this PC. Fathom notes need FATHOM_API_KEY in your environment."
+            >
+              <CalendarSettings onError={setError} />
+            </Section>
+            <Section
+              title="History"
+              hint="Files Sidekick created can be undone for 24 hours; they go to the Recycle Bin."
+            >
+              <RecentActions onError={setError} />
+            </Section>
+          </>
+        )}
+        {tab === "skills" && (
+          <>
+            <Section
+              title="Skills"
+              hint="Auto runs the first safe option without asking. Deleting files, running installers or stopping processes always ask first."
+            >
+              <SkillList onError={setError} />
+            </Section>
+          </>
+        )}
+        {tab === "sensors" && (
+          <>
+            <Section title="Sensors" hint="Each sensor can be switched off on its own (FR-SEN-12).">
+              {SENSOR_IDS.map(({ id, label, hint }) => (
+                <Toggle
+                  key={id}
+                  label={label}
+                  hint={hint}
+                  checked={settings.sensors[id] ?? id !== "heartbeat"}
+                  onChange={(on) => run(() => updateSettings({ sensors: { ...settings.sensors, [id]: on } }))}
+                />
+              ))}
+            </Section>
+            <Section
+              title="Ignored apps and sites"
+              hint="Sidekick drops everything from these: windows, copies made in them, and pages. Password managers are on the list from the start."
+            >
+              <Field label="Apps" hint="Program names, for example keepassxc.exe">
+                <TextField
+                  label="Ignored apps"
+                  value={settings.denyApps.join(", ")}
+                  className="w-56"
+                  onCommit={(v) =>
+                    run(() =>
+                      updateSettings({
+                        denyApps: v
+                          .split(/[,\s]+/)
+                          .map((a) => a.trim())
+                          .filter(Boolean),
+                      }),
+                    )
+                  }
+                />
+              </Field>
+              <Field label="Sites" hint="Domains, for example mybank.com">
+                <TextField
+                  label="Ignored sites"
+                  value={settings.denySites.join(", ")}
+                  placeholder="mybank.com"
+                  className="w-56"
+                  onCommit={(v) =>
+                    run(() =>
+                      updateSettings({
+                        denySites: v
+                          .split(/[,\s]+/)
+                          .map((a) => a.trim())
+                          .filter(Boolean),
+                      }),
+                    )
+                  }
+                />
+              </Field>
+            </Section>
+            <Section
+              title="Found on this PC"
+              hint="Skills only offer what is installed. Install ffmpeg, ImageMagick, LibreOffice or pandoc for more conversions, then rescan."
+            >
+              <Capabilities onError={setError} />
+            </Section>
+          </>
+        )}
+        {tab === "about" && (
+          <>
+            <Section
+              title="Backup"
+              hint="One file with your settings, your own skills and the action history. Calendar links are left out."
+            >
+              <Backup onError={setError} />
+            </Section>
+            {info && (
+              <Section title="About">
+                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+                  <dt className="text-(--muted)">Version</dt>
+                  <dd>{info.version}</dd>
+                  <dt className="text-(--muted)">Database</dt>
+                  <dd className="font-mono text-xs break-all">{info.dbPath}</dd>
+                  <dt className="text-(--muted)">Settings</dt>
+                  <dd className="font-mono text-xs break-all">{info.settingsPath}</dd>
+                  <dt className="text-(--muted)">Stored events</dt>
+                  <dd>{info.eventCount}</dd>
+                </dl>
+              </Section>
+            )}
+            <Section title="Debug" hint="Tools for checking the island, mascot, and pipeline.">
+              <div className="flex flex-wrap gap-2">
+                {MASCOT_STATES.map((s) => (
+                  <Button key={s} small active={s === mascot} onClick={() => run(() => api.debugSetState(s))}>
+                    {s}
+                  </Button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => run(() => api.debugEmitEvent())}>Emit test event</Button>
+                <Button onClick={() => run(() => api.debugDemoFlow())}>Run demo suggestion</Button>
+              </div>
 
-      <Section title="Island">
-        <label className="flex items-center justify-between gap-4 text-sm">
-          Collapse after (seconds)
-          <input
-            type="number"
-            min={2}
-            max={120}
-            value={settings.collapseAfterSecs}
-            onChange={(e) => run(() => updateSettings({ collapseAfterSecs: Number(e.target.value) }))}
-            className="w-20 rounded-md border border-(--border) bg-transparent px-2 py-1 text-right"
-          />
-        </label>
-        <div className="flex items-center justify-between gap-4 text-sm">
-          <span>
-            Ask shortcut
-            <span className="block text-[12px] text-(--muted)">For example Alt+Space or Ctrl+Shift+K</span>
-          </span>
-          <TextField
-            value={settings.paletteHotkey}
-            onCommit={(paletteHotkey) => run(() => updateSettings({ paletteHotkey }))}
-            className="w-40 text-right"
-            label="Ask shortcut"
-          />
-        </div>
-        <Toggle
-          label="Launch Sidekick when Windows starts"
-          checked={settings.launchAtLogin}
-          onChange={(launchAtLogin) => run(() => updateSettings({ launchAtLogin }))}
-        />
-      </Section>
-
-      <Section
-        title="AI"
-        hint="Sidekick works fully without AI. Chat tries the providers top to bottom and falls back when one is not reachable. Ranking (T1) only ever uses SemIf or a model on this PC."
-      >
-        <AiSection ai={settings.ai} onError={setError} />
-      </Section>
-
-      <Section
-        title="Browser"
-        hint="The extension only talks to Sidekick on this PC. Logins are filled from your own 1Password or Bitwarden CLI and never stored or sent anywhere else."
-      >
-        <BrowserPairing />
-      </Section>
-
-      <Section title="Today" hint="Counted from the app in front, paused while you are away. Stored only on this PC.">
-        <TimeToday />
-      </Section>
-
-      <Section title="History" hint="Files Sidekick created can be undone for 24 hours; they go to the Recycle Bin.">
-        <RecentActions onError={setError} />
-      </Section>
-
-      <Section
-        title="Skills"
-        hint="Auto runs the first safe option without asking. Deleting files, running installers or stopping processes always ask first."
-      >
-        <SkillList onError={setError} />
-      </Section>
-
-      <Section title="Sensors" hint="Each sensor can be switched off on its own (FR-SEN-12).">
-        {SENSOR_IDS.map(({ id, label, hint }) => (
-          <Toggle
-            key={id}
-            label={label}
-            hint={hint}
-            checked={settings.sensors[id] ?? id !== "heartbeat"}
-            onChange={(on) => run(() => updateSettings({ sensors: { ...settings.sensors, [id]: on } }))}
-          />
-        ))}
-      </Section>
-
-      <Section
-        title="Found on this PC"
-        hint="Skills only offer what is installed. Install ffmpeg, ImageMagick, LibreOffice or pandoc for more conversions, then rescan."
-      >
-        <Capabilities onError={setError} />
-      </Section>
-
-      <Section title="Debug" hint="Tools for checking the island, mascot, and pipeline.">
-        <div className="flex flex-wrap gap-2">
-          {MASCOT_STATES.map((s) => (
-            <Button key={s} small active={s === mascot} onClick={() => run(() => api.debugSetState(s))}>
-              {s}
-            </Button>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => run(() => api.debugEmitEvent())}>Emit test event</Button>
-          <Button onClick={() => run(() => api.debugDemoFlow())}>Run demo suggestion</Button>
-        </div>
-
-        <RecentEvents />
-      </Section>
-
-      {info && (
-        <Section title="About">
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-            <dt className="text-(--muted)">Database</dt>
-            <dd className="font-mono text-xs break-all">{info.dbPath}</dd>
-            <dt className="text-(--muted)">Settings</dt>
-            <dd className="font-mono text-xs break-all">{info.settingsPath}</dd>
-            <dt className="text-(--muted)">Stored events</dt>
-            <dd>{info.eventCount}</dd>
-          </dl>
-        </Section>
-      )}
-    </main>
+              <RecentEvents />
+            </Section>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -804,6 +954,8 @@ function AiSection({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
 
       <ClaudeHook />
 
+      <McpSetup />
+
       <Toggle
         label="Rank suggestion options with T1"
         hint="SemIf or the local model guesses which option you want and puts it first. Your past picks always win."
@@ -839,12 +991,16 @@ function StatusDot({ state }: { state: "ok" | "off" | "checking" }) {
 
 const HOOK_SNIPPET = JSON.stringify(
   {
-    hooks: Object.fromEntries(
-      ["Stop", "Notification"].map((event) => [
-        event,
-        [{ hooks: [{ type: "http", url: CLAUDE_HOOK_URL, timeout: 5 }] }],
-      ]),
-    ),
+    hooks: {
+      ...Object.fromEntries(
+        ["Stop", "Notification"].map((event) => [
+          event,
+          [{ hooks: [{ type: "http", url: CLAUDE_HOOK_URL, timeout: 5 }] }],
+        ]),
+      ),
+      // Waits up to 25 s for Allow or Deny on the island, then Claude Code asks as usual.
+      PermissionRequest: [{ hooks: [{ type: "http", url: CLAUDE_HOOK_URL, timeout: 30 }] }],
+    },
   },
   null,
   2,
@@ -869,7 +1025,8 @@ function ClaudeHook() {
           <p className="text-[14px] font-medium">Claude Code hooks</p>
           <p className="text-[12px] text-(--muted)">
             Add this to <code className="font-mono">~/.claude/settings.json</code> (merge with any hooks you have) so
-            Sidekick knows when a session finishes or is waiting for you.
+            Sidekick knows when a session finishes or is waiting for you, and you can allow or deny its permission
+            requests from the island.
           </p>
         </div>
         <Button small onClick={copy}>
@@ -961,5 +1118,350 @@ function TimeToday() {
         ))}
       </ul>
     </div>
+  );
+}
+
+function CalendarSettings({ onError }: { onError: (e: string) => void }) {
+  const calendar = useSidekick((s) => s.settings.calendar);
+  const [today, setToday] = useState<CalendarToday | null>(null);
+  useEffect(() => {
+    const load = () => void api.calendarToday().then(setToday);
+    load();
+    const id = setInterval(load, 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const set = (patch: Partial<typeof calendar>) =>
+    updateSettings({ calendar: { ...calendar, ...patch } }).catch((e) => onError(String(e)));
+  return (
+    <>
+      <Field label="Calendar links" hint="One or more, separated by spaces">
+        <TextField
+          value={calendar.feeds.join(" ")}
+          placeholder="https://calendar.google.com/calendar/ical/..."
+          onCommit={(v) => void set({ feeds: v.split(/\s+/).filter(Boolean) })}
+          className="w-56"
+          label="Calendar links"
+        />
+      </Field>
+      <Field label="Remind me before" hint="Minutes before a meeting">
+        <input
+          type="number"
+          min={1}
+          max={30}
+          value={calendar.remindMinutes}
+          onChange={(e) => void set({ remindMinutes: Number(e.target.value) })}
+          className="w-20 rounded-md border border-(--border) bg-transparent px-2 py-1 text-right text-[13px]"
+        />
+      </Field>
+      {today?.error && <p className="text-[12px] text-red-400">{today.error}</p>}
+      {calendar.feeds.length > 0 &&
+        (today && today.meetings.length > 0 ? (
+          <ul className="flex flex-col gap-1.5">
+            {today.meetings.map((m) => (
+              <li key={`${m.start}${m.title}`} className="flex items-center justify-between gap-3 text-[13px]">
+                <span className="min-w-0 truncate">
+                  <span className="text-(--muted) tabular-nums">
+                    {m.start} to {m.end}
+                  </span>{" "}
+                  {m.title}
+                </span>
+                {m.joinUrl && (
+                  <Button small onClick={() => void api.openReference("page", m.joinUrl ?? "")}>
+                    Join
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[12px] text-(--muted)">No more meetings today.</p>
+        ))}
+    </>
+  );
+}
+
+function ClearIndex({ onDone }: { onDone: () => void }) {
+  const [sure, setSure] = useState(false);
+  useEffect(() => {
+    if (!sure) return;
+    const id = setTimeout(() => setSure(false), 4000);
+    return () => clearTimeout(id);
+  }, [sure]);
+  return (
+    <Button
+      small
+      onClick={() => {
+        if (!sure) return setSure(true);
+        setSure(false);
+        void api.searchClear().then(onDone);
+      }}
+    >
+      {sure ? "Delete everything?" : "Clear index"}
+    </Button>
+  );
+}
+
+function Backup({ onError }: { onError: (e: string) => void }) {
+  const [note, setNote] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  return (
+    <div className="flex flex-col gap-2 text-[13px]">
+      <div className="flex gap-2">
+        <Button
+          onClick={() =>
+            api
+              .backupExport()
+              .then((p) => setNote(`Saved to ${p}`))
+              .catch((e) => onError(String(e)))
+          }
+        >
+          Export
+        </Button>
+        <Button onClick={() => input.current?.click()}>Import</Button>
+        <input
+          ref={input}
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (!file) return;
+            void file
+              .text()
+              .then((text) => api.backupImport(text))
+              .then(setNote)
+              .catch((err) => onError(String(err)));
+          }}
+        />
+      </div>
+      {note && <p className="text-[12px] text-(--muted) break-all">{note}</p>}
+    </div>
+  );
+}
+
+function SearchSettings({ onError }: { onError: (e: string) => void }) {
+  const folders = useSidekick((s) => s.settings.indexFolders);
+  const semantic = useSidekick((s) => s.settings.semanticSearch);
+  const [status, setStatus] = useState<{ items: number; embedded: number; embedError: string | null } | null>(null);
+  const items = status?.items ?? null;
+  const refresh = useCallback(() => void api.searchStatus().then(setStatus), []);
+  useEffect(refresh, [refresh]);
+  const setSemantic = (patch: Partial<typeof semantic>) =>
+    updateSettings({ semanticSearch: { ...semantic, ...patch } }).catch((e: unknown) => onError(String(e)));
+  return (
+    <div className="flex flex-col gap-3 text-[13px]">
+      <Field label="Folders to search" hint="Separate with ; (for example C:\\Users\\you\\notes)">
+        <TextField
+          label="Folders to search"
+          value={folders.join("; ")}
+          className="w-64"
+          onCommit={(v) =>
+            updateSettings({
+              indexFolders: v
+                .split(";")
+                .map((f) => f.trim())
+                .filter(Boolean),
+            })
+              .then(() => api.searchReindex())
+              .catch((e: unknown) => onError(String(e)))
+          }
+        />
+      </Field>
+      <div className="flex items-center justify-between">
+        <span className="text-(--muted)">
+          {items === null ? "…" : `${items.toLocaleString()} items indexed`}
+          {semantic.enabled && status && status.embedded > 0 && `, ${status.embedded.toLocaleString()} by meaning`}
+        </span>
+        <div className="flex gap-1.5">
+          <Button small onClick={refresh}>
+            Refresh
+          </Button>
+          <Button
+            small
+            onClick={() => {
+              void api.searchReindex();
+              setTimeout(refresh, 15_000);
+            }}
+          >
+            Re-index folders
+          </Button>
+          <ClearIndex onDone={refresh} />
+        </div>
+      </div>
+      <Toggle
+        label="Search by meaning"
+        hint="Finds notes that match what you mean, not just the words. Uses an embedding model on your local AI server, so nothing leaves this PC."
+        checked={semantic.enabled}
+        onChange={(enabled) => void setSemantic({ enabled })}
+      />
+      {semantic.enabled && (
+        <Field label="Embedding model" hint="Pulled once with: ollama pull nomic-embed-text">
+          <TextField
+            label="Embedding model"
+            value={semantic.model}
+            onCommit={(model) => void setSemantic({ model })}
+            className="w-44"
+            mono
+          />
+        </Field>
+      )}
+      {semantic.enabled && status?.embedError && (
+        <p className="text-[12px] text-(--muted)">Search by meaning is waiting: {status.embedError}</p>
+      )}
+    </div>
+  );
+}
+
+/** The command that adds Sidekick to Claude Code as an MCP server. */
+function McpSetup() {
+  const [info, setInfo] = useState<McpInfo | null>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    void api.mcpInfo().then(setInfo);
+  }, []);
+  const command = info
+    ? `claude mcp add --scope user --transport http sidekick ${info.url} --header "Authorization: Bearer ${info.token}"`
+    : "";
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard access can be refused; the text is selectable anyway.
+    }
+  };
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-(--border) p-3">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-medium">Sidekick in Claude Code (MCP)</p>
+          <p className="text-[12px] text-(--muted)">
+            Run this once in a terminal. Claude Code can then search your files and history, show notes on the island,
+            open links, and read today&apos;s time. It only works on this PC.
+          </p>
+        </div>
+        <Button small onClick={copy}>
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+      <pre className="overflow-x-auto rounded-lg bg-black/5 p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap select-all dark:bg-white/5">
+        {command || "…"}
+      </pre>
+    </div>
+  );
+}
+
+function VoiceSection({ voice, onError }: { voice: VoiceSettings; onError: (e: string) => void }) {
+  const status = useSidekick((s) => s.voiceStatus);
+  const [progress, setProgress] = useState<VoiceDownload | null>(null);
+  useEffect(() => {
+    void api.voiceStatus().then((voiceStatus) => useSidekick.setState({ voiceStatus }));
+    const off = listen(EVENTS.voiceDownload, (p) => {
+      setProgress(p.finished ? null : p);
+      if (p.error) onError(`Voice download: ${p.error}`);
+    });
+    return () => {
+      void off.then((f) => f());
+    };
+  }, [onError]);
+  const set = (patch: Partial<VoiceSettings>) =>
+    updateSettings({ voice: { ...voice, ...patch } }).catch((e) => onError(String(e)));
+  const missing = status?.missingBytes ?? 0;
+  const downloading = status?.downloading || progress !== null;
+  const mb = (n: number) => `${Math.round(n / 1_000_000)} MB`;
+
+  return (
+    <>
+      <Toggle
+        label="Talk to Sidekick"
+        hint={voice.wakeWord ? 'Say "Hey Sidekick", then your question.' : "Use the mic button in Ask mode."}
+        checked={voice.enabled}
+        onChange={(enabled) => {
+          void set({ enabled });
+          if (enabled && missing > 0 && !downloading) api.voiceDownload().catch((e) => onError(String(e)));
+        }}
+      />
+      {missing > 0 && (
+        <div className="flex items-center justify-between gap-4 text-[13px]">
+          <span className="min-w-0">
+            {downloading && progress
+              ? `Downloading ${progress.label}: ${mb(progress.done)} of ${mb(progress.total)}`
+              : `Speech models are not downloaded yet (${mb(missing)}, once).`}
+            {downloading && progress && (
+              <span className="mt-1.5 block h-1 overflow-hidden rounded-full bg-white/10">
+                <span
+                  className="block h-full rounded-full bg-[#0a84ff] transition-[width] duration-300"
+                  style={{ width: `${Math.round((progress.done / Math.max(1, progress.total)) * 100)}%` }}
+                />
+              </span>
+            )}
+          </span>
+          {downloading ? (
+            <Button small onClick={() => void api.voiceCancelDownload()}>
+              Cancel
+            </Button>
+          ) : (
+            <Button small onClick={() => api.voiceDownload().catch((e) => onError(String(e)))}>
+              Download
+            </Button>
+          )}
+        </div>
+      )}
+      {voice.enabled && missing === 0 && (
+        <p className="text-[12px] text-(--muted)">
+          {status?.listening
+            ? voice.wakeWord
+              ? "Listening for Hey Sidekick."
+              : "Ready. Use the mic button in Ask mode."
+            : "Starting the microphone..."}
+        </p>
+      )}
+      {status?.error && <p className="text-[12px] text-red-400">{status.error}</p>}
+      <Toggle
+        label="Wake word"
+        hint="Listens for Hey Sidekick on this PC. Off pauses the microphone until you press the mic button."
+        checked={voice.wakeWord}
+        onChange={(wakeWord) => void set({ wakeWord })}
+      />
+      <Toggle
+        label="Read answers aloud"
+        hint="When you asked by voice."
+        checked={voice.speakAnswers}
+        onChange={(speakAnswers) => void set({ speakAnswers })}
+      />
+      <Field label="Voice">
+        <div className="flex items-center gap-2">
+          <select
+            value={voice.voice}
+            onChange={(e) => void set({ voice: e.target.value })}
+            className="rounded-md border border-(--border) bg-black px-2 py-1 text-[13px]"
+            aria-label="Voice"
+          >
+            {(status?.voices ?? [{ id: voice.voice, label: voice.voice }]).map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label}
+              </option>
+            ))}
+          </select>
+          <Button small onClick={() => api.voiceTest().catch((e) => onError(String(e)))}>
+            Test
+          </Button>
+        </div>
+      </Field>
+      <label className="flex items-center justify-between gap-3 text-sm">
+        Speed {voice.speed.toFixed(1)}x
+        <input
+          type="range"
+          min={0.7}
+          max={1.5}
+          step={0.1}
+          value={voice.speed}
+          onChange={(e) => void set({ speed: Number(e.target.value) })}
+          className="w-36 accent-(--accent)"
+        />
+      </label>
+    </>
   );
 }

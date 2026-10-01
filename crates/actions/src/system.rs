@@ -141,6 +141,7 @@ pub fn open_system_page(page: &str) -> Result<Outcome, ActionError> {
         "storage" => "ms-settings:storagesense",
         "apps" => "ms-settings:appsfeatures",
         "power" => "ms-settings:powersleep",
+        "battery" => "ms-settings:batterysaver",
         // Focus and Do Not Disturb (Windows 11; Focus assist on Windows 10).
         "focus" => "ms-settings:quiethours",
         "taskmgr" => {

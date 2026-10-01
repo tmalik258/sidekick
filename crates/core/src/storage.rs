@@ -47,7 +47,113 @@ const MIGRATIONS: &[&str] = &[
         secs INTEGER NOT NULL,
         PRIMARY KEY (day, app, project)
     );",
+    // Keyword search over history and chosen folders (FR-RAG, P4 part 1).
+    // `ref` is the path, URL or id a result opens.
+    "CREATE VIRTUAL TABLE search USING fts5(
+        source UNINDEXED, ref UNINDEXED, title, body, ts UNINDEXED,
+        tokenize = 'porter unicode61'
+    );",
+    // How the user treats each skill (FR-ACT-07).
+    "CREATE TABLE skill_habits (
+        skill_id TEXT PRIMARY KEY,
+        dismiss_streak INTEGER NOT NULL DEFAULT 0,
+        muted_until TEXT,
+        last_label TEXT NOT NULL DEFAULT '',
+        accept_streak INTEGER NOT NULL DEFAULT 0,
+        offered INTEGER NOT NULL DEFAULT 0
+    );",
+    // Embeddings of search items from a local model (semantic search).
+    "CREATE TABLE vectors (
+        source TEXT NOT NULL,
+        ref TEXT NOT NULL,
+        model TEXT NOT NULL,
+        vec BLOB NOT NULL,
+        PRIMARY KEY (source, ref)
+    );",
 ];
+
+/// Cosine similarity; vectors of different lengths score 0.
+pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+    let (mut dot, mut na, mut nb) = (0.0f32, 0.0f32, 0.0f32);
+    for (x, y) in a.iter().zip(b) {
+        dot += x * y;
+        na += x * x;
+        nb += y * y;
+    }
+    if na == 0.0 || nb == 0.0 {
+        0.0
+    } else {
+        dot / (na.sqrt() * nb.sqrt())
+    }
+}
+
+fn to_blob(v: &[f32]) -> Vec<u8> {
+    v.iter().flat_map(|f| f.to_le_bytes()).collect()
+}
+
+fn from_blob(b: &[u8]) -> Vec<f32> {
+    b.as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
+        .collect()
+}
+
+/// Merges ranked lists by reciprocal rank fusion: items high in either list
+/// rise, items in both rise most.
+pub fn fuse(lists: &[Vec<(String, String)>], limit: usize) -> Vec<(String, String)> {
+    let mut scores: Vec<((String, String), f32)> = Vec::new();
+    for list in lists {
+        for (rank, key) in list.iter().enumerate() {
+            let s = 1.0 / (60.0 + rank as f32);
+            match scores.iter_mut().find(|(k, _)| k == key) {
+                Some((_, total)) => *total += s,
+                None => scores.push((key.clone(), s)),
+            }
+        }
+    }
+    scores.sort_by(|a, b| b.1.total_cmp(&a.1));
+    scores.into_iter().take(limit).map(|(k, _)| k).collect()
+}
+
+/// How the user has treated one skill lately.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Habit {
+    pub skill_id: String,
+    pub dismiss_streak: i64,
+    pub muted_until: Option<String>,
+    pub last_label: String,
+    pub accept_streak: i64,
+    /// The "do this automatically?" offer was already made.
+    pub offered: bool,
+}
+
+/// One search hit, with where it came from so it can be opened.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    pub source: String,
+    pub reference: String,
+    pub title: String,
+    /// The matching part of the text, with matches between [ and ].
+    pub snippet: String,
+    pub ts: String,
+}
+
+/// Turns what the user typed into an FTS5 query: each word is matched as a
+/// prefix, and nothing they type can be read as FTS5 syntax.
+pub fn fts_query(input: &str) -> Option<String> {
+    let words: Vec<String> = input
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .take(12)
+        .map(|w| format!("\"{}\"*", w.to_lowercase()))
+        .collect();
+    (!words.is_empty()).then(|| words.join(" "))
+}
 
 /// Seconds spent in one app (and project, when known) on one day.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -281,6 +387,249 @@ impl Storage {
         Ok(self.conn.execute("DELETE FROM app_time", [])?)
     }
 
+    pub fn habit(&self, skill_id: &str) -> Result<Habit, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT dismiss_streak, muted_until, last_label, accept_streak, offered
+             FROM skill_habits WHERE skill_id = ?1",
+        )?;
+        let mut rows = stmt.query_map([skill_id], |r| {
+            Ok(Habit {
+                skill_id: skill_id.to_owned(),
+                dismiss_streak: r.get(0)?,
+                muted_until: r.get(1)?,
+                last_label: r.get(2)?,
+                accept_streak: r.get(3)?,
+                offered: r.get(4)?,
+            })
+        })?;
+        Ok(rows.next().transpose()?.unwrap_or_else(|| Habit {
+            skill_id: skill_id.to_owned(),
+            ..Habit::default()
+        }))
+    }
+
+    pub fn save_habit(&self, h: &Habit) -> Result<(), StorageError> {
+        self.conn.execute(
+            "INSERT INTO skill_habits (skill_id, dismiss_streak, muted_until, last_label, accept_streak, offered)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT (skill_id) DO UPDATE SET dismiss_streak = excluded.dismiss_streak,
+               muted_until = excluded.muted_until, last_label = excluded.last_label,
+               accept_streak = excluded.accept_streak, offered = excluded.offered",
+            params![h.skill_id, h.dismiss_streak, h.muted_until, h.last_label, h.accept_streak, h.offered],
+        )?;
+        Ok(())
+    }
+
+    /// Adds or replaces one searchable item (same source and ref replace).
+    pub fn index(
+        &self,
+        source: &str,
+        reference: &str,
+        title: &str,
+        body: &str,
+        ts: &str,
+    ) -> Result<(), StorageError> {
+        self.conn.execute(
+            "DELETE FROM search WHERE source = ?1 AND ref = ?2",
+            params![source, reference],
+        )?;
+        // The text changed, so its embedding is stale.
+        self.conn.execute(
+            "DELETE FROM vectors WHERE source = ?1 AND ref = ?2",
+            params![source, reference],
+        )?;
+        self.conn.execute(
+            "INSERT INTO search (source, ref, title, body, ts) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![source, reference, title, body, ts],
+        )?;
+        Ok(())
+    }
+
+    /// Best matches first. `sources` limits where to look (empty = everywhere).
+    pub fn search(
+        &self,
+        input: &str,
+        sources: &[&str],
+        limit: u32,
+    ) -> Result<Vec<SearchHit>, StorageError> {
+        let Some(q) = fts_query(input) else {
+            return Ok(Vec::new());
+        };
+        let mut stmt = self.conn.prepare(
+            "SELECT source, ref, title, snippet(search, 3, '[', ']', ' ... ', 12), ts
+             FROM search WHERE search MATCH ?1 ORDER BY bm25(search, 0, 0, 4.0, 1.0) LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![q, limit * 3], |r| {
+            Ok(SearchHit {
+                source: r.get(0)?,
+                reference: r.get(1)?,
+                title: r.get(2)?,
+                snippet: r.get(3)?,
+                ts: r.get(4)?,
+            })
+        })?;
+        let mut hits: Vec<SearchHit> = rows.collect::<Result<_, _>>()?;
+        if !sources.is_empty() {
+            hits.retain(|h| sources.contains(&h.source.as_str()));
+        }
+        hits.truncate(limit as usize);
+        Ok(hits)
+    }
+
+    /// Items that have no embedding from `model` yet: (source, ref, text).
+    pub fn unembedded(
+        &self,
+        model: &str,
+        limit: u32,
+    ) -> Result<Vec<(String, String, String)>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT s.source, s.ref, s.title || '. ' || substr(s.body, 1, 1500)
+             FROM search s LEFT JOIN vectors v
+               ON v.source = s.source AND v.ref = s.ref AND v.model = ?1
+             WHERE v.ref IS NULL LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![model, limit], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn save_vector(
+        &self,
+        source: &str,
+        reference: &str,
+        model: &str,
+        vec: &[f32],
+    ) -> Result<(), StorageError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO vectors (source, ref, model, vec) VALUES (?1, ?2, ?3, ?4)",
+            params![source, reference, model, to_blob(vec)],
+        )?;
+        Ok(())
+    }
+
+    pub fn vector_count(&self, model: &str) -> Result<u64, StorageError> {
+        let n: i64 = self.conn.query_row(
+            "SELECT count(*) FROM vectors WHERE model = ?1",
+            [model],
+            |r| r.get(0),
+        )?;
+        Ok(n as u64)
+    }
+
+    /// The `limit` items closest in meaning to `query`, best first.
+    pub fn nearest(
+        &self,
+        query: &[f32],
+        model: &str,
+        sources: &[&str],
+        limit: usize,
+    ) -> Result<Vec<(String, String, f32)>, StorageError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT source, ref, vec FROM vectors WHERE model = ?1")?;
+        let mut rows = stmt.query([model])?;
+        let mut best: Vec<(String, String, f32)> = Vec::new();
+        while let Some(r) = rows.next()? {
+            let source: String = r.get(0)?;
+            if !sources.is_empty() && !sources.contains(&source.as_str()) {
+                continue;
+            }
+            let blob: Vec<u8> = r.get(2)?;
+            let score = cosine(query, &from_blob(&blob));
+            if best.len() < limit || best.last().is_some_and(|b| score > b.2) {
+                best.push((source, r.get(1)?, score));
+                best.sort_by(|a, b| b.2.total_cmp(&a.2));
+                best.truncate(limit);
+            }
+        }
+        Ok(best)
+    }
+
+    /// One item as a search hit, with the start of its text as the snippet.
+    pub fn hit(&self, source: &str, reference: &str) -> Result<Option<SearchHit>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT source, ref, title, substr(body, 1, 160), ts FROM search
+             WHERE source = ?1 AND ref = ?2 LIMIT 1",
+        )?;
+        let mut rows = stmt.query_map(params![source, reference], |r| {
+            Ok(SearchHit {
+                source: r.get(0)?,
+                reference: r.get(1)?,
+                title: r.get(2)?,
+                snippet: r.get(3)?,
+                ts: r.get(4)?,
+            })
+        })?;
+        Ok(rows.next().transpose()?)
+    }
+
+    /// The newest items of one source, newest first: (ref, title, body, ts).
+    pub fn recent_items(
+        &self,
+        source: &str,
+        limit: u32,
+    ) -> Result<Vec<(String, String, String, String)>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT ref, title, body, ts FROM search WHERE source = ?1 ORDER BY ts DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![source, limit], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Keeps only the newest `keep` items of `source` (FR-CLIP-01 keeps 500
+    /// clipboard items) and drops earlier copies of the same text.
+    pub fn trim_source(
+        &self,
+        source: &str,
+        keep: u32,
+        same_body: Option<&str>,
+    ) -> Result<(), StorageError> {
+        if let Some(body) = same_body {
+            // The newest copy is the one just added; older duplicates go.
+            self.conn.execute(
+                "DELETE FROM search WHERE source = ?1 AND body = ?2 AND rowid <
+                   (SELECT max(rowid) FROM search WHERE source = ?1 AND body = ?2)",
+                params![source, body],
+            )?;
+        }
+        self.conn.execute(
+            "DELETE FROM search WHERE source = ?1 AND rowid NOT IN
+               (SELECT rowid FROM search WHERE source = ?1 ORDER BY ts DESC LIMIT ?2)",
+            params![source, keep],
+        )?;
+        self.conn.execute(
+            "DELETE FROM vectors WHERE source = ?1 AND ref NOT IN
+               (SELECT ref FROM search WHERE source = ?1)",
+            [source],
+        )?;
+        Ok(())
+    }
+
+    pub fn search_count(&self) -> Result<u64, StorageError> {
+        let n: i64 = self
+            .conn
+            .query_row("SELECT count(*) FROM search", [], |r| r.get(0))?;
+        Ok(n as u64)
+    }
+
+    pub fn clear_search(&self, source: Option<&str>) -> Result<usize, StorageError> {
+        Ok(match source {
+            Some(s) => {
+                self.conn
+                    .execute("DELETE FROM vectors WHERE source = ?1", [s])?;
+                self.conn
+                    .execute("DELETE FROM search WHERE source = ?1", [s])?
+            }
+            None => {
+                self.conn.execute("DELETE FROM vectors", [])?;
+                self.conn.execute("DELETE FROM search", [])?
+            }
+        })
+    }
+
     pub fn mark_undone(&self, id: i64) -> Result<(), StorageError> {
         self.conn
             .execute("UPDATE actions SET undone = 1 WHERE id = ?1", [id])?;
@@ -323,6 +672,33 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keeps_a_short_clipboard_history_without_repeats() {
+        let s = Storage::open_in_memory().unwrap();
+        for (i, text) in ["a", "b", "a", "c"].iter().enumerate() {
+            s.index("clipboard", &format!("id{i}"), text, text, &format!("t{i}"))
+                .unwrap();
+            s.trim_source("clipboard", 2, Some(text)).unwrap();
+        }
+        let items: Vec<String> = s
+            .recent_items("clipboard", 10)
+            .unwrap()
+            .into_iter()
+            .map(|(_, _, body, _)| body)
+            .collect();
+        assert_eq!(items, vec!["c", "a"]);
+    }
+
+    #[test]
+    fn fuses_rankings() {
+        let k = |s: &str| ("f".to_owned(), s.to_owned());
+        let fused = fuse(&[vec![k("a"), k("b"), k("c")], vec![k("c"), k("d")]], 3);
+        // b and d tie; the first list breaks ties.
+        assert_eq!(fused, vec![k("c"), k("a"), k("b")]);
+        assert!((cosine(&[1.0, 0.0], &[1.0, 0.0]) - 1.0).abs() < 1e-6);
+        assert_eq!(cosine(&[1.0], &[1.0, 2.0]), 0.0);
+    }
 
     fn event(kind: &str) -> Event {
         Event::new(kind, "test", serde_json::json!({"k": kind}))
@@ -434,6 +810,81 @@ mod tests {
         assert_eq!(day[1].secs, 30);
         assert_eq!(day.len(), 2);
         assert_eq!(s.clear_time().unwrap(), 3);
+    }
+
+    #[test]
+    fn searches_by_words_and_prefixes_safely() {
+        let s = Storage::open_in_memory().unwrap();
+        s.index(
+            "file",
+            "C:/notes/acme.md",
+            "acme.md",
+            "Invoice for ACME Corp, due Friday. Rate 45 USD per hour.",
+            "t1",
+        )
+        .unwrap();
+        s.index(
+            "chat",
+            "c1",
+            "How do I free port 3000",
+            "Use netstat -ano to find the process",
+            "t2",
+        )
+        .unwrap();
+        s.index(
+            "file",
+            "C:/notes/acme.md",
+            "acme.md",
+            "Replaced: proposal draft for ACME",
+            "t3",
+        )
+        .unwrap();
+        let hits = s.search("acme", &[], 10).unwrap();
+        assert_eq!(hits.len(), 1, "same source and ref replace");
+        assert!(hits[0].snippet.contains("[ACME]"));
+        assert_eq!(
+            s.search("propos", &[], 10).unwrap().len(),
+            1,
+            "prefix match"
+        );
+        assert_eq!(
+            s.search("netstat", &["file"], 10).unwrap().len(),
+            0,
+            "source filter"
+        );
+        assert_eq!(s.search("netstat", &["chat"], 10).unwrap().len(), 1);
+        // FTS5 syntax in the input is treated as plain words.
+        assert!(s.search("\"acme\" OR body:*", &[], 10).is_ok());
+        assert!(s.search("  ", &[], 10).unwrap().is_empty());
+        // Vectors: nearest by meaning, dropped when the text changes.
+        s.save_vector("file", "C:/notes/acme.md", "m", &[1.0, 0.0])
+            .unwrap();
+        s.save_vector("chat", "c1", "m", &[0.6, 0.8]).unwrap();
+        let near = s.nearest(&[0.0, 1.0], "m", &[], 5).unwrap();
+        assert_eq!(near[0].1, "c1");
+        assert_eq!(s.nearest(&[0.0, 1.0], "m", &["file"], 5).unwrap().len(), 1);
+        assert_eq!(s.vector_count("m").unwrap(), 2);
+        assert!(s.unembedded("m", 10).unwrap().is_empty());
+        assert_eq!(s.unembedded("other", 10).unwrap().len(), 2);
+        let hit = s.hit("chat", "c1").unwrap().unwrap();
+        assert!(!hit.title.is_empty());
+        assert_eq!(s.search_count().unwrap(), 2);
+        assert_eq!(s.clear_search(Some("chat")).unwrap(), 1);
+    }
+
+    #[test]
+    fn keeps_skill_habits() {
+        let s = Storage::open_in_memory().unwrap();
+        let mut h = s.habit("files.download").unwrap();
+        assert_eq!(h.dismiss_streak, 0);
+        h.dismiss_streak = 2;
+        h.last_label = "Open".into();
+        s.save_habit(&h).unwrap();
+        h.accept_streak = 4;
+        s.save_habit(&h).unwrap();
+        let back = s.habit("files.download").unwrap();
+        assert_eq!((back.dismiss_streak, back.accept_streak), (2, 4));
+        assert_eq!(back.last_label, "Open");
     }
 
     #[test]

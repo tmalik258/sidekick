@@ -31,6 +31,7 @@ crates/sensors/          downloads, ports, clipboard, window, Claude Code hooks,
 crates/skills/           YAML skill engine
 crates/actions/          built-in actions and detection of installed browsers and tools
 crates/ai/               AI providers (Claude Code, local, Anthropic API), router, SemIf decisions
+crates/voice/            Hey Sidekick wake word, live speech to text, Kokoro speech (sherpa-onnx, on this PC)
 skills/                  built-in skills
 assets/                  mascot art and sounds (separate license)
 ```
@@ -71,6 +72,17 @@ In the browser preview, `window.sidekickMock.go("success")` switches mascot stat
 - **Undo**: files Sidekick creates (conversions, extracted folders) can be sent to the Recycle Bin from the island or Settings > History for 24 hours.
 - **Low disk or memory**: the island warns once and offers Storage settings or Task Manager.
 - **Step away** for 5 minutes and suggestions wait for you instead of expiring unseen.
+- **Browser**: load `apps/extension` unpacked in Chrome, Edge or Zen and paste the pairing code from Settings > Browser. Sign-in pages offer a fill from 1Password or Bitwarden, too many tabs offer cleanup, Upwork jobs offer a proposal draft.
+- **Screenshots** (Win+PrtScn): Copy, Copy text (with Tesseract), Show in folder.
+- **Search my stuff**: type in Ask mode and pick Search. Add folders under Settings > Search. With Ollama running, `ollama pull nomic-embed-text` adds search by meaning (embeddings stay on this PC).
+- **Claude Code can use Sidekick** through MCP: copy the command from Settings > AI and run it once.
+- **What's on my screen?**: pick it in Ask mode, or turn on the Screenshot chip to send one with your next question. Sidekick only captures when you ask.
+- **Voice**: turn it on in Settings > Voice (downloads about 180 MB of speech models once). Say "Hey Sidekick" and your question; the island shows your words as you speak and the answer is read aloud with Kokoro. Talking over an answer stops it. There is a mic button in Ask mode for push to talk.
+- **Settings** open inside the island (tray, the island's Settings button, or "Open settings" in Ask mode).
+- **Meetings**: paste your calendar's private iCal link in Settings > Today. A few minutes before a meeting the island offers Join call and Prep with AI; afterwards it offers to draft the follow-up, from your Fathom notes when `FATHOM_API_KEY` is set.
+- **Morning brief**: the first time you sit down each day, one card with yesterday's time, repos with unsaved work and PRs waiting on you (if the GitHub CLI `gh` is signed in). Plan my day hands it to your AI.
+- **End of day**: a time summary to paste into your standup, and repos with unsaved work.
+- **Learns**: three Not nows in a row quiet a skill for a day; five identical picks offer to make it automatic.
 
 ## AI setup
 
@@ -117,3 +129,9 @@ Credits:
 - UI sounds: [SND](https://snd.dev/) by Dentsu Inc. and Starryworks Inc., installed from npm (`snd-lib`) and copied into `apps/desktop/public/sounds` at build time. Free to use; copyright of the audio belongs to the credited sound designers.
 - Interface icons: [Solar](https://www.figma.com/community/file/1166831539721848736) by 480 Design, CC BY 4.0, via Iconify.
 - The orb mascot is drawn with CSS and is original to this project.
+
+## More
+
+- [Privacy](docs/privacy.md)
+- [Contributing and writing skills](CONTRIBUTING.md)
+- [Releasing](docs/releasing.md)

@@ -1,0 +1,13 @@
+id: files.downloads-cleanup
+name: Downloads cleanup
+description: Once a week, when Downloads has piled up, offer to move files older than 30 days to the Recycle Bin (FR-FILE-07).
+priority: 20
+cooldown_secs: 518400
+trigger:
+  event: files.downloads_old
+suggestion:
+  title: "Clean up Downloads?"
+  detail: "{{count}} files older than 30 days, {{mb}} MB"
+  options:
+    - { label: Move to Recycle Bin, action: clean_downloads }
+    - { label: Look first, action: open_folder, args: { path: "{{dir}}" } }

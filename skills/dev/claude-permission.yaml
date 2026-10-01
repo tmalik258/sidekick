@@ -1,0 +1,13 @@
+id: dev.claude-permission
+name: Claude Code permissions
+description: Allow or deny Claude Code's permission requests from the island (FR-DEV-06). Unanswered for 25 seconds, Claude Code asks in the terminal as usual. Never automatic.
+priority: 95
+trigger:
+  event: claude.permission
+suggestion:
+  title: "Claude Code wants to use {{tool}}"
+  detail: "{{project}}: {{summary}}"
+  options:
+    - { label: Allow, action: claude_allow, args: { id: "{{id}}" } }
+    - { label: Deny, action: claude_deny, args: { id: "{{id}}" } }
+    - { label: In terminal, action: claude_pass, args: { id: "{{id}}" } }

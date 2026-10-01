@@ -1,0 +1,13 @@
+id: system.layout
+name: Restore window layout
+description: When you plug monitors back in, put your windows back where they were on that setup (FR-SYS-04). Layouts are saved on this PC every few minutes.
+priority: 60
+cooldown_secs: 300
+trust: auto
+trigger:
+  event: system.monitor_connected
+suggestion:
+  title: "Monitor connected"
+  detail: "Put windows back where they were?"
+  options:
+    - { label: Restore layout, action: restore_layout }

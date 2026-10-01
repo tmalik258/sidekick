@@ -44,6 +44,17 @@ impl Anthropic {
         if !req.system.is_empty() {
             body["system"] = json!(req.system);
         }
+        // The image goes with the latest question.
+        if let (Some(data), Some(last)) = (
+            req.image_base64(),
+            body["messages"].as_array_mut().and_then(|m| m.last_mut()),
+        ) {
+            let text = last["content"].clone();
+            last["content"] = json!([
+                { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": data } },
+                { "type": "text", "text": text },
+            ]);
+        }
         // If a safety classifier declines, let the API retry on another model
         // within the same call instead of failing the answer.
         body["fallbacks"] = json!("default");
@@ -168,10 +179,25 @@ mod tests {
         let body = a.body(&ChatRequest {
             system: "Be brief.".into(),
             messages: vec![Message::user("hi")],
+            image: None,
         });
         assert_eq!(body["model"], DEFAULT_MODEL);
         assert_eq!(body["system"], "Be brief.");
         assert_eq!(body["messages"][0]["role"], "user");
         assert_eq!(body["stream"], true);
+    }
+
+    #[test]
+    fn images_ride_with_the_last_question() {
+        let a = Anthropic::new(None);
+        let body = a.body(&ChatRequest {
+            system: String::new(),
+            messages: vec![Message::user("what is this?")],
+            image: Some(vec![1, 2, 3]),
+        });
+        let content = &body["messages"][0]["content"];
+        assert_eq!(content[0]["type"], "image");
+        assert_eq!(content[0]["source"]["data"], "AQID");
+        assert_eq!(content[1]["text"], "what is this?");
     }
 }

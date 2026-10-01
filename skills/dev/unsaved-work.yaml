@@ -1,0 +1,13 @@
+id: dev.unsaved-work
+name: End of day repos
+description: In the evening, tell you which git repos still have uncommitted or unpushed work (FR-DEV-09).
+priority: 50
+cooldown_secs: 43200
+trigger:
+  event: dev.unsaved_work
+suggestion:
+  title: "{{count}} repos have unsaved work"
+  detail: "{{names}}"
+  options:
+    - { label: "Open {{first}} in VS Code", action: open_in_editor, args: { path: "{{first_path}}" }, requires: ["tool:code"] }
+    - { label: "Open {{first}}", action: open_folder, args: { path: "{{first_path}}" } }

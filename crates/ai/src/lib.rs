@@ -51,6 +51,17 @@ impl Message {
 pub struct ChatRequest {
     pub system: String,
     pub messages: Vec<Message>,
+    /// A PNG the latest question is about (a screenshot), if any.
+    pub image: Option<Vec<u8>>,
+}
+
+impl ChatRequest {
+    pub fn image_base64(&self) -> Option<String> {
+        use base64::Engine;
+        self.image
+            .as_ref()
+            .map(|png| base64::engine::general_purpose::STANDARD.encode(png))
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -165,6 +176,7 @@ mod tests {
                 },
                 Message::user("what is 2+2?"),
             ],
+            image: None,
         };
         let t = transcript(&req);
         assert!(t.starts_with("Be brief."));
@@ -177,6 +189,7 @@ mod tests {
         let req = ChatRequest {
             system: String::new(),
             messages: vec![Message::user("hello")],
+            image: None,
         };
         assert_eq!(transcript(&req), "hello");
     }

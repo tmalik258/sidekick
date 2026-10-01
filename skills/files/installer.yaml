@@ -1,6 +1,6 @@
 id: files.installer
 name: Installers
-description: Offer to run a downloaded installer. Never runs on its own (FR-ACT-02).
+description: Offer to run a downloaded installer and show who signed it (FR-FILE-04). Never runs on its own (FR-ACT-02).
 priority: 70
 trigger:
   event: file.download_completed
@@ -8,7 +8,7 @@ trigger:
     kind: { equals: installer }
 suggestion:
   title: "Installer downloaded"
-  detail: "{{name}} · {{size_human}}"
+  detail: "{{name}} · {{size_human}} · {{signature}}"
   options:
     - label: Run installer
       action: run_installer
