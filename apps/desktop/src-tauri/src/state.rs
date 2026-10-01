@@ -12,7 +12,16 @@ use sidekick_sensors::{GateState, SensorGateHandle};
 use sidekick_skills::{Engine, Env, Proposal, Skill, Trust};
 
 /// Every sensor the app can run, in the order shown in settings.
-pub const SENSOR_IDS: [&str; 5] = ["downloads", "ports", "clipboard", "window", "heartbeat"];
+pub const SENSOR_IDS: [&str; 8] = [
+    "downloads",
+    "ports",
+    "clipboard",
+    "window",
+    "claude_code",
+    "system",
+    "idle",
+    "heartbeat",
+];
 
 pub struct AppState {
     pub settings: Mutex<Settings>,
@@ -47,6 +56,8 @@ pub struct AppState {
     pub scratch_dir: PathBuf,
     /// Some AI provider is switched on and reachable (skills `requires: [ai]`).
     pub ai_ready: AtomicBool,
+    /// The user stepped away (no input for a while); suggestions wait.
+    pub away: AtomicBool,
     /// T1 picks per skill and app, from earlier decisions.
     pub decisions: Mutex<crate::decide::Cache>,
 }

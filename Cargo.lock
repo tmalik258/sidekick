@@ -4312,6 +4312,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sidekick-core",
+ "sysinfo",
  "tokio",
  "windows-sys 0.61.2",
 ]

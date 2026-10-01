@@ -1,0 +1,12 @@
+id: system.memory-high
+name: Memory running out
+description: Tell you when memory stays above 92 percent and which app uses the most (FR-SYS-02).
+priority: 55
+cooldown_secs: 1800
+trigger:
+  event: system.memory_high
+suggestion:
+  title: "Memory is at {{percent}}%"
+  detail: "{{process}} uses the most ({{process_mb}} MB)."
+  options:
+    - { label: Open Task Manager, action: open_system_page, args: { page: taskmgr } }

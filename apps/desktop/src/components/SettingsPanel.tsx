@@ -12,6 +12,7 @@ import {
   type AiSettings,
   type AppInfo,
   type CapabilityInfo,
+  CLAUDE_HOOK_URL,
   CUES,
   isPaused,
   MASCOT_STATES,
@@ -763,6 +764,8 @@ function AiSection({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
         )}
       </div>
 
+      <ClaudeHook />
+
       <Toggle
         label="Rank suggestion options with T1"
         hint="SemIf or the local model guesses which option you want and puts it first. Your past picks always win."
@@ -793,5 +796,51 @@ function StatusDot({ state }: { state: "ok" | "off" | "checking" }) {
             : "animate-pulse bg-amber-400"
       }`}
     />
+  );
+}
+
+const HOOK_SNIPPET = JSON.stringify(
+  {
+    hooks: Object.fromEntries(
+      ["Stop", "Notification"].map((event) => [
+        event,
+        [{ hooks: [{ type: "http", url: CLAUDE_HOOK_URL, timeout: 5 }] }],
+      ]),
+    ),
+  },
+  null,
+  2,
+);
+
+/** The hook users add to their own Claude Code settings. Sidekick never edits that file. */
+function ClaudeHook() {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(HOOK_SNIPPET);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard access can be refused; the text is selectable anyway.
+    }
+  };
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-(--border) p-3">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-medium">Claude Code hooks</p>
+          <p className="text-[12px] text-(--muted)">
+            Add this to <code className="font-mono">~/.claude/settings.json</code> (merge with any hooks you have) so
+            Sidekick knows when a session finishes or is waiting for you.
+          </p>
+        </div>
+        <Button small onClick={copy}>
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+      <pre className="overflow-x-auto rounded-lg bg-black/5 p-3 font-mono text-[11.5px] leading-relaxed select-all dark:bg-white/5">
+        {HOOK_SNIPPET}
+      </pre>
+    </div>
   );
 }
