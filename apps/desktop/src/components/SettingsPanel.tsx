@@ -6,7 +6,7 @@ import { useNow } from "@/lib/hooks";
 import { cueVolume, playCue } from "@/lib/sound";
 import { connect, updateSettings, useSidekick } from "@/lib/store";
 import { type AppInfo, CUES, isPaused, MASCOT_STATES, type Pause, SENSOR_IDS, type StoredEvent } from "@/lib/types";
-import { Mascot } from "./Mascot";
+import { Orb } from "./Orb";
 
 export function SettingsPanel() {
   const { settings, mascot, ready } = useSidekick();
@@ -32,10 +32,12 @@ export function SettingsPanel() {
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 px-6 py-8">
       <header className="flex items-center gap-4">
-        <Mascot state={mascot} size={64} />
+        <div className="grid size-20 place-items-center">
+          <Orb state={mascot} size={60} />
+        </div>
         <div>
-          <h1 className="text-xl font-semibold">Sidekick settings</h1>
-          <p className="text-sm text-(--muted)">
+          <h1 className="font-display text-[26px] leading-tight font-semibold tracking-[-0.02em]">Sidekick</h1>
+          <p className="text-[13px] text-(--muted)">
             Version {info?.version ?? "…"} · mascot is {mascot}
           </p>
         </div>
@@ -192,12 +194,14 @@ function RecentEvents() {
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-3 rounded-xl border border-(--border) bg-(--surface) p-4">
-      <div>
-        <h2 className="font-semibold">{title}</h2>
-        {hint && <p className="text-xs text-(--muted)">{hint}</p>}
+    <section className="flex flex-col gap-2">
+      <div className="px-4">
+        <h2 className="text-[13px] font-semibold tracking-[-0.005em] text-(--muted) uppercase">{title}</h2>
       </div>
-      {children}
+      <div className="flex flex-col gap-3.5 rounded-2xl bg-(--surface) p-4 shadow-[0_0_0_0.5px_var(--border),0_1px_2px_rgb(0_0_0/0.04)]">
+        {children}
+      </div>
+      {hint && <p className="px-4 text-[12px] text-(--muted)">{hint}</p>}
     </section>
   );
 }
@@ -231,14 +235,22 @@ function Button({
 
 function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between gap-4 text-sm">
+    <label className="flex cursor-pointer items-center justify-between gap-4 text-[14px]">
       {label}
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="size-4 accent-sky-500"
-      />
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative h-[26px] w-[44px] shrink-0 rounded-full transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff] ${
+          checked ? "bg-[#30d158]" : "bg-black/15 dark:bg-white/20"
+        }`}
+      >
+        <span
+          className="absolute top-[2px] left-[2px] size-[22px] rounded-full bg-white shadow-[0_2px_6px_rgb(0_0_0/0.2)] transition-transform duration-[260ms] ease-(--ease-out-strong)"
+          style={{ transform: checked ? "translateX(18px)" : "translateX(0)" }}
+        />
+      </button>
     </label>
   );
 }

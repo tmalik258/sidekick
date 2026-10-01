@@ -4,14 +4,20 @@
 
 use std::time::Duration;
 
+use serde::Serialize;
+
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow};
 
 use crate::state::{AppState, lock};
 
 pub const LABEL: &str = "island";
 pub const HOVER_EVENT: &str = "island://hover";
+pub const CURSOR_EVENT: &str = "island://cursor";
 
-const HOVER_POLL: Duration = Duration::from_millis(40);
+/// About 40 Hz. The UI smooths it with springs, so this reads as continuous.
+const CURSOR_POLL: Duration = Duration::from_millis(24);
+/// Movements smaller than this (logical px) are not sent.
+const CURSOR_MIN_DELTA: f64 = 1.0;
 
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     let window = app
@@ -38,18 +44,25 @@ fn position_top_center(window: &WebviewWindow) -> tauri::Result<()> {
     window.set_position(PhysicalPosition::new(x, origin.y))
 }
 
-/// Polls the cursor and toggles click-through when it enters or leaves the
-/// interactive rect. The webview gets no mouse events while click-through is
-/// on, so hover is reported to the UI from here.
+/// Polls the global cursor. Streams its position to the UI (the mascot's eyes
+/// follow it anywhere on screen) and toggles click-through when it enters or
+/// leaves the interactive rect. The webview gets no mouse events while
+/// click-through is on, so hover is reported from here too.
 fn spawn_hover_tracker(app: AppHandle, window: WebviewWindow) {
     tauri::async_runtime::spawn(async move {
         let mut inside = false;
+        let mut last: Option<CursorPos> = None;
         loop {
-            tokio::time::sleep(HOVER_POLL).await;
-            let now_inside = match cursor_in_hit_rect(&app, &window) {
-                Some(v) => v,
-                None => continue,
+            tokio::time::sleep(CURSOR_POLL).await;
+            let Some(pos) = cursor_in_window(&app, &window) else {
+                continue;
             };
+            if last.is_none_or(|l| l.moved_from(pos)) {
+                last = Some(pos);
+                let _ = app.emit_to(LABEL, CURSOR_EVENT, pos);
+            }
+
+            let now_inside = lock(&app.state::<AppState>().hit_rect).contains(pos.x, pos.y);
             if now_inside == inside {
                 continue;
             }
@@ -62,12 +75,38 @@ fn spawn_hover_tracker(app: AppHandle, window: WebviewWindow) {
     });
 }
 
-fn cursor_in_hit_rect(app: &AppHandle, window: &WebviewWindow) -> Option<bool> {
+/// Cursor position in logical pixels relative to the window's top-left corner.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct CursorPos {
+    pub x: f64,
+    pub y: f64,
+}
+
+impl CursorPos {
+    /// True when the cursor moved enough to be worth telling the UI.
+    fn moved_from(self, other: CursorPos) -> bool {
+        (self.x - other.x).abs() >= CURSOR_MIN_DELTA || (self.y - other.y).abs() >= CURSOR_MIN_DELTA
+    }
+}
+
+fn cursor_in_window(app: &AppHandle, window: &WebviewWindow) -> Option<CursorPos> {
     let cursor = app.cursor_position().ok()?;
     let origin = window.outer_position().ok()?;
     let scale = window.scale_factor().ok()?;
-    let x = (cursor.x - f64::from(origin.x)) / scale;
-    let y = (cursor.y - f64::from(origin.y)) / scale;
-    let rect = *lock(&app.state::<AppState>().hit_rect);
-    Some(rect.contains(x, y))
+    Some(CursorPos {
+        x: (cursor.x - f64::from(origin.x)) / scale,
+        y: (cursor.y - f64::from(origin.y)) / scale,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ignores_sub_pixel_jitter() {
+        let a = CursorPos { x: 10.0, y: 10.0 };
+        assert!(!a.moved_from(CursorPos { x: 10.4, y: 9.6 }));
+        assert!(a.moved_from(CursorPos { x: 11.0, y: 10.0 }));
+    }
 }

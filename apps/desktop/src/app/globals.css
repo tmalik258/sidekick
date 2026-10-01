@@ -1,5 +1,43 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: "Segoe UI Variable Text", "Segoe UI Variable", system-ui, -apple-system, "Inter", sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI Variable", system-ui, -apple-system, sans-serif;
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Colors the orb transitions between. Registered so gradients can animate. */
+@property --o1 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #4b49c9;
+}
+@property --o2 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #9e9cff;
+}
+@property --g1 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #5e5ce6;
+}
+@property --g2 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #bf5af2;
+}
+@property --g3 {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #64d2ff;
+}
+@property --halo {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0.5;
+}
+
 :root {
   --bg: #f7f7f9;
   --surface: #ffffff;
@@ -42,5 +80,133 @@ body.page {
   *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
+  }
+}
+
+/* ---------- Orb ---------- */
+
+.orb {
+  position: relative;
+  flex: none;
+  perspective: calc(var(--size) * 4);
+  transition:
+    --o1 600ms ease,
+    --o2 600ms ease,
+    --g1 700ms ease,
+    --g2 700ms ease,
+    --g3 700ms ease,
+    --halo 500ms ease;
+}
+
+.orb-float,
+.orb-body,
+.orb-halo,
+.orb-sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+.orb-halo {
+  inset: -22%;
+  background: conic-gradient(from 0turn, var(--g1), var(--g2), var(--g3), var(--g1));
+  filter: blur(calc(var(--size) * 0.16));
+  opacity: var(--halo);
+  will-change: transform;
+}
+
+.orb-body {
+  overflow: hidden;
+  transform-style: preserve-3d;
+  background: radial-gradient(
+    circle at 34% 28%,
+    color-mix(in oklab, var(--o2) 70%, white) 0%,
+    var(--o2) 24%,
+    var(--o1) 64%,
+    color-mix(in oklab, var(--o1) 55%, black) 100%
+  );
+  box-shadow:
+    inset 0 calc(var(--size) * -0.09) calc(var(--size) * 0.16) rgb(0 0 0 / 0.38),
+    inset 0 calc(var(--size) * 0.04) calc(var(--size) * 0.08) rgb(255 255 255 / 0.32),
+    0 calc(var(--size) * 0.06) calc(var(--size) * 0.18) rgb(0 0 0 / 0.45);
+}
+
+/* Slow counter-rotating color drift inside the glass. */
+.orb-sheen {
+  inset: -30%;
+  background: conic-gradient(from 0.25turn, transparent, var(--g2), transparent 40%, var(--g3), transparent 75%);
+  mix-blend-mode: soft-light;
+  opacity: 0.55;
+  will-change: transform;
+}
+
+.orb-spec {
+  position: absolute;
+  left: 20%;
+  top: 11%;
+  width: 38%;
+  height: 22%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(255 255 255 / 0.75), rgb(255 255 255 / 0));
+  filter: blur(calc(var(--size) * 0.02));
+}
+
+.orb-face {
+  position: absolute;
+  inset: 0;
+}
+
+.orb-eyes {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15%;
+  padding-bottom: 4%;
+}
+
+.orb-eye {
+  display: block;
+  width: 11%;
+  height: 26%;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 0 calc(var(--size) * 0.07) rgb(255 255 255 / 0.55);
+}
+
+.orb-eye-happy {
+  display: block;
+  width: 17%;
+  height: 11%;
+  margin-top: -6%;
+  border: calc(var(--size) * 0.045) solid #fff;
+  border-bottom: 0;
+  border-radius: 999px 999px 0 0;
+  filter: drop-shadow(0 0 calc(var(--size) * 0.05) rgb(255 255 255 / 0.5));
+}
+
+/* ---------- Island ---------- */
+
+.island-shell {
+  background: #000;
+  box-shadow:
+    0 0 0 0.5px rgb(255 255 255 / 0.08),
+    0 10px 30px -6px rgb(0 0 0 / 0.55),
+    0 2px 6px rgb(0 0 0 / 0.3);
+}
+
+.chip {
+  transition:
+    transform 140ms var(--ease-out-strong),
+    background-color 160ms ease;
+}
+.chip:active {
+  transform: scale(0.96);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .orb-sheen {
+    display: none;
   }
 }
