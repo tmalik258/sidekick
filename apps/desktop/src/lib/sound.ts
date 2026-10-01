@@ -1,39 +1,78 @@
 // Sound cues, synthesized with the Web Audio API so the repo ships no audio
-// files. Replace with original recorded sounds before the public release.
+// files. Soft sine partials through a gentle low-pass and a short room
+// reflection, tuned to sit under the user's music rather than over it.
+// Replace with original recorded sounds before the public release.
 
 import type { Cue, Settings } from "./types";
 
-interface Voice {
-  type: OscillatorType;
-  from: number;
-  to: number;
-  duration: number;
+interface Note {
+  /** Start frequency, Hz. */
+  freq: number;
+  /** Optional glide target, Hz. */
+  to?: number;
+  /** Seconds after the cue starts. */
+  at?: number;
+  /** Seconds until silent. */
+  decay: number;
   gain: number;
-  delay?: number;
-  vibratoHz?: number;
+  type?: OscillatorType;
 }
 
-const VOICES: Record<Cue, Voice[]> = {
-  pop: [{ type: "sine", from: 620, to: 980, duration: 0.09, gain: 0.5 }],
-  ding: [
-    { type: "sine", from: 1318, to: 1318, duration: 0.7, gain: 0.32 },
-    { type: "sine", from: 1976, to: 1976, duration: 0.45, gain: 0.12, delay: 0.01 },
+// Pitches from a pentatonic set so cues never clash with each other.
+const CUES: Record<Cue, Note[]> = {
+  // Something caught its eye: two soft rising notes.
+  chirp: [
+    { freq: 880, decay: 0.12, gain: 0.22 },
+    { freq: 1175, at: 0.07, decay: 0.16, gain: 0.18 },
   ],
-  chirp: [{ type: "triangle", from: 440, to: 560, duration: 0.12, gain: 0.35 }],
-  boop: [{ type: "triangle", from: 330, to: 200, duration: 0.24, gain: 0.45 }],
-  yawn: [{ type: "sine", from: 320, to: 170, duration: 0.65, gain: 0.22, vibratoHz: 6 }],
+  // A suggestion arrived: a rounded glass tap.
+  pop: [
+    { freq: 1318, to: 1240, decay: 0.18, gain: 0.26 },
+    { freq: 2637, decay: 0.08, gain: 0.05 },
+  ],
+  // Listening: an open, upward pair.
   open: [
-    { type: "sine", from: 520, to: 780, duration: 0.12, gain: 0.32 },
-    { type: "sine", from: 780, to: 1040, duration: 0.1, gain: 0.22, delay: 0.09 },
+    { freq: 659, decay: 0.14, gain: 0.2 },
+    { freq: 988, at: 0.08, decay: 0.2, gain: 0.18 },
   ],
+  // Done: a bell with a long, quiet tail.
+  ding: [
+    { freq: 1568, decay: 0.9, gain: 0.2 },
+    { freq: 2349, at: 0.005, decay: 0.55, gain: 0.07 },
+    { freq: 3136, at: 0.01, decay: 0.3, gain: 0.03 },
+  ],
+  // Failed: a low, falling pair. Calm, not alarming.
+  boop: [
+    { freq: 523, to: 494, decay: 0.16, gain: 0.22, type: "triangle" },
+    { freq: 392, at: 0.11, decay: 0.24, gain: 0.2, type: "triangle" },
+  ],
+  // Going to rest: a slow, quiet sigh downward.
+  yawn: [{ freq: 440, to: 294, decay: 0.7, gain: 0.12 }],
 };
 
 let ctx: AudioContext | null = null;
+let bus: AudioNode | null = null;
 
-function context(): AudioContext {
-  ctx ??= new AudioContext();
+/** Lazily builds context, low-pass and a short room echo. */
+function output(): { ac: AudioContext; bus: AudioNode } {
+  if (!ctx || !bus) {
+    ctx = new AudioContext();
+    const lowpass = ctx.createBiquadFilter();
+    lowpass.type = "lowpass";
+    lowpass.frequency.value = 4200;
+    lowpass.Q.value = 0.3;
+
+    const room = ctx.createDelay();
+    room.delayTime.value = 0.09;
+    const roomGain = ctx.createGain();
+    roomGain.gain.value = 0.16;
+
+    lowpass.connect(ctx.destination);
+    lowpass.connect(room).connect(roomGain).connect(ctx.destination);
+    bus = lowpass;
+  }
   if (ctx.state === "suspended") void ctx.resume();
-  return ctx;
+  return { ac: ctx, bus };
 }
 
 export function cueVolume(settings: Settings, cue: Cue): number {
@@ -43,34 +82,26 @@ export function cueVolume(settings: Settings, cue: Cue): number {
 
 export function playCue(cue: Cue, volume: number): void {
   if (volume <= 0 || typeof window === "undefined") return;
-  const ac = context();
-  const now = ac.currentTime;
+  const { ac, bus } = output();
+  const now = ac.currentTime + 0.005;
 
-  for (const v of VOICES[cue]) {
-    const start = now + (v.delay ?? 0);
-    const end = start + v.duration;
+  for (const n of CUES[cue]) {
+    const start = now + (n.at ?? 0);
+    const end = start + n.decay;
     const osc = ac.createOscillator();
     const amp = ac.createGain();
 
-    osc.type = v.type;
-    osc.frequency.setValueAtTime(v.from, start);
-    osc.frequency.exponentialRampToValueAtTime(v.to, end);
+    osc.type = n.type ?? "sine";
+    osc.frequency.setValueAtTime(n.freq, start);
+    if (n.to) osc.frequency.exponentialRampToValueAtTime(n.to, end);
+
+    // 4 ms attack avoids clicks; exponential release sounds natural.
     amp.gain.setValueAtTime(0.0001, start);
-    amp.gain.exponentialRampToValueAtTime(Math.max(v.gain * volume, 0.0002), start + 0.012);
+    amp.gain.exponentialRampToValueAtTime(Math.max(n.gain * volume, 0.0002), start + 0.004);
     amp.gain.exponentialRampToValueAtTime(0.0001, end);
 
-    if (v.vibratoHz) {
-      const lfo = ac.createOscillator();
-      const depth = ac.createGain();
-      lfo.frequency.value = v.vibratoHz;
-      depth.gain.value = 8;
-      lfo.connect(depth).connect(osc.frequency);
-      lfo.start(start);
-      lfo.stop(end);
-    }
-
-    osc.connect(amp).connect(ac.destination);
+    osc.connect(amp).connect(bus);
     osc.start(start);
-    osc.stop(end + 0.02);
+    osc.stop(end + 0.05);
   }
 }
