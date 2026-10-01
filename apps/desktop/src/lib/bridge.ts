@@ -23,6 +23,7 @@ export const EVENTS = {
   suggestionClear: "suggestion://clear",
   islandHover: "island://hover",
   islandCursor: "island://cursor",
+  islandVisible: "island://visible",
   actionResult: "action://result",
   settingsChanged: "settings://changed",
 } as const;
@@ -33,6 +34,7 @@ export interface EventPayloads {
   [EVENTS.suggestionClear]: string;
   [EVENTS.islandHover]: boolean;
   [EVENTS.islandCursor]: { x: number; y: number };
+  [EVENTS.islandVisible]: boolean;
   [EVENTS.actionResult]: ActionResult;
   [EVENTS.settingsChanged]: Settings;
 }

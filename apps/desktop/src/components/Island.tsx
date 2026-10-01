@@ -54,7 +54,7 @@ const morphOpen = { type: "spring", bounce: 0.3, duration: 0.55 } as const;
 const morphClose = { type: "spring", bounce: 0.12, duration: 0.42 } as const;
 
 export function Island() {
-  const { mascot, settings, suggestion, hovered: rawHover, ready } = useSidekick();
+  const { mascot, settings, suggestion, hovered: rawHover, visible, ready } = useSidekick();
   const reduced = useReducedMotion() ?? false;
   const now = useNow(15_000);
   const paused = isPaused(settings.pause, now);
@@ -106,7 +106,15 @@ export function Island() {
   const orbY = expanded ? EXPANDED.pad : (COMPACT.height - COMPACT.orb) / 2;
 
   return (
-    <div className="flex h-screen w-screen justify-center select-none" style={{ paddingTop: TOP }}>
+    <motion.div
+      className="flex h-screen w-screen justify-center select-none"
+      style={{ paddingTop: TOP, originY: 0 }}
+      initial={false}
+      animate={
+        visible ? { opacity: 1, scale: 1, filter: "blur(0px)" } : { opacity: 0, scale: 0.92, filter: "blur(4px)" }
+      }
+      transition={reduced ? { duration: 0 } : { duration: visible ? 0.32 : 0.2, ease: [0.23, 1, 0.32, 1] }}
+    >
       <motion.div
         className="island-shell relative overflow-hidden text-white"
         initial={false}
@@ -147,7 +155,7 @@ export function Island() {
           )}
         </AnimatePresence>
       </motion.div>
-    </div>
+    </motion.div>
   );
 }
 
