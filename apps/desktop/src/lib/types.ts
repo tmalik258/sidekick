@@ -33,7 +33,12 @@ export interface Settings {
   launchAtLogin: boolean;
   sensors: Record<string, boolean>;
   pause: Pause;
+  theme: Theme;
+  soundKit: string;
 }
+
+export const THEMES = ["graphite", "pearl", "midnight"] as const;
+export type Theme = (typeof THEMES)[number];
 
 export interface Suggestion {
   id: string;
@@ -73,6 +78,8 @@ export const DEFAULT_SETTINGS: Settings = {
   launchAtLogin: false,
   sensors: {},
   pause: { kind: "none" },
+  theme: "graphite",
+  soundKit: "01",
 };
 
 export const SENSOR_IDS = [{ id: "heartbeat", label: "Heartbeat (test event every 30 s)" }] as const;

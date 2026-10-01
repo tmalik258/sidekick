@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { api, EVENTS, listen } from "./bridge";
-import { cueVolume, playCue } from "./sound";
+import { cueVolume, playCue, preloadSounds } from "./sound";
 import { DEFAULT_SETTINGS, type MascotState, type Settings, type Suggestion } from "./types";
 
 interface SidekickState {
@@ -38,16 +38,22 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
 
   void Promise.all([api.settingsGet(), api.mascotGet(), api.suggestionCurrent()]).then(
     ([settings, mascot, suggestion]) => {
-      if (!disposed) useSidekick.setState({ settings, mascot, suggestion, ready: true });
+      if (disposed) return;
+      useSidekick.setState({ settings, mascot, suggestion, ready: true });
+      if (sounds) preloadSounds(settings.soundKit);
     },
   );
 
   unlisteners.push(
     listen(EVENTS.mascotState, (t) => {
       useSidekick.setState({ mascot: t.state });
-      if (sounds && t.cue) playCue(t.cue, cueVolume(useSidekick.getState().settings, t.cue));
+      const { settings } = useSidekick.getState();
+      if (sounds && t.cue) playCue(t.cue, cueVolume(settings, t.cue), settings.soundKit);
     }),
-    listen(EVENTS.settingsChanged, (settings) => useSidekick.setState({ settings })),
+    listen(EVENTS.settingsChanged, (settings) => {
+      useSidekick.setState({ settings });
+      if (sounds) preloadSounds(settings.soundKit);
+    }),
     listen(EVENTS.suggestionNew, (suggestion) => useSidekick.setState({ suggestion })),
     listen(EVENTS.suggestionClear, (id) => {
       if (useSidekick.getState().suggestion?.id === id) useSidekick.setState({ suggestion: null });
@@ -59,4 +65,10 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
     disposed = true;
     for (const u of unlisteners) void u.then((fn) => fn());
   };
+}
+
+/** Volume for interface sounds (chip presses), following the master volume. */
+export function uiVolume(): number {
+  const { settings } = useSidekick.getState();
+  return settings.muted ? 0 : settings.masterVolume * 0.7;
 }

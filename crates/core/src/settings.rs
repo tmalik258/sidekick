@@ -43,7 +43,14 @@ pub struct Settings {
     /// Enabled flag per sensor id. Missing means enabled.
     pub sensors: BTreeMap<String, bool>,
     pub pause: Pause,
+    /// Orb appearance: one of [`THEMES`].
+    pub theme: String,
+    /// UI sound kit: one of [`SOUND_KITS`].
+    pub sound_kit: String,
 }
+
+pub const THEMES: [&str; 3] = ["graphite", "pearl", "midnight"];
+pub const SOUND_KITS: [&str; 3] = ["01", "02", "03"];
 
 impl Default for Settings {
     fn default() -> Self {
@@ -55,6 +62,8 @@ impl Default for Settings {
             launch_at_login: false,
             sensors: BTreeMap::new(),
             pause: Pause::None,
+            theme: THEMES[0].to_string(),
+            sound_kit: SOUND_KITS[0].to_string(),
         }
     }
 }
@@ -104,6 +113,12 @@ impl Settings {
             *v = v.clamp(0.0, 1.0);
         }
         self.collapse_after_secs = self.collapse_after_secs.clamp(2, 120);
+        if !THEMES.contains(&self.theme.as_str()) {
+            self.theme = THEMES[0].to_string();
+        }
+        if !SOUND_KITS.contains(&self.sound_kit.as_str()) {
+            self.sound_kit = SOUND_KITS[0].to_string();
+        }
         self
     }
 
@@ -158,6 +173,18 @@ mod tests {
         assert!(partial.muted);
         assert_eq!(partial.collapse_after_secs, 8);
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unknown_theme_and_kit_fall_back_to_defaults() {
+        let s = Settings {
+            theme: "neon".into(),
+            sound_kit: "99".into(),
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(s.theme, "graphite");
+        assert_eq!(s.sound_kit, "01");
     }
 
     #[test]

@@ -9,7 +9,8 @@ import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } fr
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
-import { connect, setHovered, useSidekick } from "@/lib/store";
+import { playSound } from "@/lib/sound";
+import { connect, setHovered, uiVolume, useSidekick } from "@/lib/store";
 import { isPaused, type MascotState, type Suggestion } from "@/lib/types";
 import { Icon } from "./Icon";
 import { Orb } from "./Orb";
@@ -123,7 +124,7 @@ export function Island() {
           transition={transition}
           style={{ originX: 0, originY: 0 }}
         >
-          <Orb state={mascot} size={ORB} />
+          <Orb state={mascot} size={ORB} theme={settings.theme} />
         </motion.div>
 
         <AnimatePresence initial={false}>
@@ -254,7 +255,7 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
         <motion.button
           key={option}
           type="button"
-          onClick={() => void api.suggestionChoose(suggestion.id, i)}
+          onClick={() => choose(suggestion, i)}
           initial={{ opacity: 0, y: 6, filter: "blur(4px)" }}
           animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
           transition={{ duration: 0.26, delay: 0.12 + i * 0.04, ease: [0.23, 1, 0.32, 1] }}
@@ -268,7 +269,7 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
       ))}
       <motion.button
         type="button"
-        onClick={() => void api.suggestionDismiss(suggestion.id, "user")}
+        onClick={() => dismiss(suggestion)}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.2, delay: 0.12 + suggestion.options.length * 0.04 }}
@@ -278,6 +279,16 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
       </motion.button>
     </div>
   );
+}
+
+function choose(suggestion: Suggestion, index: number) {
+  playSound("select", uiVolume(), useSidekick.getState().settings.soundKit);
+  void api.suggestionChoose(suggestion.id, index);
+}
+
+function dismiss(suggestion: Suggestion) {
+  playSound("toggle_off", uiVolume(), useSidekick.getState().settings.soundKit);
+  void api.suggestionDismiss(suggestion.id, "user");
 }
 
 /** Hover with intent: a short delay in, a grace period out. */
@@ -295,9 +306,9 @@ function useSuggestionKeys(suggestion: Suggestion | null) {
   useEffect(() => {
     if (!suggestion) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") void api.suggestionDismiss(suggestion.id, "user");
+      if (e.key === "Escape") dismiss(suggestion);
       const n = Number(e.key);
-      if (n >= 1 && n <= suggestion.options.length) void api.suggestionChoose(suggestion.id, n - 1);
+      if (n >= 1 && n <= suggestion.options.length) choose(suggestion, n - 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

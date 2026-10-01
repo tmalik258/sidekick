@@ -16,18 +16,61 @@ import {
 } from "motion/react";
 import { type CSSProperties, useEffect, useRef } from "react";
 import { subscribeCursor } from "@/lib/cursor";
-import type { MascotState } from "@/lib/types";
+import type { MascotState, Theme as ThemeName } from "@/lib/types";
 
-interface Look {
+/** A material for the orb: its body, eyes and resting halo. */
+interface Theme {
   body: [string, string];
   halo: [string, string, string];
-  halo_opacity: number;
+  haloOpacity: number;
+  eye: string;
+  eyeGlow: string;
+}
+
+export const THEME_STYLES: Record<ThemeName, Theme & { label: string }> = {
+  // Brushed titanium with a faint iridescent rim.
+  graphite: {
+    label: "Graphite",
+    body: ["#141418", "#9a9ca6"],
+    halo: ["#8fa3c8", "#d9c8ee", "#9fd4e4"],
+    haloOpacity: 0.32,
+    eye: "#ffffff",
+    eyeGlow: "rgb(255 255 255 / 0.55)",
+  },
+  // Pearl white with pastel light around it.
+  pearl: {
+    label: "Pearl",
+    body: ["#a9adb9", "#ffffff"],
+    halo: ["#ffc8dd", "#bde0fe", "#e2d1ff"],
+    haloOpacity: 0.5,
+    eye: "#1c1c1e",
+    eyeGlow: "rgb(0 0 0 / 0)",
+  },
+  // Deep navy glass with a cool cyan edge.
+  midnight: {
+    label: "Midnight",
+    body: ["#050816", "#4a64b0"],
+    halo: ["#5ac8fa", "#5e5ce6", "#64d2ff"],
+    haloOpacity: 0.42,
+    eye: "#ffffff",
+    eyeGlow: "rgb(100 210 255 / 0.6)",
+  },
+};
+
+/** How a state changes the orb. The material stays; the light around it speaks. */
+interface Look {
+  /** Halo colors for this state; the theme's own halo when omitted. */
+  halo?: [string, string, string];
+  haloOpacity?: number;
+  /** Faint tint mixed into the body highlight. */
+  tint?: string;
   /** Halo rotation speed, relative to the idle speed. */
   spin: number;
   /** Eye openness, 0 closed to about 1.15 wide. */
   open: number;
   happy?: boolean;
   worried?: boolean;
+  dim?: boolean;
   /** Eyes follow the cursor in this state. */
   gaze: boolean;
 }
@@ -35,53 +78,39 @@ interface Look {
 const INTELLIGENCE: [string, string, string] = ["#ff7a45", "#e14bff", "#4d8bff"];
 
 const LOOKS: Record<MascotState, Look> = {
-  idle: {
-    body: ["#4b49c9", "#9e9cff"],
-    halo: ["#5e5ce6", "#bf5af2", "#64d2ff"],
-    halo_opacity: 0.5,
-    spin: 1,
-    open: 1,
-    gaze: true,
-  },
-  sleeping: {
-    body: ["#24242c", "#4a4a58"],
-    halo: ["#3a3a48", "#2c2c38", "#3a3a48"],
-    halo_opacity: 0,
-    spin: 0,
-    open: 0.1,
-    gaze: false,
-  },
+  idle: { spin: 1, open: 1, gaze: true },
+  sleeping: { haloOpacity: 0, spin: 0, open: 0.1, dim: true, gaze: false },
   noticing: {
-    body: ["#e07b00", "#ffd60a"],
-    halo: ["#ff9f0a", "#ff375f", "#ffd60a"],
-    halo_opacity: 0.85,
+    halo: ["#ff9f0a", "#ffd60a", "#ff9f0a"],
+    haloOpacity: 0.8,
+    tint: "#ff9f0a",
     spin: 2.6,
     open: 1.15,
     gaze: true,
   },
   suggesting: {
-    body: ["#0068d6", "#7fdcff"],
-    halo: ["#0a84ff", "#5e5ce6", "#64d2ff"],
-    halo_opacity: 0.7,
+    halo: ["#0a84ff", "#64d2ff", "#5e5ce6"],
+    haloOpacity: 0.7,
+    tint: "#0a84ff",
     spin: 1.4,
     open: 1,
     gaze: true,
   },
-  listening: { body: ["#5b47ff", "#ff8ad8"], halo: INTELLIGENCE, halo_opacity: 0.95, spin: 4, open: 1.1, gaze: true },
-  working: { body: ["#5b47ff", "#ff8ad8"], halo: INTELLIGENCE, halo_opacity: 0.9, spin: 6, open: 0.8, gaze: false },
+  listening: { halo: INTELLIGENCE, haloOpacity: 0.9, spin: 4, open: 1.1, gaze: true },
+  working: { halo: INTELLIGENCE, haloOpacity: 0.85, spin: 6, open: 0.8, gaze: false },
   success: {
-    body: ["#1f9e48", "#a6f4b5"],
-    halo: ["#30d158", "#64d2ff", "#a6f4b5"],
-    halo_opacity: 0.75,
+    halo: ["#30d158", "#a6f4b5", "#64d2ff"],
+    haloOpacity: 0.75,
+    tint: "#30d158",
     spin: 2,
     open: 1,
     happy: true,
     gaze: true,
   },
   error: {
-    body: ["#c9241b", "#ff9f8a"],
     halo: ["#ff453a", "#ff9f0a", "#ff375f"],
-    halo_opacity: 0.7,
+    haloOpacity: 0.7,
+    tint: "#ff453a",
     spin: 1,
     open: 0.75,
     worried: true,
@@ -97,10 +126,12 @@ const GAZE_RELEASE_MS = 4000;
 export function Orb({
   state,
   size,
+  theme = "graphite",
   magnetic = true,
 }: {
   state: MascotState;
   size: number;
+  theme?: ThemeName;
   /** Pull toward a nearby cursor. Gaze tracking stays on either way. */
   magnetic?: boolean;
 }) {
@@ -236,14 +267,19 @@ export function Orb({
     }
   }, [look.spin, reduced]);
 
+  const material = THEME_STYLES[theme] ?? THEME_STYLES.graphite;
+  const halo = look.halo ?? material.halo;
+  const shade = (c: string) => (look.dim ? `color-mix(in oklab, ${c} 55%, #000)` : c);
   const vars = {
     "--size": `${size}px`,
-    "--o1": look.body[0],
-    "--o2": look.body[1],
-    "--g1": look.halo[0],
-    "--g2": look.halo[1],
-    "--g3": look.halo[2],
-    "--halo": look.halo_opacity,
+    "--o1": shade(material.body[0]),
+    "--o2": shade(look.tint ? `color-mix(in oklab, ${material.body[1]} 72%, ${look.tint})` : material.body[1]),
+    "--g1": halo[0],
+    "--g2": halo[1],
+    "--g3": halo[2],
+    "--halo": look.haloOpacity ?? material.haloOpacity,
+    "--eye": material.eye,
+    "--eye-glow": material.eyeGlow,
     width: size,
     height: size,
   } as CSSProperties;
