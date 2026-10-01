@@ -41,7 +41,7 @@ const DETAIL: Record<MascotState, string> = {
 const OPEN_STATES: ReadonlySet<MascotState> = new Set(["suggesting", "listening", "working", "success", "error"]);
 
 const ORB = 44;
-const COMPACT = { width: 124, height: 36, radius: 18, orb: 26 };
+const COMPACT = { width: 104, height: 36, radius: 18, orb: 26 };
 const EXPANDED = { width: 388, minHeight: 78, radius: 30, pad: 16 };
 const TOP = 6;
 
@@ -170,7 +170,7 @@ function CompactTrailing({ mascot, paused }: { mascot: MascotState; paused: bool
     >
       {busy ? (
         <Activity />
-      ) : (
+      ) : paused && (
         <span
           className={`size-1.5 rounded-full ${paused ? "bg-[#ffd60a]" : "bg-[#30d158]"}`}
           style={{ boxShadow: `0 0 8px ${paused ? "#ffd60a" : "#30d158"}` }}
@@ -184,11 +184,11 @@ function CompactTrailing({ mascot, paused }: { mascot: MascotState; paused: bool
 /** Three bars that breathe while the mascot is busy. */
 function Activity() {
   return (
-    <span className="flex h-3 items-center gap-[3px]" role="img" aria-label="Busy">
+    <span className="flex h-3 items-center gap-0.75" role="img" aria-label="Busy">
       {[0, 1, 2].map((i) => (
         <motion.span
           key={i}
-          className="w-[3px] rounded-full bg-white/85"
+          className="w-0.75 rounded-full bg-white/85"
           animate={{ height: [4, 12, 4] }}
           transition={{ duration: 0.9, repeat: Number.POSITIVE_INFINITY, delay: i * 0.15, ease: "easeInOut" }}
         />
@@ -218,7 +218,7 @@ function ExpandedContent({
           <p className="truncate font-display text-[15px] leading-5 font-semibold tracking-[-0.015em] text-white">
             {suggestion?.title ?? TITLE[mascot]}
           </p>
-          <p className="mt-0.5 line-clamp-2 text-[13px] leading-[18px] tracking-[-0.005em] text-[rgb(235_235_245/0.6)]">
+          <p className="mt-0.5 line-clamp-2 text-[13px] leading-4.5 tracking-[-0.005em] text-[rgb(235_235_245/0.6)]">
             {detail}
           </p>
         </div>
