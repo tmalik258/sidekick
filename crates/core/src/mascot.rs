@@ -229,7 +229,10 @@ mod tests {
         assert_eq!(t.previous, S::Idle);
         assert_eq!(t.state, S::Noticing);
         assert_eq!(t.cue, Some(Cue::Chirp));
-        assert_eq!(m.dispatch(E::ConditionsFailed).unwrap().cue, Some(Cue::Settle));
+        assert_eq!(
+            m.dispatch(E::ConditionsFailed).unwrap().cue,
+            Some(Cue::Settle)
+        );
         assert_eq!(m.dispatch(E::ListenStart).unwrap().cue, Some(Cue::Open));
     }
 
