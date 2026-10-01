@@ -36,12 +36,17 @@ const MIGRATIONS: &[&str] = &[
         last_ts TEXT NOT NULL,
         PRIMARY KEY (key, label)
     );",
+    // Undo for actions that created a file (FR-ACT-04).
+    "ALTER TABLE actions ADD COLUMN undo_path TEXT;
+    ALTER TABLE actions ADD COLUMN undone INTEGER NOT NULL DEFAULT 0;",
 ];
 
 /// One entry of the action log, newest first in [`Storage::recent_actions`].
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionRecord {
+    /// Set by the database; ignored when logging.
+    pub id: i64,
     pub ts: String,
     pub skill_id: String,
     pub action: String,
@@ -49,6 +54,9 @@ pub struct ActionRecord {
     pub ok: bool,
     pub message: String,
     pub auto: bool,
+    /// A file or folder the action created, which Undo moves to the bin.
+    pub undo_path: Option<String>,
+    pub undone: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -164,9 +172,11 @@ impl Storage {
         )?)
     }
 
-    pub fn log_action(&self, record: &ActionRecord) -> Result<(), StorageError> {
+    /// Logs an action and returns its id.
+    pub fn log_action(&self, record: &ActionRecord) -> Result<i64, StorageError> {
         self.conn.execute(
-            "INSERT INTO actions (ts, skill_id, action, label, ok, message, auto) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO actions (ts, skill_id, action, label, ok, message, auto, undo_path)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 record.ts,
                 record.skill_id,
@@ -174,28 +184,53 @@ impl Storage {
                 record.label,
                 record.ok,
                 record.message,
-                record.auto
+                record.auto,
+                record.undo_path
             ],
         )?;
-        Ok(())
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    const ACTION_COLUMNS: &str =
+        "id, ts, skill_id, action, label, ok, message, auto, undo_path, undone";
+
+    fn action_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<ActionRecord> {
+        Ok(ActionRecord {
+            id: r.get(0)?,
+            ts: r.get(1)?,
+            skill_id: r.get(2)?,
+            action: r.get(3)?,
+            label: r.get(4)?,
+            ok: r.get(5)?,
+            message: r.get(6)?,
+            auto: r.get(7)?,
+            undo_path: r.get(8)?,
+            undone: r.get(9)?,
+        })
     }
 
     pub fn recent_actions(&self, limit: u32) -> Result<Vec<ActionRecord>, StorageError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT ts, skill_id, action, label, ok, message, auto FROM actions ORDER BY id DESC LIMIT ?1",
-        )?;
-        let rows = stmt.query_map([limit], |r| {
-            Ok(ActionRecord {
-                ts: r.get(0)?,
-                skill_id: r.get(1)?,
-                action: r.get(2)?,
-                label: r.get(3)?,
-                ok: r.get(4)?,
-                message: r.get(5)?,
-                auto: r.get(6)?,
-            })
-        })?;
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {} FROM actions ORDER BY id DESC LIMIT ?1",
+            Self::ACTION_COLUMNS
+        ))?;
+        let rows = stmt.query_map([limit], Self::action_row)?;
         Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn action(&self, id: i64) -> Result<Option<ActionRecord>, StorageError> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {} FROM actions WHERE id = ?1",
+            Self::ACTION_COLUMNS
+        ))?;
+        let mut rows = stmt.query_map([id], Self::action_row)?;
+        Ok(rows.next().transpose()?)
+    }
+
+    pub fn mark_undone(&self, id: i64) -> Result<(), StorageError> {
+        self.conn
+            .execute("UPDATE actions SET undone = 1 WHERE id = ?1", [id])?;
+        Ok(())
     }
 
     /// Remembers that `label` was picked under `key`.
@@ -284,7 +319,8 @@ mod tests {
     #[test]
     fn logs_actions_and_learns_choices() {
         let s = Storage::open_in_memory().unwrap();
-        let rec = ActionRecord {
+        let mut rec = ActionRecord {
+            id: 0,
             ts: "2026-10-01T10:00:00Z".into(),
             skill_id: "dev.open-in-browser".into(),
             action: "open_url".into(),
@@ -292,9 +328,27 @@ mod tests {
             ok: true,
             message: "Opened in Zen".into(),
             auto: false,
+            undo_path: None,
+            undone: false,
         };
-        s.log_action(&rec).unwrap();
-        assert_eq!(s.recent_actions(5).unwrap(), vec![rec]);
+        rec.id = s.log_action(&rec).unwrap();
+        assert_eq!(s.recent_actions(5).unwrap(), vec![rec.clone()]);
+
+        let undoable = ActionRecord {
+            action: "convert".into(),
+            undo_path: Some("C:/Users/me/Downloads/photo.webp".into()),
+            ..rec.clone()
+        };
+        let id = s.log_action(&undoable).unwrap();
+        assert!(!s.action(id).unwrap().unwrap().undone);
+        s.mark_undone(id).unwrap();
+        let after = s.action(id).unwrap().unwrap();
+        assert!(after.undone);
+        assert_eq!(
+            after.undo_path.as_deref(),
+            Some("C:/Users/me/Downloads/photo.webp")
+        );
+        assert!(s.action(9999).unwrap().is_none());
 
         s.record_choice("dev:3000", "Zen", "t1").unwrap();
         s.record_choice("dev:3000", "Zen", "t2").unwrap();

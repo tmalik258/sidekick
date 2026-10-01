@@ -1,6 +1,9 @@
 //! The command palette window (FR-UI-07): a global shortcut toggles it, and
 //! it hides again when it loses focus.
 
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
@@ -9,6 +12,19 @@ use crate::ai;
 
 pub const LABEL: &str = "palette";
 pub const OPEN_EVENT: &str = "palette://open";
+
+/// Focus can bounce right after opening (the shortcut's own key release, the
+/// shell settling); a blur this soon after opening does not close it.
+const BLUR_GRACE: Duration = Duration::from_millis(500);
+static OPENED_AT: Mutex<Option<Instant>> = Mutex::new(None);
+
+fn just_opened() -> bool {
+    OPENED_AT
+        .lock()
+        .ok()
+        .and_then(|t| *t)
+        .is_some_and(|t| t.elapsed() < BLUR_GRACE)
+}
 
 /// Sent to the palette each time it opens.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -26,7 +42,12 @@ pub fn setup(app: &AppHandle, hotkey: &str) {
         let w = window.clone();
         window.on_window_event(move |event| {
             if let WindowEvent::Focused(false) = event {
-                let _ = w.hide();
+                if just_opened() {
+                    // Take focus back instead of closing.
+                    let _ = w.set_focus();
+                } else {
+                    let _ = w.hide();
+                }
             }
         });
     }
@@ -47,7 +68,9 @@ pub fn register(app: &AppHandle, hotkey: &str) -> Result<(), String> {
             toggle(app);
         }
     })
-    .map_err(|e| format!("{hotkey} could not be registered (another app may use it): {e}"))
+    .map_err(|e| format!("{hotkey} could not be registered (another app may use it): {e}"))?;
+    log::info!("palette shortcut: {hotkey}");
+    Ok(())
 }
 
 pub fn toggle(app: &AppHandle) {
@@ -55,6 +78,7 @@ pub fn toggle(app: &AppHandle) {
         return;
     };
     if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
+        log::info!("palette hidden by shortcut");
         let _ = window.hide();
     } else {
         open(app, Open::default());
@@ -68,10 +92,32 @@ pub fn open(app: &AppHandle, mut open: Open) {
     // Captured before the palette takes focus, so it describes the app the
     // user was in.
     open.context = ai::context(app);
+    if let Ok(mut t) = OPENED_AT.lock() {
+        *t = Some(Instant::now());
+    }
     let _ = window.emit(OPEN_EVENT, open);
-    let _ = window.center();
-    let _ = window.show();
-    let _ = window.set_focus();
+    place(&window);
+    if let Err(err) = window.show().and_then(|_| window.set_focus()) {
+        log::warn!("could not show the palette: {err}");
+    }
+    log::info!("palette opened");
+}
+
+/// Centered horizontally, a fifth of the way down, like Spotlight.
+fn place(window: &tauri::WebviewWindow) {
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten());
+    let (Some(m), Ok(size)) = (monitor, window.outer_size()) else {
+        let _ = window.center();
+        return;
+    };
+    let (pos, screen) = (m.position(), m.size());
+    let x = pos.x + (screen.width as i32 - size.width as i32) / 2;
+    let y = pos.y + screen.height as i32 / 5;
+    let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
 }
 
 pub fn hide(app: &AppHandle) {

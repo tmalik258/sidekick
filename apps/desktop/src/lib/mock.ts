@@ -151,6 +151,7 @@ function mockChat(a: Record<string, unknown>) {
 commands.ai_chat = (a) => mockChat(a);
 commands.ai_cancel = () => undefined;
 commands.palette_hide = () => undefined;
+commands.action_undo = () => "Moved photo.webp to the Recycle Bin";
 commands.palette_open = () => undefined;
 commands.ai_status = () => [
   { id: "claude_code", available: false, local: false },

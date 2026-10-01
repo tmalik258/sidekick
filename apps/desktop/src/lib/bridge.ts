@@ -94,5 +94,6 @@ export const api = {
     invoke<void>("ai_chat", { id, messages, attach, localOnly }),
   aiCancel: (id: string) => invoke<void>("ai_cancel", { id }),
   paletteHide: () => invoke<void>("palette_hide"),
+  actionUndo: (id: number) => invoke<string>("action_undo", { id }),
   paletteOpen: (prompt: string | null, ask: boolean) => invoke<void>("palette_open", { prompt, ask }),
 };

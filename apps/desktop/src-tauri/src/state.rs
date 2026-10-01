@@ -56,6 +56,11 @@ pub struct AppState {
     pub scratch_dir: PathBuf,
     /// Some AI provider is switched on and reachable (skills `requires: [ai]`).
     pub ai_ready: AtomicBool,
+    /// Files Sidekick's own actions just created, so the downloads sensor
+    /// seeing them does not trigger a suggestion about Sidekick's output.
+    pub own_files: Mutex<HashMap<PathBuf, Instant>>,
+    /// The next success has buttons (Undo, Show in folder); hold it longer.
+    pub linger: AtomicBool,
     /// The user stepped away (no input for a while); suggestions wait.
     pub away: AtomicBool,
     /// T1 picks per skill and app, from earlier decisions.
