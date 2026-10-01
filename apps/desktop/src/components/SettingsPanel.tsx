@@ -144,14 +144,14 @@ export function SettingsPanel() {
         </label>
         <div className="flex items-center justify-between gap-4 text-sm">
           <span>
-            Command palette shortcut
+            Ask shortcut
             <span className="block text-[12px] text-(--muted)">For example Alt+Space or Ctrl+Shift+K</span>
           </span>
           <TextField
             value={settings.paletteHotkey}
             onCommit={(paletteHotkey) => run(() => updateSettings({ paletteHotkey }))}
             className="w-40 text-right"
-            label="Command palette shortcut"
+            label="Ask shortcut"
           />
         </div>
         <Toggle

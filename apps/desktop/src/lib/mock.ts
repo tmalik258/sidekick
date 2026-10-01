@@ -129,7 +129,7 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   },
 };
 
-// A fake streamed answer, so the palette can be developed in a browser.
+// A fake streamed answer, so Ask mode can be developed in a browser.
 function mockChat(a: Record<string, unknown>) {
   const id = a.id as string;
   const messages = a.messages as { content: string }[];
@@ -150,9 +150,20 @@ function mockChat(a: Record<string, unknown>) {
 
 commands.ai_chat = (a) => mockChat(a);
 commands.ai_cancel = () => undefined;
-commands.palette_hide = () => undefined;
+commands.ask_close = () => emit("ask://close", null);
+commands.ask_open = (a) =>
+  emit("ask://open", {
+    context: {
+      app: "Visual Studio Code",
+      title: "Island.tsx - sidekick",
+      clipboardKind: "stack_trace",
+      clipboardPreview: "Error: listen EADDRINUSE: address already in use :::3000",
+      clipboardSecret: false,
+    },
+    prompt: (a.prompt as string | null) ?? null,
+    ask: Boolean(a.ask),
+  });
 commands.action_undo = () => "Moved photo.webp to the Recycle Bin";
-commands.palette_open = () => undefined;
 commands.ai_status = () => [
   { id: "claude_code", available: false, local: false },
   { id: "anthropic", available: false, local: false },

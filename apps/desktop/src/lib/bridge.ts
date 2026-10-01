@@ -7,11 +7,11 @@ import type {
   ActionRecord,
   ActionResult,
   AppInfo,
+  AskOpen,
   CapabilityInfo,
   ChatMessage,
   HitRect,
   MascotState,
-  PaletteOpen,
   ProviderStatus,
   Settings,
   SkillInfo,
@@ -29,7 +29,8 @@ export const EVENTS = {
   islandVisible: "island://visible",
   aiDelta: "ai://delta",
   aiDone: "ai://done",
-  paletteOpen: "palette://open",
+  askOpen: "ask://open",
+  askClose: "ask://close",
   actionResult: "action://result",
   settingsChanged: "settings://changed",
 } as const;
@@ -43,7 +44,8 @@ export interface EventPayloads {
   [EVENTS.islandVisible]: boolean;
   [EVENTS.aiDelta]: { id: string; text: string };
   [EVENTS.aiDone]: { id: string; provider: string | null; error: string | null };
-  [EVENTS.paletteOpen]: PaletteOpen;
+  [EVENTS.askOpen]: AskOpen;
+  [EVENTS.askClose]: null;
   [EVENTS.actionResult]: ActionResult;
   [EVENTS.settingsChanged]: Settings;
 }
@@ -93,7 +95,7 @@ export const api = {
   aiChat: (id: string, messages: ChatMessage[], attach: { window: boolean; clipboard: boolean }, localOnly: boolean) =>
     invoke<void>("ai_chat", { id, messages, attach, localOnly }),
   aiCancel: (id: string) => invoke<void>("ai_cancel", { id }),
-  paletteHide: () => invoke<void>("palette_hide"),
+  askClose: () => invoke<void>("ask_close"),
   actionUndo: (id: number) => invoke<string>("action_undo", { id }),
-  paletteOpen: (prompt: string | null, ask: boolean) => invoke<void>("palette_open", { prompt, ask }),
+  askOpen: (prompt: string | null = null, ask = false) => invoke<void>("ask_open", { prompt, ask }),
 };

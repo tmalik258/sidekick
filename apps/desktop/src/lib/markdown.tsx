@@ -68,7 +68,7 @@ function CodeBlock({ lang, text }: { lang: string; text: string }) {
     }
   };
   return (
-    <div className="group relative my-2 overflow-hidden rounded-xl border border-white/8 bg-black/35">
+    <div className="group relative my-2 overflow-hidden rounded-xl bg-white/[0.07]">
       <div className="flex items-center justify-between px-3 pt-2 text-[11px] text-white/40">
         <span>{lang || "code"}</span>
         <button

@@ -59,6 +59,8 @@ pub struct AppState {
     /// Files Sidekick's own actions just created, so the downloads sensor
     /// seeing them does not trigger a suggestion about Sidekick's output.
     pub own_files: Mutex<HashMap<PathBuf, Instant>>,
+    /// The island is in Ask mode (input, commands, chat).
+    pub ask_open: AtomicBool,
     /// The next success has buttons (Undo, Show in folder); hold it longer.
     pub linger: AtomicBool,
     /// The user stepped away (no input for a while); suggestions wait.

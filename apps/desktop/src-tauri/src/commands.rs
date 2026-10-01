@@ -8,10 +8,10 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
 
 use crate::ai;
+use crate::ask;
 use crate::decide;
 use crate::island;
 use crate::mascot;
-use crate::palette;
 use crate::pipeline::DEBUG_MANUAL_KIND;
 use crate::state::{AppState, HitRect, Suggestion, executor, gate_state, lock};
 use crate::suggestions;
@@ -259,9 +259,9 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
     }
 
     if previous.palette_hotkey != next.palette_hotkey
-        && let Err(err) = palette::register(app, &next.palette_hotkey)
+        && let Err(err) = ask::register(app, &next.palette_hotkey)
     {
-        let _ = palette::register(app, &previous.palette_hotkey);
+        let _ = ask::register(app, &previous.palette_hotkey);
         return Err(err);
     }
 
@@ -314,22 +314,22 @@ pub fn ai_cancel(app: AppHandle, id: String) {
     ai::cancel(&app, &id);
 }
 
+/// Turns the island into Ask mode, optionally with a prompt.
 #[tauri::command]
-pub fn palette_hide(app: AppHandle) {
-    palette::hide(&app);
-}
-
-/// Opens the palette, optionally with a prompt (from a suggestion chip).
-#[tauri::command]
-pub fn palette_open(app: AppHandle, prompt: Option<String>, ask: bool) {
-    palette::open(
+pub fn ask_open(app: AppHandle, prompt: Option<String>, ask: bool) {
+    ask::open(
         &app,
-        palette::Open {
+        ask::Open {
             prompt,
             ask,
             ..Default::default()
         },
     );
+}
+
+#[tauri::command]
+pub fn ask_close(app: AppHandle) {
+    ask::close(&app);
 }
 
 /// Moves what an earlier action created to the Recycle Bin.

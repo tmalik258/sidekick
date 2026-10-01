@@ -65,7 +65,7 @@ In the browser preview, `window.sidekickMock.go("success")` switches mascot stat
 - **Go fullscreen** (video, game, slides). The island hides and comes back after.
 - **Settings > Skills**: switch skills on or off, or set them to Auto. Destructive actions always ask.
 - **Your own skills**: drop YAML files into the folder shown in Settings > Found on this PC (format in `skills/README.md`).
-- **Press Alt+Space** for the command palette. Type a command, or ask anything; attach the app you were in or your clipboard with the chips. "This PC only" keeps the chat on a local model.
+- **Press Alt+Space** (or the search button on the island) and the island becomes Ask mode: type a command or ask anything, and the answer streams right there. Attach the app you were in or your clipboard with the chips; "This PC only" keeps the chat on a local model. Esc or a click elsewhere folds it back; the conversation stays for next time.
 - **Copy an error or stack trace.** The island offers Explain and fix, which asks AI with the error attached.
 - **Claude Code sessions**: add the hook from Settings > AI and the island tells you when a session finishes or is waiting for you.
 - **Undo**: files Sidekick creates (conversions, extracted folders) can be sent to the Recycle Bin from the island or Settings > History for 24 hours.
