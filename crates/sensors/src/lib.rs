@@ -14,7 +14,7 @@ mod heartbeat;
 pub mod http;
 mod idle;
 mod ports;
-mod repos;
+pub mod repos;
 mod system;
 mod window;
 

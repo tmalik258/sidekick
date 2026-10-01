@@ -126,8 +126,12 @@ pub fn on_away(app: &AppHandle) {
     *current = None;
 }
 
-/// Writes the running span every minute and raises a long editor session.
-fn human(secs: i64) -> String {
+/// The user is at the computer with an app in front.
+pub fn is_active(app: &AppHandle) -> bool {
+    lock(&app.state::<AppState>().tracker.current).is_some()
+}
+
+pub fn human(secs: i64) -> String {
     let (h, m) = (secs / 3600, (secs % 3600) / 60);
     if h > 0 {
         format!("{h} h {m} min")
@@ -136,13 +140,8 @@ fn human(secs: i64) -> String {
     }
 }
 
-/// The day's summary event (FR-COMM-04): time per project (or app), with a
-/// plain-text version ready to paste into a standup or timesheet.
-pub fn day_summary(rows: &[sidekick_core::AppTime]) -> Option<Event> {
-    let total: i64 = rows.iter().map(|r| r.secs).sum();
-    if total < MIN_SUMMARY_SECS {
-        return None;
-    }
+/// Time per project (or app when there is no project), longest first.
+pub fn by_name(rows: &[sidekick_core::AppTime]) -> Vec<(String, i64)> {
     let mut by_name: Vec<(String, i64)> = Vec::new();
     for r in rows {
         let name = if r.project.is_empty() {
@@ -156,6 +155,17 @@ pub fn day_summary(rows: &[sidekick_core::AppTime]) -> Option<Event> {
         }
     }
     by_name.sort_by_key(|(_, s)| std::cmp::Reverse(*s));
+    by_name
+}
+
+/// The day's summary event (FR-COMM-04): time per project (or app), with a
+/// plain-text version ready to paste into a standup or timesheet.
+pub fn day_summary(rows: &[sidekick_core::AppTime]) -> Option<Event> {
+    let total: i64 = rows.iter().map(|r| r.secs).sum();
+    if total < MIN_SUMMARY_SECS {
+        return None;
+    }
+    let by_name = by_name(rows);
     let top: Vec<String> = by_name
         .iter()
         .take(3)

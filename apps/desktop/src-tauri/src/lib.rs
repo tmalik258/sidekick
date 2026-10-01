@@ -1,5 +1,6 @@
 mod ai;
 mod ask;
+mod brief;
 mod browser;
 mod commands;
 mod decide;
@@ -169,6 +170,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
 
     pipeline::start(app);
     timetrack::start(app);
+    brief::start(app, data_dir.join("last-brief"), repos.roots.clone());
     search::reindex_folders(app);
     mcp::start(app, mcp_token);
     tauri::async_runtime::spawn(async move {
