@@ -1,0 +1,22 @@
+id: clipboard.long-text
+name: Long copied text
+description: When you copy a long passage, offer to summarize or translate it with AI (FR-CLIP-03).
+priority: 25
+cooldown_secs: 30
+trigger:
+  event: clipboard.changed
+  where:
+    kind: { equals: text }
+    length: { range: [700, 1000000] }
+suggestion:
+  title: "Long text copied"
+  detail: "{{length}} characters"
+  options:
+    - label: Summarize
+      action: ask_ai
+      args: { prompt: "Summarize the copied text in five short bullet points." }
+      requires: ["ai"]
+    - label: Translate to English
+      action: ask_ai
+      args: { prompt: "Translate the copied text to clear English. If it is already English, make it plainer." }
+      requires: ["ai"]

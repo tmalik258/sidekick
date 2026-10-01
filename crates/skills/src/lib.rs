@@ -61,6 +61,14 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/clipboard/open-url.yaml"),
     ),
     (
+        "clipboard/color.yaml",
+        include_str!("../../../skills/clipboard/color.yaml"),
+    ),
+    (
+        "clipboard/long-text.yaml",
+        include_str!("../../../skills/clipboard/long-text.yaml"),
+    ),
+    (
         "clipboard/format-json.yaml",
         include_str!("../../../skills/clipboard/format-json.yaml"),
     ),

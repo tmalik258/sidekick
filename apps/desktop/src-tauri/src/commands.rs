@@ -511,3 +511,31 @@ pub fn calendar_today(app: AppHandle) -> serde_json::Value {
         .collect();
     serde_json::json!({ "meetings": meetings, "error": c.error })
 }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipItem {
+    text: String,
+    ts: String,
+}
+
+/// Recent clipboard text, newest first (FR-CLIP-01). Secrets are never in it.
+#[tauri::command]
+pub fn clipboard_history(app: AppHandle, limit: Option<u32>) -> Vec<ClipItem> {
+    lock(&app.state::<AppState>().storage)
+        .recent_items("clipboard", limit.unwrap_or(60).min(500))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(_, _, text, ts)| ClipItem { text, ts })
+        .collect()
+}
+
+/// Puts a history item back on the clipboard.
+#[tauri::command]
+pub async fn clipboard_copy(app: AppHandle, text: String) -> CmdResult<()> {
+    executor(&app.state::<AppState>())
+        .run("copy_text", &serde_json::json!({ "text": text }))
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}

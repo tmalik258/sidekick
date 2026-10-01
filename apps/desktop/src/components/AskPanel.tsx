@@ -49,6 +49,7 @@ export function AskPanel() {
   const [selected, setSelected] = useState(0);
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [hits, setHits] = useState<{ query: string; items: SearchHit[] } | null>(null);
+  const [clips, setClips] = useState<{ text: string; ts: string }[] | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const seq = ask?.seq;
@@ -58,6 +59,7 @@ export function AskPanel() {
     if (seq === undefined) return;
     setText(useSidekick.getState().ask?.prompt ?? "");
     setSelected(0);
+    setClips(null);
     void api.aiStatus().then(setProviders);
     const id = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(id);
@@ -93,6 +95,14 @@ export function AskPanel() {
           sendChat("What's on my screen? Explain it briefly and point out anything I should act on.", { screen: true }),
         stay: true,
       },
+      {
+        id: "clipboard",
+        label: "Clipboard history",
+        hint: "Copy something again",
+        icon: "undo",
+        run: () => void api.clipboardHistory().then(setClips),
+        stay: true,
+      },
       { id: "settings", label: "Open settings", icon: "settings", run: () => setAsk({ view: "settings" }), stay: true },
       ...(turns.length
         ? [
@@ -116,11 +126,13 @@ export function AskPanel() {
   const streaming = chatId !== null;
   const asking = text.trim().length > 0;
   // With a conversation going, the body shows it; commands show only while typing.
-  const showHits = hits !== null && !asking;
-  const showChat = turns.length > 0 && !asking && !showHits;
+  const showClips = clips !== null && !asking;
+  const showHits = hits !== null && !asking && !showClips;
+  const showChat = turns.length > 0 && !asking && !showHits && !showClips;
   // While typing, the first rows are "Ask", "Search" and "Teach a skill".
   const lead = asking ? 3 : 0;
-  const rows = hearing !== null ? 0 : asking ? commands.length + lead : showChat || showHits ? 0 : commands.length;
+  const rows =
+    hearing !== null ? 0 : asking ? commands.length + lead : showChat || showHits || showClips ? 0 : commands.length;
   const best = providers.find((p) => p.available && (!ask.localOnly || p.local) && p.id !== "semif");
 
   const runRow = (i: number) => {
@@ -162,6 +174,7 @@ export function AskPanel() {
       if (hearing !== null) stopListening();
       else if (streaming) cancelChat();
       else if (text) setText("");
+      else if (clips) setClips(null);
       else if (hits) setHits(null);
       else void api.askClose();
     }
@@ -213,7 +226,17 @@ export function AskPanel() {
       <ContextChips />
 
       <AnimatePresence initial={false} mode="popLayout">
-        {showHits && hits ? (
+        {showClips && clips ? (
+          <motion.div
+            key="clips"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.08 } }}
+            className="ask-scroll mt-2 max-h-[330px] overflow-y-auto pr-1"
+          >
+            <Clips items={clips} />
+          </motion.div>
+        ) : showHits && hits ? (
           <motion.div
             key="hits"
             initial={{ opacity: 0 }}
@@ -479,6 +502,30 @@ function Snippet({ text }: { text: string }) {
         ),
       )}
     </>
+  );
+}
+
+/** Clipboard history: click to copy again (FR-CLIP-01). */
+function Clips({ items }: { items: { text: string; ts: string }[] }) {
+  if (items.length === 0)
+    return <p className="py-2 text-[13px] text-[rgb(235_235_245/0.6)]">Nothing copied yet. Secrets are never kept.</p>;
+  return (
+    <ul className="-mx-1.5 py-1">
+      {items.map((c) => (
+        <li key={`${c.ts}${c.text.slice(0, 40)}`}>
+          <button
+            type="button"
+            onClick={() => void api.clipboardCopy(c.text).then(() => api.askClose())}
+            className="flex w-full items-center gap-2 rounded-[14px] px-1.5 py-1.5 text-left transition-colors duration-100 hover:bg-white/[0.1]"
+          >
+            <span className="line-clamp-2 min-w-0 flex-1 font-mono text-[12px] break-all text-white/85">{c.text}</span>
+            <span className="shrink-0 text-[11px] text-[rgb(235_235_245/0.4)] tabular-nums">
+              {new Date(c.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 

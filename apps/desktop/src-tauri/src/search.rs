@@ -16,6 +16,8 @@ use crate::state::{AppState, lock};
 /// clipboard or page text, which can hold private material.
 pub const SHAREABLE: &[&str] = &["file", "download", "screenshot", "action", "chat", "claude"];
 
+/// Clipboard items kept (FR-CLIP-01).
+const CLIPBOARD_HISTORY: u32 = 500;
 const MAX_FILE_BYTES: u64 = 1_000_000;
 const MAX_FILES: usize = 20_000;
 const MAX_DEPTH: usize = 8;
@@ -100,6 +102,16 @@ pub fn index_event(app: &AppHandle, e: &Event) {
     };
     if let Some((source, reference, title, body)) = item {
         put(app, source, &reference, &title, &body, &ts);
+        if source == "clipboard" {
+            let result = lock(&app.state::<AppState>().storage).trim_source(
+                source,
+                CLIPBOARD_HISTORY,
+                Some(&body),
+            );
+            if let Err(err) = result {
+                log::warn!("could not trim clipboard history: {err}");
+            }
+        }
     }
 }
 

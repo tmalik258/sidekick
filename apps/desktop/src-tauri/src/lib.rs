@@ -76,6 +76,8 @@ pub fn run() {
             commands::events_recent,
             commands::open_settings,
             commands::calendar_today,
+            commands::clipboard_history,
+            commands::clipboard_copy,
             commands::voice_status,
             commands::voice_download,
             commands::voice_cancel_download,

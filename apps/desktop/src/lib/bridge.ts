@@ -130,6 +130,8 @@ export const api = {
   openReference: (source: string, reference: string) => invoke<void>("open_reference", { source, reference }),
   mcpInfo: () => invoke<McpInfo>("mcp_info"),
   actionUndo: (id: number) => invoke<string>("action_undo", { id }),
+  clipboardHistory: (limit = 60) => invoke<{ text: string; ts: string }[]>("clipboard_history", { limit }),
+  clipboardCopy: (text: string) => invoke<void>("clipboard_copy", { text }),
   calendarToday: () => invoke<CalendarToday>("calendar_today"),
   voiceStatus: () => invoke<VoiceStatus>("voice_status"),
   voiceDownload: () => invoke<void>("voice_download"),

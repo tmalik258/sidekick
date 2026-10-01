@@ -183,6 +183,12 @@ const voiceStatus = () => ({
   ],
 });
 commands.voice_status = voiceStatus;
+commands.clipboard_history = () => [
+  { text: "npm run dev -- --port 3001", ts: new Date().toISOString() },
+  { text: "https://github.com/tmalik258/sidekick/pull/5", ts: new Date().toISOString() },
+  { text: "#0ea5e9", ts: new Date().toISOString() },
+];
+commands.clipboard_copy = () => undefined;
 commands.search_status = () => ({ items: 1240, embedded: 1240, embedError: null });
 commands.calendar_today = () => ({
   meetings: settings.calendar.feeds.length

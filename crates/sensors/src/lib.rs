@@ -9,6 +9,7 @@ pub mod calendar;
 pub mod classify;
 mod claude_code;
 mod clipboard;
+pub mod color;
 mod downloads;
 mod gate;
 mod heartbeat;

@@ -562,6 +562,50 @@ impl Storage {
         Ok(rows.next().transpose()?)
     }
 
+    /// The newest items of one source, newest first: (ref, title, body, ts).
+    pub fn recent_items(
+        &self,
+        source: &str,
+        limit: u32,
+    ) -> Result<Vec<(String, String, String, String)>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT ref, title, body, ts FROM search WHERE source = ?1 ORDER BY ts DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![source, limit], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Keeps only the newest `keep` items of `source` (FR-CLIP-01 keeps 500
+    /// clipboard items) and drops earlier copies of the same text.
+    pub fn trim_source(
+        &self,
+        source: &str,
+        keep: u32,
+        same_body: Option<&str>,
+    ) -> Result<(), StorageError> {
+        if let Some(body) = same_body {
+            // The newest copy is the one just added; older duplicates go.
+            self.conn.execute(
+                "DELETE FROM search WHERE source = ?1 AND body = ?2 AND rowid <
+                   (SELECT max(rowid) FROM search WHERE source = ?1 AND body = ?2)",
+                params![source, body],
+            )?;
+        }
+        self.conn.execute(
+            "DELETE FROM search WHERE source = ?1 AND rowid NOT IN
+               (SELECT rowid FROM search WHERE source = ?1 ORDER BY ts DESC LIMIT ?2)",
+            params![source, keep],
+        )?;
+        self.conn.execute(
+            "DELETE FROM vectors WHERE source = ?1 AND ref NOT IN
+               (SELECT ref FROM search WHERE source = ?1)",
+            [source],
+        )?;
+        Ok(())
+    }
+
     pub fn search_count(&self) -> Result<u64, StorageError> {
         let n: i64 = self
             .conn
@@ -626,6 +670,23 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keeps_a_short_clipboard_history_without_repeats() {
+        let s = Storage::open_in_memory().unwrap();
+        for (i, text) in ["a", "b", "a", "c"].iter().enumerate() {
+            s.index("clipboard", &format!("id{i}"), text, text, &format!("t{i}"))
+                .unwrap();
+            s.trim_source("clipboard", 2, Some(text)).unwrap();
+        }
+        let items: Vec<String> = s
+            .recent_items("clipboard", 10)
+            .unwrap()
+            .into_iter()
+            .map(|(_, _, body, _)| body)
+            .collect();
+        assert_eq!(items, vec!["c", "a"]);
+    }
 
     #[test]
     fn fuses_rankings() {
