@@ -41,6 +41,38 @@ export interface Settings {
   indexFolders: string[];
   endOfDayHour: number;
   ai: AiSettings;
+  voice: VoiceSettings;
+}
+
+export interface VoiceSettings {
+  enabled: boolean;
+  wakeWord: boolean;
+  speakAnswers: boolean;
+  voice: string;
+  speed: number;
+}
+
+export interface VoiceStatus {
+  models: { id: string; label: string; size: number; installed: boolean }[];
+  missingBytes: number;
+  downloading: boolean;
+  listening: boolean;
+  error: string | null;
+  voices: { id: string; label: string }[];
+}
+
+export interface VoiceHeard {
+  text: string;
+  final: boolean;
+  byVoice: boolean;
+}
+
+export interface VoiceDownload {
+  label: string;
+  done: number;
+  total: number;
+  finished: boolean;
+  error: string | null;
 }
 
 export const AI_PROVIDERS = ["claude_code", "anthropic", "local"] as const;
@@ -207,6 +239,7 @@ export const DEFAULT_SETTINGS: Settings = {
     },
     decisions: true,
   },
+  voice: { enabled: false, wakeWord: true, speakAnswers: true, voice: "af_bella", speed: 1 },
 };
 
 export const SENSOR_IDS = [

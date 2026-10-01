@@ -1,0 +1,24 @@
+[package]
+name = "sidekick-voice"
+description = "Voice for Sidekick: the Hey Sidekick wake word, live speech to text and Kokoro speech, all on this PC (sherpa-onnx)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bzip2 = "0.4"
+cpal = "0.16"
+log.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "rustls-tls-native-roots"] }
+sha2 = "0.10"
+tar = "0.4"
+thiserror.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# Linked statically on Windows, so no extra DLLs ship next to the app.
+sherpa-rs = { version = "0.6.8", default-features = false, features = ["download-binaries", "tts", "static"] }
+sherpa-rs-sys = { version = "0.6.8", default-features = false, features = ["download-binaries", "tts", "static"] }
+
+[target.'cfg(not(windows))'.dependencies]
+sherpa-rs = { version = "0.6.8", default-features = false, features = ["download-binaries", "tts"] }
+sherpa-rs-sys = { version = "0.6.8", default-features = false, features = ["download-binaries", "tts"] }

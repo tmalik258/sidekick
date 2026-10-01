@@ -9,7 +9,17 @@ import { AnimatePresence, motion } from "motion/react";
 import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
 import { Markdown } from "@/lib/markdown";
-import { cancelChat, newChat, sendChat, setAsk, startSkill, updateSettings, useSidekick } from "@/lib/store";
+import {
+  cancelChat,
+  newChat,
+  sendChat,
+  setAsk,
+  startListening,
+  startSkill,
+  stopListening,
+  updateSettings,
+  useSidekick,
+} from "@/lib/store";
 import { isPaused, PROVIDER_LABELS, type ProviderStatus, type SearchHit, type Turn } from "@/lib/types";
 import { Icon, type IconName } from "./Icon";
 
@@ -32,6 +42,8 @@ export function AskPanel() {
   const ask = useSidekick((s) => s.ask);
   const turns = useSidekick((s) => s.turns);
   const chatId = useSidekick((s) => s.chatId);
+  const hearing = useSidekick((s) => s.hearing);
+  const voiceReady = useSidekick((s) => s.settings.voice.enabled && (s.voiceStatus?.listening ?? false));
   const settings = useSidekick((s) => s.settings);
   const [text, setText] = useState(ask?.prompt ?? "");
   const [selected, setSelected] = useState(0);
@@ -108,7 +120,7 @@ export function AskPanel() {
   const showChat = turns.length > 0 && !asking && !showHits;
   // While typing, the first rows are "Ask", "Search" and "Teach a skill".
   const lead = asking ? 3 : 0;
-  const rows = asking ? commands.length + lead : showChat || showHits ? 0 : commands.length;
+  const rows = hearing !== null ? 0 : asking ? commands.length + lead : showChat || showHits ? 0 : commands.length;
   const best = providers.find((p) => p.available && (!ask.localOnly || p.local) && p.id !== "semif");
 
   const runRow = (i: number) => {
@@ -147,7 +159,8 @@ export function AskPanel() {
       if (rows) runRow(selected);
     } else if (e.key === "Escape") {
       e.preventDefault();
-      if (streaming) cancelChat();
+      if (hearing !== null) stopListening();
+      else if (streaming) cancelChat();
       else if (text) setText("");
       else if (hits) setHits(null);
       else void api.askClose();
@@ -157,19 +170,44 @@ export function AskPanel() {
   return (
     <div className="flex flex-col">
       <div className="flex h-[30px] items-center gap-2" style={{ paddingLeft: ASK_ORB + 10 }}>
-        <input
-          ref={inputRef}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            setSelected(0);
-          }}
-          onKeyDown={onKey}
-          placeholder={turns.length ? "Ask a follow-up" : "Ask Sidekick or type a command"}
-          spellCheck={false}
-          className="min-w-0 flex-1 bg-transparent font-display text-[17px] tracking-[-0.015em] text-white outline-none placeholder:text-[rgb(235_235_245/0.4)]"
-        />
-        {streaming ? <Pill onClick={cancelChat}>Stop</Pill> : turns.length > 0 && <Pill onClick={newChat}>New</Pill>}
+        {hearing !== null ? (
+          <Hearing text={hearing} />
+        ) : (
+          <input
+            ref={inputRef}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              setSelected(0);
+            }}
+            onKeyDown={onKey}
+            placeholder={turns.length ? "Ask a follow-up" : "Ask Sidekick or type a command"}
+            spellCheck={false}
+            className="min-w-0 flex-1 bg-transparent font-display text-[17px] tracking-[-0.015em] text-white outline-none placeholder:text-[rgb(235_235_245/0.4)]"
+          />
+        )}
+        {hearing !== null ? (
+          <Pill onClick={stopListening}>Stop</Pill>
+        ) : (
+          <>
+            {voiceReady && !streaming && (
+              <button
+                type="button"
+                aria-label="Talk (or say Hey Sidekick)"
+                title="Talk (or say Hey Sidekick)"
+                onClick={startListening}
+                className="chip grid size-7 shrink-0 place-items-center rounded-full bg-white/[0.12] text-white/85 hover:bg-white/[0.2]"
+              >
+                <Icon name="mic" size={14} />
+              </button>
+            )}
+            {streaming ? (
+              <Pill onClick={cancelChat}>Stop</Pill>
+            ) : (
+              turns.length > 0 && <Pill onClick={newChat}>New</Pill>
+            )}
+          </>
+        )}
       </div>
 
       <ContextChips />
@@ -347,6 +385,31 @@ function Chip({
     >
       {children}
     </button>
+  );
+}
+
+/** Live transcript while listening, with a breathing level bar. */
+function Hearing({ text }: { text: string }) {
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-2.5" aria-live="polite">
+      <span className="flex h-4 items-center gap-[3px]" role="img" aria-label="Listening">
+        {[0, 1, 2, 3].map((i) => (
+          <motion.span
+            key={i}
+            className="w-[3px] rounded-full bg-[#30d158]"
+            animate={{ height: [4, 14, 4] }}
+            transition={{ duration: 0.8, repeat: Number.POSITIVE_INFINITY, delay: i * 0.12, ease: "easeInOut" }}
+          />
+        ))}
+      </span>
+      <span
+        className={`min-w-0 flex-1 truncate font-display text-[17px] tracking-[-0.015em] ${
+          text ? "text-white" : "text-[rgb(235_235_245/0.4)]"
+        }`}
+      >
+        {text || "Listening..."}
+      </span>
+    </div>
   );
 }
 

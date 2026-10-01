@@ -136,6 +136,9 @@ pub struct Attach {
     /// Send a screenshot of the window the user was in.
     #[serde(default)]
     pub screen: bool,
+    /// The question was spoken; read the answer aloud.
+    #[serde(default)]
+    pub speak: bool,
 }
 
 /// What Sidekick can notice, for AI writing skills. Keep in sync with the
@@ -214,6 +217,11 @@ fn system_prompt(app: &AppHandle, attach: &Attach) -> String {
         );
     }
     let mut system = SYSTEM.to_owned();
+    if attach.speak {
+        system.push_str(
+            "\n\nThe user asked by voice and your answer is read aloud. Answer in one to three short spoken sentences. No markdown, lists, tables or links unless they ask for them; if code is needed, keep it to one short block.",
+        );
+    }
     if let Some(page) = attach.page.as_deref().filter(|p| !p.trim().is_empty()) {
         let clipped: String = page.chars().take(MAX_PAGE).collect();
         system.push_str(&format!(
@@ -293,12 +301,16 @@ pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach,
             image,
         };
         let router = router(&app);
+        let speak = attach.speak && crate::voice::begin_answer(&app, &id);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
         let forward = {
             let app = app.clone();
             let id = id.clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(text) = rx.recv().await {
+                    if speak {
+                        crate::voice::answer_text(&app, &id, &text);
+                    }
                     let _ = app.emit(DELTA_EVENT, Delta { id: &id, text });
                 }
             })
@@ -326,6 +338,9 @@ pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach,
                 }),
             },
         };
+        if speak {
+            crate::voice::answer_done(&app, &done.id, done.error.as_deref());
+        }
         let _ = app.emit(DONE_EVENT, done);
     });
 }

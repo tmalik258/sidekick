@@ -287,6 +287,10 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
         _ => {}
     }
 
+    if previous.voice != next.voice || previous.pause != next.pause {
+        crate::voice::refresh(app);
+    }
+
     if let Err(err) = app.emit(SETTINGS_CHANGED, &next) {
         log::warn!("could not emit settings change: {err}");
     }
@@ -435,4 +439,34 @@ pub fn mcp_info(state: State<'_, AppState>) -> McpInfo {
         url: format!("http://127.0.0.1:{}/mcp", crate::mcp::PORT),
         token: state.mcp_token.clone(),
     }
+}
+
+#[tauri::command]
+pub fn voice_status(app: AppHandle) -> crate::voice::VoiceStatus {
+    crate::voice::status(&app)
+}
+
+#[tauri::command]
+pub fn voice_download(app: AppHandle) -> CmdResult<()> {
+    crate::voice::download(&app)
+}
+
+#[tauri::command]
+pub fn voice_cancel_download(app: AppHandle) {
+    crate::voice::cancel_download(&app);
+}
+
+#[tauri::command]
+pub fn voice_listen(app: AppHandle) -> CmdResult<()> {
+    crate::voice::listen(&app)
+}
+
+#[tauri::command]
+pub fn voice_stop(app: AppHandle) {
+    crate::voice::stop(&app);
+}
+
+#[tauri::command]
+pub fn voice_test(app: AppHandle) -> CmdResult<()> {
+    crate::voice::test(&app)
 }

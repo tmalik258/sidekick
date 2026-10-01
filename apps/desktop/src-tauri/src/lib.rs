@@ -16,6 +16,7 @@ mod suggestions;
 mod timetrack;
 mod tray;
 mod undo;
+mod voice;
 mod windows;
 
 use std::error::Error;
@@ -72,6 +73,12 @@ pub fn run() {
             commands::suggestion_dismiss,
             commands::events_recent,
             commands::open_settings,
+            commands::voice_status,
+            commands::voice_download,
+            commands::voice_cancel_download,
+            commands::voice_listen,
+            commands::voice_stop,
+            commands::voice_test,
             commands::debug_set_state,
             commands::debug_emit_event,
             commands::debug_demo_flow,
@@ -155,6 +162,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         last_window: Mutex::default(),
         chats: Mutex::default(),
         ai_workdir: data_dir.join("claude-workspace"),
+        voice: voice::Voice::new(data_dir.join("voice-models")),
         scratch_dir,
         decisions: Mutex::default(),
         ai_ready: Default::default(),
@@ -170,6 +178,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
 
     pipeline::start(app);
     timetrack::start(app);
+    voice::refresh(app);
     brief::start(app, data_dir.join("last-brief"), repos.roots.clone());
     search::reindex_folders(app);
     mcp::start(app, mcp_token);

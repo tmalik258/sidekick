@@ -22,6 +22,9 @@ import type {
   StoredEvent,
   Suggestion,
   Transition,
+  VoiceDownload,
+  VoiceHeard,
+  VoiceStatus,
 } from "./types";
 
 export const EVENTS = {
@@ -37,6 +40,9 @@ export const EVENTS = {
   askClose: "ask://close",
   actionResult: "action://result",
   settingsChanged: "settings://changed",
+  voiceState: "voice://state",
+  voiceHeard: "voice://heard",
+  voiceDownload: "voice://download",
 } as const;
 
 export interface EventPayloads {
@@ -52,6 +58,9 @@ export interface EventPayloads {
   [EVENTS.askClose]: null;
   [EVENTS.actionResult]: ActionResult;
   [EVENTS.settingsChanged]: Settings;
+  [EVENTS.voiceState]: VoiceStatus;
+  [EVENTS.voiceHeard]: VoiceHeard;
+  [EVENTS.voiceDownload]: VoiceDownload;
 }
 
 export function isTauri(): boolean {
@@ -99,7 +108,14 @@ export const api = {
   aiChat: (
     id: string,
     messages: ChatMessage[],
-    attach: { window: boolean; clipboard: boolean; page?: string | null; skill?: boolean; screen?: boolean },
+    attach: {
+      window: boolean;
+      clipboard: boolean;
+      page?: string | null;
+      skill?: boolean;
+      screen?: boolean;
+      speak?: boolean;
+    },
     localOnly: boolean,
   ) => invoke<void>("ai_chat", { id, messages, attach, localOnly }),
   aiCancel: (id: string) => invoke<void>("ai_cancel", { id }),
@@ -113,5 +129,11 @@ export const api = {
   openReference: (source: string, reference: string) => invoke<void>("open_reference", { source, reference }),
   mcpInfo: () => invoke<McpInfo>("mcp_info"),
   actionUndo: (id: number) => invoke<string>("action_undo", { id }),
+  voiceStatus: () => invoke<VoiceStatus>("voice_status"),
+  voiceDownload: () => invoke<void>("voice_download"),
+  voiceCancelDownload: () => invoke<void>("voice_cancel_download"),
+  voiceListen: () => invoke<void>("voice_listen"),
+  voiceStop: () => invoke<void>("voice_stop"),
+  voiceTest: () => invoke<void>("voice_test"),
   askOpen: (prompt: string | null = null, ask = false) => invoke<void>("ask_open", { prompt, ask }),
 };

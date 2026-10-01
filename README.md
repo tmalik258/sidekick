@@ -31,6 +31,7 @@ crates/sensors/          downloads, ports, clipboard, window, Claude Code hooks,
 crates/skills/           YAML skill engine
 crates/actions/          built-in actions and detection of installed browsers and tools
 crates/ai/               AI providers (Claude Code, local, Anthropic API), router, SemIf decisions
+crates/voice/            Hey Sidekick wake word, live speech to text, Kokoro speech (sherpa-onnx, on this PC)
 skills/                  built-in skills
 assets/                  mascot art and sounds (separate license)
 ```
@@ -76,6 +77,8 @@ In the browser preview, `window.sidekickMock.go("success")` switches mascot stat
 - **Search my stuff**: type in Ask mode and pick Search. Add folders under Settings > Search.
 - **Claude Code can use Sidekick** through MCP: copy the command from Settings > AI and run it once.
 - **What's on my screen?**: pick it in Ask mode, or turn on the Screenshot chip to send one with your next question. Sidekick only captures when you ask.
+- **Voice**: turn it on in Settings > Voice (downloads about 180 MB of speech models once). Say "Hey Sidekick" and your question; the island shows your words as you speak and the answer is read aloud with Kokoro. Talking over an answer stops it. There is a mic button in Ask mode for push to talk.
+- **Settings** open inside the island (tray, the island's Settings button, or "Open settings" in Ask mode).
 - **Morning brief**: the first time you sit down each day, one card with yesterday's time, repos with unsaved work and PRs waiting on you (if the GitHub CLI `gh` is signed in). Plan my day hands it to your AI.
 - **End of day**: a time summary to paste into your standup, and repos with unsaved work.
 - **Learns**: three Not nows in a row quiet a skill for a day; five identical picks offer to make it automatic.

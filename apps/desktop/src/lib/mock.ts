@@ -44,6 +44,7 @@ function later(ms: number, fn: () => void) {
 function saveSettings(next: Settings): Settings {
   settings = next;
   emit("settings://changed", settings);
+  emit("voice://state", commands.voice_status?.({}));
   return settings;
 }
 
@@ -166,6 +167,42 @@ commands.ask_open = (a) =>
     view: (a.view as string | undefined) ?? "ask",
   });
 commands.skill_install = () => "Screenshots";
+const voiceStatus = () => ({
+  models: [
+    { id: "wake", label: "Wake word", size: 17_626_723, installed: settings.voice.enabled },
+    { id: "speech", label: "Speech to text", size: 57_267_600, installed: settings.voice.enabled },
+    { id: "kokoro", label: "Kokoro voice", size: 103_248_205, installed: settings.voice.enabled },
+  ],
+  missingBytes: settings.voice.enabled ? 0 : 178_142_528,
+  downloading: false,
+  listening: settings.voice.enabled,
+  error: null,
+  voices: [
+    { id: "af_bella", label: "Bella (American)" },
+    { id: "bm_george", label: "George (British)" },
+  ],
+});
+commands.voice_status = voiceStatus;
+commands.voice_download = () => {
+  let done = 0;
+  const total = 178_142_528;
+  const tick = () => {
+    done = Math.min(total, done + 30_000_000);
+    emit("voice://download", { label: "Kokoro voice", done, total, finished: done >= total, error: null });
+    if (done < total) later(300, tick);
+  };
+  tick();
+};
+commands.voice_cancel_download = () => undefined;
+commands.voice_listen = () => {
+  const words = ["What", "What time", "What time is it", "What time is it in London?"];
+  for (const [i, w] of words.entries()) {
+    later(400 * (i + 1), () => emit("voice://heard", { text: w, final: false, byVoice: false }));
+  }
+  later(2200, () => emit("voice://heard", { text: words[3], final: true, byVoice: false }));
+};
+commands.voice_stop = () => undefined;
+commands.voice_test = () => undefined;
 commands.search = (a) => [
   {
     source: "file",

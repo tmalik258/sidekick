@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode, useCallback, useEffect, useState } from "react";
-import { api } from "@/lib/bridge";
+import { api, EVENTS, listen } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
 import { checkKit, cueVolume, playCue } from "@/lib/sound";
 import { updateSettings, useSidekick } from "@/lib/store";
@@ -28,12 +28,15 @@ import {
   type SkillInfo,
   type StoredEvent,
   THEMES,
+  type VoiceDownload,
+  type VoiceSettings,
 } from "@/lib/types";
 import { Orb, THEME_STYLES } from "./Orb";
 
 export const SETTINGS_TABS = [
   { id: "general", label: "General" },
   { id: "ai", label: "AI" },
+  { id: "voice", label: "Voice" },
   { id: "browser", label: "Browser" },
   { id: "search", label: "Search" },
   { id: "today", label: "Today" },
@@ -218,6 +221,14 @@ export function SettingsPanel() {
               <AiSection ai={settings.ai} onError={setError} />
             </Section>
           </>
+        )}
+        {tab === "voice" && (
+          <Section
+            title="Voice"
+            hint="Speech runs on this PC with sherpa-onnx and Kokoro. Audio is never saved or sent anywhere; only the words you say go to your AI, like a typed question."
+          >
+            <VoiceSection voice={settings.voice} onError={setError} />
+          </Section>
         )}
         {tab === "browser" && (
           <>
@@ -1128,5 +1139,118 @@ function McpSetup() {
         {command || "…"}
       </pre>
     </div>
+  );
+}
+
+function VoiceSection({ voice, onError }: { voice: VoiceSettings; onError: (e: string) => void }) {
+  const status = useSidekick((s) => s.voiceStatus);
+  const [progress, setProgress] = useState<VoiceDownload | null>(null);
+  useEffect(() => {
+    void api.voiceStatus().then((voiceStatus) => useSidekick.setState({ voiceStatus }));
+    const off = listen(EVENTS.voiceDownload, (p) => {
+      setProgress(p.finished ? null : p);
+      if (p.error) onError(`Voice download: ${p.error}`);
+    });
+    return () => {
+      void off.then((f) => f());
+    };
+  }, [onError]);
+  const set = (patch: Partial<VoiceSettings>) =>
+    updateSettings({ voice: { ...voice, ...patch } }).catch((e) => onError(String(e)));
+  const missing = status?.missingBytes ?? 0;
+  const downloading = status?.downloading || progress !== null;
+  const mb = (n: number) => `${Math.round(n / 1_000_000)} MB`;
+
+  return (
+    <>
+      <Toggle
+        label="Talk to Sidekick"
+        hint={voice.wakeWord ? 'Say "Hey Sidekick", then your question.' : "Use the mic button in Ask mode."}
+        checked={voice.enabled}
+        onChange={(enabled) => {
+          void set({ enabled });
+          if (enabled && missing > 0 && !downloading) api.voiceDownload().catch((e) => onError(String(e)));
+        }}
+      />
+      {missing > 0 && (
+        <div className="flex items-center justify-between gap-4 text-[13px]">
+          <span className="min-w-0">
+            {downloading && progress
+              ? `Downloading ${progress.label}: ${mb(progress.done)} of ${mb(progress.total)}`
+              : `Speech models are not downloaded yet (${mb(missing)}, once).`}
+            {downloading && progress && (
+              <span className="mt-1.5 block h-1 overflow-hidden rounded-full bg-white/10">
+                <span
+                  className="block h-full rounded-full bg-[#0a84ff] transition-[width] duration-300"
+                  style={{ width: `${Math.round((progress.done / Math.max(1, progress.total)) * 100)}%` }}
+                />
+              </span>
+            )}
+          </span>
+          {downloading ? (
+            <Button small onClick={() => void api.voiceCancelDownload()}>
+              Cancel
+            </Button>
+          ) : (
+            <Button small onClick={() => api.voiceDownload().catch((e) => onError(String(e)))}>
+              Download
+            </Button>
+          )}
+        </div>
+      )}
+      {voice.enabled && missing === 0 && (
+        <p className="text-[12px] text-(--muted)">
+          {status?.listening
+            ? voice.wakeWord
+              ? "Listening for Hey Sidekick."
+              : "Ready. Use the mic button in Ask mode."
+            : "Starting the microphone..."}
+        </p>
+      )}
+      {status?.error && <p className="text-[12px] text-red-400">{status.error}</p>}
+      <Toggle
+        label="Wake word"
+        hint="Listens for Hey Sidekick on this PC. Off pauses the microphone until you press the mic button."
+        checked={voice.wakeWord}
+        onChange={(wakeWord) => void set({ wakeWord })}
+      />
+      <Toggle
+        label="Read answers aloud"
+        hint="When you asked by voice."
+        checked={voice.speakAnswers}
+        onChange={(speakAnswers) => void set({ speakAnswers })}
+      />
+      <Field label="Voice">
+        <div className="flex items-center gap-2">
+          <select
+            value={voice.voice}
+            onChange={(e) => void set({ voice: e.target.value })}
+            className="rounded-md border border-(--border) bg-black px-2 py-1 text-[13px]"
+            aria-label="Voice"
+          >
+            {(status?.voices ?? [{ id: voice.voice, label: voice.voice }]).map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label}
+              </option>
+            ))}
+          </select>
+          <Button small onClick={() => api.voiceTest().catch((e) => onError(String(e)))}>
+            Test
+          </Button>
+        </div>
+      </Field>
+      <label className="flex items-center justify-between gap-3 text-sm">
+        Speed {voice.speed.toFixed(1)}x
+        <input
+          type="range"
+          min={0.7}
+          max={1.5}
+          step={0.1}
+          value={voice.speed}
+          onChange={(e) => void set({ speed: Number(e.target.value) })}
+          className="w-36 accent-(--accent)"
+        />
+      </label>
+    </>
   );
 }

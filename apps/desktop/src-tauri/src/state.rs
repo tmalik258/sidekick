@@ -78,6 +78,7 @@ pub struct AppState {
     pub away: AtomicBool,
     /// T1 picks per skill and app, from earlier decisions.
     pub decisions: Mutex<crate::decide::Cache>,
+    pub voice: crate::voice::Voice,
 }
 
 /// The interactive part of the island window, in logical pixels relative to

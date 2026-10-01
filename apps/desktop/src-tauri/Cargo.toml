@@ -24,6 +24,7 @@ sidekick-ai.workspace = true
 sidekick-core.workspace = true
 sidekick-sensors.workspace = true
 sidekick-skills.workspace = true
+sidekick-voice.workspace = true
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-global-shortcut = "2"

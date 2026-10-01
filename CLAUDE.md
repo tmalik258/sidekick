@@ -16,6 +16,7 @@ Spec: the SRS linked in README.md. Requirement IDs (FR-UI-01, NFR-SEC-05, ...) i
 - The Claude Code hook endpoint binds to 127.0.0.1 only. Sidekick never edits `~/.claude/settings.json` and never reads transcripts or credentials.
 - Localhost endpoints (hooks 47821, browser 47822, MCP 47823) bind to 127.0.0.1, refuse requests with a web page origin, and the browser and MCP ones need their token. Use `open_folder`, never `open_path`, for paths from outside Sidekick.
 - MCP search only returns shareable sources (`search::SHAREABLE`): never clipboard or page text.
+- Voice (`crates/voice`) runs fully on this PC (sherpa-onnx, Kokoro). The microphone is open only while voice is on and Sidekick is not paused; audio is never saved, logged or sent. Only the final transcript goes to the AI. Models download from pinned GitHub release URLs and are checked against SHA-256 before unpacking.
 - Undo only touches paths an action itself produced (`undo::UNDOABLE`), sends them to the Recycle Bin, and only within 24 hours.
 
 ## Frontend rules
