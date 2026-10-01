@@ -12,6 +12,7 @@ let suggestion: Suggestion | null = null;
 let epoch = 0;
 
 const CUE_BY_STATE: Partial<Record<MascotState, Cue>> = {
+  idle: "settle",
   sleeping: "yawn",
   noticing: "chirp",
   suggesting: "pop",

@@ -13,7 +13,7 @@ export const MASCOT_STATES = [
 
 export type MascotState = (typeof MASCOT_STATES)[number];
 
-export const CUES = ["yawn", "chirp", "pop", "open", "ding", "boop"] as const;
+export const CUES = ["yawn", "settle", "chirp", "pop", "open", "ding", "boop"] as const;
 
 export type Cue = (typeof CUES)[number];
 
