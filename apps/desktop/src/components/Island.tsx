@@ -42,7 +42,7 @@ const DETAIL: Record<MascotState, string> = {
 const OPEN_STATES: ReadonlySet<MascotState> = new Set(["suggesting", "listening", "working", "success", "error"]);
 
 const ORB = 44;
-const COMPACT = { width: 104, height: 36, radius: 18, orb: 26 };
+const COMPACT = { width: 39, busyWidth: 109, height: 36, radius: 18, orb: 26 };
 const EXPANDED = { width: 388, minHeight: 78, radius: 30, pad: 16 };
 /** Ask mode: wider, so commands and answers have room. */
 const ASK_WIDTH = 560;
@@ -65,6 +65,10 @@ export function Island() {
   const paused = isPaused(settings.pause, now);
   const hovered = useIntent(rawHover);
   const expanded = asking || hovered || OPEN_STATES.has(mascot) || !!suggestion;
+  // At rest only the sphere shows. The shell keeps its size (so hover and the
+  // orb position do not move) but loses its background.
+  const bare = !expanded && !chatting && (mascot === "idle" || mascot === "sleeping");
+  const busy = chatting || mascot === "noticing" || mascot === "working" || mascot === "listening";
 
   const [contentHeight, setContentHeight] = useState(0);
   const bump = useMotionValue(1);
@@ -83,7 +87,7 @@ export function Island() {
     observer.current.observe(el);
   }, []);
 
-  const width = asking ? ASK_WIDTH : expanded ? EXPANDED.width : COMPACT.width;
+  const width = asking ? ASK_WIDTH : expanded ? EXPANDED.width : busy ? COMPACT.busyWidth : COMPACT.width;
   // The measured content box already includes the top padding.
   const height = expanded ? Math.max(EXPANDED.minHeight, contentHeight + EXPANDED.pad) : COMPACT.height;
   const radius = expanded ? EXPANDED.radius : COMPACT.radius;
@@ -123,6 +127,7 @@ export function Island() {
     >
       <motion.div
         className="island-shell relative overflow-hidden text-white"
+        data-bare={bare}
         initial={false}
         animate={{ width, height, borderRadius: radius }}
         transition={transition}
@@ -141,7 +146,7 @@ export function Island() {
         </motion.div>
 
         <AnimatePresence initial={false}>
-          {!expanded && <CompactTrailing key="compact" mascot={mascot} paused={paused} busy={chatting} />}
+          {!expanded && !bare && <CompactTrailing key="compact" busy={busy} paused={paused} />}
         </AnimatePresence>
 
         <AnimatePresence initial={false} mode="popLayout">
@@ -180,8 +185,7 @@ export function Island() {
   );
 }
 
-function CompactTrailing({ mascot, paused, busy: answering }: { mascot: MascotState; paused: boolean; busy: boolean }) {
-  const busy = answering || mascot === "noticing" || mascot === "working" || mascot === "listening";
+function CompactTrailing({ paused, busy }: { paused: boolean; busy: boolean }) {
   return (
     <motion.div
       className="absolute top-0 right-0 flex h-9 items-center pr-3.5"
