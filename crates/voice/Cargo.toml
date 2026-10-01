@@ -14,11 +14,8 @@ sha2 = "0.10"
 tar = "0.4"
 thiserror.workspace = true
 
-[target.'cfg(windows)'.dependencies]
-# Linked statically on Windows, so no extra DLLs ship next to the app.
-sherpa-rs = { version = "0.6.8", default-features = false, features = ["download-binaries", "tts", "static"] }
-sherpa-rs-sys = { version = "0.6.8", default-features = false, features = ["download-binaries", "tts", "static"] }
-
-[target.'cfg(not(windows))'.dependencies]
+# Linked dynamically: the prebuilt static libraries do not include TTS. The
+# DLLs are copied next to the binaries at build time and shipped with the
+# installer through src-tauri/tauri.release.conf.json.
 sherpa-rs = { version = "0.6.8", default-features = false, features = ["download-binaries", "tts"] }
 sherpa-rs-sys = { version = "0.6.8", default-features = false, features = ["download-binaries", "tts"] }
