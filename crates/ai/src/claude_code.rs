@@ -17,6 +17,9 @@ pub struct ClaudeCode {
     pub model: Option<String>,
     /// Folder the CLI runs in. Kept empty so it has no project to touch.
     pub workdir: PathBuf,
+    /// An MCP config file (Sidekick's own server) to load for the chat. Its
+    /// tools are pre-approved; they only search, notify and open links.
+    pub mcp_config: Option<PathBuf>,
 }
 
 impl ClaudeCode {
@@ -40,6 +43,12 @@ impl ClaudeCode {
         if let Some(model) = self.model.as_deref().filter(|m| valid_model(m)) {
             args.push("--model".into());
             args.push(model.into());
+        }
+        if let Some(config) = self.mcp_config.as_ref().filter(|p| p.is_file()) {
+            args.push("--mcp-config".into());
+            args.push(config.to_string_lossy().into_owned());
+            args.push("--allowedTools".into());
+            args.push("mcp__sidekick".into());
         }
         args
     }

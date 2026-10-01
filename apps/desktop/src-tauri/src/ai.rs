@@ -41,6 +41,7 @@ fn providers(app: &AppHandle, ai: &AiSettings, all: bool) -> Vec<Arc<dyn AiProvi
                     .map(Into::into),
                 model: Some(ai.claude_code.model.clone()).filter(|m| !m.is_empty()),
                 workdir: state.ai_workdir.clone(),
+                mcp_config: Some(state.ai_workdir.join(crate::mcp::CONFIG_FILE)),
             })),
             "anthropic" if all || ai.anthropic.enabled => {
                 out.push(Arc::new(Anthropic::new(Some(ai.anthropic.model.clone()))))

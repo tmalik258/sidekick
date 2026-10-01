@@ -47,6 +47,7 @@ printf '{"type":"result","subtype":"success","is_error":false,"result":"ignored"
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let p = sidekick_ai::ClaudeCode {
+        mcp_config: None,
         path: Some(script),
         model: None,
         workdir: dir.join("work"),

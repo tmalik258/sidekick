@@ -19,6 +19,28 @@ pub const PORT: u16 = 47823;
 const PATH: &str = "/mcp";
 const VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
 
+/// Config Ask-mode chats pass to Claude Code, so it can use Sidekick's
+/// tools too (FR-AI-08). Lives in the AI workdir, next to nothing else.
+pub const CONFIG_FILE: &str = "sidekick-mcp.json";
+
+fn write_client_config(app: &AppHandle, token: &str) {
+    let dir = app.state::<AppState>().ai_workdir.clone();
+    let config = serde_json::json!({
+        "mcpServers": {
+            "sidekick": {
+                "type": "http",
+                "url": format!("http://127.0.0.1:{PORT}/mcp"),
+                "headers": { "Authorization": format!("Bearer {token}") }
+            }
+        }
+    });
+    let result = std::fs::create_dir_all(&dir)
+        .and_then(|()| std::fs::write(dir.join(CONFIG_FILE), config.to_string()));
+    if let Err(err) = result {
+        log::warn!("could not write the MCP config for chats: {err}");
+    }
+}
+
 pub fn start(app: &AppHandle, token: String) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -26,9 +48,11 @@ pub fn start(app: &AppHandle, token: String) {
             Ok(l) => l,
             Err(err) => {
                 log::warn!("MCP server port {PORT} unavailable: {err}");
+                let _ = std::fs::remove_file(app.state::<AppState>().ai_workdir.join(CONFIG_FILE));
                 return;
             }
         };
+        write_client_config(&app, &token);
         loop {
             let Ok((sock, _)) = listener.accept().await else {
                 continue;
