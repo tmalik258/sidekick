@@ -62,7 +62,60 @@ const MIGRATIONS: &[&str] = &[
         accept_streak INTEGER NOT NULL DEFAULT 0,
         offered INTEGER NOT NULL DEFAULT 0
     );",
+    // Embeddings of search items from a local model (semantic search).
+    "CREATE TABLE vectors (
+        source TEXT NOT NULL,
+        ref TEXT NOT NULL,
+        model TEXT NOT NULL,
+        vec BLOB NOT NULL,
+        PRIMARY KEY (source, ref)
+    );",
 ];
+
+/// Cosine similarity; vectors of different lengths score 0.
+pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+    let (mut dot, mut na, mut nb) = (0.0f32, 0.0f32, 0.0f32);
+    for (x, y) in a.iter().zip(b) {
+        dot += x * y;
+        na += x * x;
+        nb += y * y;
+    }
+    if na == 0.0 || nb == 0.0 {
+        0.0
+    } else {
+        dot / (na.sqrt() * nb.sqrt())
+    }
+}
+
+fn to_blob(v: &[f32]) -> Vec<u8> {
+    v.iter().flat_map(|f| f.to_le_bytes()).collect()
+}
+
+fn from_blob(b: &[u8]) -> Vec<f32> {
+    b.chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect()
+}
+
+/// Merges ranked lists by reciprocal rank fusion: items high in either list
+/// rise, items in both rise most.
+pub fn fuse(lists: &[Vec<(String, String)>], limit: usize) -> Vec<(String, String)> {
+    let mut scores: Vec<((String, String), f32)> = Vec::new();
+    for list in lists {
+        for (rank, key) in list.iter().enumerate() {
+            let s = 1.0 / (60.0 + rank as f32);
+            match scores.iter_mut().find(|(k, _)| k == key) {
+                Some((_, total)) => *total += s,
+                None => scores.push((key.clone(), s)),
+            }
+        }
+    }
+    scores.sort_by(|a, b| b.1.total_cmp(&a.1));
+    scores.into_iter().take(limit).map(|(k, _)| k).collect()
+}
 
 /// How the user has treated one skill lately.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -378,6 +431,11 @@ impl Storage {
             "DELETE FROM search WHERE source = ?1 AND ref = ?2",
             params![source, reference],
         )?;
+        // The text changed, so its embedding is stale.
+        self.conn.execute(
+            "DELETE FROM vectors WHERE source = ?1 AND ref = ?2",
+            params![source, reference],
+        )?;
         self.conn.execute(
             "INSERT INTO search (source, ref, title, body, ts) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![source, reference, title, body, ts],
@@ -416,6 +474,94 @@ impl Storage {
         Ok(hits)
     }
 
+    /// Items that have no embedding from `model` yet: (source, ref, text).
+    pub fn unembedded(
+        &self,
+        model: &str,
+        limit: u32,
+    ) -> Result<Vec<(String, String, String)>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT s.source, s.ref, s.title || '. ' || substr(s.body, 1, 1500)
+             FROM search s LEFT JOIN vectors v
+               ON v.source = s.source AND v.ref = s.ref AND v.model = ?1
+             WHERE v.ref IS NULL LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![model, limit], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn save_vector(
+        &self,
+        source: &str,
+        reference: &str,
+        model: &str,
+        vec: &[f32],
+    ) -> Result<(), StorageError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO vectors (source, ref, model, vec) VALUES (?1, ?2, ?3, ?4)",
+            params![source, reference, model, to_blob(vec)],
+        )?;
+        Ok(())
+    }
+
+    pub fn vector_count(&self, model: &str) -> Result<u64, StorageError> {
+        let n: i64 = self.conn.query_row(
+            "SELECT count(*) FROM vectors WHERE model = ?1",
+            [model],
+            |r| r.get(0),
+        )?;
+        Ok(n as u64)
+    }
+
+    /// The `limit` items closest in meaning to `query`, best first.
+    pub fn nearest(
+        &self,
+        query: &[f32],
+        model: &str,
+        sources: &[&str],
+        limit: usize,
+    ) -> Result<Vec<(String, String, f32)>, StorageError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT source, ref, vec FROM vectors WHERE model = ?1")?;
+        let mut rows = stmt.query([model])?;
+        let mut best: Vec<(String, String, f32)> = Vec::new();
+        while let Some(r) = rows.next()? {
+            let source: String = r.get(0)?;
+            if !sources.is_empty() && !sources.contains(&source.as_str()) {
+                continue;
+            }
+            let blob: Vec<u8> = r.get(2)?;
+            let score = cosine(query, &from_blob(&blob));
+            if best.len() < limit || best.last().is_some_and(|b| score > b.2) {
+                best.push((source, r.get(1)?, score));
+                best.sort_by(|a, b| b.2.total_cmp(&a.2));
+                best.truncate(limit);
+            }
+        }
+        Ok(best)
+    }
+
+    /// One item as a search hit, with the start of its text as the snippet.
+    pub fn hit(&self, source: &str, reference: &str) -> Result<Option<SearchHit>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT source, ref, title, substr(body, 1, 160), ts FROM search
+             WHERE source = ?1 AND ref = ?2 LIMIT 1",
+        )?;
+        let mut rows = stmt.query_map(params![source, reference], |r| {
+            Ok(SearchHit {
+                source: r.get(0)?,
+                reference: r.get(1)?,
+                title: r.get(2)?,
+                snippet: r.get(3)?,
+                ts: r.get(4)?,
+            })
+        })?;
+        Ok(rows.next().transpose()?)
+    }
+
     pub fn search_count(&self) -> Result<u64, StorageError> {
         let n: i64 = self
             .conn
@@ -425,10 +571,16 @@ impl Storage {
 
     pub fn clear_search(&self, source: Option<&str>) -> Result<usize, StorageError> {
         Ok(match source {
-            Some(s) => self
-                .conn
-                .execute("DELETE FROM search WHERE source = ?1", [s])?,
-            None => self.conn.execute("DELETE FROM search", [])?,
+            Some(s) => {
+                self.conn
+                    .execute("DELETE FROM vectors WHERE source = ?1", [s])?;
+                self.conn
+                    .execute("DELETE FROM search WHERE source = ?1", [s])?
+            }
+            None => {
+                self.conn.execute("DELETE FROM vectors", [])?;
+                self.conn.execute("DELETE FROM search", [])?
+            }
         })
     }
 
@@ -474,6 +626,16 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fuses_rankings() {
+        let k = |s: &str| ("f".to_owned(), s.to_owned());
+        let fused = fuse(&[vec![k("a"), k("b"), k("c")], vec![k("c"), k("d")]], 3);
+        // b and d tie; the first list breaks ties.
+        assert_eq!(fused, vec![k("c"), k("a"), k("b")]);
+        assert!((cosine(&[1.0, 0.0], &[1.0, 0.0]) - 1.0).abs() < 1e-6);
+        assert_eq!(cosine(&[1.0], &[1.0, 2.0]), 0.0);
+    }
 
     fn event(kind: &str) -> Event {
         Event::new(kind, "test", serde_json::json!({"k": kind}))
@@ -631,6 +793,18 @@ mod tests {
         // FTS5 syntax in the input is treated as plain words.
         assert!(s.search("\"acme\" OR body:*", &[], 10).is_ok());
         assert!(s.search("  ", &[], 10).unwrap().is_empty());
+        // Vectors: nearest by meaning, dropped when the text changes.
+        s.save_vector("file", "C:/notes/acme.md", "m", &[1.0, 0.0])
+            .unwrap();
+        s.save_vector("chat", "c1", "m", &[0.6, 0.8]).unwrap();
+        let near = s.nearest(&[0.0, 1.0], "m", &[], 5).unwrap();
+        assert_eq!(near[0].1, "c1");
+        assert_eq!(s.nearest(&[0.0, 1.0], "m", &["file"], 5).unwrap().len(), 1);
+        assert_eq!(s.vector_count("m").unwrap(), 2);
+        assert!(s.unembedded("m", 10).unwrap().is_empty());
+        assert_eq!(s.unembedded("other", 10).unwrap().len(), 2);
+        let hit = s.hit("chat", "c1").unwrap().unwrap();
+        assert!(!hit.title.is_empty());
         assert_eq!(s.search_count().unwrap(), 2);
         assert_eq!(s.clear_search(Some("chat")).unwrap(), 1);
     }

@@ -183,6 +183,7 @@ const voiceStatus = () => ({
   ],
 });
 commands.voice_status = voiceStatus;
+commands.search_status = () => ({ items: 1240, embedded: 1240, embedError: null });
 commands.calendar_today = () => ({
   meetings: settings.calendar.feeds.length
     ? [

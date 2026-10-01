@@ -386,22 +386,28 @@ pub fn skill_install(state: State<'_, AppState>, yaml: String) -> CmdResult<Stri
 }
 
 #[tauri::command]
-pub fn search(app: AppHandle, query: String) -> Vec<sidekick_core::SearchHit> {
-    crate::search::search(&app, &query, &[], 30)
+pub async fn search(app: AppHandle, query: String) -> Vec<sidekick_core::SearchHit> {
+    crate::search::hybrid(&app, &query, &[], 30).await
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchStatus {
     items: u64,
+    /// Items with an embedding (semantic search).
+    embedded: u64,
+    embed_error: Option<String>,
 }
 
 #[tauri::command]
-pub fn search_status(state: State<'_, AppState>) -> CmdResult<SearchStatus> {
+pub fn search_status(app: AppHandle) -> CmdResult<SearchStatus> {
+    let items = lock(&app.state::<AppState>().storage)
+        .search_count()
+        .map_err(|e| e.to_string())?;
     Ok(SearchStatus {
-        items: lock(&state.storage)
-            .search_count()
-            .map_err(|e| e.to_string())?,
+        items,
+        embedded: crate::search::embedded_count(&app),
+        embed_error: crate::search::embed_error(),
     })
 }
 

@@ -72,7 +72,14 @@ async fn fake_openai() -> String {
                 let mut buf = vec![0u8; 8192];
                 let n = sock.read(&mut buf).await.unwrap_or(0);
                 let req = String::from_utf8_lossy(&buf[..n]).to_string();
-                let (ctype, body) = if req.starts_with("GET /v1/models") {
+                let (ctype, body) = if req.starts_with("POST /v1/embeddings") {
+                    (
+                        "application/json",
+                        // Out of order on purpose: `index` decides.
+                        r#"{"data":[{"index":1,"embedding":[0,1]},{"index":0,"embedding":[1,0]}]}"#
+                            .to_string(),
+                    )
+                } else if req.starts_with("GET /v1/models") {
                     (
                         "application/json",
                         r#"{"data":[{"id":"tiny"}]}"#.to_string(),
@@ -117,4 +124,14 @@ async fn local_model_streams_from_an_openai_compatible_server() {
 async fn unreachable_local_server_is_not_available() {
     let p = OpenAiCompat::new(Some("http://127.0.0.1:9/v1".into()), None);
     assert!(!p.available().await);
+}
+
+#[tokio::test]
+async fn embeds_with_a_local_server_only() {
+    let url = fake_openai().await;
+    let p = OpenAiCompat::new(Some(url), None);
+    let v = p.embed("e", &["a".into(), "b".into()]).await.unwrap();
+    assert_eq!(v, vec![vec![1.0, 0.0], vec![0.0, 1.0]]);
+    let remote = OpenAiCompat::new(Some("https://api.example.com/v1".into()), None);
+    assert!(remote.embed("e", &["a".into()]).await.is_err());
 }

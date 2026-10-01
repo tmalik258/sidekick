@@ -127,6 +127,59 @@ pub(crate) fn is_local_url(url: &str) -> bool {
     host == "localhost" || host.starts_with("127.")
 }
 
+impl OpenAiCompat {
+    /// Embeds `inputs` with `model` through `/embeddings` (semantic search).
+    /// Refused for servers that are not on this PC, so indexed text never
+    /// leaves it.
+    pub async fn embed(&self, model: &str, inputs: &[String]) -> Result<Vec<Vec<f32>>, AiError> {
+        if !is_local_url(&self.base_url) {
+            return Err(AiError::Failed(
+                "embeddings only use a model on this PC".into(),
+            ));
+        }
+        let resp = self
+            .client
+            .post(format!("{}/embeddings", self.base_url))
+            .timeout(Duration::from_secs(60))
+            .json(&serde_json::json!({ "model": model, "input": inputs }))
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            return Err(AiError::Failed(format!(
+                "embedding model {model} answered {}",
+                resp.status()
+            )));
+        }
+        let body: serde_json::Value = resp.json().await?;
+        let mut data: Vec<(usize, Vec<f32>)> = body["data"]
+            .as_array()
+            .ok_or_else(|| AiError::Failed("no embeddings in the answer".into()))?
+            .iter()
+            .enumerate()
+            .map(|(i, d)| {
+                let index = d["index"].as_u64().map_or(i, |n| n as usize);
+                let vec = d["embedding"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_f64())
+                            .map(|x| x as f32)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                (index, vec)
+            })
+            .collect();
+        data.sort_by_key(|(i, _)| *i);
+        if data.len() != inputs.len() || data.iter().any(|(_, v)| v.is_empty()) {
+            return Err(AiError::Failed(
+                "embedding answer did not match the input".into(),
+            ));
+        }
+        Ok(data.into_iter().map(|(_, v)| v).collect())
+    }
+}
+
 #[async_trait]
 impl AiProvider for OpenAiCompat {
     fn id(&self) -> &'static str {

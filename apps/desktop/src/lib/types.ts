@@ -43,6 +43,7 @@ export interface Settings {
   ai: AiSettings;
   voice: VoiceSettings;
   calendar: { feeds: string[]; remindMinutes: number };
+  semanticSearch: { enabled: boolean; model: string };
 }
 
 export interface CalendarToday {
@@ -246,6 +247,7 @@ export const DEFAULT_SETTINGS: Settings = {
     decisions: true,
   },
   calendar: { feeds: [], remindMinutes: 5 },
+  semanticSearch: { enabled: true, model: "nomic-embed-text" },
   voice: { enabled: false, wakeWord: true, speakAnswers: true, voice: "af_bella", speed: 1 },
 };
 

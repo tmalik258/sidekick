@@ -220,7 +220,7 @@ async fn call(app: &AppHandle, name: &str, args: &Value) -> Value {
         "sidekick_search" => {
             let query = args["query"].as_str().unwrap_or_default();
             let limit = args["limit"].as_u64().unwrap_or(8).clamp(1, 20) as u32;
-            let hits = crate::search::search(app, query, SHAREABLE, limit);
+            let hits = crate::search::hybrid(app, query, SHAREABLE, limit).await;
             if hits.is_empty() {
                 return text(format!("Nothing found for \"{query}\"."));
             }

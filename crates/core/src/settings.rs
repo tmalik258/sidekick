@@ -61,6 +61,25 @@ pub struct Settings {
     pub ai: AiSettings,
     pub voice: VoiceSettings,
     pub calendar: CalendarSettings,
+    pub semantic_search: SemanticSearch,
+}
+
+/// Search by meaning with an embedding model on this PC (FR-RAG-03).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SemanticSearch {
+    pub enabled: bool,
+    /// Embedding model on the local server, e.g. `nomic-embed-text`.
+    pub model: String,
+}
+
+impl Default for SemanticSearch {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            model: "nomic-embed-text".into(),
+        }
+    }
 }
 
 /// Calendars read through their private iCal links (FR-COMM-02).
@@ -285,6 +304,7 @@ impl Default for Settings {
             ai: AiSettings::default(),
             voice: VoiceSettings::default(),
             calendar: CalendarSettings::default(),
+            semantic_search: SemanticSearch::default(),
         }
     }
 }
@@ -358,6 +378,9 @@ impl Settings {
             .map(|f| f.trim().to_owned())
             .filter(|f| f.starts_with("https://") || f.starts_with("webcal://"))
             .collect();
+        if self.semantic_search.model.trim().is_empty() {
+            self.semantic_search.model = SemanticSearch::default().model;
+        }
         self.calendar.remind_minutes = self.calendar.remind_minutes.clamp(1, 30);
         if self.voice.voice.trim().is_empty() {
             self.voice.voice = VoiceSettings::default().voice;

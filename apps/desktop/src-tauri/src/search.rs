@@ -117,6 +117,145 @@ pub fn search(app: &AppHandle, query: &str, sources: &[&str], limit: u32) -> Vec
         .unwrap_or_default()
 }
 
+// ---------- Semantic search (FR-RAG-03) ----------
+
+/// The last embedding problem, for Settings > Search.
+static EMBED_ERROR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+const EMBED_BATCH: u32 = 24;
+const QUERY_TIMEOUT: Duration = Duration::from_secs(3);
+
+fn embedder(app: &AppHandle) -> Option<(sidekick_ai::OpenAiCompat, String)> {
+    let state = app.state::<AppState>();
+    let s = lock(&state.settings);
+    if !s.semantic_search.enabled {
+        return None;
+    }
+    let client = sidekick_ai::OpenAiCompat::new(Some(s.ai.local.base_url.clone()), None);
+    Some((client, s.semantic_search.model.clone()))
+}
+
+/// nomic-embed-text and similar models want a task prefix.
+fn prefixed(model: &str, kind: &str, text: &str) -> String {
+    if model.contains("nomic") {
+        format!("{kind}: {text}")
+    } else {
+        text.to_owned()
+    }
+}
+
+pub fn embed_error() -> Option<String> {
+    EMBED_ERROR.lock().ok().and_then(|e| e.clone())
+}
+
+fn set_embed_error(err: Option<String>) {
+    if let Ok(mut e) = EMBED_ERROR.lock() {
+        *e = err;
+    }
+}
+
+/// Embeds indexed items in the background, a batch at a time.
+pub fn start_embedder(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let pause = match embed_batch(&app).await {
+                Ok(true) => Duration::from_secs(1),
+                Ok(false) => Duration::from_secs(60),
+                Err(err) => {
+                    log::debug!("embeddings: {err}");
+                    set_embed_error(Some(err));
+                    Duration::from_secs(600)
+                }
+            };
+            tokio::time::sleep(pause).await;
+        }
+    });
+}
+
+/// True when a batch was embedded (more may be waiting).
+async fn embed_batch(app: &AppHandle) -> Result<bool, String> {
+    let Some((client, model)) = embedder(app) else {
+        return Ok(false);
+    };
+    let todo = lock(&app.state::<AppState>().storage)
+        .unembedded(&model, EMBED_BATCH)
+        .map_err(|e| e.to_string())?;
+    if todo.is_empty() {
+        return Ok(false);
+    }
+    let inputs: Vec<String> = todo
+        .iter()
+        .map(|(_, _, text)| prefixed(&model, "search_document", text))
+        .collect();
+    let vectors = client
+        .embed(&model, &inputs)
+        .await
+        .map_err(|e| format!("{e}. Run: ollama pull {model}"))?;
+    let state = app.state::<AppState>();
+    let storage = lock(&state.storage);
+    for ((source, reference, _), vec) in todo.iter().zip(vectors) {
+        storage
+            .save_vector(source, reference, &model, &vec)
+            .map_err(|e| e.to_string())?;
+    }
+    set_embed_error(None);
+    Ok(true)
+}
+
+pub fn embedded_count(app: &AppHandle) -> u64 {
+    let Some((_, model)) = embedder(app) else {
+        return 0;
+    };
+    lock(&app.state::<AppState>().storage)
+        .vector_count(&model)
+        .unwrap_or(0)
+}
+
+/// Keyword and meaning together: keyword hits plus items close in meaning,
+/// merged by rank. Falls back to keywords alone when no embedding model is
+/// reachable.
+pub async fn hybrid(app: &AppHandle, query: &str, sources: &[&str], limit: u32) -> Vec<SearchHit> {
+    let keyword = search(app, query, sources, limit * 2);
+    let Some((client, model)) = embedder(app) else {
+        return keyword.into_iter().take(limit as usize).collect();
+    };
+    if query.trim().is_empty() || embedded_count(app) == 0 {
+        return keyword.into_iter().take(limit as usize).collect();
+    }
+    let input = vec![prefixed(&model, "search_query", query.trim())];
+    let Ok(Ok(mut q)) = tokio::time::timeout(QUERY_TIMEOUT, client.embed(&model, &input)).await
+    else {
+        return keyword.into_iter().take(limit as usize).collect();
+    };
+    let Some(qv) = q.pop() else {
+        return keyword;
+    };
+    let state = app.state::<AppState>();
+    let storage = lock(&state.storage);
+    let near: Vec<(String, String)> = storage
+        .nearest(&qv, &model, sources, (limit * 2) as usize)
+        .unwrap_or_default()
+        .into_iter()
+        // Weak matches are noise.
+        .filter(|(_, _, score)| *score >= 0.45)
+        .map(|(s, r, _)| (s, r))
+        .collect();
+    let keys: Vec<(String, String)> = keyword
+        .iter()
+        .map(|h| (h.source.clone(), h.reference.clone()))
+        .collect();
+    sidekick_core::storage::fuse(&[keys, near], limit as usize)
+        .into_iter()
+        .filter_map(|(source, reference)| {
+            keyword
+                .iter()
+                .find(|h| h.source == source && h.reference == reference)
+                .cloned()
+                .or_else(|| storage.hit(&source, &reference).ok().flatten())
+        })
+        .collect()
+}
+
 fn is_text_file(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())

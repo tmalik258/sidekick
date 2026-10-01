@@ -1125,9 +1125,13 @@ function CalendarSettings({ onError }: { onError: (e: string) => void }) {
 
 function SearchSettings({ onError }: { onError: (e: string) => void }) {
   const folders = useSidekick((s) => s.settings.indexFolders);
-  const [items, setItems] = useState<number | null>(null);
-  const refresh = useCallback(() => void api.searchStatus().then((s) => setItems(s.items)), []);
+  const semantic = useSidekick((s) => s.settings.semanticSearch);
+  const [status, setStatus] = useState<{ items: number; embedded: number; embedError: string | null } | null>(null);
+  const items = status?.items ?? null;
+  const refresh = useCallback(() => void api.searchStatus().then(setStatus), []);
   useEffect(refresh, [refresh]);
+  const setSemantic = (patch: Partial<typeof semantic>) =>
+    updateSettings({ semanticSearch: { ...semantic, ...patch } }).catch((e: unknown) => onError(String(e)));
   return (
     <div className="flex flex-col gap-3 text-[13px]">
       <Field label="Folders to search" hint="Separate with ; (for example C:\\Users\\you\\notes)">
@@ -1148,7 +1152,10 @@ function SearchSettings({ onError }: { onError: (e: string) => void }) {
         />
       </Field>
       <div className="flex items-center justify-between">
-        <span className="text-(--muted)">{items === null ? "…" : `${items.toLocaleString()} items indexed`}</span>
+        <span className="text-(--muted)">
+          {items === null ? "…" : `${items.toLocaleString()} items indexed`}
+          {semantic.enabled && status && status.embedded > 0 && `, ${status.embedded.toLocaleString()} by meaning`}
+        </span>
         <div className="flex gap-1.5">
           <Button small onClick={refresh}>
             Refresh
@@ -1164,6 +1171,26 @@ function SearchSettings({ onError }: { onError: (e: string) => void }) {
           </Button>
         </div>
       </div>
+      <Toggle
+        label="Search by meaning"
+        hint="Finds notes that match what you mean, not just the words. Uses an embedding model on your local AI server, so nothing leaves this PC."
+        checked={semantic.enabled}
+        onChange={(enabled) => void setSemantic({ enabled })}
+      />
+      {semantic.enabled && (
+        <Field label="Embedding model" hint="Pulled once with: ollama pull nomic-embed-text">
+          <TextField
+            label="Embedding model"
+            value={semantic.model}
+            onCommit={(model) => void setSemantic({ model })}
+            className="w-44"
+            mono
+          />
+        </Field>
+      )}
+      {semantic.enabled && status?.embedError && (
+        <p className="text-[12px] text-(--muted)">Search by meaning is waiting: {status.embedError}</p>
+      )}
     </div>
   );
 }

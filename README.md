@@ -74,7 +74,7 @@ In the browser preview, `window.sidekickMock.go("success")` switches mascot stat
 - **Step away** for 5 minutes and suggestions wait for you instead of expiring unseen.
 - **Browser**: load `apps/extension` unpacked in Chrome, Edge or Zen and paste the pairing code from Settings > Browser. Sign-in pages offer a fill from 1Password or Bitwarden, too many tabs offer cleanup, Upwork jobs offer a proposal draft.
 - **Screenshots** (Win+PrtScn): Copy, Copy text (with Tesseract), Show in folder.
-- **Search my stuff**: type in Ask mode and pick Search. Add folders under Settings > Search.
+- **Search my stuff**: type in Ask mode and pick Search. Add folders under Settings > Search. With Ollama running, `ollama pull nomic-embed-text` adds search by meaning (embeddings stay on this PC).
 - **Claude Code can use Sidekick** through MCP: copy the command from Settings > AI and run it once.
 - **What's on my screen?**: pick it in Ask mode, or turn on the Screenshot chip to send one with your next question. Sidekick only captures when you ask.
 - **Voice**: turn it on in Settings > Voice (downloads about 180 MB of speech models once). Say "Hey Sidekick" and your question; the island shows your words as you speak and the answer is read aloud with Kokoro. Talking over an answer stops it. There is a mic button in Ask mode for push to talk.

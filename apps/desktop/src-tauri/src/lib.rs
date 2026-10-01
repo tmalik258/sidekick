@@ -186,6 +186,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     voice::refresh(app);
     brief::start(app, data_dir.join("last-brief"), repos.roots.clone());
     search::reindex_folders(app);
+    search::start_embedder(app);
     mcp::start(app, mcp_token);
     tauri::async_runtime::spawn(async move {
         let sensors: Vec<Box<dyn Sensor>> = vec![
