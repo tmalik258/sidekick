@@ -207,23 +207,28 @@ async fn execute(
     option: &ProposedOption,
 ) -> Result<sidekick_actions::Outcome, String> {
     // App-level actions that need the window system rather than the OS.
-    if option.action == "ask_ai" {
-        let prompt = option.args["prompt"]
-            .as_str()
-            .unwrap_or("Help me with this.")
-            .to_owned();
-        crate::ask::open(
-            app,
-            crate::ask::Open {
-                prompt: Some(prompt),
-                ask: true,
-                ..Default::default()
-            },
-        );
-        return Ok(sidekick_actions::Outcome {
-            message: "Asking Sidekick".into(),
-            path: None,
-        });
+    let arg = |name: &str| option.args[name].as_str().filter(|s| !s.is_empty());
+    match option.action.as_str() {
+        "ask_ai" => {
+            crate::ask::open(
+                app,
+                crate::ask::Open {
+                    prompt: Some(arg("prompt").unwrap_or("Help me with this.").to_owned()),
+                    ask: true,
+                    clipboard: arg("clipboard") != Some("false"),
+                    page: arg("page").map(str::to_owned),
+                    ..Default::default()
+                },
+            );
+            return Ok(sidekick_actions::Outcome {
+                message: "Asking Sidekick".into(),
+                path: None,
+            });
+        }
+        "browser_fill" | "browser_close_duplicates" | "browser_save_session" => {
+            return crate::browser::run(app, &option.action, &option.args).await;
+        }
+        _ => {}
     }
     let exec = executor(&app.state::<AppState>());
     exec.run(&option.action, &option.args)

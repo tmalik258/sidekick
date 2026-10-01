@@ -1,5 +1,6 @@
 mod ai;
 mod ask;
+mod browser;
 mod commands;
 mod decide;
 mod island;
@@ -7,6 +8,7 @@ mod mascot;
 mod pipeline;
 mod state;
 mod suggestions;
+mod timetrack;
 mod tray;
 mod undo;
 mod windows;
@@ -19,8 +21,8 @@ use chrono::Utc;
 use sidekick_actions::{Capabilities, Executor};
 use sidekick_core::{EventBus, MascotEvent, Settings, Storage};
 use sidekick_sensors::{
-    ClaudeCodeSensor, ClipboardSensor, DownloadsSensor, HeartbeatSensor, IdleSensor, PortsSensor,
-    Sensor, SensorGate, SystemSensor, WindowSensor,
+    BrowserBridge, BrowserSensor, ClaudeCodeSensor, ClipboardSensor, DownloadsSensor,
+    HeartbeatSensor, IdleSensor, PortsSensor, Sensor, SensorGate, SystemSensor, WindowSensor,
 };
 use sidekick_skills::Engine;
 use tauri::{AppHandle, Manager};
@@ -78,6 +80,9 @@ pub fn run() {
             commands::ai_cancel,
             commands::ask_open,
             commands::ask_close,
+            commands::browser_info,
+            commands::time_today,
+            commands::skill_install,
             commands::action_undo,
         ])
         .run(tauri::generate_context!())
@@ -106,6 +111,8 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     let (gate_handle, gate) = SensorGate::new(state::gate_state(&settings, Utc::now()));
     let paused = settings.pause.is_active(Utc::now());
     let hotkey = settings.palette_hotkey.clone();
+    let browser_token = browser::load_or_create_token(&data_dir);
+    let bridge = BrowserBridge::default();
 
     app.manage(AppState {
         settings: Mutex::new(settings),
@@ -135,9 +142,13 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         linger: Default::default(),
         own_files: Mutex::default(),
         ask_open: Default::default(),
+        tracker: Default::default(),
+        browser: bridge.clone(),
+        browser_token: browser_token.clone(),
     });
 
     pipeline::start(app);
+    timetrack::start(app);
     tauri::async_runtime::spawn(async move {
         let sensors: Vec<Box<dyn Sensor>> = vec![
             Box::new(DownloadsSensor::new()),
@@ -146,6 +157,11 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
             Box::new(WindowSensor),
             Box::new(ClaudeCodeSensor {
                 port: ClaudeCodeSensor::DEFAULT_PORT,
+            }),
+            Box::new(BrowserSensor {
+                port: BrowserSensor::DEFAULT_PORT,
+                token: browser_token,
+                bridge,
             }),
             Box::new(SystemSensor),
             Box::new(IdleSensor::default()),

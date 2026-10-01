@@ -1,0 +1,19 @@
+id: browser.upwork-job
+name: Draft Upwork proposals
+description: On an Upwork job page, offer to draft a proposal with AI from the job post (FR-BRW-03). Needs the Sidekick browser extension.
+priority: 60
+cooldown_secs: 300
+dedupe: "{{url}}"
+trigger:
+  event: browser.upwork_job
+suggestion:
+  title: "Upwork job"
+  detail: "{{title}}"
+  options:
+    - label: Draft a proposal
+      action: ask_ai
+      args:
+        prompt: "Draft a short, specific Upwork proposal for this job. Open with how I would solve their problem, mention relevant experience, ask one smart question, and keep it under 150 words."
+        page: "{{text}}"
+        clipboard: "false"
+      requires: ["ai"]

@@ -163,7 +163,18 @@ commands.ask_open = (a) =>
     },
     prompt: (a.prompt as string | null) ?? null,
     ask: Boolean(a.ask),
+    clipboard: false,
+    page: null,
   });
+commands.skill_install = () => "Screenshots";
+commands.time_today = () => [
+  { app: "Visual Studio Code", project: "sidekick", secs: 9420 },
+  { app: "Google Chrome", project: "", secs: 4310 },
+  { app: "Windows Terminal", project: "", secs: 2200 },
+  { app: "Visual Studio Code", project: "falconxoft-api", secs: 1500 },
+  { app: "Slack", project: "", secs: 640 },
+];
+commands.browser_info = () => ({ token: "browser-preview-pairing-code", port: 47822 });
 commands.action_undo = () => "Moved photo.webp to the Recycle Bin";
 commands.ai_status = () => [
   { id: "claude_code", available: false, local: false },

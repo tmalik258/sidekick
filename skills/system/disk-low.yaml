@@ -12,4 +12,4 @@ suggestion:
   options:
     - { label: Storage settings, action: open_system_page, args: { page: storage } }
     - { label: Installed apps, action: open_system_page, args: { page: apps } }
-    - { label: Show drive, action: open_path, args: { path: "{{mount}}" } }
+    - { label: Show drive, action: open_folder, args: { path: "{{mount}}" } }

@@ -122,12 +122,39 @@ pub async fn status(app: &AppHandle) -> Vec<ProviderStatus> {
 }
 
 /// What the user chose to attach to a chat.
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Attach {
     pub window: bool,
     pub clipboard: bool,
+    /// Text of the web page the conversation is about.
+    #[serde(default)]
+    pub page: Option<String>,
+    /// The user is describing a new skill for Sidekick to learn.
+    #[serde(default)]
+    pub skill: bool,
 }
+
+/// What Sidekick can notice, for AI writing skills. Keep in sync with the
+/// sensors.
+const EVENT_CATALOG: &str = "\
+file.download_completed: path, dir, name, ext, kind (image|video|audio|document|archive|installer|code|other), size, size_human, stem
+port.listening / port.closed: port, pid, process (lowercase, no .exe), address, url
+clipboard.changed: kind (url|json|color|email|path|stack_trace|code|text|secret), preview, text (never for secret)
+window.focused: app, exe, title, pid
+claude.stop / claude.notification: project, cwd, session, message
+browser.login_form / browser.long_read / browser.upwork_job: url, domain, title, text, words, tab
+browser.many_tabs: count, duplicates
+system.disk_low: mount, free_human, total_human, percent_free
+system.memory_high: percent, process, process_mb
+focus.long_session: app, project, minutes
+user.idle / user.active: idle_secs / away_secs";
+
+const SKILL_SYSTEM: &str = "You write skills for Sidekick, a desktop assistant on Windows. \
+A skill is one YAML file that matches an event and offers the user a few one-click options. \
+Reply with one short sentence on what the skill does, then the complete skill in a single \
+```yaml code block. Use only the events, fields and actions below. Do not set trust: auto. \
+Use a lowercase id starting with \"my.\". Never use em dashes.";
 
 /// The context Ask mode can offer to attach, captured when it opens.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -169,8 +196,23 @@ pub fn context(app: &AppHandle) -> Context {
     ctx
 }
 
-fn system_prompt(app: &AppHandle, attach: Attach) -> String {
+/// Longest page text attached to a chat.
+const MAX_PAGE: usize = 20_000;
+
+fn system_prompt(app: &AppHandle, attach: &Attach) -> String {
+    if attach.skill {
+        return format!(
+            "{SKILL_SYSTEM}\n\nEvents and their fields:\n{EVENT_CATALOG}\n\nThe skill format:\n{}",
+            sidekick_skills::FORMAT_GUIDE
+        );
+    }
     let mut system = SYSTEM.to_owned();
+    if let Some(page) = attach.page.as_deref().filter(|p| !p.trim().is_empty()) {
+        let clipped: String = page.chars().take(MAX_PAGE).collect();
+        system.push_str(&format!(
+            "\n\nThe web page the user is asking about:\n```\n{clipped}\n```"
+        ));
+    }
     let ctx = context(app);
     if attach.window
         && let Some(name) = &ctx.app
@@ -215,7 +257,7 @@ pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach,
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let req = ChatRequest {
-            system: system_prompt(&app, attach),
+            system: system_prompt(&app, &attach),
             messages,
         };
         let router = router(&app);

@@ -42,8 +42,12 @@ pub struct Open {
     pub context: ai::Context,
     /// Text to put in the input, e.g. "Explain this error".
     pub prompt: Option<String>,
-    /// Send `prompt` right away, with the clipboard attached.
+    /// Send `prompt` right away.
     pub ask: bool,
+    /// Attach the clipboard to that first question.
+    pub clipboard: bool,
+    /// Text of the web page the question is about (from the extension).
+    pub page: Option<String>,
 }
 
 pub fn is_open(app: &AppHandle) -> bool {

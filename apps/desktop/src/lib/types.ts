@@ -100,6 +100,27 @@ export interface AskOpen {
   context: AskContext;
   prompt: string | null;
   ask: boolean;
+  /** Attach the clipboard to the first question. */
+  clipboard: boolean;
+  /** Text of the web page the question is about. */
+  page: string | null;
+}
+
+export interface AppTime {
+  app: string;
+  project: string;
+  secs: number;
+}
+
+export function formatDuration(secs: number): string {
+  const h = Math.floor(secs / 3600);
+  const m = Math.round((secs % 3600) / 60);
+  return h ? `${h} h ${m} min` : `${m} min`;
+}
+
+export interface BrowserInfo {
+  token: string;
+  port: number;
 }
 
 export const THEMES = ["pearl", "graphite", "midnight"] as const;
@@ -174,6 +195,11 @@ export const SENSOR_IDS = [
     id: "claude_code",
     label: "Claude Code",
     hint: "Hears when a Claude Code session finishes or needs you (add the hook under AI).",
+  },
+  {
+    id: "browser",
+    label: "Browser",
+    hint: "Hears the Sidekick extension: sign-in pages, long reads, Upwork jobs, too many tabs.",
   },
   { id: "system", label: "Disk and memory", hint: "Warns when a drive is almost full or memory stays high." },
   {
