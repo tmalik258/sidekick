@@ -1,0 +1,17 @@
+id: dev.explain-error
+name: Explain copied errors
+description: When you copy an error or stack trace, offer to explain it and suggest a fix with AI (FR-DEV-08). The error is only sent when you click.
+priority: 40
+cooldown_secs: 20
+trigger:
+  event: clipboard.changed
+  where:
+    kind: { equals: stack_trace }
+suggestion:
+  title: "Error copied"
+  detail: "{{preview}}"
+  options:
+    - label: Explain and fix
+      action: ask_ai
+      args: { prompt: "Explain this error in two or three sentences, then give the most likely fix." }
+      requires: ["ai"]

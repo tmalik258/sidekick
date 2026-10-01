@@ -35,6 +35,61 @@ export interface Settings {
   pause: Pause;
   theme: Theme;
   soundKit: string;
+  skills?: Record<string, { enabled?: boolean | null; auto?: boolean | null }>;
+  paletteHotkey: string;
+  ai: AiSettings;
+}
+
+export const AI_PROVIDERS = ["claude_code", "anthropic", "local"] as const;
+export type AiProviderId = (typeof AI_PROVIDERS)[number];
+
+export interface AiSettings {
+  order: AiProviderId[];
+  claudeCode: { enabled: boolean; path: string; model: string };
+  local: { enabled: boolean; baseUrl: string; model: string };
+  anthropic: { enabled: boolean; model: string };
+  semif: {
+    enabled: boolean;
+    command: string[];
+    mode: string;
+    backend: string;
+    model: string;
+    revision: string;
+    gguf: string;
+  };
+  decisions: boolean;
+}
+
+export const PROVIDER_LABELS: Record<string, string> = {
+  claude_code: "Claude Code",
+  anthropic: "Anthropic API",
+  local: "Local model",
+  semif: "SemIf",
+};
+
+export interface ProviderStatus {
+  id: string;
+  available: boolean;
+  local: boolean;
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface PaletteContext {
+  app: string | null;
+  title: string | null;
+  clipboardKind: string | null;
+  clipboardPreview: string | null;
+  clipboardSecret: boolean;
+}
+
+export interface PaletteOpen {
+  context: PaletteContext;
+  prompt: string | null;
+  ask: boolean;
 }
 
 export const THEMES = ["pearl", "graphite", "midnight"] as const;
@@ -81,6 +136,23 @@ export const DEFAULT_SETTINGS: Settings = {
   pause: { kind: "none" },
   theme: "pearl",
   soundKit: "01",
+  paletteHotkey: "Alt+Space",
+  ai: {
+    order: ["claude_code", "anthropic", "local"],
+    claudeCode: { enabled: true, path: "", model: "" },
+    local: { enabled: true, baseUrl: "http://localhost:11434/v1", model: "" },
+    anthropic: { enabled: true, model: "" },
+    semif: {
+      enabled: false,
+      command: ["semif-score"],
+      mode: "direct",
+      backend: "llamacpp",
+      model: "openbmb/MiniCPM5-2B",
+      revision: "main",
+      gguf: "",
+    },
+    decisions: true,
+  },
 };
 
 export const SENSOR_IDS = [

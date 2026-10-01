@@ -37,6 +37,18 @@ pub struct AppState {
     pub island_hidden: Mutex<bool>,
     /// The cursor is over the island (kept by the hover tracker).
     pub hovered: AtomicBool,
+    /// The last app the user was in (payload of `window.focused`).
+    pub last_window: Mutex<Option<serde_json::Value>>,
+    /// Chats in flight, so they can be cancelled.
+    pub chats: Mutex<HashMap<String, sidekick_ai::CancellationToken>>,
+    /// Empty folder Claude Code runs in, so it has no project to touch.
+    pub ai_workdir: PathBuf,
+    /// Temporary files (SemIf input and output).
+    pub scratch_dir: PathBuf,
+    /// Some AI provider is switched on and reachable (skills `requires: [ai]`).
+    pub ai_ready: AtomicBool,
+    /// T1 picks per skill and app, from earlier decisions.
+    pub decisions: Mutex<crate::decide::Cache>,
 }
 
 /// The interactive part of the island window, in logical pixels relative to
@@ -103,13 +115,17 @@ pub fn gate_state(settings: &Settings, now: DateTime<Utc>) -> GateState {
 /// What the skill engine needs from the app, captured for one evaluation.
 pub struct AppEnv<'a> {
     pub settings: &'a Settings,
+    pub ai_ready: bool,
     pub caps: &'a Capabilities,
     pub storage: &'a Mutex<Storage>,
 }
 
 impl Env for AppEnv<'_> {
     fn has(&self, requirement: &str) -> bool {
-        self.caps.has(requirement)
+        match requirement {
+            "ai" => self.ai_ready,
+            _ => self.caps.has(requirement),
+        }
     }
 
     fn skill_enabled(&self, skill: &Skill) -> bool {

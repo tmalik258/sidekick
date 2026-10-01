@@ -184,6 +184,25 @@ async fn execute(
     app: &AppHandle,
     option: &ProposedOption,
 ) -> Result<sidekick_actions::Outcome, String> {
+    // App-level actions that need the window system rather than the OS.
+    if option.action == "ask_ai" {
+        let prompt = option.args["prompt"]
+            .as_str()
+            .unwrap_or("Help me with this.")
+            .to_owned();
+        crate::palette::open(
+            app,
+            crate::palette::Open {
+                prompt: Some(prompt),
+                ask: true,
+                ..Default::default()
+            },
+        );
+        return Ok(sidekick_actions::Outcome {
+            message: "Asking Sidekick".into(),
+            path: None,
+        });
+    }
     let exec = executor(&app.state::<AppState>());
     exec.run(&option.action, &option.args)
         .await

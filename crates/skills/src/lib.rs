@@ -64,6 +64,10 @@ const BUILTIN: &[(&str, &str)] = &[
         "clipboard/format-json.yaml",
         include_str!("../../../skills/clipboard/format-json.yaml"),
     ),
+    (
+        "dev/explain-error.yaml",
+        include_str!("../../../skills/dev/explain-error.yaml"),
+    ),
 ];
 
 pub fn builtin() -> Vec<Skill> {
