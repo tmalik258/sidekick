@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f7f7f9;
+  --surface: #ffffff;
+  --text: #16161d;
+  --muted: #6b6b7b;
+  --border: #e3e3ea;
+  --hover: #f0f0f5;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101015;
+    --surface: #17171f;
+    --text: #ececf2;
+    --muted: #9a9aab;
+    --border: #2a2a36;
+    --hover: #22222c;
+  }
+}
+
+/* Windows are transparent by default so the island can float; pages that
+   need a background set it themselves. */
+html,
+body {
+  background: transparent;
+  margin: 0;
+  overflow: hidden;
+}
+
+body.page {
+  background: var(--bg);
+  color: var(--text);
+  overflow: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

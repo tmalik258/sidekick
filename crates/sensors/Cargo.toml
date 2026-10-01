@@ -1,0 +1,15 @@
+[package]
+name = "sidekick-sensors"
+description = "Sensors that turn OS signals into Sidekick events"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+log.workspace = true
+serde_json.workspace = true
+sidekick-core.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
