@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "postinstall": "node scripts/sync-sounds.mjs",
     "dev": "node scripts/sync-sounds.mjs && next dev --port 3000",
     "build": "node scripts/sync-sounds.mjs && next build",
     "typecheck": "tsc --noEmit",

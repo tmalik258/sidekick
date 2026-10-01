@@ -50,7 +50,7 @@ pub struct Settings {
 }
 
 pub const THEMES: [&str; 3] = ["pearl", "graphite", "midnight"];
-pub const SOUND_KITS: [&str; 3] = ["01", "02", "03"];
+pub const SOUND_KITS: [&str; 1] = ["01"];
 
 impl Default for Settings {
     fn default() -> Self {

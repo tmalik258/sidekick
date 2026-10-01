@@ -30,11 +30,7 @@ const CUE_SOUND: Record<Cue, SndSound> = {
   yawn: "transition_down",
 };
 
-export const SOUND_KITS = [
-  { id: "01", label: "Kit 1" },
-  { id: "02", label: "Kit 2" },
-  { id: "03", label: "Kit 3" },
-] as const;
+export const SOUND_KITS = [{ id: "01", label: "Kit 1" }] as const;
 
 interface Kit {
   buffer: AudioBuffer;
@@ -72,14 +68,23 @@ async function decodeFirst(ac: AudioContext, id: string): Promise<AudioBuffer> {
   throw lastError;
 }
 
+async function fetchSpriteMap(id: string): Promise<Record<string, { start: number; end: number }>> {
+  const res = await fetch(`/sounds/${id}/sprite.json`);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} for /sounds/${id}/sprite.json (run pnpm install or pnpm --filter desktop dev to sync kits)`);
+  }
+  const json: { spritemap: Record<string, { start: number; end: number }> } = await res.json();
+  return json.spritemap;
+}
+
 function loadKit(id: string): Promise<Kit | null> {
   let kit = kits.get(id);
   if (!kit) {
     const { ac } = audio();
-    kit = Promise.all([fetch(`/sounds/${id}/sprite.json`).then((r) => r.json()), decodeFirst(ac, id)])
-      .then(([json, buffer]) => {
+    kit = Promise.all([fetchSpriteMap(id), decodeFirst(ac, id)])
+      .then(([map, buffer]) => {
         kitErrors.delete(id);
-        return { buffer, map: json.spritemap };
+        return { buffer, map };
       })
       .catch((err) => {
         kitErrors.set(id, String(err));
