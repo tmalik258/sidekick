@@ -13,9 +13,17 @@ listeners = "0.6"
 log.workspace = true
 notify = "8"
 regex = "1"
+serde.workspace = true
 serde_json.workspace = true
 sidekick-core.workspace = true
 tokio.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

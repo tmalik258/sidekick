@@ -50,19 +50,21 @@ pub fn follow_fullscreen(app: &AppHandle, payload: &serde_json::Value) {
     let Some(window) = app.get_webview_window(LABEL) else {
         return;
     };
-    let exe = payload["exe"].as_str().unwrap_or_default();
-    let fullscreen = match (
-        payload["width"].as_f64(),
-        payload["height"].as_f64(),
-        window.current_monitor().ok().flatten(),
-    ) {
-        // The desktop itself reports a screen-sized window; it is not fullscreen.
-        (Some(w), Some(h), Some(monitor)) if exe != "explorer.exe" => {
-            let screen = monitor.size();
-            w >= f64::from(screen.width) - 1.0 && h >= f64::from(screen.height) - 1.0
-        }
-        _ => false,
-    };
+    // The sensor decides what is fullscreen (an exact monitor match, so
+    // maximized windows never count). Only hide for the island's own monitor.
+    let fullscreen = payload["fullscreen"].as_bool().unwrap_or(false)
+        && window
+            .current_monitor()
+            .ok()
+            .flatten()
+            .is_some_and(|monitor| {
+                let (pos, size) = (monitor.position(), monitor.size());
+                let m = &payload["monitor"];
+                m["x"].as_i64() == Some(i64::from(pos.x))
+                    && m["y"].as_i64() == Some(i64::from(pos.y))
+                    && m["width"].as_i64() == Some(i64::from(size.width))
+                    && m["height"].as_i64() == Some(i64::from(size.height))
+            });
     let state = app.state::<AppState>();
     let mut hidden = lock(&state.island_hidden);
     if fullscreen == *hidden {

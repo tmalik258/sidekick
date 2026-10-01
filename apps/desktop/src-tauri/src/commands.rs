@@ -7,6 +7,7 @@ use sidekick_skills::Trust;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
 
+use crate::island;
 use crate::mascot;
 use crate::pipeline::DEBUG_MANUAL_KIND;
 use crate::state::{AppState, HitRect, Suggestion, executor, gate_state, lock};
@@ -256,6 +257,10 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
     next.save(&state.settings_path).map_err(|e| e.to_string())?;
     *lock(&state.settings) = next.clone();
     state.gate.set(gate_state(&next, now));
+    // Without the window sensor nothing would bring a hidden island back.
+    if next.pause.is_active(now) || !next.sensor_enabled("window") {
+        island::follow_fullscreen(app, &serde_json::Value::Null);
+    }
 
     match (previous.pause.is_active(now), next.pause.is_active(now)) {
         (false, true) => {
