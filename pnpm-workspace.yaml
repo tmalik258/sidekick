@@ -1,0 +1,7 @@
+packages:
+  - apps/*
+onlyBuiltDependencies:
+  - "@biomejs/biome"
+  - "@tailwindcss/oxide"
+  - "@tauri-apps/cli"
+  - sharp
