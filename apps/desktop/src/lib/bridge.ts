@@ -99,7 +99,7 @@ export const api = {
   aiChat: (
     id: string,
     messages: ChatMessage[],
-    attach: { window: boolean; clipboard: boolean; page?: string | null; skill?: boolean },
+    attach: { window: boolean; clipboard: boolean; page?: string | null; skill?: boolean; screen?: boolean },
     localOnly: boolean,
   ) => invoke<void>("ai_chat", { id, messages, attach, localOnly }),
   aiCancel: (id: string) => invoke<void>("ai_cancel", { id }),

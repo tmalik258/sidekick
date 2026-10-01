@@ -80,6 +80,13 @@ impl OpenAiCompat {
             messages.push(json!({"role": "system", "content": req.system}));
         }
         messages.extend(req.messages.iter().map(|m| json!(m)));
+        if let (Some(data), Some(last)) = (req.image_base64(), messages.last_mut()) {
+            let text = last["content"].clone();
+            last["content"] = json!([
+                { "type": "image_url", "image_url": { "url": format!("data:image/png;base64,{data}") } },
+                { "type": "text", "text": text },
+            ]);
+        }
         json!({"model": model, "stream": stream, "messages": messages})
     }
 
@@ -188,6 +195,7 @@ mod tests {
             &ChatRequest {
                 system: "Be brief.".into(),
                 messages: vec![Message::user("hi")],
+                image: None,
             },
             true,
         );

@@ -72,6 +72,15 @@ export function AskPanel() {
         icon: settings.muted ? "play" : "pause",
         run: () => void updateSettings({ muted: !settings.muted }),
       },
+      {
+        id: "screen",
+        label: "What's on my screen?",
+        hint: "Sends a screenshot to your AI",
+        icon: "screen",
+        run: () =>
+          sendChat("What's on my screen? Explain it briefly and point out anything I should act on.", { screen: true }),
+        stay: true,
+      },
       { id: "settings", label: "Open settings", icon: "settings", run: () => void api.openSettings() },
       ...(turns.length
         ? [
@@ -298,6 +307,13 @@ function ContextChips() {
         )
       )}
       <Chip
+        on={ask.attachScreen}
+        onClick={() => setAsk({ attachScreen: !ask.attachScreen })}
+        title={`Send a screenshot of ${context.app ?? "the screen"} with the next question`}
+      >
+        Screenshot
+      </Chip>
+      <Chip
         on={ask.localOnly}
         onClick={() => setAsk({ localOnly: !ask.localOnly })}
         title="Only use a model on this PC"
@@ -484,6 +500,9 @@ function Chat({ turns }: { turns: Turn[] }) {
           {t.role === "user" ? (
             <div className="max-w-[85%] rounded-[18px] rounded-br-md bg-white/[0.14] px-3 py-1.5 text-[13.5px] whitespace-pre-wrap">
               {t.content}
+              {t.screen && (
+                <span className="mt-0.5 block text-[11px] text-[rgb(235_235_245/0.5)]">with screenshot</span>
+              )}
             </div>
           ) : (
             <div className="text-[13.5px] leading-relaxed text-white/90">

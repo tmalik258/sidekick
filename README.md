@@ -75,6 +75,7 @@ In the browser preview, `window.sidekickMock.go("success")` switches mascot stat
 - **Screenshots** (Win+PrtScn): Copy, Copy text (with Tesseract), Show in folder.
 - **Search my stuff**: type in Ask mode and pick Search. Add folders under Settings > Search.
 - **Claude Code can use Sidekick** through MCP: copy the command from Settings > AI and run it once.
+- **What's on my screen?**: pick it in Ask mode, or turn on the Screenshot chip to send one with your next question. Sidekick only captures when you ask.
 - **End of day**: a time summary to paste into your standup, and repos with unsaved work.
 - **Learns**: three Not nows in a row quiet a skill for a day; five identical picks offer to make it automatic.
 

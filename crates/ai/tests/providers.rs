@@ -11,6 +11,7 @@ async fn run(p: &dyn AiProvider, prompt: &str) -> (Result<String, String>, Strin
     let req = ChatRequest {
         system: String::new(),
         messages: vec![Message::user(prompt)],
+        image: None,
     };
     let r = p
         .chat(&req, &sink, &CancellationToken::new())

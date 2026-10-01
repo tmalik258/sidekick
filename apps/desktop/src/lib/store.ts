@@ -43,6 +43,8 @@ export interface AskState {
   seq: number;
   attachWindow: boolean;
   attachClip: boolean;
+  /** Send a screenshot with the next question only. */
+  attachScreen: boolean;
   localOnly: boolean;
 }
 
@@ -67,7 +69,7 @@ export const setAsk = (patch: Partial<AskState>) => {
 };
 
 /** Sends a message in the Ask conversation; answers stream into the last turn. */
-export function sendChat(prompt: string, attach?: { clipboard?: boolean }) {
+export function sendChat(prompt: string, attach?: { clipboard?: boolean; screen?: boolean }) {
   const { ask, turns, chatId, chatPage, chatSkill } = useSidekick.getState();
   const q = prompt.trim();
   if (!q || chatId) return;
@@ -76,10 +78,12 @@ export function sendChat(prompt: string, attach?: { clipboard?: boolean }) {
     ...turns.filter((t) => !t.error).map(({ role, content }) => ({ role, content })),
     { role: "user", content: q },
   ];
+  const screen = attach?.screen ?? ask?.attachScreen ?? false;
   useSidekick.setState({
     chatId: id,
-    turns: [...turns, { role: "user", content: q }, { role: "assistant", content: "", streaming: true }],
+    turns: [...turns, { role: "user", content: q, screen }, { role: "assistant", content: "", streaming: true }],
   });
+  if (ask?.attachScreen) setAsk({ attachScreen: false });
   void api.aiChat(
     id,
     history,
@@ -88,6 +92,7 @@ export function sendChat(prompt: string, attach?: { clipboard?: boolean }) {
       clipboard: attach?.clipboard ?? ask?.attachClip ?? false,
       page: chatPage,
       skill: chatSkill,
+      screen,
     },
     ask?.localOnly ?? false,
   );
@@ -173,6 +178,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           seq,
           attachWindow: false,
           attachClip: clip,
+          attachScreen: false,
           localOnly: false,
         },
       });

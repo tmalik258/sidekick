@@ -8,6 +8,7 @@ mod learn;
 mod mascot;
 mod mcp;
 mod pipeline;
+mod screen;
 mod search;
 mod state;
 mod suggestions;

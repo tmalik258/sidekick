@@ -45,6 +45,8 @@ impl ClaudeCode {
     }
 }
 
+const SCREENSHOT: &str = "screen.png";
+
 fn valid_model(m: &str) -> bool {
     !m.is_empty()
         && m.len() <= 64
@@ -146,7 +148,15 @@ impl AiProvider for ClaudeCode {
             .spawn()
             .map_err(|e| AiError::Failed(format!("could not start Claude Code: {e}")))?;
 
-        let prompt = transcript(req);
+        let mut prompt = transcript(req);
+        if let Some(png) = &req.image {
+            // Claude Code reads images from files; it runs in this folder.
+            std::fs::write(self.workdir.join(SCREENSHOT), png)
+                .map_err(|e| AiError::Failed(format!("could not save the screenshot: {e}")))?;
+            prompt = format!(
+                "A screenshot of the user's screen is saved as {SCREENSHOT} in the current folder. Read it first.\n\n{prompt}"
+            );
+        }
         let mut stdin = child.stdin.take().expect("piped stdin");
         stdin
             .write_all(prompt.as_bytes())

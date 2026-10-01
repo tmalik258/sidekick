@@ -89,6 +89,8 @@ export interface Turn extends ChatMessage {
   provider?: string | null;
   error?: string | null;
   streaming?: boolean;
+  /** A screenshot went with this question. */
+  screen?: boolean;
 }
 
 export interface AskContext {

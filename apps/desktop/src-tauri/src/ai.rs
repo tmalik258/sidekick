@@ -133,6 +133,9 @@ pub struct Attach {
     /// The user is describing a new skill for Sidekick to learn.
     #[serde(default)]
     pub skill: bool,
+    /// Send a screenshot of the window the user was in.
+    #[serde(default)]
+    pub screen: bool,
 }
 
 /// What Sidekick can notice, for AI writing skills. Keep in sync with the
@@ -264,9 +267,29 @@ pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach,
             .rev()
             .find(|m| m.role == sidekick_ai::Role::User)
             .map(|m| m.content.clone());
+        let image = if attach.screen {
+            match screenshot(&app).await {
+                Ok(png) => Some(png),
+                Err(err) => {
+                    lock(&app.state::<AppState>().chats).remove(&id);
+                    let _ = app.emit(
+                        DONE_EVENT,
+                        Done {
+                            id,
+                            provider: None,
+                            error: Some(format!("Could not capture the screen: {err}")),
+                        },
+                    );
+                    return;
+                }
+            }
+        } else {
+            None
+        };
         let req = ChatRequest {
             system: system_prompt(&app, &attach),
             messages,
+            image,
         };
         let router = router(&app);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
@@ -304,6 +327,17 @@ pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach,
         };
         let _ = app.emit(DONE_EVENT, done);
     });
+}
+
+/// Captures the window the user was in before Sidekick took focus.
+async fn screenshot(app: &AppHandle) -> Result<Vec<u8>, String> {
+    let pid = lock(&app.state::<AppState>().last_window)
+        .as_ref()
+        .and_then(|w| w["pid"].as_u64())
+        .and_then(|p| u32::try_from(p).ok());
+    tokio::task::spawn_blocking(move || crate::screen::capture(pid))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 fn no_provider_hint(local_only: bool) -> String {

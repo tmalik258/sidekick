@@ -32,3 +32,6 @@ tauri-plugin-single-instance = "2"
 trash = "5"
 tokio.workspace = true
 ulid.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+xcap = "0.9"
