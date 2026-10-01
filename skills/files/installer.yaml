@@ -1,0 +1,15 @@
+id: files.installer
+name: Installers
+description: Offer to run a downloaded installer. Never runs on its own (FR-ACT-02).
+priority: 70
+trigger:
+  event: file.download_completed
+  where:
+    kind: { equals: installer }
+suggestion:
+  title: "Installer downloaded"
+  detail: "{{name}} · {{size_human}}"
+  options:
+    - label: Run installer
+      action: run_installer
+      args: { path: "{{path}}" }

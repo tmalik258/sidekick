@@ -47,7 +47,21 @@ pub struct Settings {
     pub theme: String,
     /// UI sound kit: one of [`SOUND_KITS`].
     pub sound_kit: String,
+    /// Per-skill switches set by the user (FR-SKL-06).
+    pub skills: BTreeMap<String, SkillPref>,
 }
+
+/// The user's overrides for one skill. `None` keeps the skill's default.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SkillPref {
+    pub enabled: Option<bool>,
+    /// Run the first safe option without asking.
+    pub auto: Option<bool>,
+}
+
+/// Sensors that only run when switched on explicitly.
+pub const SENSORS_OFF_BY_DEFAULT: [&str; 1] = ["heartbeat"];
 
 pub const THEMES: [&str; 3] = ["pearl", "graphite", "midnight"];
 pub const SOUND_KITS: [&str; 1] = ["01"];
@@ -64,6 +78,7 @@ impl Default for Settings {
             pause: Pause::None,
             theme: THEMES[0].to_string(),
             sound_kit: SOUND_KITS[0].to_string(),
+            skills: BTreeMap::new(),
         }
     }
 }
@@ -123,7 +138,10 @@ impl Settings {
     }
 
     pub fn sensor_enabled(&self, id: &str) -> bool {
-        self.sensors.get(id).copied().unwrap_or(true)
+        self.sensors
+            .get(id)
+            .copied()
+            .unwrap_or(!SENSORS_OFF_BY_DEFAULT.contains(&id))
     }
 }
 
@@ -167,6 +185,7 @@ mod tests {
         assert_eq!(loaded, s);
         assert!(!loaded.sensor_enabled("heartbeat"));
         assert!(loaded.sensor_enabled("files"));
+        assert!(!Settings::default().sensor_enabled("heartbeat"));
 
         fs::write(&path, r#"{"muted": true}"#).unwrap();
         let partial = Settings::load(&path);
