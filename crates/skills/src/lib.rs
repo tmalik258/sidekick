@@ -137,6 +137,10 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/dev/docker.yaml"),
     ),
     (
+        "dev/claude-permission.yaml",
+        include_str!("../../../skills/dev/claude-permission.yaml"),
+    ),
+    (
         "dev/unsaved-work.yaml",
         include_str!("../../../skills/dev/unsaved-work.yaml"),
     ),
@@ -199,6 +203,9 @@ pub const ACTIONS: &[&str] = &[
     "clean_downloads",
     "summarize_file",
     "restore_layout",
+    "claude_allow",
+    "claude_deny",
+    "claude_pass",
     "browser_fill",
     "browser_close_duplicates",
     "browser_save_session",

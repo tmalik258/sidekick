@@ -5168,6 +5168,7 @@ dependencies = [
  "sidekick-core",
  "sysinfo",
  "tokio",
+ "ulid",
  "windows-sys 0.61.2",
 ]
 

@@ -23,7 +23,7 @@ mod window;
 
 pub use browser::{BrowserBridge, BrowserSensor};
 pub use calendar::{Calendar, CalendarSensor};
-pub use claude_code::ClaudeCodeSensor;
+pub use claude_code::{Approvals, ClaudeCodeSensor};
 pub use clipboard::ClipboardSensor;
 pub use downloads::DownloadsSensor;
 pub use gate::{GateState, SensorGate, SensorGateHandle};

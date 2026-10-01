@@ -81,6 +81,8 @@ pub struct AppState {
     pub decisions: Mutex<crate::decide::Cache>,
     pub voice: crate::voice::Voice,
     pub calendar: sidekick_sensors::Calendar,
+    /// Claude Code permission requests waiting on the island (FR-DEV-06).
+    pub approvals: sidekick_sensors::Approvals,
 }
 
 /// The interactive part of the island window, in logical pixels relative to

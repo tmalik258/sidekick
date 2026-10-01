@@ -151,6 +151,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     let mcp_token = browser::load_or_create_secret(&data_dir, "mcp-token");
     let bridge = BrowserBridge::default();
     let calendar = sidekick_sensors::Calendar::default();
+    let approvals = sidekick_sensors::Approvals::default();
     commands::sync_calendar(&calendar, &settings);
 
     app.manage(AppState {
@@ -176,6 +177,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         ai_workdir: data_dir.join("claude-workspace"),
         voice: voice::Voice::new(data_dir.join("voice-models")),
         calendar: calendar.clone(),
+        approvals: approvals.clone(),
         scratch_dir,
         decisions: Mutex::default(),
         ai_ready: Default::default(),
@@ -222,6 +224,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
             Box::new(WindowSensor),
             Box::new(ClaudeCodeSensor {
                 port: ClaudeCodeSensor::DEFAULT_PORT,
+                approvals,
             }),
             Box::new(BrowserSensor {
                 port: BrowserSensor::DEFAULT_PORT,

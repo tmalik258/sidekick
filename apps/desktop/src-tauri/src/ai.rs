@@ -150,6 +150,7 @@ port.listening / port.closed: port, pid, process (lowercase, no .exe), address, 
 clipboard.changed: kind (url|json|color|email|path|stack_trace|code|text|secret), preview, text (never for secret)
 window.focused: app, exe, title, pid
 claude.stop / claude.notification: project, cwd, session, message
+claude.permission: id, project, tool, summary, seconds
 browser.login_form / browser.long_read / browser.upwork_job: url, domain, title, text, words, tab
 browser.many_tabs: count, duplicates
 system.disk_low: mount, free_human, total_human, percent_free

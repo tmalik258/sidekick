@@ -296,6 +296,26 @@ async fn execute(
                 path: None,
             });
         }
+        "claude_allow" | "claude_deny" | "claude_pass" => {
+            let id = arg("id").ok_or("no request id")?;
+            let answer = match option.action.as_str() {
+                "claude_allow" => Some(true),
+                "claude_deny" => Some(false),
+                _ => None,
+            };
+            let state = app.state::<AppState>();
+            if !state.approvals.decide(id, answer) {
+                return Err("Claude Code already moved on; answer in the terminal.".into());
+            }
+            return Ok(sidekick_actions::Outcome {
+                message: match answer {
+                    Some(true) => "Allowed".into(),
+                    Some(false) => "Denied".into(),
+                    None => "Answer in the terminal".into(),
+                },
+                path: None,
+            });
+        }
         "restore_layout" => {
             return crate::layout::restore(app)
                 .await

@@ -945,12 +945,16 @@ function StatusDot({ state }: { state: "ok" | "off" | "checking" }) {
 
 const HOOK_SNIPPET = JSON.stringify(
   {
-    hooks: Object.fromEntries(
-      ["Stop", "Notification"].map((event) => [
-        event,
-        [{ hooks: [{ type: "http", url: CLAUDE_HOOK_URL, timeout: 5 }] }],
-      ]),
-    ),
+    hooks: {
+      ...Object.fromEntries(
+        ["Stop", "Notification"].map((event) => [
+          event,
+          [{ hooks: [{ type: "http", url: CLAUDE_HOOK_URL, timeout: 5 }] }],
+        ]),
+      ),
+      // Waits up to 25 s for Allow or Deny on the island, then Claude Code asks as usual.
+      PermissionRequest: [{ hooks: [{ type: "http", url: CLAUDE_HOOK_URL, timeout: 30 }] }],
+    },
   },
   null,
   2,
@@ -975,7 +979,8 @@ function ClaudeHook() {
           <p className="text-[14px] font-medium">Claude Code hooks</p>
           <p className="text-[12px] text-(--muted)">
             Add this to <code className="font-mono">~/.claude/settings.json</code> (merge with any hooks you have) so
-            Sidekick knows when a session finishes or is waiting for you.
+            Sidekick knows when a session finishes or is waiting for you, and you can allow or deny its permission
+            requests from the island.
           </p>
         </div>
         <Button small onClick={copy}>
