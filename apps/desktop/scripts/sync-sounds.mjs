@@ -17,6 +17,9 @@ for (const kit of ["01", "02", "03"]) {
   const src = join(pkg, "assets", "sounds", "sprite", kit);
   const dest = join(out, kit);
   mkdirSync(dest, { recursive: true });
+  // AAC and MP3 play everywhere WebView2 runs; OGG stays as a backup.
+  copyFileSync(join(src, "audioSprite.m4a"), join(dest, "sprite.m4a"));
+  copyFileSync(join(src, "audioSprite.mp3"), join(dest, "sprite.mp3"));
   copyFileSync(join(src, "audioSprite.ogg"), join(dest, "sprite.ogg"));
   copyFileSync(join(src, "audioSprite.json"), join(dest, "sprite.json"));
 }

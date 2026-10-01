@@ -126,7 +126,7 @@ const GAZE_RELEASE_MS = 4000;
 export function Orb({
   state,
   size,
-  theme = "graphite",
+  theme = "pearl",
   magnetic = true,
 }: {
   state: MascotState;
@@ -267,7 +267,7 @@ export function Orb({
     }
   }, [look.spin, reduced]);
 
-  const material = THEME_STYLES[theme] ?? THEME_STYLES.graphite;
+  const material = THEME_STYLES[theme] ?? THEME_STYLES.pearl;
   const halo = look.halo ?? material.halo;
   const shade = (c: string) => (look.dim ? `color-mix(in oklab, ${c} 55%, #000)` : c);
   const vars = {

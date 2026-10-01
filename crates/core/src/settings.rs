@@ -49,7 +49,7 @@ pub struct Settings {
     pub sound_kit: String,
 }
 
-pub const THEMES: [&str; 3] = ["graphite", "pearl", "midnight"];
+pub const THEMES: [&str; 3] = ["pearl", "graphite", "midnight"];
 pub const SOUND_KITS: [&str; 3] = ["01", "02", "03"];
 
 impl Default for Settings {
@@ -183,7 +183,7 @@ mod tests {
             ..Settings::default()
         }
         .sanitized();
-        assert_eq!(s.theme, "graphite");
+        assert_eq!(s.theme, "pearl");
         assert_eq!(s.sound_kit, "01");
     }
 

@@ -3,7 +3,7 @@
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
-import { cueVolume, playCue, SOUND_KITS } from "@/lib/sound";
+import { checkKit, cueVolume, playCue, SOUND_KITS } from "@/lib/sound";
 import { connect, updateSettings, useSidekick } from "@/lib/store";
 import {
   type AppInfo,
@@ -116,6 +116,7 @@ export function SettingsPanel() {
             ))}
           </div>
         </div>
+        <KitStatus kit={settings.soundKit} />
         <Toggle
           label="Mute all sounds"
           checked={settings.muted}
@@ -200,6 +201,23 @@ export function SettingsPanel() {
         </Section>
       )}
     </main>
+  );
+}
+
+function KitStatus({ kit }: { kit: string }) {
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void checkKit(kit).then((e) => live && setError(e));
+    return () => {
+      live = false;
+    };
+  }, [kit]);
+  if (!error) return null;
+  return (
+    <p role="alert" className="text-[12px] text-red-500">
+      This kit could not load, so a fallback tone plays instead: {error}
+    </p>
   );
 }
 
