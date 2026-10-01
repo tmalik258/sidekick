@@ -12,7 +12,16 @@ use sidekick_sensors::{GateState, SensorGateHandle};
 use sidekick_skills::{Engine, Env, Proposal, Skill, Trust};
 
 /// Every sensor the app can run, in the order shown in settings.
-pub const SENSOR_IDS: [&str; 5] = ["downloads", "ports", "clipboard", "window", "heartbeat"];
+pub const SENSOR_IDS: [&str; 8] = [
+    "downloads",
+    "ports",
+    "clipboard",
+    "window",
+    "claude_code",
+    "system",
+    "idle",
+    "heartbeat",
+];
 
 pub struct AppState {
     pub settings: Mutex<Settings>,
@@ -37,6 +46,27 @@ pub struct AppState {
     pub island_hidden: Mutex<bool>,
     /// The cursor is over the island (kept by the hover tracker).
     pub hovered: AtomicBool,
+    /// The last app the user was in (payload of `window.focused`).
+    pub last_window: Mutex<Option<serde_json::Value>>,
+    /// Chats in flight, so they can be cancelled.
+    pub chats: Mutex<HashMap<String, sidekick_ai::CancellationToken>>,
+    /// Empty folder Claude Code runs in, so it has no project to touch.
+    pub ai_workdir: PathBuf,
+    /// Temporary files (SemIf input and output).
+    pub scratch_dir: PathBuf,
+    /// Some AI provider is switched on and reachable (skills `requires: [ai]`).
+    pub ai_ready: AtomicBool,
+    /// Files Sidekick's own actions just created, so the downloads sensor
+    /// seeing them does not trigger a suggestion about Sidekick's output.
+    pub own_files: Mutex<HashMap<PathBuf, Instant>>,
+    /// The island is in Ask mode (input, commands, chat).
+    pub ask_open: AtomicBool,
+    /// The next success has buttons (Undo, Show in folder); hold it longer.
+    pub linger: AtomicBool,
+    /// The user stepped away (no input for a while); suggestions wait.
+    pub away: AtomicBool,
+    /// T1 picks per skill and app, from earlier decisions.
+    pub decisions: Mutex<crate::decide::Cache>,
 }
 
 /// The interactive part of the island window, in logical pixels relative to
@@ -103,13 +133,17 @@ pub fn gate_state(settings: &Settings, now: DateTime<Utc>) -> GateState {
 /// What the skill engine needs from the app, captured for one evaluation.
 pub struct AppEnv<'a> {
     pub settings: &'a Settings,
+    pub ai_ready: bool,
     pub caps: &'a Capabilities,
     pub storage: &'a Mutex<Storage>,
 }
 
 impl Env for AppEnv<'_> {
     fn has(&self, requirement: &str) -> bool {
-        self.caps.has(requirement)
+        match requirement {
+            "ai" => self.ai_ready,
+            _ => self.caps.has(requirement),
+        }
     }
 
     fn skill_enabled(&self, skill: &Skill) -> bool {

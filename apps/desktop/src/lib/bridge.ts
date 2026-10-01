@@ -7,9 +7,12 @@ import type {
   ActionRecord,
   ActionResult,
   AppInfo,
+  AskOpen,
   CapabilityInfo,
+  ChatMessage,
   HitRect,
   MascotState,
+  ProviderStatus,
   Settings,
   SkillInfo,
   StoredEvent,
@@ -23,6 +26,11 @@ export const EVENTS = {
   suggestionClear: "suggestion://clear",
   islandHover: "island://hover",
   islandCursor: "island://cursor",
+  islandVisible: "island://visible",
+  aiDelta: "ai://delta",
+  aiDone: "ai://done",
+  askOpen: "ask://open",
+  askClose: "ask://close",
   actionResult: "action://result",
   settingsChanged: "settings://changed",
 } as const;
@@ -33,6 +41,11 @@ export interface EventPayloads {
   [EVENTS.suggestionClear]: string;
   [EVENTS.islandHover]: boolean;
   [EVENTS.islandCursor]: { x: number; y: number };
+  [EVENTS.islandVisible]: boolean;
+  [EVENTS.aiDelta]: { id: string; text: string };
+  [EVENTS.aiDone]: { id: string; provider: string | null; error: string | null };
+  [EVENTS.askOpen]: AskOpen;
+  [EVENTS.askClose]: null;
   [EVENTS.actionResult]: ActionResult;
   [EVENTS.settingsChanged]: Settings;
 }
@@ -78,4 +91,11 @@ export const api = {
   choicesReset: () => invoke<number>("choices_reset"),
   actionsRecent: (limit = 30) => invoke<ActionRecord[]>("actions_recent", { limit }),
   revealPath: (path: string) => invoke<void>("reveal_path", { path }),
+  aiStatus: () => invoke<ProviderStatus[]>("ai_status"),
+  aiChat: (id: string, messages: ChatMessage[], attach: { window: boolean; clipboard: boolean }, localOnly: boolean) =>
+    invoke<void>("ai_chat", { id, messages, attach, localOnly }),
+  aiCancel: (id: string) => invoke<void>("ai_cancel", { id }),
+  askClose: () => invoke<void>("ask_close"),
+  actionUndo: (id: number) => invoke<string>("action_undo", { id }),
+  askOpen: (prompt: string | null = null, ask = false) => invoke<void>("ask_open", { prompt, ask }),
 };

@@ -1,10 +1,14 @@
+mod ai;
+mod ask;
 mod commands;
+mod decide;
 mod island;
 mod mascot;
 mod pipeline;
 mod state;
 mod suggestions;
 mod tray;
+mod undo;
 mod windows;
 
 use std::error::Error;
@@ -15,8 +19,8 @@ use chrono::Utc;
 use sidekick_actions::{Capabilities, Executor};
 use sidekick_core::{EventBus, MascotEvent, Settings, Storage};
 use sidekick_sensors::{
-    ClipboardSensor, DownloadsSensor, HeartbeatSensor, PortsSensor, Sensor, SensorGate,
-    WindowSensor,
+    ClaudeCodeSensor, ClipboardSensor, DownloadsSensor, HeartbeatSensor, IdleSensor, PortsSensor,
+    Sensor, SensorGate, SystemSensor, WindowSensor,
 };
 use sidekick_skills::Engine;
 use tauri::{AppHandle, Manager};
@@ -38,6 +42,7 @@ pub fn run() {
                 .max_file_size(10 * 1024 * 1024)
                 .build(),
         )
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -68,6 +73,12 @@ pub fn run() {
             commands::choices_reset,
             commands::actions_recent,
             commands::reveal_path,
+            commands::ai_status,
+            commands::ai_chat,
+            commands::ai_cancel,
+            commands::ask_open,
+            commands::ask_close,
+            commands::action_undo,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Sidekick");
@@ -85,13 +96,16 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     log::info!("{} skills loaded", skills.len());
     let caps = Capabilities::detect();
     log::info!("found: {}", caps.summary().join(", "));
-    let db_path = app.path().app_data_dir()?.join("sidekick.db");
+    let data_dir = app.path().app_data_dir()?;
+    let db_path = data_dir.join("sidekick.db");
+    let scratch_dir = app.path().app_cache_dir()?;
 
     let settings = Settings::load(&settings_path);
     let storage = Storage::open(&db_path)?;
     let bus = EventBus::default();
     let (gate_handle, gate) = SensorGate::new(state::gate_state(&settings, Utc::now()));
     let paused = settings.pause.is_active(Utc::now());
+    let hotkey = settings.palette_hotkey.clone();
 
     app.manage(AppState {
         settings: Mutex::new(settings),
@@ -111,6 +125,16 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         queue: Mutex::default(),
         island_hidden: Mutex::default(),
         hovered: Default::default(),
+        last_window: Mutex::default(),
+        chats: Mutex::default(),
+        ai_workdir: data_dir.join("claude-workspace"),
+        scratch_dir,
+        decisions: Mutex::default(),
+        ai_ready: Default::default(),
+        away: Default::default(),
+        linger: Default::default(),
+        own_files: Mutex::default(),
+        ask_open: Default::default(),
     });
 
     pipeline::start(app);
@@ -120,12 +144,19 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
             Box::new(PortsSensor),
             Box::new(ClipboardSensor),
             Box::new(WindowSensor),
+            Box::new(ClaudeCodeSensor {
+                port: ClaudeCodeSensor::DEFAULT_PORT,
+            }),
+            Box::new(SystemSensor),
+            Box::new(IdleSensor::default()),
             Box::new(HeartbeatSensor::new(HEARTBEAT_INTERVAL)),
         ];
         sidekick_sensors::spawn_all(sensors, &bus, &gate);
     });
 
     island::setup(app)?;
+    ask::setup(app, &hotkey);
+    ai::watch_readiness(app);
     tray::create(app)?;
 
     if paused {

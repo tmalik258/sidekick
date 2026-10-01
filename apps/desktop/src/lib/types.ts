@@ -13,7 +13,7 @@ export const MASCOT_STATES = [
 
 export type MascotState = (typeof MASCOT_STATES)[number];
 
-export const CUES = ["yawn", "chirp", "pop", "open", "ding", "boop"] as const;
+export const CUES = ["yawn", "settle", "chirp", "pop", "open", "ding", "boop"] as const;
 
 export type Cue = (typeof CUES)[number];
 
@@ -35,6 +35,71 @@ export interface Settings {
   pause: Pause;
   theme: Theme;
   soundKit: string;
+  skills?: Record<string, { enabled?: boolean | null; auto?: boolean | null }>;
+  paletteHotkey: string;
+  ai: AiSettings;
+}
+
+export const AI_PROVIDERS = ["claude_code", "anthropic", "local"] as const;
+export type AiProviderId = (typeof AI_PROVIDERS)[number];
+
+export interface AiSettings {
+  order: AiProviderId[];
+  claudeCode: { enabled: boolean; path: string; model: string };
+  local: { enabled: boolean; baseUrl: string; model: string };
+  anthropic: { enabled: boolean; model: string };
+  semif: {
+    enabled: boolean;
+    command: string[];
+    mode: string;
+    backend: string;
+    model: string;
+    revision: string;
+    gguf: string;
+  };
+  decisions: boolean;
+}
+
+export const PROVIDER_LABELS: Record<string, string> = {
+  claude_code: "Claude Code",
+  anthropic: "Anthropic API",
+  local: "Local model",
+  semif: "SemIf",
+};
+
+/** Where Sidekick listens for Claude Code hooks (ClaudeCodeSensor::DEFAULT_PORT). */
+export const CLAUDE_HOOK_URL = "http://127.0.0.1:47821/claude-code";
+
+export interface ProviderStatus {
+  id: string;
+  available: boolean;
+  local: boolean;
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/** One turn of an Ask conversation, as the island shows it. */
+export interface Turn extends ChatMessage {
+  provider?: string | null;
+  error?: string | null;
+  streaming?: boolean;
+}
+
+export interface AskContext {
+  app: string | null;
+  title: string | null;
+  clipboardKind: string | null;
+  clipboardPreview: string | null;
+  clipboardSecret: boolean;
+}
+
+export interface AskOpen {
+  context: AskContext;
+  prompt: string | null;
+  ask: boolean;
 }
 
 export const THEMES = ["pearl", "graphite", "midnight"] as const;
@@ -81,6 +146,23 @@ export const DEFAULT_SETTINGS: Settings = {
   pause: { kind: "none" },
   theme: "pearl",
   soundKit: "01",
+  paletteHotkey: "Alt+Space",
+  ai: {
+    order: ["claude_code", "anthropic", "local"],
+    claudeCode: { enabled: true, path: "", model: "" },
+    local: { enabled: true, baseUrl: "http://localhost:11434/v1", model: "" },
+    anthropic: { enabled: true, model: "" },
+    semif: {
+      enabled: false,
+      command: ["semif-score"],
+      mode: "direct",
+      backend: "llamacpp",
+      model: "openbmb/MiniCPM5-2B",
+      revision: "main",
+      gguf: "",
+    },
+    decisions: true,
+  },
 };
 
 export const SENSOR_IDS = [
@@ -88,6 +170,17 @@ export const SENSOR_IDS = [
   { id: "ports", label: "Dev servers", hint: "Notices local servers starting, checked every second." },
   { id: "clipboard", label: "Clipboard", hint: "Notices copied text. Secrets are never stored." },
   { id: "window", label: "Active window", hint: "Knows which app is in front; hides the island in fullscreen." },
+  {
+    id: "claude_code",
+    label: "Claude Code",
+    hint: "Hears when a Claude Code session finishes or needs you (add the hook under AI).",
+  },
+  { id: "system", label: "Disk and memory", hint: "Warns when a drive is almost full or memory stays high." },
+  {
+    id: "idle",
+    label: "Away detection",
+    hint: "Holds suggestions while you are away and shows them when you are back.",
+  },
   { id: "heartbeat", label: "Heartbeat (debug)", hint: "A test event every 30 seconds." },
 ] as const;
 
@@ -96,6 +189,8 @@ export interface ActionResult {
   message: string;
   path: string | null;
   auto: boolean;
+  /** Set when the action created a file that Undo can move to the bin. */
+  undoId: number | null;
 }
 
 export interface SkillInfo {
@@ -115,6 +210,7 @@ export interface CapabilityInfo {
 }
 
 export interface ActionRecord {
+  id: number;
   ts: string;
   skillId: string;
   action: string;
@@ -122,6 +218,13 @@ export interface ActionRecord {
   ok: boolean;
   message: string;
   auto: boolean;
+  undoPath: string | null;
+  undone: boolean;
+}
+
+/** Undo is kept for 24 hours (FR-ACT-04). */
+export function canUndo(a: ActionRecord, now = Date.now()): boolean {
+  return !!a.undoPath && !a.undone && now - Date.parse(a.ts) < 24 * 60 * 60 * 1000;
 }
 
 export function isPaused(pause: Pause, now = Date.now()): boolean {

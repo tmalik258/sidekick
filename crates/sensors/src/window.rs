@@ -24,6 +24,7 @@ impl Sensor for WindowSensor {
         tokio::spawn(async move {
             let own_pid = u64::from(std::process::id());
             let mut last: Option<(String, String, Option<Rect>)> = None;
+            let mut last_raw: Option<Rect> = None;
             let mut tick = tokio::time::interval(CHECK_EVERY);
             loop {
                 tick.tick().await;
@@ -37,9 +38,18 @@ impl Sensor for WindowSensor {
                 }
                 // Fullscreen is part of the key: pressing F11 or Esc changes
                 // nothing else about the window.
-                let fullscreen = tokio::task::spawn_blocking(fullscreen_monitor)
+                let raw = tokio::task::spawn_blocking(fullscreen_monitor)
                     .await
                     .unwrap_or_default();
+                // Only trust fullscreen once it holds for two checks, so a
+                // passing overlay never hides the island.
+                let fullscreen = raw.filter(|_| raw == last_raw);
+                last_raw = raw;
+                let is_shell = win
+                    .process_path
+                    .file_name()
+                    .is_some_and(|n| n.eq_ignore_ascii_case("explorer.exe"));
+                let fullscreen = fullscreen.filter(|_| !is_shell);
                 let key = (win.app_name.clone(), win.title.clone(), fullscreen);
                 if !gate.allows(Self::ID) {
                     // Report the window again when resumed.
@@ -94,6 +104,19 @@ pub struct Rect {
 /// Windows reports it 8px past every monitor edge (its invisible resize
 /// borders), so only an exact match with the monitor counts.
 #[cfg(windows)]
+const SHELL_CLASSES: &[&str] = &[
+    "WorkerW",
+    "Progman",
+    "XamlExplorerHostIslandWindow",
+    "MultitaskingViewFrame",
+    "TaskSwitcherWnd",
+    "ForegroundStaging",
+    "Shell_TrayWnd",
+    "Shell_SecondaryTrayWnd",
+    "Windows.UI.Core.CoreWindow",
+];
+
+#[cfg(windows)]
 fn fullscreen_monitor() -> Option<Rect> {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::Graphics::Gdi::{
@@ -110,11 +133,12 @@ fn fullscreen_monitor() -> Option<Rect> {
         if hwnd.is_null() || hwnd == GetShellWindow() {
             return None;
         }
-        // The desktop (wallpaper) is a screen-sized window, not a fullscreen app.
-        let mut class = [0u16; 32];
+        // The desktop, the Alt+Tab and Win+Tab switchers, Start and the
+        // taskbar fill the screen too, but they are the shell, not an app.
+        let mut class = [0u16; 64];
         let len = GetClassNameW(hwnd, class.as_mut_ptr(), class.len() as i32);
         let class = String::from_utf16_lossy(&class[..len.max(0) as usize]);
-        if class == "WorkerW" || class == "Progman" {
+        if SHELL_CLASSES.contains(&class.as_str()) {
             return None;
         }
         let mut rect: RECT = std::mem::zeroed();

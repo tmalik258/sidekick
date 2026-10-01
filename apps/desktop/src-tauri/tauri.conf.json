@@ -15,8 +15,8 @@
         "label": "island",
         "url": "island/",
         "title": "Sidekick",
-        "width": 440,
-        "height": 200,
+        "width": 600,
+        "height": 560,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
@@ -37,7 +37,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
+    "targets": [
+      "nsis",
+      "msi"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -46,7 +49,9 @@
       "icons/icon.ico"
     ],
     "windows": {
-      "nsis": { "installMode": "currentUser" }
+      "nsis": {
+        "installMode": "currentUser"
+      }
     }
   }
 }

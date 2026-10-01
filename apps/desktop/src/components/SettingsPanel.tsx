@@ -7,12 +7,19 @@ import { checkKit, cueVolume, playCue } from "@/lib/sound";
 import { connect, updateSettings, useSidekick } from "@/lib/store";
 import {
   type ActionRecord,
+  AI_PROVIDERS,
+  type AiProviderId,
+  type AiSettings,
   type AppInfo,
   type CapabilityInfo,
+  CLAUDE_HOOK_URL,
   CUES,
+  canUndo,
   isPaused,
   MASCOT_STATES,
   type Pause,
+  PROVIDER_LABELS,
+  type ProviderStatus,
   SENSOR_IDS,
   type SkillInfo,
   type StoredEvent,
@@ -135,11 +142,34 @@ export function SettingsPanel() {
             className="w-20 rounded-md border border-(--border) bg-transparent px-2 py-1 text-right"
           />
         </label>
+        <div className="flex items-center justify-between gap-4 text-sm">
+          <span>
+            Ask shortcut
+            <span className="block text-[12px] text-(--muted)">For example Alt+Space or Ctrl+Shift+K</span>
+          </span>
+          <TextField
+            value={settings.paletteHotkey}
+            onCommit={(paletteHotkey) => run(() => updateSettings({ paletteHotkey }))}
+            className="w-40 text-right"
+            label="Ask shortcut"
+          />
+        </div>
         <Toggle
           label="Launch Sidekick when Windows starts"
           checked={settings.launchAtLogin}
           onChange={(launchAtLogin) => run(() => updateSettings({ launchAtLogin }))}
         />
+      </Section>
+
+      <Section
+        title="AI"
+        hint="Sidekick works fully without AI. Chat tries the providers top to bottom and falls back when one is not reachable. Ranking (T1) only ever uses SemIf or a model on this PC."
+      >
+        <AiSection ai={settings.ai} onError={setError} />
+      </Section>
+
+      <Section title="History" hint="Files Sidekick created can be undone for 24 hours; they go to the Recycle Bin.">
+        <RecentActions onError={setError} />
       </Section>
 
       <Section
@@ -180,7 +210,7 @@ export function SettingsPanel() {
           <Button onClick={() => run(() => api.debugEmitEvent())}>Emit test event</Button>
           <Button onClick={() => run(() => api.debugDemoFlow())}>Run demo suggestion</Button>
         </div>
-        <RecentActions />
+
         <RecentEvents />
       </Section>
 
@@ -325,10 +355,18 @@ function Capabilities({ onError }: { onError: (e: string) => void }) {
   );
 }
 
-function RecentActions() {
+function RecentActions({ onError }: { onError: (e: string) => void }) {
   const [actions, setActions] = useState<ActionRecord[]>([]);
-  const refresh = useCallback(() => void api.actionsRecent(10).then(setActions), []);
+  const refresh = useCallback(() => void api.actionsRecent(30).then(setActions), []);
   useEffect(refresh, [refresh]);
+  const undo = async (id: number) => {
+    try {
+      await api.actionUndo(id);
+    } catch (err) {
+      onError(String(err));
+    }
+    refresh();
+  };
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
@@ -338,16 +376,27 @@ function RecentActions() {
         </Button>
       </div>
       {actions.length === 0 ? (
-        <p className="text-sm text-(--muted)">No actions yet.</p>
+        <p className="text-sm text-(--muted)">Nothing yet. Actions you pick on the island show up here.</p>
       ) : (
-        <ul className="divide-y divide-(--border) rounded-lg border border-(--border) text-xs">
+        <ul className="divide-y divide-(--border) rounded-lg border border-(--border) text-[12.5px]">
           {actions.map((a) => (
-            <li key={`${a.ts}-${a.label}`} className="flex justify-between gap-3 px-3 py-1.5">
-              <span className={a.ok ? "" : "text-red-500"}>
-                {a.label}
-                {a.auto ? " (auto)" : ""}: {a.message}
+            <li key={a.id} className="flex items-center justify-between gap-3 px-3 py-2">
+              <span className={`min-w-0 ${a.ok ? "" : "text-red-500"}`}>
+                <span className="font-medium">{a.label}</span>
+                {a.auto ? " (auto)" : ""}
+                <span className="block truncate text-(--muted)">
+                  {a.undone ? "Undone. " : ""}
+                  {a.message}
+                </span>
               </span>
-              <span className="shrink-0 text-(--muted)">{new Date(a.ts).toLocaleTimeString()}</span>
+              <span className="flex shrink-0 items-center gap-2">
+                {canUndo(a) && (
+                  <Button small onClick={() => void undo(a.id)}>
+                    Undo
+                  </Button>
+                )}
+                <span className="text-(--muted)">{new Date(a.ts).toLocaleTimeString()}</span>
+              </span>
             </li>
           ))}
         </ul>
@@ -482,5 +531,340 @@ function Slider({ label, value, onChange }: { label: string; value: number; onCh
         className="w-36 accent-(--accent)"
       />
     </label>
+  );
+}
+
+/** A text input that saves on Enter or when it loses focus, not per key. */
+function TextField({
+  value,
+  onCommit,
+  placeholder,
+  className = "",
+  mono,
+  label,
+}: {
+  label?: string;
+  value: string;
+  onCommit: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+  mono?: boolean;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const commit = () => {
+    if (draft !== value) onCommit(draft.trim());
+  };
+  return (
+    <input
+      value={draft}
+      aria-label={label}
+      placeholder={placeholder}
+      spellCheck={false}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit();
+        if (e.key === "Escape") setDraft(value);
+      }}
+      className={`rounded-md border border-(--border) bg-transparent px-2 py-1 text-[13px] outline-none focus:border-(--accent) ${
+        mono ? "font-mono text-[12px]" : ""
+      } ${className}`}
+    />
+  );
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4 text-[13px]">
+      <span className="min-w-0">
+        {label}
+        {hint && <span className="block text-[11.5px] text-(--muted)">{hint}</span>}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+/** Splits a command line into arguments, honouring double quotes. */
+function splitArgs(line: string): string[] {
+  return [...line.matchAll(/"([^"]*)"|(\S+)/g)].map((m) => m[1] ?? m[2]);
+}
+
+function joinArgs(args: string[]): string {
+  return args.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(" ");
+}
+
+const PROVIDER_HINTS: Record<AiProviderId, string> = {
+  claude_code: "Your own Claude subscription through the claude CLI. Sidekick never reads its sign-in files.",
+  anthropic: "Uses ANTHROPIC_API_KEY from your environment. The key is never stored.",
+  local: "Ollama, LM Studio or any OpenAI-compatible server. Nothing leaves this PC.",
+};
+
+function AiSection({ ai, onError }: { ai: AiSettings; onError: (e: string) => void }) {
+  const [status, setStatus] = useState<ProviderStatus[] | null>(null);
+  const refresh = useCallback(() => {
+    setStatus(null);
+    void api.aiStatus().then(setStatus);
+  }, []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-check whenever the AI settings change
+  useEffect(refresh, [refresh, ai]);
+
+  const save = (next: Partial<AiSettings>) =>
+    updateSettings({ ai: { ...ai, ...next } }).catch((e: unknown) => onError(String(e)));
+  const available = (id: string) => status?.find((s) => s.id === id)?.available;
+  const move = (id: AiProviderId, delta: number) => {
+    const order = [...ai.order];
+    const i = order.indexOf(id);
+    const j = i + delta;
+    if (i < 0 || j < 0 || j >= order.length) return;
+    [order[i], order[j]] = [order[j], order[i]];
+    void save({ order });
+  };
+  const enabled = (id: AiProviderId) =>
+    id === "claude_code" ? ai.claudeCode.enabled : id === "anthropic" ? ai.anthropic.enabled : ai.local.enabled;
+  const setEnabled = (id: AiProviderId, on: boolean) => {
+    if (id === "claude_code") void save({ claudeCode: { ...ai.claudeCode, enabled: on } });
+    else if (id === "anthropic") void save({ anthropic: { ...ai.anthropic, enabled: on } });
+    else void save({ local: { ...ai.local, enabled: on } });
+  };
+  const order = ai.order.filter((id) => AI_PROVIDERS.includes(id));
+
+  return (
+    <div className="flex flex-col gap-4">
+      <ol className="flex flex-col gap-3">
+        {order.map((id, i) => (
+          <li key={id} className="flex flex-col gap-2 rounded-xl border border-(--border) p-3">
+            <div className="flex items-center gap-3">
+              <StatusDot state={status === null ? "checking" : available(id) ? "ok" : "off"} />
+              <div className="min-w-0 flex-1">
+                <p className="text-[14px] font-medium">
+                  {i + 1}. {PROVIDER_LABELS[id]}
+                </p>
+                <p className="text-[12px] text-(--muted)">{PROVIDER_HINTS[id]}</p>
+              </div>
+              <div className="flex gap-1">
+                <Button small onClick={() => move(id, -1)} disabled={i === 0}>
+                  Up
+                </Button>
+                <Button small onClick={() => move(id, 1)} disabled={i === order.length - 1}>
+                  Down
+                </Button>
+              </div>
+              <Switch checked={enabled(id)} onChange={(on) => setEnabled(id, on)} label={PROVIDER_LABELS[id]} />
+            </div>
+            {id === "claude_code" && (
+              <>
+                <Field label="Path to claude" hint="Empty finds it on PATH">
+                  <TextField
+                    label="Path to claude"
+                    value={ai.claudeCode.path}
+                    placeholder="claude"
+                    mono
+                    className="w-64"
+                    onCommit={(path) => save({ claudeCode: { ...ai.claudeCode, path } })}
+                  />
+                </Field>
+                <Field label="Model" hint="Empty uses Claude Code's default">
+                  <TextField
+                    label="Model"
+                    value={ai.claudeCode.model}
+                    placeholder="default"
+                    mono
+                    className="w-64"
+                    onCommit={(model) => save({ claudeCode: { ...ai.claudeCode, model } })}
+                  />
+                </Field>
+              </>
+            )}
+            {id === "anthropic" && (
+              <Field label="Model">
+                <TextField
+                  label="Model"
+                  value={ai.anthropic.model}
+                  placeholder="claude-opus-5-5"
+                  mono
+                  className="w-64"
+                  onCommit={(model) => save({ anthropic: { ...ai.anthropic, model } })}
+                />
+              </Field>
+            )}
+            {id === "local" && (
+              <>
+                <Field label="Server URL">
+                  <TextField
+                    label="Server URL"
+                    value={ai.local.baseUrl}
+                    mono
+                    className="w-64"
+                    onCommit={(baseUrl) => save({ local: { ...ai.local, baseUrl } })}
+                  />
+                </Field>
+                <Field label="Model" hint="Empty uses the first model the server lists">
+                  <TextField
+                    label="Model"
+                    value={ai.local.model}
+                    placeholder="qwen3:4b"
+                    mono
+                    className="w-64"
+                    onCommit={(model) => save({ local: { ...ai.local, model } })}
+                  />
+                </Field>
+              </>
+            )}
+          </li>
+        ))}
+      </ol>
+
+      <div className="flex flex-col gap-2 rounded-xl border border-(--border) p-3">
+        <div className="flex items-center gap-3">
+          <StatusDot state={status === null ? "checking" : available("semif") ? "ok" : "off"} />
+          <div className="min-w-0 flex-1">
+            <p className="text-[14px] font-medium">SemIf decisions (T1)</p>
+            <p className="text-[12px] text-(--muted)">
+              Scores each option straight from a small model's logits. Runs semif-score natively or inside WSL.
+            </p>
+          </div>
+          <Switch
+            checked={ai.semif.enabled}
+            onChange={(enabled) => save({ semif: { ...ai.semif, enabled } })}
+            label="SemIf"
+          />
+        </div>
+        {ai.semif.enabled && (
+          <>
+            <Field label="Command" hint="e.g. wsl.exe -d Ubuntu-22.04 -- /home/me/semif/.venv/bin/semif-score">
+              <TextField
+                label="Command"
+                value={joinArgs(ai.semif.command)}
+                mono
+                className="w-72"
+                onCommit={(line) => save({ semif: { ...ai.semif, command: splitArgs(line) } })}
+              />
+            </Field>
+            <Field label="Backend" hint="llamacpp runs a GGUF on CPU or a small GPU">
+              <select
+                value={ai.semif.backend}
+                onChange={(e) => save({ semif: { ...ai.semif, backend: e.target.value } })}
+                className="rounded-md border border-(--border) bg-transparent px-2 py-1 text-[13px]"
+              >
+                {["llamacpp", "torch", "mlx"].map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Model">
+              <TextField
+                label="Model"
+                value={ai.semif.model}
+                mono
+                className="w-72"
+                onCommit={(model) => save({ semif: { ...ai.semif, model } })}
+              />
+            </Field>
+            <Field label="Revision">
+              <TextField
+                label="Revision"
+                value={ai.semif.revision}
+                mono
+                className="w-72"
+                onCommit={(revision) => save({ semif: { ...ai.semif, revision } })}
+              />
+            </Field>
+            {ai.semif.backend === "llamacpp" && (
+              <Field label="GGUF file" hint="Path as SemIf sees it (a /home/... path inside WSL)">
+                <TextField
+                  label="GGUF file"
+                  value={ai.semif.gguf}
+                  mono
+                  className="w-72"
+                  onCommit={(gguf) => save({ semif: { ...ai.semif, gguf } })}
+                />
+              </Field>
+            )}
+          </>
+        )}
+      </div>
+
+      <ClaudeHook />
+
+      <Toggle
+        label="Rank suggestion options with T1"
+        hint="SemIf or the local model guesses which option you want and puts it first. Your past picks always win."
+        checked={ai.decisions}
+        onChange={(decisions) => save({ decisions })}
+      />
+      <div>
+        <Button small onClick={refresh}>
+          Check again
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function StatusDot({ state }: { state: "ok" | "off" | "checking" }) {
+  const label = state === "ok" ? "Ready" : state === "off" ? "Not reachable" : "Checking";
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className={`size-2 shrink-0 rounded-full ${
+        state === "ok"
+          ? "bg-[#30d158]"
+          : state === "off"
+            ? "bg-black/20 dark:bg-white/25"
+            : "animate-pulse bg-amber-400"
+      }`}
+    />
+  );
+}
+
+const HOOK_SNIPPET = JSON.stringify(
+  {
+    hooks: Object.fromEntries(
+      ["Stop", "Notification"].map((event) => [
+        event,
+        [{ hooks: [{ type: "http", url: CLAUDE_HOOK_URL, timeout: 5 }] }],
+      ]),
+    ),
+  },
+  null,
+  2,
+);
+
+/** The hook users add to their own Claude Code settings. Sidekick never edits that file. */
+function ClaudeHook() {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(HOOK_SNIPPET);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard access can be refused; the text is selectable anyway.
+    }
+  };
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-(--border) p-3">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-medium">Claude Code hooks</p>
+          <p className="text-[12px] text-(--muted)">
+            Add this to <code className="font-mono">~/.claude/settings.json</code> (merge with any hooks you have) so
+            Sidekick knows when a session finishes or is waiting for you.
+          </p>
+        </div>
+        <Button small onClick={copy}>
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+      <pre className="overflow-x-auto rounded-lg bg-black/5 p-3 font-mono text-[11.5px] leading-relaxed select-all dark:bg-white/5">
+        {HOOK_SNIPPET}
+      </pre>
+    </div>
   );
 }

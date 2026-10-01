@@ -128,9 +128,9 @@ body {
 }
 
 .orb-halo {
-  inset: -22%;
+  inset: -14.5%;
   background: conic-gradient(from 0turn, var(--g1), var(--g2), var(--g3), var(--g1));
-  filter: blur(calc(var(--size) * 0.16));
+  filter: blur(calc(var(--size) * 0.2));
   opacity: var(--halo);
   will-change: transform;
 }
@@ -214,6 +214,15 @@ body {
     0 0 0 0.5px rgb(255 255 255 / 0.08),
     0 10px 30px -6px rgb(0 0 0 / 0.55),
     0 2px 6px rgb(0 0 0 / 0.3);
+  transition:
+    background-color 220ms ease,
+    box-shadow 220ms ease;
+}
+
+/* Idle and sleeping: just the sphere, no capsule behind it. */
+.island-shell[data-bare="true"] {
+  background-color: transparent;
+  box-shadow: none;
 }
 
 .chip {
@@ -229,4 +238,11 @@ body {
   .orb-sheen {
     display: none;
   }
+}
+
+/* ---------- Ask ---------- */
+
+.ask-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.18) transparent;
 }

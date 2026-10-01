@@ -39,6 +39,8 @@ pub struct Capabilities {
     pub soffice: Option<PathBuf>,
     pub pandoc: Option<PathBuf>,
     pub tar: Option<PathBuf>,
+    /// VS Code, for opening projects.
+    pub code: Option<PathBuf>,
 }
 
 impl Capabilities {
@@ -63,6 +65,7 @@ impl Capabilities {
                 .or_else(|| first_existing(&office_paths())),
             pandoc: which::which("pandoc").ok(),
             tar: which::which("tar").ok(),
+            code: find_vscode(),
         }
     }
 
@@ -80,6 +83,7 @@ impl Capabilities {
             Some(("tool", "soffice")) => self.soffice.is_some(),
             Some(("tool", "pandoc")) => self.pandoc.is_some(),
             Some(("tool", "tar")) => self.tar.is_some(),
+            Some(("tool", "code")) => self.code.is_some(),
             _ => false,
         }
     }
@@ -97,6 +101,7 @@ impl Capabilities {
             ("LibreOffice", self.soffice.is_some()),
             ("pandoc", self.pandoc.is_some()),
             ("tar", self.tar.is_some()),
+            ("VS Code", self.code.is_some()),
         ] {
             if found {
                 out.push(name.to_string());
@@ -104,6 +109,21 @@ impl Capabilities {
         }
         out
     }
+}
+
+/// Prefers `Code.exe` itself over the `code.cmd` wrapper on PATH.
+fn find_vscode() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        let installs = [
+            env_path("LOCALAPPDATA", r"Programs\Microsoft VS Code\Code.exe"),
+            env_path("ProgramFiles", r"Microsoft VS Code\Code.exe"),
+        ];
+        if let Some(p) = installs.into_iter().flatten().find(|p| p.is_file()) {
+            return Some(p);
+        }
+    }
+    which::which("code").ok()
 }
 
 fn first_existing(paths: &[PathBuf]) -> Option<PathBuf> {

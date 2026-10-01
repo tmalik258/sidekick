@@ -1,0 +1,183 @@
+//! AI tiers (SRS 5.5 and 9.3). Every AI call goes through [`AiProvider`]
+//! (FR-AI-01) and the [`Router`] picks the first provider that is switched on
+//! and reachable, falling back down the list (FR-AI-02). Sidekick works fully
+//! without any of them (FR-AI-09).
+//!
+//! Decisions (pick one option from a typed list) are a separate, cheaper
+//! interface, [`Decider`], served by SemIf or a local model (T1).
+
+mod anthropic;
+mod claude_code;
+mod decide;
+mod openai;
+mod router;
+mod sse;
+
+use std::sync::atomic::{AtomicBool, Ordering};
+
+pub use anthropic::Anthropic;
+use async_trait::async_trait;
+pub use claude_code::ClaudeCode;
+pub use decide::{Decider, Decision, DecisionOption, LocalDecider, Ranked, SemIf};
+pub use openai::OpenAiCompat;
+pub use router::{Answer, Router};
+use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc::UnboundedSender;
+pub use tokio_util::sync::CancellationToken;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    User,
+    Assistant,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Message {
+    pub role: Role,
+    pub content: String,
+}
+
+impl Message {
+    pub fn user(content: impl Into<String>) -> Self {
+        Self {
+            role: Role::User,
+            content: content.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ChatRequest {
+    pub system: String,
+    pub messages: Vec<Message>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum AiError {
+    #[error("no AI provider is set up and reachable")]
+    NoProvider,
+    #[error("{0}")]
+    Failed(String),
+    #[error("cancelled")]
+    Cancelled,
+}
+
+impl From<reqwest::Error> for AiError {
+    fn from(err: reqwest::Error) -> Self {
+        Self::Failed(err.to_string())
+    }
+}
+
+/// Where streamed text goes. Remembers whether anything was sent, so the
+/// router only falls back before the user has seen a partial answer.
+pub struct Sink {
+    tx: UnboundedSender<String>,
+    sent: AtomicBool,
+}
+
+impl Sink {
+    pub fn new(tx: UnboundedSender<String>) -> Self {
+        Self {
+            tx,
+            sent: AtomicBool::new(false),
+        }
+    }
+
+    pub fn send(&self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        self.sent.store(true, Ordering::Relaxed);
+        let _ = self.tx.send(text.to_owned());
+    }
+
+    pub fn has_sent(&self) -> bool {
+        self.sent.load(Ordering::Relaxed)
+    }
+}
+
+#[async_trait]
+pub trait AiProvider: Send + Sync {
+    /// Stable id used in settings: `claude_code`, `local`, `anthropic`.
+    fn id(&self) -> &'static str;
+    /// Runs on this machine; nothing leaves it.
+    fn is_local(&self) -> bool;
+    /// Cheap check that the provider can answer right now.
+    async fn available(&self) -> bool;
+    /// Streams the answer into `sink` and returns the full text.
+    async fn chat(
+        &self,
+        req: &ChatRequest,
+        sink: &Sink,
+        cancel: &CancellationToken,
+    ) -> Result<String, AiError>;
+}
+
+/// Flattens a conversation into one prompt for providers that take a single
+/// text input (Claude Code's `-p`).
+pub fn transcript(req: &ChatRequest) -> String {
+    let mut out = String::new();
+    if !req.system.is_empty() {
+        out.push_str(&req.system);
+        out.push_str("\n\n");
+    }
+    let Some((last, earlier)) = req.messages.split_last() else {
+        return out;
+    };
+    if !earlier.is_empty() {
+        out.push_str("Conversation so far:\n");
+        for m in earlier {
+            let who = match m.role {
+                Role::User => "User",
+                Role::Assistant => "Assistant",
+            };
+            out.push_str(&format!("{who}: {}\n", m.content));
+        }
+        out.push_str("\nReply to the user's latest message:\n");
+    }
+    out.push_str(&last.content);
+    out
+}
+
+#[cfg(windows)]
+pub(crate) fn hide_console(cmd: &mut tokio::process::Command) {
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    cmd.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+pub(crate) fn hide_console(_cmd: &mut tokio::process::Command) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transcript_keeps_turns_in_order() {
+        let req = ChatRequest {
+            system: "Be brief.".into(),
+            messages: vec![
+                Message::user("hi"),
+                Message {
+                    role: Role::Assistant,
+                    content: "hello".into(),
+                },
+                Message::user("what is 2+2?"),
+            ],
+        };
+        let t = transcript(&req);
+        assert!(t.starts_with("Be brief."));
+        assert!(t.contains("User: hi\nAssistant: hello\n"));
+        assert!(t.ends_with("what is 2+2?"));
+    }
+
+    #[test]
+    fn single_message_has_no_history_header() {
+        let req = ChatRequest {
+            system: String::new(),
+            messages: vec![Message::user("hello")],
+        };
+        assert_eq!(transcript(&req), "hello");
+    }
+}
