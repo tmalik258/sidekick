@@ -1,4 +1,4 @@
-//! AI tiers wired to settings: chat for the palette (T2 with fallback) and
+//! AI tiers wired to settings: chat in Ask mode (T2 with fallback) and
 //! T1 decisions for ranking suggestions.
 
 use std::sync::Arc;
@@ -129,7 +129,7 @@ pub struct Attach {
     pub clipboard: bool,
 }
 
-/// The context the palette can offer to attach, captured when it opens.
+/// The context Ask mode can offer to attach, captured when it opens.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Context {

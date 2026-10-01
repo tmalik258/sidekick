@@ -1,9 +1,9 @@
 mod ai;
+mod ask;
 mod commands;
 mod decide;
 mod island;
 mod mascot;
-mod palette;
 mod pipeline;
 mod state;
 mod suggestions;
@@ -76,8 +76,8 @@ pub fn run() {
             commands::ai_status,
             commands::ai_chat,
             commands::ai_cancel,
-            commands::palette_hide,
-            commands::palette_open,
+            commands::ask_open,
+            commands::ask_close,
             commands::action_undo,
         ])
         .run(tauri::generate_context!())
@@ -134,6 +134,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         away: Default::default(),
         linger: Default::default(),
         own_files: Mutex::default(),
+        ask_open: Default::default(),
     });
 
     pipeline::start(app);
@@ -154,7 +155,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     });
 
     island::setup(app)?;
-    palette::setup(app, &hotkey);
+    ask::setup(app, &hotkey);
     ai::watch_readiness(app);
     tray::create(app)?;
 

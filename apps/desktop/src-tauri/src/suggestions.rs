@@ -45,7 +45,8 @@ pub fn offer(app: &AppHandle, proposal: Proposal) {
     // While the user is away, suggestions wait instead of showing to no one.
     let busy = lock(&state.active).is_some()
         || mascot::current(app) != MascotState::Idle
-        || state.away.load(std::sync::atomic::Ordering::Relaxed);
+        || state.away.load(std::sync::atomic::Ordering::Relaxed)
+        || state.ask_open.load(std::sync::atomic::Ordering::SeqCst);
     if busy {
         let mut queue = lock(&state.queue);
         // A newer copy of the same suggestion replaces the waiting one;
@@ -211,9 +212,9 @@ async fn execute(
             .as_str()
             .unwrap_or("Help me with this.")
             .to_owned();
-        crate::palette::open(
+        crate::ask::open(
             app,
-            crate::palette::Open {
+            crate::ask::Open {
                 prompt: Some(prompt),
                 ask: true,
                 ..Default::default()
@@ -340,7 +341,9 @@ fn schedule_next(app: &AppHandle, after: Duration) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(after).await;
         let state = app.state::<AppState>();
-        if state.away.load(std::sync::atomic::Ordering::Relaxed) {
+        if state.away.load(std::sync::atomic::Ordering::Relaxed)
+            || state.ask_open.load(std::sync::atomic::Ordering::SeqCst)
+        {
             return;
         }
         if lock(&state.active).is_some() || mascot::current(&app) != MascotState::Idle {

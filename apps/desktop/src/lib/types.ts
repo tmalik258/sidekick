@@ -81,7 +81,14 @@ export interface ChatMessage {
   content: string;
 }
 
-export interface PaletteContext {
+/** One turn of an Ask conversation, as the island shows it. */
+export interface Turn extends ChatMessage {
+  provider?: string | null;
+  error?: string | null;
+  streaming?: boolean;
+}
+
+export interface AskContext {
   app: string | null;
   title: string | null;
   clipboardKind: string | null;
@@ -89,8 +96,8 @@ export interface PaletteContext {
   clipboardSecret: boolean;
 }
 
-export interface PaletteOpen {
-  context: PaletteContext;
+export interface AskOpen {
+  context: AskContext;
   prompt: string | null;
   ask: boolean;
 }

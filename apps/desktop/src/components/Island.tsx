@@ -12,6 +12,7 @@ import { useNow } from "@/lib/hooks";
 import { playSound } from "@/lib/sound";
 import { connect, setHovered, uiVolume, useSidekick } from "@/lib/store";
 import { isPaused, type MascotState, type Suggestion } from "@/lib/types";
+import { ASK_ORB, AskPanel } from "./AskPanel";
 import { Icon } from "./Icon";
 import { Orb } from "./Orb";
 
@@ -43,6 +44,8 @@ const OPEN_STATES: ReadonlySet<MascotState> = new Set(["suggesting", "listening"
 const ORB = 44;
 const COMPACT = { width: 104, height: 36, radius: 18, orb: 26 };
 const EXPANDED = { width: 388, minHeight: 78, radius: 30, pad: 16 };
+/** Ask mode: wider, so commands and answers have room. */
+const ASK_WIDTH = 560;
 const TOP = 6;
 
 /** Delay before hover expands, so a cursor passing over the top edge does not trigger it. */
@@ -55,11 +58,13 @@ const morphClose = { type: "spring", bounce: 0.12, duration: 0.42 } as const;
 
 export function Island() {
   const { mascot, settings, suggestion, hovered: rawHover, visible, ready } = useSidekick();
+  const asking = useSidekick((s) => s.ask !== null);
+  const chatting = useSidekick((s) => s.chatId !== null);
   const reduced = useReducedMotion() ?? false;
   const now = useNow(15_000);
   const paused = isPaused(settings.pause, now);
   const hovered = useIntent(rawHover);
-  const expanded = hovered || OPEN_STATES.has(mascot) || !!suggestion;
+  const expanded = asking || hovered || OPEN_STATES.has(mascot) || !!suggestion;
 
   const [contentHeight, setContentHeight] = useState(0);
   const bump = useMotionValue(1);
@@ -78,7 +83,7 @@ export function Island() {
     observer.current.observe(el);
   }, []);
 
-  const width = expanded ? EXPANDED.width : COMPACT.width;
+  const width = asking ? ASK_WIDTH : expanded ? EXPANDED.width : COMPACT.width;
   // The measured content box already includes the top padding.
   const height = expanded ? Math.max(EXPANDED.minHeight, contentHeight + EXPANDED.pad) : COMPACT.height;
   const radius = expanded ? EXPANDED.radius : COMPACT.radius;
@@ -96,12 +101,13 @@ export function Island() {
     void animate(bump, [1, 1.06, 1], { duration: 0.42, ease: [0.23, 1, 0.32, 1] });
   }, [mascot, reduced, bump]);
 
-  useSuggestionKeys(suggestion);
+  // Number keys must not pick a suggestion while the user is typing.
+  useSuggestionKeys(asking ? null : suggestion);
 
   if (!ready) return null;
 
   // The orb scales from its top-left corner, so these are its visual corner.
-  const orbScale = expanded ? 1 : COMPACT.orb / ORB;
+  const orbScale = asking ? ASK_ORB / ORB : expanded ? 1 : COMPACT.orb / ORB;
   const orbX = expanded ? EXPANDED.pad : (COMPACT.height - COMPACT.orb) / 2 + 1;
   const orbY = expanded ? EXPANDED.pad : (COMPACT.height - COMPACT.orb) / 2;
 
@@ -131,27 +137,42 @@ export function Island() {
           transition={transition}
           style={{ originX: 0, originY: 0 }}
         >
-          <Orb state={mascot} size={ORB} theme={settings.theme} />
+          <Orb state={chatting && mascot === "idle" ? "working" : mascot} size={ORB} theme={settings.theme} />
         </motion.div>
 
         <AnimatePresence initial={false}>
-          {!expanded && <CompactTrailing key="compact" mascot={mascot} paused={paused} />}
+          {!expanded && <CompactTrailing key="compact" mascot={mascot} paused={paused} busy={chatting} />}
         </AnimatePresence>
 
         <AnimatePresence initial={false} mode="popLayout">
-          {expanded && (
+          {asking ? (
             <motion.div
-              key="expanded"
+              key="ask"
               ref={contentRef}
               className="absolute top-0 right-0"
-              style={{ left: EXPANDED.pad + ORB + 14, paddingTop: EXPANDED.pad, paddingRight: EXPANDED.pad }}
+              style={{ left: EXPANDED.pad, paddingTop: EXPANDED.pad, paddingRight: EXPANDED.pad }}
               initial={reduced ? { opacity: 0 } : { opacity: 0, filter: "blur(6px)", y: 4 }}
               animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
               exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
               transition={{ duration: 0.28, delay: 0.06, ease: [0.23, 1, 0.32, 1] }}
             >
-              <ExpandedContent mascot={mascot} paused={paused} suggestion={suggestion} />
+              <AskPanel />
             </motion.div>
+          ) : (
+            expanded && (
+              <motion.div
+                key="expanded"
+                ref={contentRef}
+                className="absolute top-0 right-0"
+                style={{ left: EXPANDED.pad + ORB + 14, paddingTop: EXPANDED.pad, paddingRight: EXPANDED.pad }}
+                initial={reduced ? { opacity: 0 } : { opacity: 0, filter: "blur(6px)", y: 4 }}
+                animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
+                exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
+                transition={{ duration: 0.28, delay: 0.06, ease: [0.23, 1, 0.32, 1] }}
+              >
+                <ExpandedContent mascot={mascot} paused={paused} suggestion={suggestion} />
+              </motion.div>
+            )
           )}
         </AnimatePresence>
       </motion.div>
@@ -159,8 +180,8 @@ export function Island() {
   );
 }
 
-function CompactTrailing({ mascot, paused }: { mascot: MascotState; paused: boolean }) {
-  const busy = mascot === "noticing" || mascot === "working" || mascot === "listening";
+function CompactTrailing({ mascot, paused, busy: answering }: { mascot: MascotState; paused: boolean; busy: boolean }) {
+  const busy = answering || mascot === "noticing" || mascot === "working" || mascot === "listening";
   return (
     <motion.div
       className="absolute top-0 right-0 flex h-9 items-center pr-3.5"
@@ -263,6 +284,9 @@ function UndoButton({ id }: { id: number }) {
 function QuickActions({ paused }: { paused: boolean }) {
   return (
     <div className="flex shrink-0 gap-1.5">
+      <RoundButton label="Ask Sidekick (Alt+Space)" onClick={() => void api.askOpen()}>
+        <Icon name="ask" size={15} />
+      </RoundButton>
       <RoundButton
         label={paused ? "Resume" : "Pause 15 minutes"}
         onClick={() => void (paused ? api.sensorsResume() : api.sensorsPause(15))}

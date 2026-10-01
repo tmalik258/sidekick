@@ -1,11 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions for the island, palette and settings windows. App commands are Rust functions; the UI has no shell or filesystem access (NFR-SEC-05).",
+  "description": "Permissions for the island and settings windows. App commands are Rust functions; the UI has no shell or filesystem access (NFR-SEC-05).",
   "windows": [
     "island",
-    "settings",
-    "palette"
+    "settings"
   ],
   "permissions": [
     "core:default"

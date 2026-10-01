@@ -49,7 +49,7 @@ pub struct Settings {
     pub sound_kit: String,
     /// Per-skill switches set by the user (FR-SKL-06).
     pub skills: BTreeMap<String, SkillPref>,
-    /// Global shortcut that opens the command palette (FR-UI-07).
+    /// Global shortcut that turns the island into Ask mode (FR-UI-07).
     pub palette_hotkey: String,
     pub ai: AiSettings,
 }
