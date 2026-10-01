@@ -129,3 +129,9 @@ Credits:
 - UI sounds: [SND](https://snd.dev/) by Dentsu Inc. and Starryworks Inc., installed from npm (`snd-lib`) and copied into `apps/desktop/public/sounds` at build time. Free to use; copyright of the audio belongs to the credited sound designers.
 - Interface icons: [Solar](https://www.figma.com/community/file/1166831539721848736) by 480 Design, CC BY 4.0, via Iconify.
 - The orb mascot is drawn with CSS and is original to this project.
+
+## More
+
+- [Privacy](docs/privacy.md)
+- [Contributing and writing skills](CONTRIBUTING.md)
+- [Releasing](docs/releasing.md)

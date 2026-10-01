@@ -45,6 +45,7 @@ export interface Settings {
   calendar: { feeds: string[]; remindMinutes: number };
   semanticSearch: { enabled: boolean; model: string };
   onboarded: boolean;
+  checkUpdates: boolean;
 }
 
 export interface CalendarToday {
@@ -250,6 +251,7 @@ export const DEFAULT_SETTINGS: Settings = {
   calendar: { feeds: [], remindMinutes: 5 },
   semanticSearch: { enabled: true, model: "nomic-embed-text" },
   onboarded: false,
+  checkUpdates: true,
   voice: { enabled: false, wakeWord: true, speakAnswers: true, voice: "af_bella", speed: 1 },
 };
 

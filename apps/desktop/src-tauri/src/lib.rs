@@ -17,6 +17,7 @@ mod suggestions;
 mod timetrack;
 mod tray;
 mod undo;
+mod updates;
 mod voice;
 mod windows;
 
@@ -201,6 +202,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     brief::start(app, data_dir.join("last-brief"), repos.roots.clone());
     search::reindex_folders(app);
     search::start_embedder(app);
+    updates::start(app);
     mcp::start(app, mcp_token);
     tauri::async_runtime::spawn(async move {
         let sensors: Vec<Box<dyn Sensor>> = vec![

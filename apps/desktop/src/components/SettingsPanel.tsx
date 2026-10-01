@@ -172,6 +172,12 @@ export function SettingsPanel() {
                 checked={settings.launchAtLogin}
                 onChange={(launchAtLogin) => run(() => updateSettings({ launchAtLogin }))}
               />
+              <Toggle
+                label="Tell me about new versions"
+                hint="Checks GitHub once a day. Nothing installs on its own."
+                checked={settings.checkUpdates}
+                onChange={(checkUpdates) => run(() => updateSettings({ checkUpdates }))}
+              />
             </Section>
             <Section title="Privacy" hint="Paused sensors do not run at all (FR-SET-01).">
               <PauseStatus pause={settings.pause} />

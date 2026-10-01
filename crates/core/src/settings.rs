@@ -64,6 +64,8 @@ pub struct Settings {
     pub semantic_search: SemanticSearch,
     /// The first-run welcome was finished or skipped.
     pub onboarded: bool,
+    /// Look for a newer release once a day.
+    pub check_updates: bool,
 }
 
 /// Search by meaning with an embedding model on this PC (FR-RAG-03).
@@ -308,6 +310,7 @@ impl Default for Settings {
             calendar: CalendarSettings::default(),
             semantic_search: SemanticSearch::default(),
             onboarded: false,
+            check_updates: true,
         }
     }
 }
