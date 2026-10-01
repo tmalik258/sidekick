@@ -55,24 +55,47 @@ function audio(): { ac: AudioContext; out: GainNode } {
   return { ac: ctx, out };
 }
 
+/** Last load error per kit, shown in settings so failures are never silent. */
+export const kitErrors = new Map<string, string>();
+
+async function decodeFirst(ac: AudioContext, id: string): Promise<AudioBuffer> {
+  let lastError: unknown;
+  for (const ext of ["m4a", "mp3", "ogg"]) {
+    try {
+      const res = await fetch(`/sounds/${id}/sprite.${ext}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status} for sprite.${ext}`);
+      return await ac.decodeAudioData(await res.arrayBuffer());
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError;
+}
+
 function loadKit(id: string): Promise<Kit | null> {
   let kit = kits.get(id);
   if (!kit) {
     const { ac } = audio();
-    kit = Promise.all([
-      fetch(`/sounds/${id}/sprite.json`).then((r) => r.json()),
-      fetch(`/sounds/${id}/sprite.ogg`)
-        .then((r) => r.arrayBuffer())
-        .then((b) => ac.decodeAudioData(b)),
-    ])
-      .then(([json, buffer]) => ({ buffer, map: json.spritemap }))
+    kit = Promise.all([fetch(`/sounds/${id}/sprite.json`).then((r) => r.json()), decodeFirst(ac, id)])
+      .then(([json, buffer]) => {
+        kitErrors.delete(id);
+        return { buffer, map: json.spritemap };
+      })
       .catch((err) => {
-        console.warn(`sound kit ${id} unavailable, using fallback tones`, err);
+        kitErrors.set(id, String(err));
+        console.warn(`sound kit ${id} unavailable, using fallback tone`, err);
+        kits.delete(id); // retry on the next play
         return null;
       });
     kits.set(id, kit);
   }
   return kit;
+}
+
+/** Loads a kit and reports whether it decoded, for the settings screen. */
+export async function checkKit(id: string): Promise<string | null> {
+  const kit = await loadKit(id);
+  return kit ? null : (kitErrors.get(id) ?? "unknown error");
 }
 
 /** Starts decoding a kit ahead of the first cue so playback is instant. */

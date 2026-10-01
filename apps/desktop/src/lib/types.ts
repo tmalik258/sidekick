@@ -37,7 +37,7 @@ export interface Settings {
   soundKit: string;
 }
 
-export const THEMES = ["graphite", "pearl", "midnight"] as const;
+export const THEMES = ["pearl", "graphite", "midnight"] as const;
 export type Theme = (typeof THEMES)[number];
 
 export interface Suggestion {
@@ -78,7 +78,7 @@ export const DEFAULT_SETTINGS: Settings = {
   launchAtLogin: false,
   sensors: {},
   pause: { kind: "none" },
-  theme: "graphite",
+  theme: "pearl",
   soundKit: "01",
 };
 
