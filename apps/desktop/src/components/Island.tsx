@@ -334,7 +334,7 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
           }`}
         >
           {option}
-          <kbd className={`font-sans text-[11px] ${i === 0 ? "text-black/40" : "text-white/35"}`}>{i + 1}</kbd>
+          <kbd className={`font-sans text-[11px] ${i === 0 ? "text-black/40" : "text-white/35"}`}>Alt {i + 1}</kbd>
         </motion.button>
       ))}
       <motion.button
@@ -346,6 +346,7 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
         className="chip ml-0.5 h-8 rounded-full px-2.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
       >
         Not now
+        <kbd className="ml-1.5 font-sans text-[11px] text-white/35">Alt 0</kbd>
       </motion.button>
     </div>
   );
@@ -376,6 +377,7 @@ function useSuggestionKeys(suggestion: Suggestion | null) {
   useEffect(() => {
     if (!suggestion) return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.altKey) return; // Alt+N is a global shortcut handled in Rust
       if (e.key === "Escape") dismiss(suggestion);
       const n = Number(e.key);
       if (n >= 1 && n <= suggestion.options.length) choose(suggestion, n - 1);

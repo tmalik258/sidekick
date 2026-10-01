@@ -11,10 +11,13 @@ import {
   type AiProviderId,
   type AiSettings,
   type AppInfo,
+  type AppTime,
+  type BrowserInfo,
   type CapabilityInfo,
   CLAUDE_HOOK_URL,
   CUES,
   canUndo,
+  formatDuration,
   isPaused,
   MASCOT_STATES,
   type Pause,
@@ -166,6 +169,17 @@ export function SettingsPanel() {
         hint="Sidekick works fully without AI. Chat tries the providers top to bottom and falls back when one is not reachable. Ranking (T1) only ever uses SemIf or a model on this PC."
       >
         <AiSection ai={settings.ai} onError={setError} />
+      </Section>
+
+      <Section
+        title="Browser"
+        hint="The extension only talks to Sidekick on this PC. Logins are filled from your own 1Password or Bitwarden CLI and never stored or sent anywhere else."
+      >
+        <BrowserPairing />
+      </Section>
+
+      <Section title="Today" hint="Counted from the app in front, paused while you are away. Stored only on this PC.">
+        <TimeToday />
       </Section>
 
       <Section title="History" hint="Files Sidekick created can be undone for 24 hours; they go to the Recycle Bin.">
@@ -865,6 +879,87 @@ function ClaudeHook() {
       <pre className="overflow-x-auto rounded-lg bg-black/5 p-3 font-mono text-[11.5px] leading-relaxed select-all dark:bg-white/5">
         {HOOK_SNIPPET}
       </pre>
+    </div>
+  );
+}
+
+/** Pairing code and setup steps for the browser extension. */
+function BrowserPairing() {
+  const [info, setInfo] = useState<BrowserInfo | null>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    void api.browserInfo().then(setInfo);
+  }, []);
+  const copy = async () => {
+    if (!info) return;
+    try {
+      await navigator.clipboard.writeText(info.token);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard access can be refused; the code is selectable anyway.
+    }
+  };
+  return (
+    <div className="flex flex-col gap-3 text-[13px]">
+      <ol className="list-decimal space-y-1 pl-5 text-(--muted)">
+        <li>
+          Open <code className="font-mono">chrome://extensions</code> (or Edge, or Zen&apos;s{" "}
+          <code className="font-mono">about:debugging</code>) and turn on Developer mode.
+        </li>
+        <li>
+          Load unpacked: pick the <code className="font-mono">apps/extension</code> folder of the Sidekick repo.
+        </li>
+        <li>Paste this pairing code in the extension&apos;s options and press Save and test.</li>
+      </ol>
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 truncate rounded-lg bg-black/5 px-3 py-2 font-mono text-[12px] select-all dark:bg-white/5">
+          {info?.token || "…"}
+        </code>
+        <Button small onClick={copy}>
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Where today went, by app and project. */
+function TimeToday() {
+  const [rows, setRows] = useState<AppTime[] | null>(null);
+  useEffect(() => {
+    void api.timeToday().then(setRows);
+    const id = setInterval(() => void api.timeToday().then(setRows), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  if (!rows) return null;
+  if (rows.length === 0) return <p className="text-sm text-(--muted)">Nothing counted yet today.</p>;
+  const total = rows.reduce((n, r) => n + r.secs, 0);
+  const top = rows[0].secs;
+  return (
+    <div className="flex flex-col gap-2.5">
+      <p className="text-[13px] text-(--muted)">
+        <span className="font-display text-[22px] font-semibold tracking-[-0.02em] text-(--text)">
+          {formatDuration(total)}
+        </span>{" "}
+        at the computer
+      </p>
+      <ul className="flex flex-col gap-2">
+        {rows.slice(0, 8).map((r) => (
+          <li key={`${r.app}|${r.project}`} className="text-[13px]">
+            <div className="flex justify-between gap-3">
+              <span className="truncate">
+                {r.app}
+                {r.project && <span className="text-(--muted)"> · {r.project}</span>}
+              </span>
+              <span className="shrink-0 text-(--muted) tabular-nums">{formatDuration(r.secs)}</span>
+            </div>
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-black/5 dark:bg-white/8">
+              <div className="h-full rounded-full bg-(--accent)" style={{ width: `${(r.secs / top) * 100}%` }} />
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

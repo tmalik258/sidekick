@@ -29,6 +29,10 @@ interface SidekickState {
   turns: Turn[];
   /** The chat request in flight, if any. */
   chatId: string | null;
+  /** Web page text the conversation is about; sent with every turn. */
+  chatPage: string | null;
+  /** The conversation is about writing a new skill. */
+  chatSkill: boolean;
 }
 
 export interface AskState {
@@ -53,6 +57,8 @@ export const useSidekick = create<SidekickState>(() => ({
   ask: null,
   turns: [],
   chatId: null,
+  chatPage: null,
+  chatSkill: false,
 }));
 
 export const setAsk = (patch: Partial<AskState>) => {
@@ -62,7 +68,7 @@ export const setAsk = (patch: Partial<AskState>) => {
 
 /** Sends a message in the Ask conversation; answers stream into the last turn. */
 export function sendChat(prompt: string, attach?: { clipboard?: boolean }) {
-  const { ask, turns, chatId } = useSidekick.getState();
+  const { ask, turns, chatId, chatPage, chatSkill } = useSidekick.getState();
   const q = prompt.trim();
   if (!q || chatId) return;
   const id = crypto.randomUUID();
@@ -77,9 +83,21 @@ export function sendChat(prompt: string, attach?: { clipboard?: boolean }) {
   void api.aiChat(
     id,
     history,
-    { window: ask?.attachWindow ?? false, clipboard: attach?.clipboard ?? ask?.attachClip ?? false },
+    {
+      window: ask?.attachWindow ?? false,
+      clipboard: attach?.clipboard ?? ask?.attachClip ?? false,
+      page: chatPage,
+      skill: chatSkill,
+    },
     ask?.localOnly ?? false,
   );
+}
+
+/** Starts a conversation in which AI drafts a new skill (FR-SKL-08). */
+export function startSkill(description: string) {
+  newChat();
+  useSidekick.setState({ chatSkill: true });
+  sendChat(`Write a skill: ${description}`);
 }
 
 export function cancelChat() {
@@ -89,7 +107,7 @@ export function cancelChat() {
 
 export function newChat() {
   cancelChat();
-  useSidekick.setState({ turns: [], chatId: null });
+  useSidekick.setState({ turns: [], chatId: null, chatPage: null, chatSkill: false });
 }
 
 function updateLastTurn(id: string, fn: (t: Turn) => Turn) {
@@ -142,7 +160,12 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
     listen(EVENTS.islandVisible, (visible) => useSidekick.setState({ visible })),
     listen(EVENTS.askOpen, (open) => {
       const seq = (useSidekick.getState().ask?.seq ?? 0) + 1;
-      const clip = open.ask && !open.context.clipboardSecret;
+      const clip = open.clipboard && !open.context.clipboardSecret;
+      // A question about a web page starts a fresh conversation about it.
+      if (open.page) {
+        newChat();
+        useSidekick.setState({ chatPage: open.page });
+      }
       useSidekick.setState({
         ask: {
           context: open.context,

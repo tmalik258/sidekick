@@ -15,6 +15,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 arboard = { version = "3", default-features = false }
 chrono.workspace = true
+getrandom = "0.3"
 log.workspace = true
 serde.workspace = true
 serde_json.workspace = true

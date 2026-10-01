@@ -42,8 +42,12 @@ pub struct Open {
     pub context: ai::Context,
     /// Text to put in the input, e.g. "Explain this error".
     pub prompt: Option<String>,
-    /// Send `prompt` right away, with the clipboard attached.
+    /// Send `prompt` right away.
     pub ask: bool,
+    /// Attach the clipboard to that first question.
+    pub clipboard: bool,
+    /// Text of the web page the question is about (from the extension).
+    pub page: Option<String>,
 }
 
 pub fn is_open(app: &AppHandle) -> bool {
@@ -86,6 +90,8 @@ pub fn register(app: &AppHandle, hotkey: &str) -> Result<(), String> {
         .map_err(|e| format!("{hotkey} is not a valid shortcut: {e}"))?;
     let gs = app.global_shortcut();
     let _ = gs.unregister_all();
+    // unregister_all also dropped the Alt+N keys of a suggestion on screen.
+    suggestions::rebind_keys(app);
     gs.on_shortcut(shortcut, |app, _shortcut, event| {
         if event.state == ShortcutState::Pressed {
             toggle(app);

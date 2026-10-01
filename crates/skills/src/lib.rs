@@ -84,7 +84,94 @@ const BUILTIN: &[(&str, &str)] = &[
         "dev/claude-needs-you.yaml",
         include_str!("../../../skills/dev/claude-needs-you.yaml"),
     ),
+    (
+        "browser/login.yaml",
+        include_str!("../../../skills/browser/login.yaml"),
+    ),
+    (
+        "browser/many-tabs.yaml",
+        include_str!("../../../skills/browser/many-tabs.yaml"),
+    ),
+    (
+        "browser/upwork-job.yaml",
+        include_str!("../../../skills/browser/upwork-job.yaml"),
+    ),
+    (
+        "browser/long-read.yaml",
+        include_str!("../../../skills/browser/long-read.yaml"),
+    ),
+    (
+        "system/focus.yaml",
+        include_str!("../../../skills/system/focus.yaml"),
+    ),
 ];
+
+/// Every action a skill may name. Keep in sync with the executor and the
+/// app-level actions (`ask_ai`, `browser_*`).
+pub const ACTIONS: &[&str] = &[
+    "open_path",
+    "open_folder",
+    "reveal_path",
+    "copy_file",
+    "copy_text",
+    "open_url",
+    "open_in_editor",
+    "open_system_page",
+    "convert",
+    "extract_archive",
+    "run_installer",
+    "kill_port",
+    "clear_clipboard_later",
+    "format_json_clipboard",
+    "ask_ai",
+    "browser_fill",
+    "browser_close_duplicates",
+    "browser_save_session",
+    "noop",
+];
+
+/// The skill format, for people and for AI writing skills.
+pub const FORMAT_GUIDE: &str = include_str!("../../../skills/README.md");
+
+/// Checks a skill written by the user or by AI before it is installed:
+/// valid YAML, a plain id that does not replace a built-in, only known
+/// actions, and Suggest trust (Auto is something the user turns on).
+pub fn validate_new(yaml: &str) -> Result<Skill, String> {
+    let skill = Skill::parse("new skill", yaml).map_err(|e| e.to_string())?;
+    let id_ok = skill.id.len() >= 3
+        && skill.id.len() <= 64
+        && skill
+            .id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '-'))
+        && skill.id.starts_with(|c: char| c.is_ascii_lowercase());
+    if !id_ok {
+        return Err(format!(
+            "id {:?} must be lowercase letters, digits, dots or dashes",
+            skill.id
+        ));
+    }
+    if builtin().iter().any(|b| b.id == skill.id) {
+        return Err(format!("{} is a built-in skill; pick another id", skill.id));
+    }
+    if skill.trust == Trust::Auto {
+        return Err(
+            "new skills start at Suggest; switch on Auto in Settings if you want it".into(),
+        );
+    }
+    if skill.suggestion.options.is_empty() {
+        return Err("the skill has no options".into());
+    }
+    if let Some(o) = skill
+        .suggestion
+        .options
+        .iter()
+        .find(|o| !ACTIONS.contains(&o.action.as_str()))
+    {
+        return Err(format!("unknown action {} in option {}", o.action, o.label));
+    }
+    Ok(skill)
+}
 
 pub fn builtin() -> Vec<Skill> {
     BUILTIN
@@ -134,6 +221,39 @@ mod tests {
     #[test]
     fn every_builtin_skill_parses() {
         assert_eq!(builtin().len(), BUILTIN.len());
+    }
+
+    #[test]
+    fn builtin_skills_only_use_known_actions() {
+        for s in builtin() {
+            for o in &s.suggestion.options {
+                assert!(
+                    ACTIONS.contains(&o.action.as_str()),
+                    "{}: {}",
+                    s.id,
+                    o.action
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn new_skills_are_checked() {
+        let ok = "id: my.screenshots\nname: Screens\ntrigger: { event: file.download_completed }\nsuggestion: { title: t, options: [ { label: Open, action: open_path, args: { path: \"{{path}}\" } } ] }\n";
+        assert_eq!(validate_new(ok).unwrap().id, "my.screenshots");
+        let bad_action = ok.replace("open_path", "run_shell");
+        assert!(
+            validate_new(&bad_action)
+                .unwrap_err()
+                .contains("unknown action")
+        );
+        let builtin_id = ok.replace("my.screenshots", "files.download");
+        assert!(validate_new(&builtin_id).unwrap_err().contains("built-in"));
+        let auto = format!("{ok}trust: auto\n");
+        assert!(validate_new(&auto).unwrap_err().contains("Suggest"));
+        let bad_id = ok.replace("my.screenshots", "../../evil");
+        assert!(validate_new(&bad_id).is_err());
+        assert!(validate_new("not: [yaml").is_err());
     }
 
     #[test]

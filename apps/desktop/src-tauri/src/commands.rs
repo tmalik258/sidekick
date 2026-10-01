@@ -337,3 +337,43 @@ pub fn ask_close(app: AppHandle) {
 pub fn action_undo(app: AppHandle, id: i64) -> CmdResult<String> {
     crate::undo::undo(&app, id)
 }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserInfo {
+    token: String,
+    port: u16,
+}
+
+/// The pairing code to paste into the browser extension.
+#[tauri::command]
+pub fn browser_info(state: State<'_, AppState>) -> BrowserInfo {
+    BrowserInfo {
+        token: state.browser_token.clone(),
+        port: sidekick_sensors::BrowserSensor::DEFAULT_PORT,
+    }
+}
+
+/// Today's time per app and project, largest first.
+#[tauri::command]
+pub fn time_today(state: State<'_, AppState>) -> CmdResult<Vec<sidekick_core::AppTime>> {
+    let day = chrono::Local::now().format("%Y-%m-%d").to_string();
+    lock(&state.storage)
+        .time_for_day(&day)
+        .map_err(|e| e.to_string())
+}
+
+/// Installs a skill written in Ask mode, after checking it (FR-SKL-08), and
+/// reloads all skills. Returns the skill's name.
+#[tauri::command]
+pub fn skill_install(state: State<'_, AppState>, yaml: String) -> CmdResult<String> {
+    let skill = sidekick_skills::validate_new(&yaml)?;
+    std::fs::create_dir_all(&state.skills_dir).map_err(|e| e.to_string())?;
+    let path = state.skills_dir.join(format!("{}.yaml", skill.id));
+    std::fs::write(&path, yaml).map_err(|e| format!("could not save the skill: {e}"))?;
+    let (skills, errors) = sidekick_skills::load_all(&state.skills_dir);
+    *lock(&state.engine) = sidekick_skills::Engine::new(skills);
+    *lock(&state.skill_errors) = errors;
+    log::info!("installed skill {} at {}", skill.id, path.display());
+    Ok(skill.name)
+}

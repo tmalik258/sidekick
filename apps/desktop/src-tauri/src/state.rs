@@ -12,12 +12,13 @@ use sidekick_sensors::{GateState, SensorGateHandle};
 use sidekick_skills::{Engine, Env, Proposal, Skill, Trust};
 
 /// Every sensor the app can run, in the order shown in settings.
-pub const SENSOR_IDS: [&str; 8] = [
+pub const SENSOR_IDS: [&str; 9] = [
     "downloads",
     "ports",
     "clipboard",
     "window",
     "claude_code",
+    "browser",
     "system",
     "idle",
     "heartbeat",
@@ -59,6 +60,12 @@ pub struct AppState {
     /// Files Sidekick's own actions just created, so the downloads sensor
     /// seeing them does not trigger a suggestion about Sidekick's output.
     pub own_files: Mutex<HashMap<PathBuf, Instant>>,
+    /// Time per app and project.
+    pub tracker: crate::timetrack::Tracker,
+    /// Commands for the browser extension.
+    pub browser: sidekick_sensors::BrowserBridge,
+    /// The pairing code the extension must send.
+    pub browser_token: String,
     /// The island is in Ask mode (input, commands, chat).
     pub ask_open: AtomicBool,
     /// The next success has buttons (Undo, Show in folder); hold it longer.

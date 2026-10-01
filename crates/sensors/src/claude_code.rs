@@ -2,11 +2,10 @@ use std::path::Path;
 use std::time::Duration;
 
 use sidekick_core::{Event, EventBus, Sensitivity};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
 
-use crate::{Sensor, SensorGate};
+use crate::{Sensor, SensorGate, http};
 
 /// Receives Claude Code hooks (FR-SEN-09) on a local port, so Sidekick knows
 /// when a session finishes or needs the user. Claude Code posts the hook
@@ -26,8 +25,7 @@ impl ClaudeCodeSensor {
     pub const SESSION_START: &'static str = "claude.session_start";
 }
 
-const MAX_BODY: usize = 256 * 1024;
-const READ_TIMEOUT: Duration = Duration::from_secs(5);
+const READ_TIMEOUT: Duration = http::READ_TIMEOUT;
 
 impl Sensor for ClaudeCodeSensor {
     fn id(&self) -> &'static str {
@@ -62,12 +60,17 @@ impl Sensor for ClaudeCodeSensor {
 }
 
 /// Reads one request, always answers, and returns the event it carried.
+/// Only a local program may post here: anything a browser sends (it carries
+/// an `Origin`) or that is not JSON is refused, so a web page cannot forge
+/// a Claude Code event.
 async fn serve(mut sock: TcpStream) -> Option<Event> {
-    let request = read_request(&mut sock).await;
+    let request = http::read_request(&mut sock).await;
     let (status, event) = match request {
-        Some((method, path, body)) if method == "POST" && path == ClaudeCodeSensor::PATH => {
-            match serde_json::from_slice::<serde_json::Value>(&body) {
-                Ok(input) => ("200 OK", hook_event(&input)),
+        Some(r) if r.origin().is_some() => ("403 Forbidden", None),
+        Some(r) if r.method == "POST" && r.path == ClaudeCodeSensor::PATH => {
+            match serde_json::from_slice::<serde_json::Value>(&r.body) {
+                Ok(input) if r.is_json() => ("200 OK", hook_event(&input)),
+                Ok(_) => ("415 Unsupported Media Type", None),
                 Err(_) => ("400 Bad Request", None),
             }
         }
@@ -75,50 +78,8 @@ async fn serve(mut sock: TcpStream) -> Option<Event> {
         None => ("400 Bad Request", None),
     };
     // An empty body: Claude Code takes no decision from this hook.
-    let resp = format!("HTTP/1.1 {status}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
-    let _ = sock.write_all(resp.as_bytes()).await;
+    http::respond(&mut sock, status, &[], None).await;
     event
-}
-
-async fn read_request(sock: &mut TcpStream) -> Option<(String, String, Vec<u8>)> {
-    let mut buf = Vec::with_capacity(4096);
-    let mut chunk = [0u8; 4096];
-    let header_end = loop {
-        let n = sock.read(&mut chunk).await.ok()?;
-        if n == 0 {
-            return None;
-        }
-        buf.extend_from_slice(&chunk[..n]);
-        if let Some(i) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
-            break i + 4;
-        }
-        if buf.len() > 16 * 1024 {
-            return None;
-        }
-    };
-    let head = String::from_utf8_lossy(&buf[..header_end]).into_owned();
-    let mut lines = head.lines();
-    let mut first = lines.next()?.split_whitespace();
-    let method = first.next()?.to_owned();
-    let path = first.next()?.split('?').next()?.to_owned();
-    let length: usize = lines
-        .filter_map(|l| l.split_once(':'))
-        .find(|(k, _)| k.trim().eq_ignore_ascii_case("content-length"))
-        .and_then(|(_, v)| v.trim().parse().ok())
-        .unwrap_or(0);
-    if length > MAX_BODY {
-        return None;
-    }
-    let mut body = buf[header_end..].to_vec();
-    while body.len() < length {
-        let n = sock.read(&mut chunk).await.ok()?;
-        if n == 0 {
-            break;
-        }
-        body.extend_from_slice(&chunk[..n]);
-    }
-    body.truncate(length);
-    Some((method, path, body))
 }
 
 /// Turns hook input into an event. Only the fields Sidekick needs are kept;
@@ -161,6 +122,7 @@ pub fn hook_event(input: &serde_json::Value) -> Option<Event> {
 mod tests {
     use super::*;
     use crate::GateState;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[test]
     fn maps_hook_input() {
@@ -212,6 +174,29 @@ mod tests {
         let mut resp = String::new();
         sock.read_to_string(&mut resp).await.unwrap();
         assert!(resp.starts_with("HTTP/1.1 404"));
+
+        // What a web page could send: a "simple" cross-site POST, or JSON
+        // with the page's Origin. Both are refused and publish nothing.
+        for (ctype, origin) in [
+            ("text/plain", ""),
+            ("application/json", "origin: https://evil.example\r\n"),
+        ] {
+            let mut sock = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+            let req = format!(
+                "POST /claude-code HTTP/1.1\r\nhost: x\r\n{origin}content-type: {ctype}\r\ncontent-length: {}\r\n\r\n{body}",
+                body.len()
+            );
+            sock.write_all(req.as_bytes()).await.unwrap();
+            let mut resp = String::new();
+            sock.read_to_string(&mut resp).await.unwrap();
+            assert!(resp.starts_with("HTTP/1.1 4"), "{resp}");
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(300), rx.recv())
+                .await
+                .is_err(),
+            "a refused request must not publish an event"
+        );
         task.abort();
     }
 }
