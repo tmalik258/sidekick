@@ -42,6 +42,7 @@ export type Theme = (typeof THEMES)[number];
 
 export interface Suggestion {
   id: string;
+  skillId: string;
   title: string;
   detail: string;
   options: string[];
@@ -82,7 +83,46 @@ export const DEFAULT_SETTINGS: Settings = {
   soundKit: "01",
 };
 
-export const SENSOR_IDS = [{ id: "heartbeat", label: "Heartbeat (test event every 30 s)" }] as const;
+export const SENSOR_IDS = [
+  { id: "downloads", label: "Downloads", hint: "Notices finished downloads the moment they land." },
+  { id: "ports", label: "Dev servers", hint: "Notices local servers starting, checked every second." },
+  { id: "clipboard", label: "Clipboard", hint: "Notices copied text. Secrets are never stored." },
+  { id: "window", label: "Active window", hint: "Knows which app is in front; hides the island in fullscreen." },
+  { id: "heartbeat", label: "Heartbeat (debug)", hint: "A test event every 30 seconds." },
+] as const;
+
+export interface ActionResult {
+  ok: boolean;
+  message: string;
+  path: string | null;
+  auto: boolean;
+}
+
+export interface SkillInfo {
+  id: string;
+  name: string;
+  description: string;
+  event: string;
+  enabled: boolean;
+  auto: boolean;
+  autoByDefault: boolean;
+}
+
+export interface CapabilityInfo {
+  found: string[];
+  skillsDir: string;
+  skillErrors: string[];
+}
+
+export interface ActionRecord {
+  ts: string;
+  skillId: string;
+  action: string;
+  label: string;
+  ok: boolean;
+  message: string;
+  auto: boolean;
+}
 
 export function isPaused(pause: Pause, now = Date.now()): boolean {
   if (pause.kind === "indefinite") return true;

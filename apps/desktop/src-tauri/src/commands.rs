@@ -1,13 +1,16 @@
 use chrono::Utc;
 use serde::Serialize;
-use sidekick_core::{Event, MascotEvent, MascotState, Pause, Settings, StoredEvent};
+use sidekick_core::{
+    ActionRecord, Event, MascotEvent, MascotState, Pause, Settings, SkillPref, StoredEvent,
+};
+use sidekick_skills::Trust;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
 
-use crate::demo;
 use crate::mascot;
 use crate::pipeline::DEBUG_MANUAL_KIND;
-use crate::state::{AppState, HitRect, Suggestion, gate_state, lock};
+use crate::state::{AppState, HitRect, Suggestion, executor, gate_state, lock};
+use crate::suggestions;
 use crate::windows;
 
 pub const SETTINGS_CHANGED: &str = "settings://changed";
@@ -72,18 +75,18 @@ pub fn island_set_hit_rect(state: State<'_, AppState>, rect: HitRect) {
 }
 
 #[tauri::command]
-pub fn suggestion_current(state: State<'_, AppState>) -> Option<Suggestion> {
-    lock(&state.suggestion).clone()
+pub fn suggestion_current(app: AppHandle) -> Option<Suggestion> {
+    suggestions::current(&app)
 }
 
 #[tauri::command]
 pub fn suggestion_choose(app: AppHandle, id: String, index: usize) -> CmdResult<()> {
-    demo::choose(&app, &id, index)
+    suggestions::choose(&app, &id, index)
 }
 
 #[tauri::command]
 pub fn suggestion_dismiss(app: AppHandle, id: String, reason: String) -> CmdResult<()> {
-    demo::dismiss(&app, &id, &reason)
+    suggestions::dismiss(&app, &id, &reason)
 }
 
 #[tauri::command]
@@ -116,8 +119,114 @@ pub fn debug_emit_event(state: State<'_, AppState>) {
 }
 
 #[tauri::command]
-pub fn debug_demo_flow(app: AppHandle) -> CmdResult<()> {
-    demo::start(&app)
+pub fn debug_demo_flow(app: AppHandle) {
+    suggestions::demo(&app);
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillInfo {
+    id: String,
+    name: String,
+    description: String,
+    event: String,
+    enabled: bool,
+    auto: bool,
+    /// The skill runs on its own by default.
+    auto_by_default: bool,
+}
+
+/// Every loaded skill with the user's switches applied (FR-SKL-06).
+#[tauri::command]
+pub fn skills_list(state: State<'_, AppState>) -> Vec<SkillInfo> {
+    let settings = lock(&state.settings).clone();
+    lock(&state.engine)
+        .skills()
+        .iter()
+        .map(|s| {
+            let pref = settings.skills.get(&s.id).cloned().unwrap_or_default();
+            SkillInfo {
+                id: s.id.clone(),
+                name: s.name.clone(),
+                description: s.description.clone(),
+                event: s.trigger.event.clone(),
+                enabled: pref.enabled.unwrap_or(s.enabled_by_default),
+                auto: pref.auto.unwrap_or(s.trust == Trust::Auto),
+                auto_by_default: s.trust == Trust::Auto,
+            }
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub fn skill_set(app: AppHandle, id: String, enabled: bool, auto: bool) -> CmdResult<Settings> {
+    let mut settings = lock(&app.state::<AppState>().settings).clone();
+    settings.skills.insert(
+        id,
+        SkillPref {
+            enabled: Some(enabled),
+            auto: Some(auto),
+        },
+    );
+    apply_settings(&app, settings)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityInfo {
+    found: Vec<String>,
+    skills_dir: String,
+    skill_errors: Vec<String>,
+}
+
+/// What browsers and tools Sidekick found, optionally scanning again.
+#[tauri::command]
+pub async fn capabilities_get(app: AppHandle, rescan: bool) -> CmdResult<CapabilityInfo> {
+    let state = app.state::<AppState>();
+    if rescan {
+        let caps = tauri::async_runtime::spawn_blocking(sidekick_actions::Capabilities::detect)
+            .await
+            .map_err(|e| e.to_string())?;
+        *state
+            .executor
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            std::sync::Arc::new(sidekick_actions::Executor::new(caps));
+    }
+    let exec = executor(&state);
+    Ok(CapabilityInfo {
+        found: exec.capabilities().summary(),
+        skills_dir: state.skills_dir.display().to_string(),
+        skill_errors: lock(&state.skill_errors).clone(),
+    })
+}
+
+/// Forgets which options the user picked before (FR-DEV-02).
+#[tauri::command]
+pub fn choices_reset(state: State<'_, AppState>) -> CmdResult<usize> {
+    lock(&state.storage)
+        .clear_choices()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn actions_recent(
+    state: State<'_, AppState>,
+    limit: Option<u32>,
+) -> CmdResult<Vec<ActionRecord>> {
+    lock(&state.storage)
+        .recent_actions(limit.unwrap_or(30).min(200))
+        .map_err(|e| e.to_string())
+}
+
+/// Shows a file an action produced. Only existing paths, nothing else runs.
+#[tauri::command]
+pub async fn reveal_path(app: AppHandle, path: String) -> CmdResult<()> {
+    let exec = executor(&app.state::<AppState>());
+    exec.run("reveal_path", &serde_json::json!({ "path": path }))
+        .await
+        .map(drop)
+        .map_err(|e| e.to_string())
 }
 
 pub fn set_pause(app: &AppHandle, pause: Pause) -> CmdResult<Settings> {

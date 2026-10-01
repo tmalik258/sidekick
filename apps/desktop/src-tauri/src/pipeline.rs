@@ -1,17 +1,19 @@
-//! Consumes the event bus: stores every event and, in P0, turns debug events
-//! into mascot reactions. Skills replace the reaction part in P1.
+//! Consumes the event bus: stores every event, runs the skill engine, and
+//! hands proposals to the island.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use sidekick_core::{Event, MascotEvent, Pause};
-use sidekick_sensors::HeartbeatSensor;
+use sidekick_sensors::WindowSensor;
 use tauri::{AppHandle, Manager};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::commands;
+use crate::island;
 use crate::mascot;
-use crate::state::{AppState, lock};
+use crate::state::{AppEnv, AppState, executor, lock};
+use crate::suggestions;
 
 /// Event kind published by the debug panel's "Emit test event" button.
 pub const DEBUG_MANUAL_KIND: &str = "debug.manual";
@@ -45,12 +47,31 @@ fn spawn_consumer(app: AppHandle) {
 async fn handle(app: &AppHandle, event: Event) {
     store(app, event.clone()).await;
 
-    if (event.kind == HeartbeatSensor::EVENT_KIND || event.kind == DEBUG_MANUAL_KIND)
-        && mascot::dispatch(app, MascotEvent::SkillMatched).is_some()
-    {
-        // No skills yet, so conditions always fail and the mascot settles.
-        mascot::after(app, NOTICE_HOLD, MascotEvent::ConditionsFailed);
+    if event.kind == WindowSensor::EVENT_KIND {
+        island::follow_fullscreen(app, &event.payload);
     }
+
+    if event.kind == DEBUG_MANUAL_KIND && mascot::dispatch(app, MascotEvent::SkillMatched).is_some()
+    {
+        mascot::after(app, NOTICE_HOLD, MascotEvent::ConditionsFailed);
+        return;
+    }
+
+    if let Some(proposal) = evaluate(app, &event) {
+        suggestions::offer(app, proposal);
+    }
+}
+
+fn evaluate(app: &AppHandle, event: &Event) -> Option<sidekick_skills::Proposal> {
+    let state = app.state::<AppState>();
+    let settings = lock(&state.settings).clone();
+    let exec = executor(&state);
+    let env = AppEnv {
+        settings: &settings,
+        caps: exec.capabilities(),
+        storage: &state.storage,
+    };
+    lock(&state.engine).evaluate(event, &env, Instant::now())
 }
 
 async fn store(app: &AppHandle, event: Event) {

@@ -17,8 +17,10 @@ chrono.workspace = true
 log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sidekick-actions.workspace = true
 sidekick-core.workspace = true
 sidekick-sensors.workspace = true
+sidekick-skills.workspace = true
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-log = "2"
