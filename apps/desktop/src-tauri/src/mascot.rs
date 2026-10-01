@@ -11,6 +11,9 @@ use crate::state::{AppState, lock};
 pub const STATE_EVENT: &str = "mascot://state";
 
 const SUCCESS_HOLD: Duration = Duration::from_millis(1500);
+/// Long enough to reach Undo or Show in folder after an action made a file.
+const LINGER_HOLD: Duration = Duration::from_secs(6);
+const HOVER_RECHECK: Duration = Duration::from_millis(250);
 const ERROR_HOLD: Duration = Duration::from_secs(4);
 
 pub fn current(app: &AppHandle) -> MascotState {
@@ -47,6 +50,23 @@ pub fn after(app: &AppHandle, delay: Duration, event: MascotEvent) {
     });
 }
 
+/// Holds a result that has buttons, and keeps it while the cursor is on it.
+fn linger_then_idle(app: &AppHandle) {
+    let epoch = app.state::<AppState>().mascot_epoch.load(Ordering::SeqCst);
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(LINGER_HOLD).await;
+        let state = app.state::<AppState>();
+        while state.hovered.load(Ordering::Relaxed) {
+            tokio::time::sleep(HOVER_RECHECK).await;
+        }
+        if state.mascot_epoch.load(Ordering::SeqCst) == epoch {
+            dispatch(&app, MascotEvent::SuccessElapsed);
+            crate::suggestions::resume(&app);
+        }
+    });
+}
+
 fn entered(app: &AppHandle, t: Transition) {
     app.state::<AppState>()
         .mascot_epoch
@@ -55,7 +75,14 @@ fn entered(app: &AppHandle, t: Transition) {
         log::warn!("could not emit mascot state: {err}");
     }
     match t.state {
-        MascotState::Success => after(app, SUCCESS_HOLD, MascotEvent::SuccessElapsed),
+        MascotState::Success => {
+            let linger = app.state::<AppState>().linger.swap(false, Ordering::SeqCst);
+            if linger {
+                linger_then_idle(app);
+            } else {
+                after(app, SUCCESS_HOLD, MascotEvent::SuccessElapsed);
+            }
+        }
         MascotState::Error => after(app, ERROR_HOLD, MascotEvent::ErrorDismissed),
         _ => {}
     }

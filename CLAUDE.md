@@ -12,6 +12,9 @@ Spec: the SRS linked in README.md. Requirement IDs (FR-UI-01, NFR-SEC-05, ...) i
 - Mascot transitions only through `mascot::dispatch` (or `force` for debug). Delayed follow-ups use `mascot::after`, which is cancelled by any newer transition.
 - Never read browser password stores, cookies, or Claude credential files. Never pass event data to a shell as a string.
 - Destructive or outward-facing actions can never run at Auto trust level.
+- All AI goes through `crates/ai` (`AiProvider` for chat, `Decider` for T1). Prompts reach Claude Code on stdin, never as arguments. T1 decisions only use SemIf or a local model, never a cloud provider. A clipboard classified as a secret is never attached to a prompt.
+- The Claude Code hook endpoint binds to 127.0.0.1 only. Sidekick never edits `~/.claude/settings.json` and never reads transcripts or credentials.
+- Undo only touches paths an action itself produced (`undo::UNDOABLE`), sends them to the Recycle Bin, and only within 24 hours.
 
 ## Frontend rules
 

@@ -182,6 +182,8 @@ export interface ActionResult {
   message: string;
   path: string | null;
   auto: boolean;
+  /** Set when the action created a file that Undo can move to the bin. */
+  undoId: number | null;
 }
 
 export interface SkillInfo {
@@ -201,6 +203,7 @@ export interface CapabilityInfo {
 }
 
 export interface ActionRecord {
+  id: number;
   ts: string;
   skillId: string;
   action: string;
@@ -208,6 +211,13 @@ export interface ActionRecord {
   ok: boolean;
   message: string;
   auto: boolean;
+  undoPath: string | null;
+  undone: boolean;
+}
+
+/** Undo is kept for 24 hours (FR-ACT-04). */
+export function canUndo(a: ActionRecord, now = Date.now()): boolean {
+  return !!a.undoPath && !a.undone && now - Date.parse(a.ts) < 24 * 60 * 60 * 1000;
 }
 
 export function isPaused(pause: Pause, now = Date.now()): boolean {

@@ -8,6 +8,7 @@ mod pipeline;
 mod state;
 mod suggestions;
 mod tray;
+mod undo;
 mod windows;
 
 use std::error::Error;
@@ -77,6 +78,7 @@ pub fn run() {
             commands::ai_cancel,
             commands::palette_hide,
             commands::palette_open,
+            commands::action_undo,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Sidekick");
@@ -130,6 +132,8 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         decisions: Mutex::default(),
         ai_ready: Default::default(),
         away: Default::default(),
+        linger: Default::default(),
+        own_files: Mutex::default(),
     });
 
     pipeline::start(app);

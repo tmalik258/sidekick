@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use sidekick_core::{Event, MascotEvent, Pause};
-use sidekick_sensors::{IdleSensor, WindowSensor};
+use sidekick_sensors::{DownloadsSensor, IdleSensor, WindowSensor};
 use tauri::{AppHandle, Manager};
 use tokio::sync::broadcast::error::RecvError;
 
@@ -67,6 +67,15 @@ async fn handle(app: &AppHandle, event: Event) {
     if event.kind == DEBUG_MANUAL_KIND && mascot::dispatch(app, MascotEvent::SkillMatched).is_some()
     {
         mascot::after(app, NOTICE_HOLD, MascotEvent::ConditionsFailed);
+        return;
+    }
+
+    // A conversion saved into Downloads is not a new download.
+    if event.kind == DownloadsSensor::EVENT_KIND
+        && event.payload["path"]
+            .as_str()
+            .is_some_and(|p| suggestions::is_own_file(app, p))
+    {
         return;
     }
 

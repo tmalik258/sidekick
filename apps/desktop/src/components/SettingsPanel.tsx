@@ -14,6 +14,7 @@ import {
   type CapabilityInfo,
   CLAUDE_HOOK_URL,
   CUES,
+  canUndo,
   isPaused,
   MASCOT_STATES,
   type Pause,
@@ -167,6 +168,10 @@ export function SettingsPanel() {
         <AiSection ai={settings.ai} onError={setError} />
       </Section>
 
+      <Section title="History" hint="Files Sidekick created can be undone for 24 hours; they go to the Recycle Bin.">
+        <RecentActions onError={setError} />
+      </Section>
+
       <Section
         title="Skills"
         hint="Auto runs the first safe option without asking. Deleting files, running installers or stopping processes always ask first."
@@ -205,7 +210,7 @@ export function SettingsPanel() {
           <Button onClick={() => run(() => api.debugEmitEvent())}>Emit test event</Button>
           <Button onClick={() => run(() => api.debugDemoFlow())}>Run demo suggestion</Button>
         </div>
-        <RecentActions />
+
         <RecentEvents />
       </Section>
 
@@ -350,10 +355,18 @@ function Capabilities({ onError }: { onError: (e: string) => void }) {
   );
 }
 
-function RecentActions() {
+function RecentActions({ onError }: { onError: (e: string) => void }) {
   const [actions, setActions] = useState<ActionRecord[]>([]);
-  const refresh = useCallback(() => void api.actionsRecent(10).then(setActions), []);
+  const refresh = useCallback(() => void api.actionsRecent(30).then(setActions), []);
   useEffect(refresh, [refresh]);
+  const undo = async (id: number) => {
+    try {
+      await api.actionUndo(id);
+    } catch (err) {
+      onError(String(err));
+    }
+    refresh();
+  };
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
@@ -363,16 +376,27 @@ function RecentActions() {
         </Button>
       </div>
       {actions.length === 0 ? (
-        <p className="text-sm text-(--muted)">No actions yet.</p>
+        <p className="text-sm text-(--muted)">Nothing yet. Actions you pick on the island show up here.</p>
       ) : (
-        <ul className="divide-y divide-(--border) rounded-lg border border-(--border) text-xs">
+        <ul className="divide-y divide-(--border) rounded-lg border border-(--border) text-[12.5px]">
           {actions.map((a) => (
-            <li key={`${a.ts}-${a.label}`} className="flex justify-between gap-3 px-3 py-1.5">
-              <span className={a.ok ? "" : "text-red-500"}>
-                {a.label}
-                {a.auto ? " (auto)" : ""}: {a.message}
+            <li key={a.id} className="flex items-center justify-between gap-3 px-3 py-2">
+              <span className={`min-w-0 ${a.ok ? "" : "text-red-500"}`}>
+                <span className="font-medium">{a.label}</span>
+                {a.auto ? " (auto)" : ""}
+                <span className="block truncate text-(--muted)">
+                  {a.undone ? "Undone. " : ""}
+                  {a.message}
+                </span>
               </span>
-              <span className="shrink-0 text-(--muted)">{new Date(a.ts).toLocaleTimeString()}</span>
+              <span className="flex shrink-0 items-center gap-2">
+                {canUndo(a) && (
+                  <Button small onClick={() => void undo(a.id)}>
+                    Undo
+                  </Button>
+                )}
+                <span className="text-(--muted)">{new Date(a.ts).toLocaleTimeString()}</span>
+              </span>
             </li>
           ))}
         </ul>

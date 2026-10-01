@@ -4,7 +4,7 @@ A proactive desktop companion for Windows. Sidekick lives in a small "island" at
 
 Local-first: events, history, and settings stay on your machine. AI runs in tiers: rules first, a local decision model (SemIf) next, and Claude Code for real work.
 
-> Status: **P1 MVP**. Real sensors (downloads, dev servers, clipboard, active window), a rule-based skill engine, and built-in actions work end to end. AI tiers (SemIf, local model, Claude Code) arrive in P2.
+> Status: **P2**. Rule-based skills (T0), SemIf or a local model for ranking (T1), and chat through Claude Code, the Anthropic API or a local model (T2) work end to end. Browser extension and password manager fill come in P3.
 
 Full spec: [Desktop AI Assistant SRS](https://claude.ai/code/artifact/2f76a151-4e3f-4d9b-ab0c-bd1239d8ff69)
 
@@ -27,8 +27,11 @@ apps/desktop/            Next.js UI (island, settings) + src-tauri (the app)
   src/lib/               bridge to Rust, browser mock, store, sound cues
   src-tauri/src/         commands, mascot driver, pipeline, island window, tray
 crates/core/             event envelope, bus, mascot state machine, settings, storage
-crates/sensors/          Sensor trait, pause gate, heartbeat test sensor
-skills/                  built-in skills (P1)
+crates/sensors/          downloads, ports, clipboard, window, Claude Code hooks, disk and memory, away
+crates/skills/           YAML skill engine
+crates/actions/          built-in actions and detection of installed browsers and tools
+crates/ai/               AI providers (Claude Code, local, Anthropic API), router, SemIf decisions
+skills/                  built-in skills
 assets/                  mascot art and sounds (separate license)
 ```
 
@@ -62,6 +65,31 @@ In the browser preview, `window.sidekickMock.go("success")` switches mascot stat
 - **Go fullscreen** (video, game, slides). The island hides and comes back after.
 - **Settings > Skills**: switch skills on or off, or set them to Auto. Destructive actions always ask.
 - **Your own skills**: drop YAML files into the folder shown in Settings > Found on this PC (format in `skills/README.md`).
+- **Press Alt+Space** for the command palette. Type a command, or ask anything; attach the app you were in or your clipboard with the chips. "This PC only" keeps the chat on a local model.
+- **Copy an error or stack trace.** The island offers Explain and fix, which asks AI with the error attached.
+- **Claude Code sessions**: add the hook from Settings > AI and the island tells you when a session finishes or is waiting for you.
+- **Undo**: files Sidekick creates (conversions, extracted folders) can be sent to the Recycle Bin from the island or Settings > History for 24 hours.
+- **Low disk or memory**: the island warns once and offers Storage settings or Task Manager.
+- **Step away** for 5 minutes and suggestions wait for you instead of expiring unseen.
+
+## AI setup
+
+Everything works without AI. Set up any of these, in any order (Settings > AI shows which are reachable):
+
+```powershell
+# Claude Code: answers come from your own Claude subscription
+npm install -g @anthropic-ai/claude-code
+claude   # sign in once
+
+# Local model through Ollama (stays on this PC; also ranks suggestions)
+winget install Ollama.Ollama
+ollama pull qwen3:4b
+
+# Or the Anthropic API
+setx ANTHROPIC_API_KEY "your-key"
+```
+
+SemIf (optional, T1 decisions) runs from WSL. Install it there, then set the command in Settings > AI, for example `wsl.exe -d Ubuntu-22.04 -- /home/you/semif/.venv/bin/semif-score`, with the llamacpp backend and a GGUF file for the GTX 1650 Ti.
 
 ## Checks
 

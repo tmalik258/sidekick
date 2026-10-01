@@ -331,3 +331,9 @@ pub fn palette_open(app: AppHandle, prompt: Option<String>, ask: bool) {
         },
     );
 }
+
+/// Moves what an earlier action created to the Recycle Bin.
+#[tauri::command]
+pub fn action_undo(app: AppHandle, id: i64) -> CmdResult<String> {
+    crate::undo::undo(&app, id)
+}
