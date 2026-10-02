@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
-import { startWaiting } from "@/lib/store";
+import { installExtension } from "@/lib/store";
 import type { BrowserStatus, ExtensionGuide } from "@/lib/types";
 
 /** Shared by welcome and Settings > Browser. */
@@ -21,16 +21,14 @@ export function BrowserInstallPanel({ onDone }: { onDone?: () => void }) {
     return () => clearInterval(id);
   }, [onDone]);
 
-  const install = (id: string) => {
+  const install = (id: string, name: string) => {
     setBusy(id);
     setError(null);
-    void api
-      .extensionInstall(id)
+    // In the welcome the steps stay inline; elsewhere the island keeps them.
+    void installExtension(id, name, { shrink: !onDone })
       .then((g) => {
         setGuide(g);
         onDone?.();
-        // The steps stay on screen; the welcome ticks itself once paired.
-        if (onDone) startWaiting("browser", "the browser extension", { shrink: false });
       })
       .catch((e) => setError(String(e)))
       .finally(() => setBusy(null));
@@ -41,8 +39,8 @@ export function BrowserInstallPanel({ onDone }: { onDone?: () => void }) {
   return (
     <div className="flex flex-col gap-2 text-[12px] leading-relaxed text-(--muted)">
       <p>
-        Sidekick copies the extension and opens the browser&apos;s extensions page with the folder path ready. You still
-        click Load unpacked once (browsers do not allow silent installs).
+        Sidekick opens your browser and gives you the two things to paste. You still click Load unpacked once (browsers
+        do not allow silent installs).
       </p>
       <div className="flex flex-wrap gap-1.5">
         {list.map((b) => (
@@ -50,7 +48,7 @@ export function BrowserInstallPanel({ onDone }: { onDone?: () => void }) {
             key={b.id}
             type="button"
             disabled={busy !== null}
-            onClick={() => install(b.id)}
+            onClick={() => install(b.id, b.name)}
             className="chip self-start rounded-full bg-white px-2.5 py-1 text-[12px] font-medium text-black hover:bg-white/90 disabled:opacity-50"
           >
             {busy === b.id ? "Opening..." : b.connected ? `${b.name} (paired)` : `Set up ${b.name}`}
@@ -62,12 +60,37 @@ export function BrowserInstallPanel({ onDone }: { onDone?: () => void }) {
           {guide.steps.map((s) => (
             <li key={s}>{s}</li>
           ))}
-          <li>
-            Path on clipboard: <code className="rounded bg-black/30 px-1 font-mono text-[11px]">{guide.copied}</code>
-          </li>
         </ol>
+      )}
+      {guide && (
+        <div className="flex flex-wrap gap-1.5">
+          <CopyButton label="Copy extensions address" text={guide.page} />
+          <CopyButton label="Copy folder path" text={guide.copied} />
+        </div>
       )}
       {error && <p className="text-[11px] text-[#ff453a]">{error}</p>}
     </div>
+  );
+}
+
+function CopyButton({ label, text }: { label: string; text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      title={text}
+      onClick={() =>
+        void navigator.clipboard
+          .writeText(text)
+          .then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          })
+          .catch(() => undefined)
+      }
+      className="chip rounded-full bg-white/[0.1] px-2.5 py-1 text-[12px] text-white/90 hover:bg-white/[0.16]"
+    >
+      {copied ? "Copied" : label}
+    </button>
   );
 }
