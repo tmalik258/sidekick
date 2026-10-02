@@ -31,7 +31,7 @@ pub const WELCOME_EVENT: &str = "voice://welcome";
 /// The first thing Sidekick says, and the first thing the welcome shows,
 /// word by word as it is heard. Punctuation is the direction here: the voice
 /// lifts on "!" and "?" and breathes at commas.
-pub const WELCOME_LINE: &str = "Hi there! I'm Sidekick. I live up here, and I'll keep an eye out for little moments where I can help. Don't worry, I always ask before I do anything. Ready? Let's get you set up. It only takes a minute.";
+pub const WELCOME_LINE: &str = "Online. I'm Sidekick, your AI on this machine. I notice, I suggest, you decide. Let's begin.";
 
 /// When each sentence of the welcome line sounds, in Unix milliseconds, so
 /// the UI can show the words as they are heard.
@@ -45,6 +45,9 @@ pub struct WelcomeSpeech {
     /// Nothing will be heard (no speakers, or the voice failed): the UI
     /// paces the words itself.
     pub silent: bool,
+    /// Speech was asked for and is on its way (the model may still be
+    /// loading): the UI waits for it instead of pacing the words itself.
+    pub pending: bool,
     #[serde(skip)]
     key: Option<(u64, u64)>,
 }
@@ -419,6 +422,7 @@ fn speech_events(app: &AppHandle) -> sidekick_voice::SpeechEvents {
                 ends_in,
             } if w.key == Some((speaker, utterance)) => {
                 w.ends_at = Some(now_ms() + ends_in.as_millis() as u64);
+                w.pending = false;
             }
             _ => return,
         }
@@ -438,12 +442,15 @@ fn start_welcome_speech(app: &AppHandle) {
         *w = WelcomeSpeech {
             script: WELCOME_LINE,
             key: Some((speaker, utterance)),
+            pending: true,
             ..Default::default()
         };
+        let _ = app.emit(WELCOME_EVENT, w.clone());
     });
     if !heard {
         let mut w = lock(&v.welcome);
         w.silent = true;
+        w.pending = false;
         let _ = app.emit(WELCOME_EVENT, w.clone());
     }
 }

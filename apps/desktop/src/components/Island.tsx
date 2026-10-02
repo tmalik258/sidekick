@@ -80,7 +80,9 @@ export function Island() {
   }
   if (quiet && !rawHover) setQuiet(false);
   const intent = useIntent(rawHover);
-  const hovered = intent && !quiet;
+  // Until onboarding is done, hovering only brings the welcome back; the
+  // idle card ("watching for moments") would just flash on the way.
+  const hovered = intent && !quiet && settings.onboarded;
   const preparingVoice =
     !settings.onboarded && !asking && !(voiceStatus?.models.some((m) => m.id === "voice" && m.installed) ?? false);
   const expanded = asking || preparingVoice || hovered || OPEN_STATES.has(mascot) || !!suggestion;
