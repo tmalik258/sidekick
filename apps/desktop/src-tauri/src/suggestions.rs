@@ -296,6 +296,21 @@ async fn execute(
                 path: None,
             });
         }
+        "browser_pair_allow" | "browser_pair_deny" => {
+            let id = arg("id").ok_or("no request id")?;
+            let allow = option.action == "browser_pair_allow";
+            if !app.state::<AppState>().approvals.decide(id, Some(allow)) {
+                return Err("The extension stopped waiting; press Connect in it again.".into());
+            }
+            return Ok(sidekick_actions::Outcome {
+                message: if allow {
+                    "Browser connected".into()
+                } else {
+                    "Not connected".into()
+                },
+                path: None,
+            });
+        }
         "claude_allow" | "claude_deny" | "claude_pass" => {
             let id = arg("id").ok_or("no request id")?;
             let answer = match option.action.as_str() {

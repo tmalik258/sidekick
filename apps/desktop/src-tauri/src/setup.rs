@@ -371,7 +371,8 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         .last_event_from(sidekick_sensors::BrowserSensor::ID)
         .ok()
         .flatten()
-        .is_some();
+        .is_some()
+        || !state.browser.seen().is_empty();
     items.push(
         SetupItem::new(
             "browser",

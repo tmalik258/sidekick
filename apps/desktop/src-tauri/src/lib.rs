@@ -8,6 +8,7 @@ mod composio;
 mod composio_api;
 mod decide;
 mod detect;
+mod extension;
 mod fathom;
 mod files;
 mod island;
@@ -90,6 +91,8 @@ pub fn run() {
             commands::search_clear,
             commands::setup_status,
             commands::setup_detect,
+            commands::browsers_status,
+            commands::extension_install,
             commands::setup_apply,
             commands::claude_add_hooks,
             commands::claude_add_mcp,
@@ -249,12 +252,13 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
             Box::new(WindowSensor),
             Box::new(ClaudeCodeSensor {
                 port: ClaudeCodeSensor::DEFAULT_PORT,
-                approvals,
+                approvals: approvals.clone(),
             }),
             Box::new(BrowserSensor {
                 port: BrowserSensor::DEFAULT_PORT,
                 token: browser_token,
                 bridge,
+                approvals,
             }),
             Box::new(SystemSensor),
             Box::new(sidekick_sensors::CalendarSensor { state: calendar }),

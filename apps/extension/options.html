@@ -9,16 +9,24 @@
       h1 { font-size: 22px; letter-spacing: -0.01em; }
       p { color: GrayText; font-size: 14px; }
       input { width: 100%; box-sizing: border-box; padding: 9px 11px; border-radius: 10px; border: 1px solid #8884; font: 13px ui-monospace, monospace; }
-      button { margin-top: 12px; padding: 8px 16px; border-radius: 999px; border: 0; background: #0a84ff; color: white; font-weight: 600; }
-      #status { margin-top: 12px; font-size: 13px; }
+      button { margin-top: 12px; padding: 8px 16px; border-radius: 999px; border: 0; background: #0a84ff; color: white; font-weight: 600; cursor: pointer; }
+      button.plain { background: #8882; color: inherit; }
+      details { margin-top: 28px; }
+      summary { cursor: pointer; font-size: 13px; color: GrayText; }
+      #status { margin-top: 12px; font-size: 14px; }
     </style>
   </head>
   <body>
     <h1>Connect to Sidekick</h1>
-    <p>Paste the pairing code from Sidekick under Settings &gt; Browser. The extension only talks to Sidekick on this PC.</p>
-    <input id="token" placeholder="Pairing code" spellcheck="false" autocomplete="off" />
-    <button id="save" type="button">Save and test</button>
-    <div id="status"></div>
+    <p>Press Connect, then press Allow on Sidekick's island at the top of your screen. The extension only talks to Sidekick on this PC.</p>
+    <button id="connect" type="button">Connect</button>
+    <div id="status" role="status"></div>
+    <details>
+      <summary>Use a pairing code instead</summary>
+      <p>Settings &gt; Connections in Sidekick shows the code.</p>
+      <input id="token" placeholder="Pairing code" spellcheck="false" autocomplete="off" />
+      <button id="save" class="plain" type="button">Save and test</button>
+    </details>
     <script src="options.js"></script>
   </body>
 </html>
