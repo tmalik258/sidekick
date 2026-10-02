@@ -221,6 +221,11 @@ commands.ask_defer_welcome = () => {
   welcomeDeferred = true;
   emit("ask://close", { reason: "defer" });
 };
+commands.ask_resume_welcome = () => {
+  if (settings.onboarded) return;
+  welcomeDeferred = false;
+  commands.ask_open?.({ view: "welcome" });
+};
 commands.skill_install = () => "Screenshots";
 const voiceStatus = () => ({
   models: [
@@ -301,9 +306,15 @@ commands.setup_status = () => {
         tab: "browser",
         recommended: true,
       }),
-      item("calendar", "connect", "Calendar", "Meeting reminders with Join and Prep.", false, "Not connected", {
-        tab: "today",
-      }),
+      item(
+        "calendar",
+        "connect",
+        "Calendar",
+        "Meeting reminders with Join and Prep.",
+        Boolean(settings.composio.account),
+        settings.composio.account ? "Connected" : "Not connected",
+        { tab: "connections" },
+      ),
       item("gh", "tools", "GitHub CLI", "Open PRs in the morning brief.", false, "Not installed", {
         command: w("GitHub.cli"),
         runnable: true,

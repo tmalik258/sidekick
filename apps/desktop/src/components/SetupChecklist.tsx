@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
+import { useSidekick } from "@/lib/store";
 import type { SetupGroup, SetupItem } from "@/lib/types";
 import { SETUP_CATALOG, skeletonItem } from "./SetupCatalog";
 import { SetupRow, SmallButton } from "./SetupChecklistRow";
@@ -89,6 +90,9 @@ export function SetupChecklist({
   const { status, checking, check, watchForChanges } = useSetupStatus();
   const [error, setError] = useState<string | null>(null);
   const [showOptional, setShowOptional] = useState(!compact);
+  // Coming back from a step finished elsewhere: make sure its row shows.
+  const justDone = useSidekick((s) => s.justDone);
+  const showAll = showOptional || Boolean(justDone);
   const [openGuide, setOpenGuide] = useState<string | null>(null);
 
   // Stable callbacks, so a row only re-renders when its own data changes.
@@ -165,7 +169,7 @@ export function SetupChecklist({
       )}
 
       {groups.map((g) => {
-        const shown = items.filter((i) => i.group === g && (i.recommended || showOptional));
+        const shown = items.filter((i) => i.group === g && (i.recommended || showAll));
         if (shown.length === 0) return null;
         return (
           <section key={g} className="flex flex-col gap-1.5">

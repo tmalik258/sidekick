@@ -99,7 +99,15 @@ pub struct HitRect {
 
 impl HitRect {
     pub fn contains(&self, x: f64, y: f64) -> bool {
-        x >= self.x && x <= self.x + self.width && y >= self.y && y <= self.y + self.height
+        self.contains_within(x, y, 0.0)
+    }
+
+    /// Like [`HitRect::contains`], with `pad` pixels to spare on every side.
+    pub fn contains_within(&self, x: f64, y: f64, pad: f64) -> bool {
+        x >= self.x - pad
+            && x <= self.x + self.width + pad
+            && y >= self.y - pad
+            && y <= self.y + self.height + pad
     }
 }
 

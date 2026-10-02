@@ -4,6 +4,7 @@
 
 import { memo, useState } from "react";
 import { api } from "@/lib/bridge";
+import { startWaiting, stopWaiting, useSidekick } from "@/lib/store";
 import type { SetupItem } from "@/lib/types";
 import { ItemGuide } from "./SetupGuides";
 
@@ -57,6 +58,8 @@ export const SetupRow = memo(function SetupRow({
   checking?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
+  const waiting = useSidekick((s) => s.waiting);
+  const justDone = useSidekick((s) => s.justDone === item.id);
   const [actionError, setActionError] = useState<string | null>(null);
   const multiline = item.command?.includes("\n") ?? false;
   const oneClick = ONE_CLICK.has(item.id);
@@ -78,11 +81,22 @@ export const SetupRow = memo(function SetupRow({
         : item.id === "claude_mcp"
           ? api.claudeAddMcp().catch(() => api.setupRun("claude_mcp"))
           : api.composioSignIn().then(() => undefined);
+    const outside = item.id === "composio" || item.id === "calendar" || item.id === "fathom";
     void work
-      .then(onDone)
+      .then(() => {
+        onDone();
+        // Finishing happens in the browser: wait there, not here.
+        if (outside && inlineGuides) startWaiting(item.id, item.title);
+      })
       .catch((e) => setActionError(String(e)))
       .finally(() => setBusy(false));
   };
+  const run = () => {
+    onRun(item.id);
+    // The install runs in PowerShell: the welcome waits as a small pill.
+    if (inlineGuides) startWaiting(item.id, item.title);
+  };
+  const isWaiting = waiting?.id === item.id && !item.done;
 
   const isDirect =
     item.id === "claude_hooks" ||
@@ -92,7 +106,11 @@ export const SetupRow = memo(function SetupRow({
     item.id === "fathom";
 
   return (
-    <div className="flex flex-col gap-1.5 rounded-2xl bg-white/[0.06] px-3.5 py-2.5">
+    <div
+      className={`flex flex-col gap-1.5 rounded-2xl bg-white/[0.06] px-3.5 py-2.5 ring-1 transition-shadow duration-700 ${
+        justDone ? "ring-[#30d158]/70" : "ring-transparent"
+      }`}
+    >
       <div className="flex items-center gap-3">
         {/* One element whose look changes, so the glyph eases instead of popping. */}
         <span
@@ -121,11 +139,18 @@ export const SetupRow = memo(function SetupRow({
           </p>
           <p className="text-[11.5px] leading-snug text-[rgb(235_235_245/0.55)]">{item.why}</p>
         </div>
-        {!checking && !item.done && (
+        {isWaiting && (
+          <div className="flex shrink-0 items-center gap-1.5">
+            <span className="text-[12px] text-[rgb(235_235_245/0.6)]">Waiting…</span>
+            <SmallButton onClick={() => (isDirect ? runDirect() : run())}>Open again</SmallButton>
+            <SmallButton onClick={stopWaiting}>Cancel</SmallButton>
+          </div>
+        )}
+        {!checking && !item.done && !isWaiting && (
           <div className="flex shrink-0 gap-1.5">
             {item.command && !oneClick && <CopyButton text={item.command} />}
             {showRun && (
-              <SmallButton primary={!showInline && !isDirect} onClick={() => onRun(item.id)}>
+              <SmallButton primary={!showInline && !isDirect} onClick={run}>
                 Run
               </SmallButton>
             )}

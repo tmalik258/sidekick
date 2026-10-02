@@ -19,6 +19,8 @@ pub const VISIBLE_EVENT: &str = "island://visible";
 const CURSOR_POLL: Duration = Duration::from_millis(24);
 /// Movements smaller than this (logical px) are not sent.
 const CURSOR_MIN_DELTA: f64 = 1.0;
+/// Extra room around an open panel that still takes clicks (logical px).
+const ASK_MARGIN: f64 = 16.0;
 
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     let window = app
@@ -138,6 +140,9 @@ pub fn follow_fullscreen(app: &AppHandle, payload: &serde_json::Value) {
 fn spawn_hover_tracker(app: AppHandle, window: WebviewWindow) {
     tauri::async_runtime::spawn(async move {
         let mut inside = false;
+        // Click-through as last applied, with what it was worked out from:
+        // re-applied whenever any of them changes.
+        let mut applied: Option<(bool, bool, bool)> = None;
         let mut last: Option<CursorPos> = None;
         loop {
             tokio::time::sleep(CURSOR_POLL).await;
@@ -151,8 +156,20 @@ fn spawn_hover_tracker(app: AppHandle, window: WebviewWindow) {
 
             let state = app.state::<AppState>();
             let asking = crate::ask::is_open(&app);
-            let now_inside =
-                !*lock(&state.island_hidden) && lock(&state.hit_rect).contains(pos.x, pos.y);
+            let hidden = *lock(&state.island_hidden);
+            let rect = *lock(&state.hit_rect);
+            // Only the panel itself takes clicks, so apps around it stay
+            // usable even while Ask or the welcome is open. While a panel is
+            // open its rect can lag a growing animation, hence the margin.
+            let pad = if asking { ASK_MARGIN } else { 0.0 };
+            let now_through = hidden || !rect.contains_within(pos.x, pos.y, pad);
+            if applied != Some((now_through, asking, hidden)) {
+                applied = Some((now_through, asking, hidden));
+                if let Err(err) = window.set_ignore_cursor_events(now_through) {
+                    log::warn!("could not toggle click-through: {err}");
+                }
+            }
+            let now_inside = !hidden && rect.contains(pos.x, pos.y);
             if now_inside == inside {
                 continue;
             }
@@ -160,11 +177,6 @@ fn spawn_hover_tracker(app: AppHandle, window: WebviewWindow) {
             state
                 .hovered
                 .store(inside, std::sync::atomic::Ordering::Relaxed);
-            // Ask (welcome, chat, settings) must keep receiving clicks; the
-            // hover rect can lag while the panel grows.
-            if let Err(err) = window.set_ignore_cursor_events(!asking && !inside) {
-                log::warn!("could not toggle click-through: {err}");
-            }
             let _ = app.emit_to(LABEL, HOVER_EVENT, inside);
             // Hide parks welcome; hovering the compact island brings it back.
             if inside {

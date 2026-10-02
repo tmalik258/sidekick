@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
-import { updateSettings, useSidekick } from "@/lib/store";
+import { startWaiting, updateSettings, useSidekick } from "@/lib/store";
 import { BrowserInstallPanel } from "./SetupBrowser";
 
 export function ItemGuide({ id, onDone }: { id: string; onDone: () => void }) {
@@ -221,7 +221,10 @@ function ComposioGuide({ onDone }: { onDone: () => void }) {
     setError(null);
     void api
       .composioSignIn()
-      .then((code) => setNote(`Finish in your browser. The page shows ${code}.`))
+      .then((code) => {
+        setNote(`Finish in your browser. The page shows ${code}.`);
+        startWaiting("composio", "Composio");
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setBusy(false));
   };
