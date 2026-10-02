@@ -281,6 +281,9 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
 
     next.save(&state.settings_path).map_err(|e| e.to_string())?;
     *lock(&state.settings) = next.clone();
+    if next.onboarded && !previous.onboarded {
+        ask::release_sticky();
+    }
     if keys_changed && let Err(err) = ask::register(app, &next.palette_hotkey) {
         // Put the old keys back so Ask keeps working.
         previous
@@ -355,6 +358,18 @@ pub fn ask_open(app: AppHandle, prompt: Option<String>, ask: bool) {
             ..Default::default()
         },
     );
+}
+
+/// Shows welcome when the island is ready and onboarding is not done yet.
+#[tauri::command]
+pub fn ask_ensure_welcome(app: AppHandle) {
+    ask::ensure_welcome(&app);
+}
+
+/// Parks welcome until the user hovers the island again (does not finish onboarding).
+#[tauri::command]
+pub fn ask_defer_welcome(app: AppHandle) {
+    ask::defer_welcome(&app);
 }
 
 #[tauri::command]

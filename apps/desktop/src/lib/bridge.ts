@@ -71,7 +71,7 @@ export interface EventPayloads {
   [EVENTS.aiDone]: { id: string; provider: string | null; error: string | null; handoff: string | null };
   [EVENTS.aiTool]: { id: string; name: string };
   [EVENTS.askOpen]: AskOpen;
-  [EVENTS.askClose]: null;
+  [EVENTS.askClose]: { reason: "close" | "defer" };
   [EVENTS.actionResult]: ActionResult;
   [EVENTS.settingsChanged]: Settings;
   [EVENTS.voiceState]: VoiceStatus;
@@ -188,4 +188,6 @@ export const api = {
   voiceStop: () => invoke<void>("voice_stop"),
   voiceTest: () => invoke<void>("voice_test"),
   askOpen: (prompt: string | null = null, ask = false) => invoke<void>("ask_open", { prompt, ask }),
+  askEnsureWelcome: () => invoke<void>("ask_ensure_welcome"),
+  askDeferWelcome: () => invoke<void>("ask_defer_welcome"),
 };

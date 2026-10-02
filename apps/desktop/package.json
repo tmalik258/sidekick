@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "postinstall": "node scripts/sync-sounds.mjs",
-    "dev": "node scripts/sync-sounds.mjs && next dev --port 3000",
-    "build": "node scripts/sync-sounds.mjs && next build",
+    "fetch-voice-models": "node scripts/fetch-voice-models.mjs",
+    "dev": "node scripts/fetch-voice-models.mjs && node scripts/sync-sounds.mjs && next dev --port 3002",
+    "build": "node scripts/fetch-voice-models.mjs && node scripts/sync-sounds.mjs && next build",
     "typecheck": "tsc --noEmit",
     "tauri": "tauri"
   },

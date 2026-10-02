@@ -46,13 +46,15 @@ assets/                  mascot art and sounds (separate license)
 
 ```powershell
 pnpm install
-pnpm dev          # runs Next.js and the Tauri app together
+pnpm dev          # Next.js + Tauri (Rust release; needed so sherpa DLLs match the CRT)
 ```
+
+On Windows, a debug Rust build links the debug CRT while the sherpa/ONNX DLLs use the release CRT, which crashes at startup with a Visual C++ assert. `pnpm dev` therefore runs Tauri with `--release`.
 
 Preview only the UI in a browser, with a mock core instead of Rust:
 
 ```powershell
-pnpm web          # then open http://localhost:3000/island/ or /settings/
+pnpm web          # then open http://localhost:3002/island/ or /settings/
 ```
 
 In the browser preview, `window.sidekickMock.go("success")` switches mascot states from the console.
@@ -66,7 +68,7 @@ In the browser preview, `window.sidekickMock.go("success")` switches mascot stat
 - **Go fullscreen** (video, game, slides). The island hides and comes back after.
 - **Settings > Skills**: switch skills on or off, or set them to Auto. Destructive actions always ask.
 - **Your own skills**: drop YAML files into the folder shown in Settings > Found on this PC (format in `skills/README.md`).
-- **Press Alt+Space** (or the search button on the island) and the island becomes Ask mode: type a command or ask anything, and the answer streams right there. Attach the app you were in or your clipboard with the chips; "This PC only" keeps the chat on a local model. Esc or a click elsewhere folds it back; the conversation stays for next time.
+- **Press Ctrl+Space** (or the search button on the island) and the island becomes Ask mode: type a command or ask anything, and the answer streams right there. Attach the app you were in or your clipboard with the chips; "This PC only" keeps the chat on a local model. Esc or a click elsewhere folds it back; the conversation stays for next time.
 - **Copy an error or stack trace.** The island offers Explain and fix, which asks AI with the error attached.
 - **Claude Code sessions**: add the hook from Settings > AI and the island tells you when a session finishes or is waiting for you.
 - **Undo**: files Sidekick creates (conversions, extracted folders) can be sent to the Recycle Bin from the island or Settings > History for 24 hours.

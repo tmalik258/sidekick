@@ -12,7 +12,7 @@ use sidekick_sensors::{GateState, SensorGateHandle};
 use sidekick_skills::{Engine, Env, Proposal, Skill, Trust};
 
 /// Every sensor the app can run, in the order shown in settings.
-pub const SENSOR_IDS: [&str; 12] = [
+pub const SENSOR_IDS: [&str; 11] = [
     "calendar",
     "downloads",
     "screenshots",
@@ -24,7 +24,6 @@ pub const SENSOR_IDS: [&str; 12] = [
     "system",
     "repos",
     "idle",
-    "heartbeat",
 ];
 
 pub struct AppState {
@@ -224,10 +223,7 @@ mod tests {
         s.pause = Pause::for_minutes(5, now);
         let g = gate_state(&s, now);
         assert!(g.paused);
-        // heartbeat is off by default, clipboard was switched off.
-        assert_eq!(
-            g.disabled.into_iter().collect::<Vec<_>>(),
-            ["clipboard", "heartbeat"]
-        );
+        // clipboard was switched off; everything else defaults on.
+        assert_eq!(g.disabled.into_iter().collect::<Vec<_>>(), ["clipboard"]);
     }
 }

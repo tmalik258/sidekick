@@ -150,6 +150,7 @@ fn spawn_hover_tracker(app: AppHandle, window: WebviewWindow) {
             }
 
             let state = app.state::<AppState>();
+            let asking = crate::ask::is_open(&app);
             let now_inside =
                 !*lock(&state.island_hidden) && lock(&state.hit_rect).contains(pos.x, pos.y);
             if now_inside == inside {
@@ -159,10 +160,16 @@ fn spawn_hover_tracker(app: AppHandle, window: WebviewWindow) {
             state
                 .hovered
                 .store(inside, std::sync::atomic::Ordering::Relaxed);
-            if let Err(err) = window.set_ignore_cursor_events(!inside) {
+            // Ask (welcome, chat, settings) must keep receiving clicks; the
+            // hover rect can lag while the panel grows.
+            if let Err(err) = window.set_ignore_cursor_events(!asking && !inside) {
                 log::warn!("could not toggle click-through: {err}");
             }
             let _ = app.emit_to(LABEL, HOVER_EVENT, inside);
+            // Hide parks welcome; hovering the compact island brings it back.
+            if inside {
+                crate::ask::on_island_hover(&app);
+            }
         }
     });
 }
