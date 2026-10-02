@@ -55,6 +55,8 @@ export interface Settings {
   denySites: string[];
   routines: boolean;
   routinesAuto: boolean;
+  /** Fade the island while a fullscreen app is in front. */
+  hideInFullscreen: boolean;
 }
 
 export interface CalendarToday {
@@ -317,6 +319,7 @@ export const DEFAULT_SETTINGS: Settings = {
   denySites: [],
   routines: true,
   routinesAuto: false,
+  hideInFullscreen: false,
   voice: {
     enabled: true,
     wakeWord: true,

@@ -86,6 +86,12 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
             onChange={(v) => save({ collapseAfterSecs: Number(v) })}
           />
         </Field>
+        <Toggle
+          label="Hide in fullscreen apps"
+          hint="Off: Sidekick stays on top of everything, fullscreen videos and slides included."
+          checked={settings.hideInFullscreen}
+          onChange={(hideInFullscreen) => save({ hideInFullscreen })}
+        />
       </Section>
       <Section
         collapsible

@@ -100,6 +100,9 @@ pub struct Settings {
     pub routines: bool,
     /// Open the usual setup without asking (offered after five Open alls).
     pub routines_auto: bool,
+    /// Fade the island out while a fullscreen app is in front. Off: the
+    /// island stays on top of everything, fullscreen apps included.
+    pub hide_in_fullscreen: bool,
 }
 
 /// Password managers are ignored from the start (FR-RAG-08).
@@ -405,6 +408,7 @@ impl Default for Settings {
             deny_sites: Vec::new(),
             routines: true,
             routines_auto: false,
+            hide_in_fullscreen: false,
         }
     }
 }
