@@ -416,12 +416,9 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     };
     items.push(mcp);
 
-    let browser_seen = lock(&state.storage)
-        .last_event_from(sidekick_sensors::BrowserSensor::ID)
-        .ok()
-        .flatten()
-        .is_some()
-        || !state.browser.seen().is_empty();
+    // Match Connections: only count authenticated check-ins, not pair_request
+    // events stored before the user clicks Allow on the island.
+    let browser_seen = !state.browser.seen().is_empty();
     items.push(
         SetupItem::new(
             "browser",
