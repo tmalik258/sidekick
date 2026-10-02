@@ -91,15 +91,15 @@ export const SetupRow = memo(function SetupRow({
           : api.composioSignIn();
     const outside = item.id === "composio" || item.id === "calendar" || item.id === "fathom";
     void work
-      .then((code) => {
+      .then(() => {
         onDone();
         // Finishing happens in the browser: the island keeps the steps until it connects.
         if (outside)
           startWaiting(item.id, item.title, {
             resumeTab: item.tab ?? "connections",
             steps: [
-              "Composio opened in your browser. Sign in there.",
-              typeof code === "string" && code ? `Press Allow. The page shows the code ${code}.` : "Press Allow.",
+              "Composio opened in your browser.",
+              "Sign in and press Allow, the same as in Claude.",
               "Come back here; it connects by itself.",
             ],
             again: runDirect,

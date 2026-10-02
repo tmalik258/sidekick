@@ -167,6 +167,7 @@ export const api = {
   composioSignOut: () => invoke<void>("composio_sign_out"),
   composioStatus: () => invoke<ComposioStatus>("composio_status"),
   composioConnect: (slug: string) => invoke<void>("composio_connect", { slug }),
+  composioUseKey: (key: string) => invoke<string>("composio_use_key", { key }),
   setupDetect: () => invoke<Found>("setup_detect"),
   setupApply: (plan: SetupPlan) => invoke<string[]>("setup_apply", { plan }),
   claudeAddHooks: () => invoke<string | null>("claude_add_hooks"),

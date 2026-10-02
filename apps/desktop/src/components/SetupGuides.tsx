@@ -221,14 +221,14 @@ function ComposioGuide({ onDone }: { onDone: () => void }) {
     setError(null);
     void api
       .composioSignIn()
-      .then((code) => {
-        setNote(`Finish in your browser. The page shows ${code}.`);
+      .then(() => {
+        setNote("Finish in your browser: sign in and press Allow.");
         startWaiting("composio", "Composio", {
           resumeTab: "connections",
           steps: [
-            "Composio opened in your browser. Sign in there.",
-            `Press Allow. The page shows the code ${code}.`,
-            "Come back here; it connects by itself.",
+            "Composio opened in your browser.",
+            "Sign in and press Allow, the same as in Claude.",
+            "Come back here; every app you connected there shows up by itself.",
           ],
           again: connect,
         });
