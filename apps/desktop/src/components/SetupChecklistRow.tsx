@@ -80,21 +80,39 @@ export const SetupRow = memo(function SetupRow({
         ? api.claudeAddHooks().then(() => undefined)
         : item.id === "claude_mcp"
           ? api.claudeAddMcp().catch(() => api.setupRun("claude_mcp"))
-          : api.composioSignIn().then(() => undefined);
+          : api.composioSignIn();
     const outside = item.id === "composio" || item.id === "calendar" || item.id === "fathom";
     void work
-      .then(() => {
+      .then((code) => {
         onDone();
-        // Finishing happens in the browser: wait as a pill, then speak and reopen.
-        if (outside) startWaiting(item.id, item.title, { resumeTab: item.tab ?? "connections" });
+        // Finishing happens in the browser: the island keeps the steps until it connects.
+        if (outside)
+          startWaiting(item.id, item.title, {
+            resumeTab: item.tab ?? "connections",
+            steps: [
+              "Composio opened in your browser. Sign in there.",
+              typeof code === "string" && code ? `Press Allow. The page shows the code ${code}.` : "Press Allow.",
+              "Come back here; it connects by itself.",
+            ],
+            again: runDirect,
+          });
       })
       .catch((e) => setActionError(String(e)))
       .finally(() => setBusy(false));
   };
   const run = () => {
     onRun(item.id);
-    // Install runs in PowerShell: shrink to a pill until setup status flips.
-    startWaiting(item.id, item.title, { resumeTab: item.tab ?? "home" });
+    // Install runs in PowerShell: the island keeps the steps until setup status flips.
+    startWaiting(item.id, item.title, {
+      resumeTab: item.tab ?? "home",
+      steps: [
+        `A PowerShell window is installing ${item.title}.`,
+        "Leave it open and answer any prompts there.",
+        "This finishes by itself when it is ready.",
+      ],
+      copies: item.command ? [{ label: "Copy the command", text: item.command }] : undefined,
+      again: () => onRun(item.id),
+    });
   };
   const isWaiting = waiting?.id === item.id && !item.done;
 

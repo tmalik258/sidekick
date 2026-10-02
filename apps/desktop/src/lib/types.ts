@@ -444,6 +444,8 @@ export interface BrowserStatus {
 
 export interface ExtensionGuide {
   copied: string;
+  /** The extensions page, to paste into the address bar. */
+  page: string;
   steps: string[];
 }
 

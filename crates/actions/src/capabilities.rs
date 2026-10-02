@@ -22,6 +22,22 @@ impl Browser {
         }
     }
 
+    /// Chromium browsers show their profile picker when started without a
+    /// profile, and the link is lost. Open in the profile used last instead.
+    pub fn profile_arg(&self) -> Option<String> {
+        let data = dirs::data_local_dir()?.join(self.user_data_dir()?);
+        last_profile(&data).map(|p| format!("--profile-directory={p}"))
+    }
+
+    fn user_data_dir(&self) -> Option<&'static str> {
+        match self.id.as_str() {
+            "chrome" => Some("Google/Chrome/User Data"),
+            "edge" => Some("Microsoft/Edge/User Data"),
+            "brave" => Some("BraveSoftware/Brave-Browser/User Data"),
+            _ => None,
+        }
+    }
+
     pub fn private_flag(&self) -> &'static str {
         match self.id.as_str() {
             "edge" => "--inprivate",
@@ -29,6 +45,65 @@ impl Browser {
             _ => "--incognito",
         }
     }
+}
+
+/// Which browser opens web links, from its ProgId (`ChromeHTML`,
+/// `MSEdgeHTM`, `BraveHTML`, `FirefoxURL-...`).
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn browser_for_prog_id(prog_id: &str) -> Option<&'static str> {
+    let p = prog_id.to_ascii_lowercase();
+    [
+        ("chrome", "chrome"),
+        ("msedge", "edge"),
+        ("brave", "brave"),
+        ("firefox", "firefox"),
+        ("zen", "zen"),
+    ]
+    .iter()
+    .find(|(key, _)| p.starts_with(key))
+    .map(|(_, id)| *id)
+}
+
+/// The default browser's id on Windows, read from the https link handler.
+pub fn default_browser() -> Option<&'static str> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let out = std::process::Command::new("reg")
+            .args([
+                "query",
+                r"HKCU\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice",
+                "/v",
+                "ProgId",
+            ])
+            .creation_flags(0x0800_0000)
+            .output()
+            .ok()?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        let prog_id = text
+            .lines()
+            .find(|l| l.contains("ProgId"))?
+            .split_whitespace()
+            .last()?
+            .to_owned();
+        browser_for_prog_id(&prog_id)
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
+/// The profile folder a Chromium browser used last, from its `Local State`
+/// file, if that folder still exists.
+fn last_profile(user_data: &std::path::Path) -> Option<String> {
+    let text = std::fs::read_to_string(user_data.join("Local State")).ok()?;
+    let state: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let last = state["profile"]["last_used"]
+        .as_str()
+        .filter(|p| !p.is_empty())
+        .unwrap_or("Default");
+    user_data.join(last).is_dir().then(|| last.to_owned())
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -342,6 +417,38 @@ fn office_paths() -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn knows_the_default_browser_by_prog_id() {
+        assert_eq!(browser_for_prog_id("ChromeHTML"), Some("chrome"));
+        assert_eq!(browser_for_prog_id("MSEdgeHTM"), Some("edge"));
+        assert_eq!(
+            browser_for_prog_id("FirefoxURL-308046B0AF4A39CB"),
+            Some("firefox")
+        );
+        assert_eq!(browser_for_prog_id("SomethingElse"), None);
+    }
+
+    #[test]
+    fn opens_links_in_the_last_used_profile() {
+        let dir = std::env::temp_dir().join(format!("sidekick-profile-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("Profile 2")).unwrap();
+        assert_eq!(last_profile(&dir), None, "no Local State yet");
+        std::fs::write(
+            dir.join("Local State"),
+            r#"{"profile":{"last_used":"Profile 2"}}"#,
+        )
+        .unwrap();
+        assert_eq!(last_profile(&dir).as_deref(), Some("Profile 2"));
+        std::fs::write(
+            dir.join("Local State"),
+            r#"{"profile":{"last_used":"Gone"}}"#,
+        )
+        .unwrap();
+        assert_eq!(last_profile(&dir), None, "a deleted profile is skipped");
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn picks_the_editor_used_last() {

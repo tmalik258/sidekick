@@ -6,6 +6,7 @@ import {
   type AskContext,
   type ChatMessage,
   DEFAULT_SETTINGS,
+  type ExtensionGuide,
   type MascotState,
   type Settings,
   type Suggestion,
@@ -56,6 +57,22 @@ export interface Waiting {
   since: number;
   /** Settings tab to reopen when this finishes after onboarding. */
   resumeTab?: string;
+  /** What to do meanwhile; stays on the island until done or cancelled. */
+  steps?: string[];
+  /** Copy buttons for things to paste (an address, a folder path). */
+  copies?: { label: string; text: string }[];
+  /** Starts the step again (reopens the browser page, reruns the install). */
+  again?: () => void;
+  /** Shrunk to the pill; hovering brings the guide back. */
+  minimized?: boolean;
+}
+
+export interface WaitOptions {
+  shrink?: boolean;
+  resumeTab?: string;
+  steps?: string[];
+  copies?: { label: string; text: string }[];
+  again?: () => void;
 }
 
 export interface AskState {
@@ -112,15 +129,41 @@ let resumeSettingsTab: string | null = null;
 export function startWaiting(
   id: string,
   label: string,
-  { shrink = true, resumeTab }: { shrink?: boolean; resumeTab?: string } = {},
+  { shrink = true, resumeTab, steps, copies, again }: WaitOptions = {},
 ) {
-  useSidekick.setState({ waiting: { id, label, since: Date.now(), resumeTab } });
+  useSidekick.setState({ waiting: { id, label, since: Date.now(), resumeTab, steps, copies, again } });
   // ask_defer_welcome parks welcome, or closes Settings/Ask when already onboarded.
   if (shrink) void api.askDeferWelcome();
 }
 
 export function stopWaiting() {
   useSidekick.setState({ waiting: null });
+}
+
+/**
+ * Opens a browser's extensions page and keeps the steps on the island until
+ * the extension connects. Shared by the welcome and Settings.
+ */
+export async function installExtension(id: string, name: string, { shrink = true } = {}): Promise<ExtensionGuide> {
+  const guide = await api.extensionInstall(id);
+  const firefox = guide.page.startsWith("about:");
+  startWaiting("browser", `the ${name} extension`, {
+    shrink,
+    resumeTab: "connections",
+    steps: guide.steps,
+    copies: [
+      { label: "Copy extensions address", text: guide.page },
+      { label: firefox ? "Copy file path" : "Copy folder path", text: guide.copied },
+    ],
+    again: () => void installExtension(id, name, { shrink }).catch(() => undefined),
+  });
+  return guide;
+}
+
+/** Shrinks the guide to the pill, or brings it back. */
+export function minimizeWaiting(minimized: boolean) {
+  const waiting = useSidekick.getState().waiting;
+  if (waiting) useSidekick.setState({ waiting: { ...waiting, minimized } });
 }
 
 /** Marks a waited-for step done: speak, highlight, reopen welcome or Settings. */
@@ -409,6 +452,10 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         if (useSidekick.getState().chatId === id) {
           useSidekick.setState({ chatId: null });
           if (sounds && !useSidekick.getState().chatSkill) saveChat();
+          // Ask was closed while the answer came in: bring it back with the answer.
+          if (sounds && !useSidekick.getState().ask && useSidekick.getState().turns.length > 0) {
+            void api.askOpen();
+          }
         }
       }),
     ]);

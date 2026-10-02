@@ -223,7 +223,15 @@ function ComposioGuide({ onDone }: { onDone: () => void }) {
       .composioSignIn()
       .then((code) => {
         setNote(`Finish in your browser. The page shows ${code}.`);
-        startWaiting("composio", "Composio", { resumeTab: "connections" });
+        startWaiting("composio", "Composio", {
+          resumeTab: "connections",
+          steps: [
+            "Composio opened in your browser. Sign in there.",
+            `Press Allow. The page shows the code ${code}.`,
+            "Come back here; it connects by itself.",
+          ],
+          again: connect,
+        });
       })
       .catch((e) => setError(String(e)))
       .finally(() => setBusy(false));
