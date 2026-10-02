@@ -52,6 +52,8 @@ export interface AskState {
   /** Send a screenshot with the next question only. */
   attachScreen: boolean;
   localOnly: boolean;
+  /** Settings tab to show, when something asked for a particular one. */
+  settingsTab?: string;
 }
 
 export const useSidekick = create<SidekickState>(() => ({

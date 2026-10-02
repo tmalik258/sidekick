@@ -683,3 +683,26 @@ pub fn backup_import(app: AppHandle, text: String) -> CmdResult<String> {
         if restored { "settings and " } else { "" }
     ))
 }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetupStatus {
+    items: Vec<crate::setup::SetupItem>,
+    /// Installs every missing recommended tool in one go.
+    install_all: Option<String>,
+}
+
+/// The setup checklist, checked again each time.
+#[tauri::command]
+pub async fn setup_status(app: AppHandle) -> SetupStatus {
+    let items = crate::setup::status(&app).await;
+    let install_all = crate::setup::install_all(&items);
+    SetupStatus { items, install_all }
+}
+
+/// Opens a PowerShell window running one setup step ("all" for every
+/// missing recommended tool).
+#[tauri::command]
+pub async fn setup_run(app: AppHandle, id: String) -> CmdResult<()> {
+    crate::setup::run(&app, &id).await
+}
