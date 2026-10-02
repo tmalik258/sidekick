@@ -1,21 +1,19 @@
 "use client";
 
 // What hovering the island shows when nothing is asking for attention: the
-// next meeting or how the day is going, suggestions you missed, and the last
-// thing Sidekick did. Cached data shows at once and refreshes behind it.
+// next meeting or how the day is going, and suggestions you missed. Cached
+// data shows at once and refreshes behind it.
 
 import { type ReactNode, useEffect } from "react";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { useNow } from "@/lib/hooks";
 import { useSidekick } from "@/lib/store";
-import { type ActionRecord, type AppTime, type CalendarToday, formatDuration, type LaterItem } from "@/lib/types";
+import { type AppTime, type CalendarToday, formatDuration, type LaterItem } from "@/lib/types";
 import { Icon } from "./Icon";
 
 /** A meeting this close (or already on) takes the headline. */
 const MEETING_SOON_MIN = 60;
-/** The last action shows for this long. */
-const RECENT_ACTION_MIN = 120;
 
 export function Glance({ paused }: { paused: boolean }) {
   const now = useNow(30_000);
@@ -43,7 +41,6 @@ export function Glance({ paused }: { paused: boolean }) {
         </div>
       </div>
       <LaterList />
-      <LastAction now={now} />
     </div>
   );
 }
@@ -137,22 +134,6 @@ function LaterList() {
         </button>
       ))}
       {items.length > 3 && <span className="text-[12px] text-white/40">and {items.length - 3} more</span>}
-    </div>
-  );
-}
-
-/** The last thing Sidekick did, with Undo while it can still be undone. */
-function LastAction({ now }: { now: number }) {
-  const { data } = useCached<ActionRecord[]>("actions-last", () => api.actionsRecent(1));
-  const last = data?.[0];
-  if (!last || last.undone) return null;
-  const mins = Math.max(0, Math.round((now - Date.parse(last.ts)) / 60_000));
-  if (!(mins < RECENT_ACTION_MIN)) return null;
-  return (
-    <div className="mt-3 flex items-center gap-2 text-[12px] text-[rgb(235_235_245/0.6)]">
-      <span className={`size-1.5 shrink-0 rounded-full ${last.ok ? "bg-[#30d158]" : "bg-[#ff453a]"}`} />
-      <span className="min-w-0 flex-1 truncate">{last.message || last.label}</span>
-      <span className="shrink-0 text-white/40">{ago(mins)}</span>
     </div>
   );
 }
