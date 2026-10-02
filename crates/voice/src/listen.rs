@@ -102,8 +102,11 @@ impl Engine {
                     1,
                 ),
                 max_active_paths: 4,
-                keywords_score: 1.0,
-                keywords_threshold: 0.25,
+                // Tuned for real voices across a room, not studio audio: a
+                // boost for the phrase and a lower bar to fire. Lower than
+                // this and everyday speech starts to wake it.
+                keywords_score: 1.5,
+                keywords_threshold: 0.15,
                 num_trailing_blanks: 1,
                 keywords_buf: Some(WAKE_KEYWORDS.to_owned()),
                 ..Default::default()

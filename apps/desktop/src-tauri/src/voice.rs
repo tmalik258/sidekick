@@ -256,9 +256,17 @@ pub fn refresh(app: &AppHandle) {
         // Stop the old one first so the microphone is free.
         let old = lock(&voice(&app).runtime).take();
         drop(old);
-        // Full runtime owns the speakers; drop the welcome greeter.
-        let greeter = lock(&voice(&app).greeter).take();
-        drop(greeter);
+        // Full runtime owns the speakers from now on. The welcome greeter
+        // goes once it is quiet, so a line being said is not cut off.
+        if let Some(greeter) = lock(&voice(&app).greeter).take() {
+            std::thread::spawn(move || {
+                let started = std::time::Instant::now();
+                while greeter.busy() && started.elapsed() < MAX_SPEECH {
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                }
+                drop(greeter);
+            });
+        }
         let runtime = build(&app, key, &settings);
         let v = voice(&app);
         *lock(&v.runtime) = Some(runtime);
