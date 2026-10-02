@@ -10,11 +10,12 @@ use crate::state::{AppState, lock};
 
 pub const STATE_EVENT: &str = "mascot://state";
 
-const SUCCESS_HOLD: Duration = Duration::from_millis(1500);
+/// Long enough to read what happened; hovering keeps it longer.
+const SUCCESS_HOLD: Duration = Duration::from_secs(5);
 /// Long enough to reach Undo or Show in folder after an action made a file.
 const LINGER_HOLD: Duration = Duration::from_secs(6);
 const HOVER_RECHECK: Duration = Duration::from_millis(250);
-const ERROR_HOLD: Duration = Duration::from_secs(4);
+const ERROR_HOLD: Duration = Duration::from_secs(6);
 
 pub fn current(app: &AppHandle) -> MascotState {
     lock(&app.state::<AppState>().mascot).state()
@@ -50,18 +51,19 @@ pub fn after(app: &AppHandle, delay: Duration, event: MascotEvent) {
     });
 }
 
-/// Holds a result that has buttons, and keeps it while the cursor is on it.
-fn linger_then_idle(app: &AppHandle) {
+/// Holds a result for `delay`, then as long as the cursor is on it, then
+/// moves on with `event` and lets suggestions that waited meanwhile show.
+fn hold_then(app: &AppHandle, delay: Duration, event: MascotEvent) {
     let epoch = app.state::<AppState>().mascot_epoch.load(Ordering::SeqCst);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(LINGER_HOLD).await;
+        tokio::time::sleep(delay).await;
         let state = app.state::<AppState>();
         while state.hovered.load(Ordering::Relaxed) {
             tokio::time::sleep(HOVER_RECHECK).await;
         }
         if state.mascot_epoch.load(Ordering::SeqCst) == epoch {
-            dispatch(&app, MascotEvent::SuccessElapsed);
+            dispatch(&app, event);
             crate::suggestions::resume(&app);
         }
     });
@@ -77,13 +79,10 @@ fn entered(app: &AppHandle, t: Transition) {
     match t.state {
         MascotState::Success => {
             let linger = app.state::<AppState>().linger.swap(false, Ordering::SeqCst);
-            if linger {
-                linger_then_idle(app);
-            } else {
-                after(app, SUCCESS_HOLD, MascotEvent::SuccessElapsed);
-            }
+            let hold = if linger { LINGER_HOLD } else { SUCCESS_HOLD };
+            hold_then(app, hold, MascotEvent::SuccessElapsed);
         }
-        MascotState::Error => after(app, ERROR_HOLD, MascotEvent::ErrorDismissed),
+        MascotState::Error => hold_then(app, ERROR_HOLD, MascotEvent::ErrorDismissed),
         _ => {}
     }
 }

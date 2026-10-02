@@ -100,6 +100,14 @@ export function Island() {
 
   const [contentHeight, setContentHeight] = useState(0);
   const bump = useMotionValue(1);
+  // The orb reacts to how things went: a small nod when done, a shake on error.
+  const nodY = useMotionValue(0);
+  const shakeX = useMotionValue(0);
+  useEffect(() => {
+    if (reduced) return;
+    if (mascot === "success") void animate(nodY, [0, -4, 0, -2, 0], { duration: 0.6, ease: "easeOut" });
+    if (mascot === "error") void animate(shakeX, [0, -4, 4, -3, 3, 0], { duration: 0.45, ease: "easeInOut" });
+  }, [mascot, reduced, nodY, shakeX]);
   const contentEl = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => connect({ sounds: true }), []);
@@ -209,7 +217,9 @@ export function Island() {
           transition={transition}
           style={{ originX: 0, originY: 0 }}
         >
-          <Orb state={chatting && mascot === "idle" ? "working" : mascot} size={ORB} theme={settings.theme} />
+          <motion.div style={{ x: shakeX, y: nodY }}>
+            <Orb state={chatting && mascot === "idle" ? "working" : mascot} size={ORB} theme={settings.theme} />
+          </motion.div>
         </motion.div>
 
         <AnimatePresence initial={false}>
@@ -338,11 +348,19 @@ function ExpandedContent({
   suggestion: Suggestion | null;
 }) {
   const result = useSidekick((s) => s.lastResult);
+  const running = useSidekick((s) => s.running);
   const reporting = (mascot === "success" || mascot === "error" || mascot === "working") && !suggestion;
   if (!suggestion && (mascot === "idle" || mascot === "sleeping")) return <Glance paused={paused} />;
+  // Working names what it is doing; done and error say what happened.
   const detail =
     suggestion?.detail ??
-    (reporting && result ? result.message : paused && mascot !== "sleeping" ? "Sensors are paused." : DETAIL[mascot]);
+    (mascot === "working" && running
+      ? `${running}...`
+      : reporting && result
+        ? result.message
+        : paused && mascot !== "sleeping"
+          ? "Sensors are paused."
+          : DETAIL[mascot]);
   return (
     <div className="flex flex-col">
       <div className="flex items-start gap-3">
@@ -366,7 +384,7 @@ function ExpandedContent({
         ) : null}
       </div>
 
-      {suggestion && <Options suggestion={suggestion} />}
+      {suggestion && <Options key={suggestion.id} suggestion={suggestion} />}
     </div>
   );
 }
@@ -388,11 +406,17 @@ function UndoButton({ id }: { id: number }) {
   );
 }
 
+/** Options shown before "More"; the rest stay one tap (or Alt key) away. */
+const VISIBLE_OPTIONS = 3;
+
 function Options({ suggestion }: { suggestion: Suggestion }) {
   const alwaysAt = suggestion.always?.findIndex(Boolean) ?? -1;
+  const [more, setMore] = useState(false);
+  const hidden = suggestion.options.length - VISIBLE_OPTIONS;
+  const shown = more || hidden <= 0 ? suggestion.options : suggestion.options.slice(0, VISIBLE_OPTIONS);
   return (
     <div className="mt-3 flex flex-wrap items-center gap-1.5">
-      {suggestion.options.map((option, i) => (
+      {shown.map((option, i) => (
         <motion.button
           key={option}
           type="button"
@@ -414,6 +438,15 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
           </kbd>
         </motion.button>
       ))}
+      {!more && hidden > 0 && (
+        <button
+          type="button"
+          onClick={() => setMore(true)}
+          className="chip rounded-full px-2.5 py-1.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
+        >
+          More
+        </button>
+      )}
       {alwaysAt >= 0 && (
         <motion.button
           type="button"
@@ -444,11 +477,13 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
 
 function choose(suggestion: Suggestion, index: number) {
   playSound("select", uiVolume(), useSidekick.getState().settings.soundKit);
+  useSidekick.setState({ running: suggestion.options[index] ?? null });
   void api.suggestionChoose(suggestion.id, index);
 }
 
 function always(suggestion: Suggestion, index: number) {
   playSound("select", uiVolume(), useSidekick.getState().settings.soundKit);
+  useSidekick.setState({ running: suggestion.options[index] ?? null });
   void api.suggestionAlways(suggestion.id, index);
 }
 
