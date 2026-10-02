@@ -26,6 +26,8 @@ interface SidekickState {
   ready: boolean;
   /** Outcome of the last action, shown while the mascot reports it. */
   lastResult: ActionResult | null;
+  /** The option being carried out, shown while the island works on it. */
+  running: string | null;
   /** Ask mode: the island is a panel for commands and chat. */
   ask: AskState | null;
   /** The Ask conversation. It outlives Ask mode closing. */
@@ -102,6 +104,7 @@ export const useSidekick = create<SidekickState>(() => ({
   visible: true,
   ready: false,
   lastResult: null,
+  running: null,
   ask: null,
   turns: [],
   chatId: null,
@@ -369,7 +372,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         if (!settings.onboarded && !useSidekick.getState().ask) void api.askEnsureWelcome();
       }),
       listen(EVENTS.suggestionNew, (suggestion) => useSidekick.setState({ suggestion, lastResult: null })),
-      listen(EVENTS.actionResult, (lastResult) => useSidekick.setState({ lastResult })),
+      listen(EVENTS.actionResult, (lastResult) => useSidekick.setState({ lastResult, running: null })),
       listen(EVENTS.suggestionClear, (id) => {
         if (useSidekick.getState().suggestion?.id === id) useSidekick.setState({ suggestion: null });
       }),
