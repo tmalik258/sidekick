@@ -21,6 +21,8 @@ const CURSOR_POLL: Duration = Duration::from_millis(24);
 const CURSOR_MIN_DELTA: f64 = 1.0;
 /// Extra room around an open panel that still takes clicks (logical px).
 const ASK_MARGIN: f64 = 16.0;
+/// How often the island claims the top of the z-order again.
+const TOP_EVERY: Duration = Duration::from_secs(1);
 
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     let window = app
@@ -31,6 +33,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     // setting it on a hidden window panics inside tao).
     window.show()?;
     window.set_ignore_cursor_events(true)?;
+    spawn_top_keeper(window.clone());
     spawn_hover_tracker(app.clone(), window);
     Ok(())
 }
@@ -97,15 +100,61 @@ pub fn follow_active_monitor(app: &AppHandle, payload: &serde_json::Value) {
     }
 }
 
-/// Hides the island while a fullscreen app (a game, a video, a slideshow) is
-/// in front, and brings it back afterwards (FR-UI-09).
+/// Puts the island back on top. Windows lets a window that goes
+/// fullscreen (a browser after F11, a video player, slides) cover other
+/// always-on-top windows; claiming the top again, without taking focus,
+/// keeps the island above it. Exclusive-fullscreen games still win.
+#[cfg(windows)]
+pub fn keep_on_top(window: &WebviewWindow) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SetWindowPos,
+    };
+    let Ok(hwnd) = window.hwnd() else {
+        return;
+    };
+    // SAFETY: a valid window handle from Tauri; only the z-order changes.
+    unsafe {
+        SetWindowPos(
+            hwnd.0 as _,
+            HWND_TOPMOST,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+pub fn keep_on_top(window: &WebviewWindow) {
+    let _ = window.set_always_on_top(true);
+}
+
+/// Keeps the island above other windows: right away when the window in
+/// front changes, and every second in case something climbed over it.
+fn spawn_top_keeper(window: WebviewWindow) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(TOP_EVERY).await;
+            keep_on_top(&window);
+        }
+    });
+}
+
+/// Optionally fades the island while a fullscreen app (a game, a video, a
+/// slideshow) is in front (FR-UI-09). Off by default: the island stays on
+/// top of everything.
 pub fn follow_fullscreen(app: &AppHandle, payload: &serde_json::Value) {
     let Some(window) = app.get_webview_window(LABEL) else {
         return;
     };
+    keep_on_top(&window);
+    let wanted = lock(&app.state::<AppState>().settings).hide_in_fullscreen;
     // The sensor decides what is fullscreen (an exact monitor match, so
     // maximized windows never count). Only hide for the island's own monitor.
-    let fullscreen = payload["fullscreen"].as_bool().unwrap_or(false)
+    let fullscreen = wanted
+        && payload["fullscreen"].as_bool().unwrap_or(false)
         && window
             .current_monitor()
             .ok()
