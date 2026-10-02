@@ -226,16 +226,16 @@ const voiceStatus = () => ({
   models: [
     { id: "wake", label: "Wake word", size: 17_626_723, installed: settings.voice.enabled },
     { id: "speech", label: "Speech to text", size: 57_267_600, installed: settings.voice.enabled },
-    { id: "kokoro", label: "Kokoro voice", size: 349_906_910, installed: settings.voice.enabled },
+    { id: "voice", label: "Supertonic voice", size: 128_774_318, installed: settings.voice.enabled },
   ],
-  missingBytes: settings.voice.enabled ? 0 : 424_801_233,
+  missingBytes: settings.voice.enabled ? 0 : 203_669_641,
   downloading: false,
   listening: settings.voice.enabled,
   error: null,
   voices: [
-    { id: "af_heart", label: "Heart (American, warm)" },
-    { id: "af_bella", label: "Bella (American, bright)" },
-    { id: "bm_george", label: "George (British)" },
+    { id: "f5", label: "Female 5 (warm)" },
+    { id: "f1", label: "Female 1 (clear)" },
+    { id: "m2", label: "Male 2 (deep, lively)" },
   ],
 });
 commands.voice_status = voiceStatus;
@@ -494,10 +494,10 @@ commands.calendar_today = () => ({
 });
 commands.voice_download = () => {
   let done = 0;
-  const total = 424_801_233;
+  const total = 203_669_641;
   const tick = () => {
     done = Math.min(total, done + 30_000_000);
-    emit("voice://download", { label: "Kokoro voice", done, total, finished: done >= total, error: null });
+    emit("voice://download", { label: "Supertonic voice", done, total, finished: done >= total, error: null });
     if (done < total) later(300, tick);
   };
   tick();

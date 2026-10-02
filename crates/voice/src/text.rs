@@ -5,27 +5,56 @@
 /// tokens of the gigaspeech KWS model), and how they appear in transcripts.
 pub const WAKE_KEYWORDS: &str = "▁HE Y ▁ SIDE K IC K @hey_sidekick\n▁HI ▁ SIDE K IC K @hey_sidekick\n▁O K ▁ SIDE K IC K @hey_sidekick\n";
 
-const WAKE_PREFIXES: &[&str] = &[
-    "hey sidekick",
-    "hi sidekick",
-    "ok sidekick",
-    "okay sidekick",
-    "sidekick",
+/// Words a greeting can start with.
+const GREETINGS: &[&str] = &["hey", "hi", "ok", "okay", "a"];
+
+/// How the name comes out of speech to text, as one word or two: people
+/// (and voices) often soften the "d", so "cider kick" is common.
+const NAMES: &[&[&str]] = &[
+    &["sidekick"],
+    &["sidekik"],
+    &["side", "kick"],
+    &["cider", "kick"],
+    &["side", "kik"],
+    &["psych", "kick"],
 ];
 
 /// The transcript without the wake phrase at its start.
 pub fn strip_wake(text: &str) -> String {
     let trimmed = text.trim();
-    let lower = trimmed.to_lowercase();
-    for p in WAKE_PREFIXES {
-        if let Some(rest) = lower.strip_prefix(p) {
-            let cut = trimmed.len() - rest.len();
-            return trimmed[cut..]
-                .trim_start_matches(|c: char| c.is_ascii_punctuation() || c.is_whitespace())
-                .to_owned();
+    // Words with where they end in `trimmed`, punctuation and case ignored.
+    let mut words: Vec<(String, usize)> = Vec::new();
+    let mut start = None;
+    for (i, c) in trimmed.char_indices().chain([(trimmed.len(), ' ')]) {
+        let part = c.is_alphanumeric() || c == '\'';
+        match (start, part) {
+            (None, true) => start = Some(i),
+            (Some(s), false) => {
+                words.push((trimmed[s..i].to_lowercase().replace('\'', ""), i));
+                start = None;
+            }
+            _ => {}
         }
     }
-    trimmed.to_owned()
+    let name_at = |at: usize| {
+        NAMES.iter().find_map(|name| {
+            let fits = name.len() <= words.len().saturating_sub(at)
+                && name.iter().enumerate().all(|(k, w)| words[at + k].0 == *w);
+            fits.then_some(at + name.len())
+        })
+    };
+    let first = words.first().map(|(w, _)| w.as_str());
+    let end = name_at(0).or_else(|| {
+        first
+            .filter(|w| GREETINGS.contains(w))
+            .and_then(|_| name_at(1))
+    });
+    match end {
+        Some(n) => trimmed[words[n - 1].1..]
+            .trim_start_matches(|c: char| c.is_ascii_punctuation() || c.is_whitespace())
+            .to_owned(),
+        None => trimmed.to_owned(),
+    }
 }
 
 /// Removes what sounds wrong when read aloud: markdown marks, link targets
@@ -153,6 +182,14 @@ mod tests {
         );
         assert_eq!(strip_wake("Hey Sidekick"), "");
         assert_eq!(strip_wake("What is a sidekick?"), "What is a sidekick?");
+        // Common mishearings of the name.
+        assert_eq!(
+            strip_wake("hey, cider kick, what time is it in london?"),
+            "what time is it in london?"
+        );
+        assert_eq!(strip_wake("Okay side kick open settings"), "open settings");
+        assert_eq!(strip_wake("Hi Sidekik. Pause"), "Pause");
+        assert_eq!(strip_wake("hey there"), "hey there");
     }
 
     #[test]

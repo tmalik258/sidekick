@@ -54,33 +54,34 @@ pub const SPEECH: Model = Model {
     skip: &["test_wavs/"],
 };
 
-/// Kokoro v1.0 at full precision: far more natural than the int8 v0.19
-/// build (af_heart is its warmest voice). Only the English parts are
-/// needed; the Chinese lexicon is skipped (the engine still requires
-/// `dict/`).
-pub const KOKORO: Model = Model {
-    id: "kokoro",
-    label: "Kokoro voice",
-    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2",
-    sha256: "c5f7e2d2caf082bc1d20fb70334a61d99d20b484500aad32e7cf84c128ea3298",
-    size: 349_906_910,
-    dir: "kokoro-multi-lang-v1_0",
+/// Supertonic 3: natural, and fast enough on a CPU (about 20 times real
+/// time) that answers start sounding at once. Ten built-in voices.
+pub const VOICE: Model = Model {
+    id: "voice",
+    label: "Supertonic voice",
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2",
+    sha256: "82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427",
+    size: 128_774_318,
+    dir: "sherpa-onnx-supertonic-3-tts-int8-2026-05-11",
     files: &[
-        "model.onnx",
-        "voices.bin",
-        "tokens.txt",
-        "lexicon-us-en.txt",
-        "lexicon-gb-en.txt",
-        "espeak-ng-data",
-        "dict",
+        "duration_predictor.int8.onnx",
+        "text_encoder.int8.onnx",
+        "vector_estimator.int8.onnx",
+        "vocoder.int8.onnx",
+        "tts.json",
+        "unicode_indexer.bin",
+        "voice.bin",
     ],
-    skip: &["lexicon-zh.txt", "-zh.fst"],
+    skip: &[],
 };
 
-pub const MODELS: [Model; 3] = [WAKE, SPEECH, KOKORO];
+pub const MODELS: [Model; 3] = [WAKE, SPEECH, VOICE];
 
 /// Folders of models that were replaced, removed once their successor is in.
-const RETIRED: &[(&str, Model)] = &[("kokoro-int8-en-v0_19", KOKORO)];
+const RETIRED: &[(&str, Model)] = &[
+    ("kokoro-int8-en-v0_19", VOICE),
+    ("kokoro-multi-lang-v1_0", VOICE),
+];
 
 /// Deletes replaced models whose successor is installed. Returns how many.
 pub fn remove_retired(root: &Path) -> usize {
@@ -274,9 +275,13 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("sidekick-retired-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("kokoro-int8-en-v0_19")).unwrap();
-        assert_eq!(remove_retired(&dir), 0, "kept while v1.0 is missing");
-        for f in KOKORO.files {
-            let p = KOKORO.path(&dir).join(f);
+        assert_eq!(
+            remove_retired(&dir),
+            0,
+            "kept while the new voice is missing"
+        );
+        for f in VOICE.files {
+            let p = VOICE.path(&dir).join(f);
             fs::create_dir_all(p.parent().unwrap()).unwrap();
             fs::write(p, "x").unwrap();
         }

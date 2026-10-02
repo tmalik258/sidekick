@@ -1,5 +1,5 @@
 //! Voice (FR-VOICE): "Hey Sidekick" wakes a listener that transcribes what
-//! you say as you say it, and answers are spoken with Kokoro. Everything runs
+//! you say as you say it, and answers are spoken with Supertonic. Everything runs
 //! on this PC through sherpa-onnx; audio is never stored or sent anywhere,
 //! only the final text goes to the AI you chose.
 
@@ -11,7 +11,10 @@ pub mod text;
 
 pub use listen::{Control, Heard, Listener, ListenerConfig};
 pub use models::{MODELS, Model};
-pub use speak::{DEFAULT_VOICE, Speaker, SpeechEvent, SpeechEvents, VOICES, tts_config};
+pub use speak::{
+    DEFAULT_VOICE, Speaker, SpeechEvent, SpeechEvents, VOICES, respell, speaker_id, synthesize,
+    tts_config,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum VoiceError {

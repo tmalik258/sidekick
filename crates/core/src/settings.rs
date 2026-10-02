@@ -176,12 +176,13 @@ pub struct VoiceSettings {
     pub conversation: bool,
     /// Read suggestions aloud and take a spoken choice ("open", "not now").
     pub speak_suggestions: bool,
-    /// Kokoro voice id, e.g. "af_heart".
+    /// Voice id, e.g. "f5" (Supertonic 3's Female 5).
     pub voice: String,
     /// 0.5 to 2.0.
     pub speed: f32,
-    /// Which Kokoro model the voice was picked for. Files saved before v1.0
-    /// lack it and read as 1, so the old default moves to the new one once.
+    /// Which voice model the voice was picked for (1 Kokoro v0.19, 2 Kokoro
+    /// v1.0, 3 Supertonic 3). Files saved before had no such field and read
+    /// as 1. A voice from an older model is moved to the default once.
     #[serde(default = "voice_model_v1")]
     pub model: u32,
 }
@@ -191,7 +192,7 @@ fn voice_model_v1() -> u32 {
     1
 }
 
-pub const VOICE_MODEL: u32 = 2;
+pub const VOICE_MODEL: u32 = 3;
 
 impl Default for VoiceSettings {
     fn default() -> Self {
@@ -201,7 +202,7 @@ impl Default for VoiceSettings {
             speak_answers: true,
             conversation: true,
             speak_suggestions: true,
-            voice: "af_heart".into(),
+            voice: "f5".into(),
             speed: 1.0,
             model: VOICE_MODEL,
         }
@@ -466,12 +467,10 @@ impl Settings {
             self.semantic_search.model = SemanticSearch::default().model;
         }
         self.calendar.remind_minutes = self.calendar.remind_minutes.clamp(1, 30);
-        // The v0.19 default (Bella) gives way to Heart, v1.0's most natural
-        // voice; a voice picked on purpose since then is kept.
+        // Voices of an older model do not exist in the new one: they move
+        // to the default once. A voice picked on purpose since is kept.
         if self.voice.model < VOICE_MODEL {
-            if matches!(self.voice.voice.as_str(), "af_bella" | "af") {
-                self.voice.voice = VoiceSettings::default().voice;
-            }
+            self.voice.voice = VoiceSettings::default().voice;
             self.voice.model = VOICE_MODEL;
         }
         if self.voice.voice.trim().is_empty() {
@@ -508,16 +507,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn moves_the_old_default_voice_to_heart_once() {
+    fn moves_older_voices_to_the_new_default_once() {
         let old: Settings = serde_json::from_str(r#"{"voice": {"voice": "af_bella"}}"#).unwrap();
         let mut old = old.sanitized();
-        assert_eq!(old.voice.voice, "af_heart");
-        // Picking Bella again later is respected.
-        old.voice.voice = "af_bella".into();
-        assert_eq!(old.sanitized().voice.voice, "af_bella");
-        let chosen: Settings =
-            serde_json::from_str(r#"{"voice": {"voice": "bm_george"}}"#).unwrap();
-        assert_eq!(chosen.sanitized().voice.voice, "bm_george");
+        assert_eq!(old.voice.voice, "f5");
+        let kokoro: Settings =
+            serde_json::from_str(r#"{"voice": {"voice": "bm_george", "model": 2}}"#).unwrap();
+        assert_eq!(kokoro.sanitized().voice.voice, "f5");
+        // Picking another voice later is respected.
+        old.voice.voice = "m2".into();
+        assert_eq!(old.sanitized().voice.voice, "m2");
     }
 
     #[test]

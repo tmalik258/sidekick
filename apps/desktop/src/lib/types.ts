@@ -72,7 +72,7 @@ export interface VoiceSettings {
   speakSuggestions: boolean;
   voice: string;
   speed: number;
-  /** Which Kokoro model the voice was picked for (2 = v1.0). */
+  /** Which voice model the voice was picked for (3 = Supertonic 3). */
   model?: number;
 }
 
@@ -305,7 +305,7 @@ export const DEFAULT_SETTINGS: Settings = {
     speakAnswers: true,
     conversation: true,
     speakSuggestions: true,
-    voice: "af_heart",
+    voice: "f5",
     speed: 1,
   },
 };

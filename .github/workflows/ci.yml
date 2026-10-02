@@ -32,20 +32,6 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-        with:
-          # sherpa-rs-sys downloads the speech libraries here, outside target/.
-          cache-directories: ~/AppData/Local/sherpa-rs
-      # If target/ came back from the cache without those libraries, make
-      # sherpa-rs-sys's build script run again so it downloads them;
-      # otherwise linking fails with "cannot open input file 'cargs.lib'".
-      - name: Make sure the speech libraries are present
-        shell: pwsh
-        run: |
-          if (-not (Test-Path "$env:LOCALAPPDATA\sherpa-rs")) {
-            Get-ChildItem target -Recurse -Directory -Filter "sherpa-rs-sys-*" -ErrorAction SilentlyContinue |
-              Where-Object { $_.Parent.Name -in @("build", ".fingerprint") } |
-              Remove-Item -Recurse -Force
-          }
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -56,14 +42,4 @@ jobs:
       - run: pnpm --filter desktop build
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      # sherpa-rs-sys copies its DLLs next to the test binaries only when its
-      # build script runs; a cached target/ can come back without them
-      # (STATUS_DLL_NOT_FOUND). The downloaded copies are always here, so
-      # put their folders on PATH for the tests.
-      - name: Let tests find the speech DLLs
-        shell: pwsh
-        run: |
-          Get-ChildItem "$env:LOCALAPPDATA\sherpa-rs" -Recurse -Filter *.dll -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty DirectoryName -Unique |
-            ForEach-Object { Write-Host "Adding $_"; Add-Content $env:GITHUB_PATH $_ }
       - run: cargo test --workspace

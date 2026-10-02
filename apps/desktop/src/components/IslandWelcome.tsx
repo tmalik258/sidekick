@@ -157,7 +157,7 @@ function Intro() {
       {(downloading || missing) && (
         <p className="rounded-2xl bg-white/[0.06] px-3.5 py-2.5 text-[12.5px] text-[rgb(235_235_245/0.7)]">
           {downloading
-            ? "Getting my voice ready (speech models download once, about 425 MB)…"
+            ? "Getting my voice ready (speech models download once, about 205 MB)…"
             : "Speech models will download so I can talk with you."}
         </p>
       )}
@@ -298,7 +298,7 @@ function Extras() {
     <div className="flex flex-col gap-2.5 text-[13px]">
       <Choice
         title="Talk to me"
-        hint='Say "Hey Sidekick". Downloads about 425 MB of speech models once; all on this PC.'
+        hint='Say "Hey Sidekick". Downloads about 205 MB of speech models once; all on this PC.'
         on={settings.voice.enabled}
         onChange={(enabled) => {
           void updateSettings({ voice: { ...settings.voice, enabled } });

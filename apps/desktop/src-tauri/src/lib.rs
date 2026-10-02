@@ -237,7 +237,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     // once it listens (ask_ensure_welcome), or after models become ready.
     voice::seed_from_bundle(app);
     voice::refresh(app);
-    if !settings_onboarded(app) && !voice::kokoro_ready(app) {
+    if !settings_onboarded(app) && !voice::voice_ready(app) {
         voice::prepare_then_welcome(app);
     }
     brief::start(app, data_dir.join("last-brief"), repos.roots.clone());

@@ -1,6 +1,6 @@
 [package]
 name = "sidekick-voice"
-description = "Voice for Sidekick: the Hey Sidekick wake word, live speech to text and Kokoro speech, all on this PC (sherpa-onnx)"
+description = "Voice for Sidekick: the Hey Sidekick wake word, live speech to text and Supertonic speech, all on this PC (sherpa-onnx)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,12 +10,12 @@ bzip2 = "0.4"
 cpal = "0.16"
 log.workspace = true
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "rustls-tls-native-roots"] }
+serde_json.workspace = true
 sha2 = "0.10"
 tar = "0.4"
 thiserror.workspace = true
 
-# Linked dynamically: the prebuilt static libraries do not include TTS. The
-# DLLs are copied next to the binaries at build time and shipped with the
-# installer through src-tauri/tauri.release.conf.json.
-sherpa-rs = { version = "0.6.8", default-features = false, features = ["download-binaries", "tts"] }
-sherpa-rs-sys = { version = "0.6.8", default-features = false, features = ["download-binaries", "tts"] }
+# The official bindings, linked statically: no DLLs to ship. On Windows the
+# libraries use the static C runtime, so the workspace does too
+# (.cargo/config.toml).
+sherpa-onnx = "1.13.8"
