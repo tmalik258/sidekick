@@ -71,8 +71,13 @@ export interface Waiting {
   copies?: { label: string; text: string }[];
   /** Starts the step again (reopens the browser page, reruns the install). */
   again?: () => void;
-  /** Shrunk to the pill; hovering brings the guide back. */
+  /** Shrunk to the pill; hovering brings the guide back unless background. */
   minimized?: boolean;
+  /**
+   * Wait quietly: compact pill only, hover does not reopen the guide.
+   * Still finishes with the usual success when the step is done.
+   */
+  background?: boolean;
   /** Browser id when waiting on a specific extension (chrome, edge, zen, …). */
   target?: string;
 }
@@ -85,6 +90,8 @@ export interface WaitOptions {
   again?: () => void;
   /** Browser id for per-browser extension waiting. */
   target?: string;
+  /** When false, the guide starts expanded. Default is minimized. */
+  minimized?: boolean;
 }
 
 export interface AskState {
@@ -165,9 +172,11 @@ let resumeSettingsTab: string | null = null;
 export function startWaiting(
   id: string,
   label: string,
-  { shrink = true, resumeTab, steps, copies, again, target }: WaitOptions = {},
+  { shrink = true, resumeTab, steps, copies, again, target, minimized = true }: WaitOptions = {},
 ) {
-  useSidekick.setState({ waiting: { id, label, since: Date.now(), resumeTab, steps, copies, again, target } });
+  useSidekick.setState({
+    waiting: { id, label, since: Date.now(), resumeTab, steps, copies, again, target, minimized },
+  });
   // ask_defer_welcome parks welcome, or closes Settings/Ask when already onboarded.
   if (shrink) void api.askDeferWelcome();
 }
@@ -200,7 +209,13 @@ export async function installExtension(id: string, name: string, { shrink = true
 /** Shrinks the guide to the pill, or brings it back. */
 export function minimizeWaiting(minimized: boolean) {
   const waiting = useSidekick.getState().waiting;
-  if (waiting) useSidekick.setState({ waiting: { ...waiting, minimized } });
+  if (waiting) useSidekick.setState({ waiting: { ...waiting, minimized, background: minimized ? waiting.background : false } });
+}
+
+/** Wait as a pill only: hover no longer opens the guide; success still finishes normally. */
+export function backgroundWaiting() {
+  const waiting = useSidekick.getState().waiting;
+  if (waiting) useSidekick.setState({ waiting: { ...waiting, minimized: true, background: true } });
 }
 
 /** Marks a waited-for step done: speak, highlight, reopen welcome or Settings. */

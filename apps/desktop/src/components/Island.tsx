@@ -177,7 +177,8 @@ export function Island() {
     };
   }, [asking, view, turnsLen, chatId]);
 
-  const showGuide = !!waiting && !suggestion && (mascot === "idle" || mascot === "sleeping");
+  const showGuide =
+    !!waiting && !waiting.background && !suggestion && (mascot === "idle" || mascot === "sleeping");
   const width = asking
     ? ASK_WIDTH
     : expanded
