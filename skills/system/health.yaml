@@ -1,0 +1,13 @@
+id: system.health
+name: Something stopped working
+description: When something that was working stops (Ollama, the Composio sign-in, Claude Code hooks), say so once with a Fix button.
+priority: 75
+cooldown_secs: 3600
+dedupe: "{{what}}"
+trigger:
+  event: health.problem
+suggestion:
+  title: "{{title}}"
+  detail: "{{detail}}"
+  options:
+    - { label: Fix, action: health_fix, args: { what: "{{what}}" } }

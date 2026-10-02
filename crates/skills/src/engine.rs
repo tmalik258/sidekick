@@ -47,6 +47,9 @@ pub struct Proposal {
     pub trust: Trust,
     /// Where the user's choice is remembered, if the skill learns.
     pub remember: Option<String>,
+    /// The skill's priority (higher is more urgent); low ones can wait
+    /// quietly and are not read aloud.
+    pub priority: i32,
 }
 
 pub struct Engine {
@@ -147,6 +150,7 @@ impl Engine {
                         options,
                         trust: env.trust_override(&skill.id).unwrap_or(skill.trust),
                         remember: skill.remember.as_ref().map(|r| render(r, &vars)),
+                        priority: skill.priority,
                     });
                 }
                 Some(p) => {

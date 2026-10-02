@@ -172,13 +172,13 @@ pub fn start_docker() -> Result<Outcome, ActionError> {
 }
 
 /// Editor plus a terminal in the project folder (FR-DEV-10).
-pub fn launch(path: &Path, code: Option<&Path>) -> Result<Outcome, ActionError> {
+pub fn launch(path: &Path, editor: Option<(&Path, &str)>) -> Result<Outcome, ActionError> {
     let mut opened = Vec::new();
-    if let Some(code) = code {
+    if let Some((code, name)) = editor {
         let mut cmd = Command::new(code);
         cmd.arg(path);
         system::spawn_detached(cmd)?;
-        opened.push("VS Code");
+        opened.push(name);
     }
     if let Ok(wt) = which::which("wt") {
         let mut cmd = Command::new(wt);

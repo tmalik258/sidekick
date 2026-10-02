@@ -29,6 +29,24 @@ impl Pause {
     }
 }
 
+/// Shortcuts besides Ask, with their defaults.
+pub const SHORTCUTS: &[(&str, &str)] = &[
+    ("talk", "Ctrl+Alt+Space"),
+    ("accept", "Ctrl+Alt+Enter"),
+    ("dismiss", "Ctrl+Alt+Backspace"),
+    ("screen", "Ctrl+Alt+S"),
+    ("clipboard", "Ctrl+Alt+V"),
+    ("pause", "Ctrl+Alt+P"),
+    ("settings", "Ctrl+Alt+Comma"),
+];
+
+pub fn default_shortcuts() -> BTreeMap<String, String> {
+    SHORTCUTS
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -51,6 +69,9 @@ pub struct Settings {
     pub skills: BTreeMap<String, SkillPref>,
     /// Global shortcut that turns the island into Ask mode (FR-UI-07).
     pub palette_hotkey: String,
+    /// More global shortcuts, by action (talk, accept, dismiss, screen,
+    /// clipboard, pause, settings). Empty turns one off.
+    pub shortcuts: BTreeMap<String, String>,
     /// Folders with git repos to check at the end of the day (FR-DEV-09).
     /// Empty means the usual places (code, projects, source/repos, ...).
     pub code_folders: Vec<String>,
@@ -61,9 +82,14 @@ pub struct Settings {
     pub ai: AiSettings,
     pub voice: VoiceSettings,
     pub calendar: CalendarSettings,
+    /// Composio's MCP server, for apps like Jira, Slack and Gmail in chat.
+    pub composio: ComposioSettings,
     pub semantic_search: SemanticSearch,
     /// The first-run welcome was finished or skipped.
     pub onboarded: bool,
+    /// Step index inside the welcome flow (0-based). Kept so a restart
+    /// resumes where the user left off until they skip or finish.
+    pub welcome_step: u32,
     /// Look for a newer release once a day.
     pub check_updates: bool,
     /// Programs whose windows and copies Sidekick ignores (FR-SET-02).
@@ -102,26 +128,42 @@ impl Default for SemanticSearch {
     }
 }
 
-/// Calendars read through their private iCal links (FR-COMM-02).
+/// Meeting reminders (FR-COMM-02); meetings come from Composio.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct CalendarSettings {
-    /// Private iCal (ICS) links. They are secrets: stored only here.
-    pub feeds: Vec<String>,
     /// Minutes before a meeting to offer Join and Prep.
     pub remind_minutes: u32,
 }
 
 impl Default for CalendarSettings {
     fn default() -> Self {
-        Self {
-            feeds: Vec::new(),
-            remind_minutes: 5,
-        }
+        Self { remind_minutes: 5 }
     }
 }
 
-/// Voice (FR-VOICE): off until the user turns it on and downloads the models.
+/// Composio's MCP server: the apps connected there (Jira, Trello, Slack,
+/// Gmail, Notion and more) become tools in Ask mode. The local model may
+/// only read; anything that changes something goes to Claude Code.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ComposioSettings {
+    pub enabled: bool,
+    /// Who signed in (their email), for Settings. The key itself is in
+    /// Credential Manager.
+    pub account: String,
+    /// The Composio user the apps are connected under.
+    pub user_id: String,
+    /// The MCP server link from Composio (or from Claude Code's config).
+    pub url: String,
+    /// Extra request headers, such as `x-api-key`. Secrets: kept only here
+    /// and left out of backups.
+    pub headers: BTreeMap<String, String>,
+}
+
+/// Voice (FR-VOICE): on by default. Speech models download on launch when
+/// missing. The microphone is open only while voice is on and Sidekick is not
+/// paused.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct VoiceSettings {
@@ -130,20 +172,39 @@ pub struct VoiceSettings {
     pub wake_word: bool,
     /// Read answers aloud when the question was spoken.
     pub speak_answers: bool,
-    /// Kokoro voice id, e.g. "af_bella".
+    /// After a spoken answer, listen for a reply without the wake phrase.
+    pub conversation: bool,
+    /// Read suggestions aloud and take a spoken choice ("open", "not now").
+    pub speak_suggestions: bool,
+    /// Voice id, e.g. "f5" (Supertonic 3's Female 5).
     pub voice: String,
     /// 0.5 to 2.0.
     pub speed: f32,
+    /// Which voice model the voice was picked for (1 Kokoro v0.19, 2 Kokoro
+    /// v1.0, 3 Supertonic 3). Files saved before had no such field and read
+    /// as 1. A voice from an older model is moved to the default once.
+    #[serde(default = "voice_model_v1")]
+    pub model: u32,
 }
+
+/// Settings saved before the v1.0 voice model had no `model` field.
+fn voice_model_v1() -> u32 {
+    1
+}
+
+pub const VOICE_MODEL: u32 = 3;
 
 impl Default for VoiceSettings {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             wake_word: true,
             speak_answers: true,
-            voice: "af_bella".into(),
+            conversation: true,
+            speak_suggestions: true,
+            voice: "f5".into(),
             speed: 1.0,
+            model: VOICE_MODEL,
         }
     }
 }
@@ -251,7 +312,7 @@ impl Default for AnthropicPref {
 impl Default for SemIfPref {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             command: vec!["semif-score".into()],
             mode: "direct".into(),
             backend: "llamacpp".into(),
@@ -299,7 +360,9 @@ pub struct SkillPref {
 }
 
 /// Sensors that only run when switched on explicitly.
-pub const SENSORS_OFF_BY_DEFAULT: [&str; 1] = ["heartbeat"];
+/// Sensors that start switched off. Empty: every sensor is on unless the user
+/// turns it off.
+pub const SENSORS_OFF_BY_DEFAULT: [&str; 0] = [];
 
 pub const THEMES: [&str; 3] = ["pearl", "graphite", "midnight"];
 pub const SOUND_KITS: [&str; 1] = ["01"];
@@ -311,21 +374,24 @@ impl Default for Settings {
             master_volume: 0.6,
             cue_volumes: BTreeMap::new(),
             collapse_after_secs: 8,
-            launch_at_login: false,
+            launch_at_login: true,
             sensors: BTreeMap::new(),
             pause: Pause::None,
             theme: THEMES[0].to_string(),
             sound_kit: SOUND_KITS[0].to_string(),
             skills: BTreeMap::new(),
             palette_hotkey: DEFAULT_PALETTE_HOTKEY.into(),
+            shortcuts: default_shortcuts(),
             code_folders: Vec::new(),
             end_of_day_hour: 18,
             index_folders: Vec::new(),
             ai: AiSettings::default(),
             voice: VoiceSettings::default(),
             calendar: CalendarSettings::default(),
+            composio: ComposioSettings::default(),
             semantic_search: SemanticSearch::default(),
             onboarded: false,
+            welcome_step: 0,
             check_updates: true,
             deny_apps: DEFAULT_DENY_APPS.iter().map(|s| (*s).to_owned()).collect(),
             deny_sites: Vec::new(),
@@ -333,7 +399,9 @@ impl Default for Settings {
     }
 }
 
-pub const DEFAULT_PALETTE_HOTKEY: &str = "Alt+Space";
+pub const DEFAULT_PALETTE_HOTKEY: &str = "Ctrl+Space";
+/// Screens in the first-run welcome (Welcome, Your AI, Connect, Tools, Extras).
+pub const WELCOME_STEP_COUNT: u32 = 5;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SettingsError {
@@ -395,22 +463,31 @@ impl Settings {
         } else {
             1.0
         };
-        self.calendar.feeds = self
-            .calendar
-            .feeds
-            .iter()
-            .map(|f| f.trim().to_owned())
-            .filter(|f| f.starts_with("https://") || f.starts_with("webcal://"))
-            .collect();
         if self.semantic_search.model.trim().is_empty() {
             self.semantic_search.model = SemanticSearch::default().model;
         }
         self.calendar.remind_minutes = self.calendar.remind_minutes.clamp(1, 30);
+        // Voices of an older model do not exist in the new one: they move
+        // to the default once. A voice picked on purpose since is kept.
+        if self.voice.model < VOICE_MODEL {
+            self.voice.voice = VoiceSettings::default().voice;
+            self.voice.model = VOICE_MODEL;
+        }
         if self.voice.voice.trim().is_empty() {
             self.voice.voice = VoiceSettings::default().voice;
         }
+        if self.welcome_step >= WELCOME_STEP_COUNT {
+            self.welcome_step = WELCOME_STEP_COUNT.saturating_sub(1);
+        }
         self.end_of_day_hour = self.end_of_day_hour.min(23);
         self.code_folders.retain(|f| !f.trim().is_empty());
+        for (action, default) in SHORTCUTS {
+            self.shortcuts
+                .entry((*action).to_owned())
+                .or_insert_with(|| (*default).to_owned());
+        }
+        self.shortcuts
+            .retain(|k, _| SHORTCUTS.iter().any(|(a, _)| a == k));
         self.deny_apps.retain(|a| !a.trim().is_empty());
         self.deny_sites.retain(|s| !s.trim().is_empty());
         self.index_folders.retain(|f| !f.trim().is_empty());
@@ -430,6 +507,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn moves_older_voices_to_the_new_default_once() {
+        let old: Settings = serde_json::from_str(r#"{"voice": {"voice": "af_bella"}}"#).unwrap();
+        let mut old = old.sanitized();
+        assert_eq!(old.voice.voice, "f5");
+        let kokoro: Settings =
+            serde_json::from_str(r#"{"voice": {"voice": "bm_george", "model": 2}}"#).unwrap();
+        assert_eq!(kokoro.sanitized().voice.voice, "f5");
+        // Picking another voice later is respected.
+        old.voice.voice = "m2".into();
+        assert_eq!(old.sanitized().voice.voice, "m2");
+    }
+
+    #[test]
     fn ai_order_keeps_known_ids_once_and_adds_missing() {
         let mut s = Settings::default();
         s.ai.order = vec!["local".into(), "bogus".into(), "local".into()];
@@ -447,7 +537,7 @@ mod tests {
         assert!(s.muted);
         assert!(s.ai.claude_code.enabled);
         assert_eq!(s.ai.local.base_url, "http://localhost:11434/v1");
-        assert!(!s.ai.semif.enabled);
+        assert!(s.ai.semif.enabled);
     }
 
     #[test]
@@ -478,15 +568,15 @@ mod tests {
         let path = dir.join("settings.json");
         let s = Settings {
             muted: true,
-            sensors: BTreeMap::from([("heartbeat".to_string(), false)]),
+            sensors: BTreeMap::from([("clipboard".to_string(), false)]),
             ..Settings::default()
         };
         s.save(&path).unwrap();
         let loaded = Settings::load(&path);
         assert_eq!(loaded, s);
-        assert!(!loaded.sensor_enabled("heartbeat"));
+        assert!(!loaded.sensor_enabled("clipboard"));
         assert!(loaded.sensor_enabled("files"));
-        assert!(!Settings::default().sensor_enabled("heartbeat"));
+        assert!(Settings::default().sensor_enabled("clipboard"));
 
         fs::write(&path, r#"{"muted": true}"#).unwrap();
         let partial = Settings::load(&path);
@@ -512,11 +602,13 @@ mod tests {
         let s = Settings {
             master_volume: 3.0,
             collapse_after_secs: 0,
+            welcome_step: 99,
             ..Settings::default()
         }
         .sanitized();
         assert_eq!(s.master_volume, 1.0);
         assert_eq!(s.collapse_after_secs, 2);
+        assert_eq!(s.welcome_step, WELCOME_STEP_COUNT - 1);
     }
 
     #[test]

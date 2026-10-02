@@ -9,6 +9,7 @@
 mod anthropic;
 mod claude_code;
 mod decide;
+mod mcp;
 mod openai;
 mod router;
 mod sse;
@@ -19,7 +20,10 @@ pub use anthropic::Anthropic;
 use async_trait::async_trait;
 pub use claude_code::ClaudeCode;
 pub use decide::{Decider, Decision, DecisionOption, LocalDecider, Ranked, SemIf};
-pub use openai::OpenAiCompat;
+pub use mcp::{McpClient, McpTool};
+pub use openai::{
+    MAX_TOOL_STEPS, OpenAiCompat, ToolChatEnd, first_chat_model, is_embedding_model, strip_thinking,
+};
 pub use router::{Answer, Router};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
@@ -106,6 +110,24 @@ impl Sink {
     pub fn has_sent(&self) -> bool {
         self.sent.load(Ordering::Relaxed)
     }
+}
+
+/// A tool a model may call, in OpenAI function form.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ToolDef {
+    pub name: String,
+    pub description: String,
+    /// JSON Schema of the arguments.
+    pub parameters: serde_json::Value,
+}
+
+/// Runs the tools a model asks for. The result (or an error) goes back to
+/// the model as text.
+#[async_trait]
+pub trait ToolRunner: Send + Sync {
+    async fn run(&self, name: &str, arguments: &serde_json::Value) -> String;
+    /// Called once per tool call, before it runs, for progress text.
+    fn started(&self, _name: &str) {}
 }
 
 #[async_trait]

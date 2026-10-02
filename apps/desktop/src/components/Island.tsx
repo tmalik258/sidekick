@@ -10,13 +10,14 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
 import { playSound } from "@/lib/sound";
-import { connect, setHovered, uiVolume, useSidekick } from "@/lib/store";
-import { isPaused, type MascotState, type Suggestion } from "@/lib/types";
+import { connect, setHovered, uiVolume, useSidekick, watchWaiting } from "@/lib/store";
+import { isPaused, type LaterItem, type MascotState, type Suggestion } from "@/lib/types";
 import { ASK_ORB, AskPanel } from "./AskPanel";
 import { Icon } from "./Icon";
 import { IslandSettings } from "./IslandSettings";
 import { IslandWelcome } from "./IslandWelcome";
 import { Orb } from "./Orb";
+import { PreparingVoice } from "./PreparingVoice";
 
 const TITLE: Record<MascotState, string> = {
   idle: "Sidekick",
@@ -44,7 +45,7 @@ const DETAIL: Record<MascotState, string> = {
 const OPEN_STATES: ReadonlySet<MascotState> = new Set(["suggesting", "listening", "working", "success", "error"]);
 
 const ORB = 44;
-const COMPACT = { width: 39, busyWidth: 109, height: 36, radius: 18, orb: 26 };
+const COMPACT = { width: 39, busyWidth: 109, waitWidth: 248, height: 36, radius: 18, orb: 26 };
 const EXPANDED = { width: 388, minHeight: 78, radius: 30, pad: 16 };
 /** Ask mode: wider, so commands and answers have room. */
 const ASK_WIDTH = 560;
@@ -63,26 +64,49 @@ export function Island() {
   const asking = useSidekick((s) => s.ask !== null);
   const view = useSidekick((s) => s.ask?.view);
   const chatting = useSidekick((s) => s.chatId !== null);
+  const voiceStatus = useSidekick((s) => s.voiceStatus);
+  const waiting = useSidekick((s) => (s.ask ? null : s.waiting));
   const reduced = useReducedMotion() ?? false;
   const now = useNow(15_000);
   const paused = isPaused(settings.pause, now);
-  const hovered = useIntent(rawHover);
-  const expanded = asking || hovered || OPEN_STATES.has(mascot) || !!suggestion;
+  // Closing a panel (Hide, Esc, Done) goes straight to the small orb. The
+  // hover card stays off until the cursor leaves and comes back; otherwise
+  // shrinking the hit rect clears quiet while useIntent still thinks we are
+  // hovering, and "Watching for moments" flashes.
+  const [prevAsking, setPrevAsking] = useState(asking);
+  const [quiet, setQuiet] = useState(false);
+  if (prevAsking !== asking) {
+    setPrevAsking(asking);
+    if (!asking) setQuiet(true);
+  }
+  if (quiet && !rawHover) setQuiet(false);
+  const intent = useIntent(rawHover && !quiet);
+  // Until onboarding is done, hovering only brings the welcome back; the
+  // idle card ("watching for moments") would just flash on the way.
+  const hovered = intent && !quiet && settings.onboarded;
+  const preparingVoice =
+    !settings.onboarded && !asking && !(voiceStatus?.models.some((m) => m.id === "voice" && m.installed) ?? false);
+  const expanded = asking || preparingVoice || hovered || OPEN_STATES.has(mascot) || !!suggestion;
   // At rest only the sphere shows. The shell keeps its size (so hover and the
   // orb position do not move) but loses its background.
-  const bare = !expanded && !chatting && (mascot === "idle" || mascot === "sleeping");
-  const busy = chatting || mascot === "noticing" || mascot === "working" || mascot === "listening";
+  const bare = !expanded && !chatting && !waiting && (mascot === "idle" || mascot === "sleeping");
+  const busy = chatting || preparingVoice || mascot === "noticing" || mascot === "working" || mascot === "listening";
 
   const [contentHeight, setContentHeight] = useState(0);
   const bump = useMotionValue(1);
+  const contentEl = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => connect({ sounds: true }), []);
+  useEffect(() => watchWaiting(), []);
 
   // Measure expanded content so the capsule grows exactly to fit it. A
   // callback ref, because the content node mounts and unmounts with expansion.
   const observer = useRef<ResizeObserver | null>(null);
   const contentRef = useCallback((el: HTMLDivElement | null) => {
     observer.current?.disconnect();
+    contentEl.current = el;
+    // Keep the last height while the node is gone (AnimatePresence swaps);
+    // zeroing here collapses Settings/Welcome mid-transition.
     if (!el) return;
     const measure = () => setContentHeight(el.offsetHeight);
     measure();
@@ -90,8 +114,37 @@ export function Island() {
     observer.current.observe(el);
   }, []);
 
-  const width = asking ? ASK_WIDTH : expanded ? EXPANDED.width : busy ? COMPACT.busyWidth : COMPACT.width;
-  // The measured content box already includes the top padding.
+  // Remeasure after paint when Ask content swaps (New, stream, view change),
+  // so a stale tall height does not stick after the chat clears.
+  const turnsLen = useSidekick((s) => s.turns.length);
+  const chatId = useSidekick((s) => s.chatId);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: view, turnsLen and chatId are triggers, not inputs
+  useEffect(() => {
+    if (!asking) return;
+    let id2 = 0;
+    const id1 = requestAnimationFrame(() => {
+      id2 = requestAnimationFrame(() => {
+        const el = contentEl.current;
+        if (el) setContentHeight(el.offsetHeight);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(id1);
+      cancelAnimationFrame(id2);
+    };
+  }, [asking, view, turnsLen, chatId]);
+
+  const width = asking
+    ? ASK_WIDTH
+    : expanded
+      ? EXPANDED.width
+      : waiting
+        ? COMPACT.waitWidth
+        : busy
+          ? COMPACT.busyWidth
+          : COMPACT.width;
+  // The island window is already fixed (~560 tall); do not re-cap against
+  // innerHeight or Settings/Welcome get clipped by the shell spring.
   const height = expanded ? Math.max(EXPANDED.minHeight, contentHeight + EXPANDED.pad) : COMPACT.height;
   const radius = expanded ? EXPANDED.radius : COMPACT.radius;
   const transition = reduced ? { duration: 0 } : expanded ? morphOpen : morphClose;
@@ -149,7 +202,9 @@ export function Island() {
         </motion.div>
 
         <AnimatePresence initial={false}>
-          {!expanded && !bare && <CompactTrailing key="compact" busy={busy} paused={paused} />}
+          {!expanded && !bare && (
+            <CompactTrailing key="compact" busy={busy} paused={paused} waiting={waiting?.label ?? null} />
+          )}
         </AnimatePresence>
 
         <AnimatePresence initial={false} mode="popLayout">
@@ -165,6 +220,19 @@ export function Island() {
               transition={{ duration: 0.28, delay: 0.06, ease: [0.23, 1, 0.32, 1] }}
             >
               {view === "settings" ? <IslandSettings /> : view === "welcome" ? <IslandWelcome /> : <AskPanel />}
+            </motion.div>
+          ) : preparingVoice ? (
+            <motion.div
+              key="preparing"
+              ref={contentRef}
+              className="absolute top-0 right-0"
+              style={{ left: EXPANDED.pad + ORB + 14, paddingTop: EXPANDED.pad, paddingRight: EXPANDED.pad }}
+              initial={reduced ? { opacity: 0 } : { opacity: 0, filter: "blur(6px)", y: 4 }}
+              animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
+              exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
+              transition={{ duration: 0.28, delay: 0.06, ease: [0.23, 1, 0.32, 1] }}
+            >
+              <PreparingVoice voiceStatus={voiceStatus} />
             </motion.div>
           ) : (
             expanded && (
@@ -188,7 +256,22 @@ export function Island() {
   );
 }
 
-function CompactTrailing({ paused, busy }: { paused: boolean; busy: boolean }) {
+function CompactTrailing({ paused, busy, waiting }: { paused: boolean; busy: boolean; waiting: string | null }) {
+  const later = useSidekick((s) => s.later);
+  if (waiting) {
+    return (
+      <motion.div
+        className="absolute top-0 right-0 flex h-9 items-center gap-2.5 pr-3.5"
+        style={{ left: COMPACT.height + 4 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, transition: { delay: 0.12, duration: 0.2 } }}
+        exit={{ opacity: 0, transition: { duration: 0.08 } }}
+      >
+        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-white/85">Waiting for {waiting}</span>
+        <Activity />
+      </motion.div>
+    );
+  }
   return (
     <motion.div
       className="absolute top-0 right-0 flex h-9 items-center pr-3.5"
@@ -198,13 +281,16 @@ function CompactTrailing({ paused, busy }: { paused: boolean; busy: boolean }) {
     >
       {busy ? (
         <Activity />
+      ) : paused ? (
+        <span className="size-1.5 rounded-full bg-[#ffd60a]" style={{ boxShadow: "0 0 8px #ffd60a" }} title="Paused" />
       ) : (
-        paused && (
+        later > 0 && (
           <span
-            className={`size-1.5 rounded-full ${paused ? "bg-[#ffd60a]" : "bg-[#30d158]"}`}
-            style={{ boxShadow: `0 0 8px ${paused ? "#ffd60a" : "#30d158"}` }}
-            title={paused ? "Paused" : "Watching"}
-          />
+            className="grid h-4 min-w-4 place-items-center rounded-full bg-[#0a84ff] px-1 text-[10px] leading-none font-semibold text-white"
+            title={`${later} waiting for you`}
+          >
+            {later}
+          </span>
         )
       )}
     </motion.div>
@@ -267,6 +353,7 @@ function ExpandedContent({
       </div>
 
       {suggestion && <Options suggestion={suggestion} />}
+      {!suggestion && !reporting && <LaterList />}
     </div>
   );
 }
@@ -289,9 +376,10 @@ function UndoButton({ id }: { id: number }) {
 }
 
 function QuickActions({ paused }: { paused: boolean }) {
+  const hotkey = useSidekick((s) => s.settings.paletteHotkey);
   return (
     <div className="flex shrink-0 gap-1.5">
-      <RoundButton label="Ask Sidekick (Alt+Space)" onClick={() => void api.askOpen()}>
+      <RoundButton label={`Ask Sidekick (${hotkey})`} onClick={() => void api.askOpen()}>
         <Icon name="ask" size={15} />
       </RoundButton>
       <RoundButton
@@ -314,7 +402,7 @@ function RoundButton({ label, onClick, children }: { label: string; onClick: () 
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="chip grid size-8 place-items-center rounded-full bg-white/[0.12] text-white/90 hover:bg-white/[0.2] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff]"
+      className="chip grid size-8 place-items-center rounded-full bg-white/12 text-white/90 hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff]"
     >
       {children}
     </button>
@@ -322,6 +410,7 @@ function RoundButton({ label, onClick, children }: { label: string; onClick: () 
 }
 
 function Options({ suggestion }: { suggestion: Suggestion }) {
+  const alwaysAt = suggestion.always?.findIndex(Boolean) ?? -1;
   return (
     <div className="mt-3 flex flex-wrap items-center gap-1.5">
       {suggestion.options.map((option, i) => (
@@ -332,21 +421,40 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
           initial={{ opacity: 0, y: 6, filter: "blur(4px)" }}
           animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
           transition={{ duration: 0.26, delay: 0.12 + i * 0.04, ease: [0.23, 1, 0.32, 1] }}
-          className={`chip flex h-8 items-center gap-2 rounded-full pr-3.5 pl-3 text-[13px] font-medium tracking-[-0.01em] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff] ${
-            i === 0 ? "bg-white text-black hover:bg-white/90" : "bg-white/[0.12] text-white hover:bg-white/[0.2]"
+          className={`chip flex max-w-full min-h-8 items-center gap-2 rounded-full px-3 py-1.5 text-left text-[13px] font-medium tracking-[-0.01em] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff] ${
+            i === 0 ? "bg-white text-black hover:bg-white/90" : "bg-white/12 text-white hover:bg-white/20"
           }`}
         >
-          {option}
-          <kbd className={`font-sans text-[11px] ${i === 0 ? "text-black/40" : "text-white/35"}`}>Alt {i + 1}</kbd>
+          <span className="max-w-60 leading-snug text-balance">{option}</span>
+          <kbd
+            className={`shrink-0 self-center font-sans text-[11px] leading-none ${
+              i === 0 ? "text-black/40" : "text-white/35"
+            }`}
+          >
+            Alt {i + 1}
+          </kbd>
         </motion.button>
       ))}
+      {alwaysAt >= 0 && (
+        <motion.button
+          type="button"
+          onClick={() => always(suggestion, alwaysAt)}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.2, delay: 0.12 + suggestion.options.length * 0.04 }}
+          title={`From now on, "${suggestion.options[alwaysAt]}" without asking. Undo in Settings > Skills.`}
+          className="chip rounded-full px-2.5 py-1.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
+        >
+          Always do this
+        </motion.button>
+      )}
       <motion.button
         type="button"
         onClick={() => dismiss(suggestion)}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.2, delay: 0.12 + suggestion.options.length * 0.04 }}
-        className="chip ml-0.5 h-8 rounded-full px-2.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
+        className="chip rounded-full px-2.5 py-1.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
       >
         Not now
         <kbd className="ml-1.5 font-sans text-[11px] text-white/35">Alt 0</kbd>
@@ -358,6 +466,46 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
 function choose(suggestion: Suggestion, index: number) {
   playSound("select", uiVolume(), useSidekick.getState().settings.soundKit);
   void api.suggestionChoose(suggestion.id, index);
+}
+
+function always(suggestion: Suggestion, index: number) {
+  playSound("select", uiVolume(), useSidekick.getState().settings.soundKit);
+  void api.suggestionAlways(suggestion.id, index);
+}
+
+/** Suggestions held while you were busy, opened one at a time. */
+function LaterList() {
+  const count = useSidekick((s) => s.later);
+  const [items, setItems] = useState<LaterItem[]>([]);
+  useEffect(() => {
+    if (count > 0) void api.laterList().then(setItems);
+    else setItems([]);
+  }, [count]);
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-3 flex flex-col gap-1.5">
+      <div className="flex items-center justify-between text-[12px] text-[rgb(235_235_245/0.6)]">
+        <span>Saved for later</span>
+        <button type="button" onClick={() => void api.laterClear()} className="chip hover:text-white">
+          Clear
+        </button>
+      </div>
+      {items.slice(0, 4).map((l) => (
+        <button
+          key={l.id}
+          type="button"
+          onClick={() => void api.laterOpen(l.id)}
+          className="chip flex items-center justify-between gap-3 rounded-xl bg-white/[0.07] px-3 py-1.5 text-left hover:bg-white/[0.12]"
+        >
+          <span className="min-w-0">
+            <span className="block truncate text-[13px] font-medium text-white">{l.title}</span>
+            <span className="block truncate text-[12px] text-[rgb(235_235_245/0.55)]">{l.detail}</span>
+          </span>
+          <span className="shrink-0 text-[11px] text-white/40">{l.minutesAgo < 1 ? "now" : `${l.minutesAgo} min`}</span>
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function dismiss(suggestion: Suggestion) {

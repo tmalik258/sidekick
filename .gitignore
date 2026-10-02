@@ -4,3 +4,5 @@ node_modules/
 *.log
 .env
 .env.*
+apps/desktop/src-tauri/resources/voice-models/
+!apps/desktop/src-tauri/resources/voice-models/.keep

@@ -3,12 +3,17 @@
 //! up commands (fill this login, close duplicate tabs) over a localhost-only
 //! endpoint.
 //!
-//! Only the extension gets in: every request must carry the pairing token
-//! shown in Settings, and any request with a web page's origin is refused
-//! outright (extensions send `chrome-extension://` or `moz-extension://`, or
-//! no origin at all on simple GETs).
+//! Only the extension gets in: every request must carry the pairing token,
+//! and any request with a web page's origin is refused outright (extensions
+//! send `chrome-extension://` or `moz-extension://`, or no origin at all on
+//! simple GETs).
+//!
+//! Pairing needs no code: the extension asks (`POST /browser/pair`, only
+//! from an extension origin), the island shows Allow or Deny, and on Allow
+//! the extension gets the token.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -17,7 +22,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
-use crate::{Sensor, SensorGate, http};
+use crate::{Approvals, Sensor, SensorGate, http};
 
 /// How long the extension's poll for commands is held open.
 const POLL_HOLD: Duration = Duration::from_secs(20);
@@ -34,14 +39,38 @@ const KINDS: &[(&str, &str)] = &[
     ("many_tabs", "browser.many_tabs"),
 ];
 
-/// Commands for the extension, queued until it polls.
+/// How long a pairing request waits for Allow on the island.
+pub const PAIR_WAIT: Duration = Duration::from_secs(90);
+pub const PAIR_REQUEST: &str = "browser.pair_request";
+
+/// Commands for the extension, queued until it polls, and when each browser
+/// last checked in.
 #[derive(Clone, Default)]
 pub struct BrowserBridge {
     queue: Arc<Mutex<VecDeque<serde_json::Value>>>,
     ready: Arc<Notify>,
+    seen: Arc<Mutex<HashMap<String, i64>>>,
 }
 
 impl BrowserBridge {
+    /// Browsers whose extension checked in, with the Unix time of the last
+    /// time.
+    pub fn seen(&self) -> Vec<(String, i64)> {
+        let mut v: Vec<(String, i64)> = self
+            .seen
+            .lock()
+            .map(|m| m.iter().map(|(k, v)| (k.clone(), *v)).collect())
+            .unwrap_or_default();
+        v.sort();
+        v
+    }
+
+    fn mark(&self, browser: &str) {
+        if let Ok(mut m) = self.seen.lock() {
+            m.insert(browser.to_owned(), chrono::Utc::now().timestamp());
+        }
+    }
+
     pub fn send(&self, command: serde_json::Value) {
         if let Ok(mut q) = self.queue.lock() {
             if q.len() >= MAX_QUEUED {
@@ -72,6 +101,8 @@ pub struct BrowserSensor {
     pub port: u16,
     pub token: String,
     pub bridge: BrowserBridge,
+    /// Pairing requests waiting for Allow on the island.
+    pub approvals: Approvals,
 }
 
 impl BrowserSensor {
@@ -94,18 +125,20 @@ impl Sensor for BrowserSensor {
                 }
             };
             let token: Arc<str> = self.token.into();
+            let pairing = Arc::new(AtomicBool::new(false));
             loop {
                 let Ok((sock, _)) = listener.accept().await else {
                     continue;
                 };
-                let (bus, gate, bridge, token) = (
-                    bus.clone(),
-                    gate.clone(),
-                    self.bridge.clone(),
-                    token.clone(),
-                );
+                let ctx = Ctx {
+                    token: token.clone(),
+                    bridge: self.bridge.clone(),
+                    approvals: self.approvals.clone(),
+                    pairing: pairing.clone(),
+                };
+                let (bus, gate) = (bus.clone(), gate.clone());
                 tokio::spawn(async move {
-                    serve(sock, &token, &bridge, |event| {
+                    serve(sock, &ctx, |event| {
                         if gate.allows(Self::ID) {
                             bus.publish(event);
                         }
@@ -132,7 +165,32 @@ fn token_matches(given: &str, expected: &str) -> bool {
             == 0
 }
 
-async fn serve(mut sock: TcpStream, token: &str, bridge: &BrowserBridge, publish: impl Fn(Event)) {
+/// What each connection needs.
+struct Ctx {
+    token: Arc<str>,
+    bridge: BrowserBridge,
+    approvals: Approvals,
+    /// One pairing request at a time.
+    pairing: Arc<AtomicBool>,
+}
+
+/// "Chrome", "Edge", "Firefox": a short name the extension sends, cleaned.
+pub fn browser_name(raw: &str) -> String {
+    let clean: String = raw
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == ' ')
+        .take(20)
+        .collect();
+    let clean = clean.trim();
+    if clean.is_empty() {
+        "Browser".into()
+    } else {
+        clean.to_owned()
+    }
+}
+
+async fn serve(mut sock: TcpStream, ctx: &Ctx, publish: impl Fn(Event)) {
+    let (token, bridge) = (&*ctx.token, &ctx.bridge);
     let Ok(Some(req)) =
         tokio::time::timeout(http::READ_TIMEOUT, http::read_request(&mut sock)).await
     else {
@@ -157,7 +215,7 @@ async fn serve(mut sock: TcpStream, token: &str, bridge: &BrowserBridge, publish
         ),
         (
             "access-control-allow-headers",
-            "content-type, x-sidekick-token",
+            "content-type, x-sidekick-token, x-sidekick-browser",
         ),
         ("access-control-allow-methods", "GET, POST"),
     ];
@@ -165,10 +223,53 @@ async fn serve(mut sock: TcpStream, token: &str, bridge: &BrowserBridge, publish
         http::respond(&mut sock, "204 No Content", &cors, None).await;
         return;
     }
+    if (req.method.as_str(), req.path.as_str()) == ("POST", "/browser/pair") {
+        // Only an extension can ask, and only one request at a time.
+        if origin.is_empty() {
+            http::respond(&mut sock, "403 Forbidden", &cors, None).await;
+            return;
+        }
+        if ctx.pairing.swap(true, Ordering::SeqCst) {
+            http::respond(&mut sock, "429 Too Many Requests", &cors, None).await;
+            return;
+        }
+        let browser = browser_name(req.header("x-sidekick-browser").unwrap_or_default());
+        let id = ulid::Ulid::new().to_string();
+        let answer = ctx.approvals.open(&id);
+        let extension: String = origin
+            .split("://")
+            .nth(1)
+            .unwrap_or_default()
+            .chars()
+            .take(8)
+            .collect();
+        publish(Event::new(
+            PAIR_REQUEST,
+            BrowserSensor::ID,
+            serde_json::json!({ "id": id, "browser": browser, "extension": extension }),
+        ));
+        let allowed = matches!(
+            tokio::time::timeout(PAIR_WAIT, answer).await,
+            Ok(Ok(Some(true)))
+        );
+        ctx.approvals.close(&id);
+        ctx.pairing.store(false, Ordering::SeqCst);
+        if allowed {
+            bridge.mark(&browser);
+            let body = serde_json::json!({ "token": token });
+            http::respond(&mut sock, "200 OK", &cors, Some(&body)).await;
+        } else {
+            http::respond(&mut sock, "403 Forbidden", &cors, None).await;
+        }
+        return;
+    }
     if !token_matches(req.header("x-sidekick-token").unwrap_or_default(), token) {
         http::respond(&mut sock, "401 Unauthorized", &cors, None).await;
         return;
     }
+    bridge.mark(&browser_name(
+        req.header("x-sidekick-browser").unwrap_or("Browser"),
+    ));
     match (req.method.as_str(), req.path.as_str()) {
         ("GET", "/browser/hello") => {
             http::respond(
@@ -305,6 +406,7 @@ mod tests {
             port,
             token: "t0ken".into(),
             bridge: bridge.clone(),
+            approvals: Approvals::default(),
         })
         .spawn(bus, gate);
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -352,6 +454,70 @@ mod tests {
         .await;
         assert!(resp.starts_with("HTTP/1.1 200"), "{resp}");
         assert!(resp.contains("close_duplicates"));
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn pairs_only_after_allow_on_the_island() {
+        let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = probe.local_addr().unwrap().port();
+        drop(probe);
+        let bus = EventBus::default();
+        let mut rx = bus.subscribe();
+        let (_h, gate) = SensorGate::new(GateState::default());
+        let bridge = BrowserBridge::default();
+        let approvals = Approvals::default();
+        let task = Box::new(BrowserSensor {
+            port,
+            token: "t0ken".into(),
+            bridge: bridge.clone(),
+            approvals: approvals.clone(),
+        })
+        .spawn(bus, gate);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let pair = |origin: &str| {
+            format!(
+                "POST /browser/pair HTTP/1.1\r\norigin: {origin}\r\nx-sidekick-browser: Chrome\r\ncontent-length: 0\r\n\r\n"
+            )
+        };
+        // A web page, or a request with no origin, cannot ask.
+        assert!(
+            call(port, pair("https://evil.example"))
+                .await
+                .starts_with("HTTP/1.1 403")
+        );
+        assert!(
+            call(
+                port,
+                "POST /browser/pair HTTP/1.1\r\ncontent-length: 0\r\n\r\n".into()
+            )
+            .await
+            .starts_with("HTTP/1.1 403")
+        );
+        // The extension asks; the island shows the request; Allow sends the token.
+        let asking = tokio::spawn(call(port, pair("chrome-extension://abcdefghij")));
+        let e = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(e.kind, PAIR_REQUEST);
+        assert_eq!(e.payload["browser"], "Chrome");
+        assert_eq!(e.payload["extension"], "abcdefgh");
+        let id = e.payload["id"].as_str().unwrap().to_owned();
+        assert!(approvals.decide(&id, Some(true)));
+        let resp = asking.await.unwrap();
+        assert!(resp.starts_with("HTTP/1.1 200"), "{resp}");
+        assert!(resp.contains("t0ken"));
+        assert_eq!(bridge.seen().first().map(|s| s.0.as_str()), Some("Chrome"));
+
+        // Deny sends nothing.
+        let asking = tokio::spawn(call(port, pair("chrome-extension://abcdefghij")));
+        let e = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        approvals.decide(e.payload["id"].as_str().unwrap(), Some(false));
+        assert!(asking.await.unwrap().starts_with("HTTP/1.1 403"));
         task.abort();
     }
 }

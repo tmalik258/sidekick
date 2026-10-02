@@ -92,7 +92,13 @@ impl Executor {
         match action {
             "open_path" | "run_installer" => {
                 let path = existing_path(args)?;
-                open::that_detached(&path).map_err(fail)?;
+                // Folders must use the default file manager; open::that_detached
+                // forces Windows Explorer for directories.
+                if path.is_dir() {
+                    system::open_folder_path(&path)?;
+                } else {
+                    open::that_detached(&path).map_err(fail)?;
+                }
                 Ok(Outcome::msg(format!("Opened {}", file_name(&path))))
             }
             "reveal_path" => {
@@ -149,8 +155,8 @@ impl Executor {
                 let minify = args.get("minify").and_then(Value::as_str) == Some("true");
                 system::format_json_clipboard(minify)
             }
-            // Opens a folder in Explorer. Unlike open_path it never runs a
-            // file, so it is the one to use with paths from outside sources.
+            // Opens a folder in the default file manager. Unlike open_path it
+            // never runs a file, so it is the one to use with paths from outside.
             "open_folder" => {
                 let path = existing_path(args)?;
                 if !path.is_dir() {
@@ -159,7 +165,7 @@ impl Executor {
                         path.display()
                     )));
                 }
-                open::that_detached(&path).map_err(fail)?;
+                system::open_folder_path(&path)?;
                 Ok(Outcome::msg(format!("Opened {}", file_name(&path))))
             }
             "open_in_editor" => {
@@ -168,13 +174,14 @@ impl Executor {
                     .caps
                     .code
                     .as_ref()
-                    .ok_or_else(|| ActionError::Failed("VS Code is not installed".into()))?;
+                    .ok_or_else(|| ActionError::Failed("No code editor found".into()))?;
                 let mut cmd = std::process::Command::new(code);
                 cmd.arg(&path);
                 system::spawn_detached(cmd)?;
                 Ok(Outcome::msg(format!(
-                    "Opened {} in VS Code",
-                    file_name(&path)
+                    "Opened {} in {}",
+                    file_name(&path),
+                    self.caps.code_name.as_deref().unwrap_or("your editor")
                 )))
             }
             "open_system_page" => system::open_system_page(arg(args, "page")?),
@@ -196,7 +203,13 @@ impl Executor {
             "clean_downloads" => tokio::task::spawn_blocking(cleanup::clean_downloads)
                 .await
                 .map_err(fail)?,
-            "launch_project" => dev::launch(&existing_path(args)?, self.caps.code.as_deref()),
+            "launch_project" => dev::launch(
+                &existing_path(args)?,
+                self.caps
+                    .code
+                    .as_deref()
+                    .map(|p| (p, self.caps.code_name.as_deref().unwrap_or("your editor"))),
+            ),
             "extract_text" => {
                 let path = existing_path(args)?;
                 convert::ocr(&self.caps, &path).await

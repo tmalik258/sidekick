@@ -37,15 +37,20 @@ export interface Settings {
   soundKit: string;
   skills?: Record<string, { enabled?: boolean | null; auto?: boolean | null }>;
   paletteHotkey: string;
+  /** Global shortcuts by action; empty turns one off. */
+  shortcuts: Record<string, string>;
   codeFolders: string[];
   indexFolders: string[];
   endOfDayHour: number;
   ai: AiSettings;
   voice: VoiceSettings;
-  calendar: { feeds: string[]; remindMinutes: number };
+  calendar: { remindMinutes: number };
   semanticSearch: { enabled: boolean; model: string };
   onboarded: boolean;
+  /** 0-based welcome step; resumed until onboarded is true. */
+  welcomeStep: number;
   checkUpdates: boolean;
+  composio: ComposioSettings;
   denyApps: string[];
   denySites: string[];
 }
@@ -53,14 +58,22 @@ export interface Settings {
 export interface CalendarToday {
   meetings: { title: string; start: string; end: string; joinUrl: string | null }[];
   error: string | null;
+  /** Calendars read through Composio, e.g. "Google Calendar". */
+  sources: string[];
 }
 
 export interface VoiceSettings {
   enabled: boolean;
   wakeWord: boolean;
   speakAnswers: boolean;
+  /** After a spoken answer, listen for a reply without the wake word. */
+  conversation: boolean;
+  /** Read suggestions aloud and take a spoken choice. */
+  speakSuggestions: boolean;
   voice: string;
   speed: number;
+  /** Which voice model the voice was picked for (3 = Supertonic 3). */
+  model?: number;
 }
 
 export interface VoiceStatus {
@@ -70,6 +83,22 @@ export interface VoiceStatus {
   listening: boolean;
   error: string | null;
   voices: { id: string; label: string }[];
+}
+
+/** The first-run welcome line and when each part of it is heard. */
+export interface WelcomeSpeech {
+  /** The welcome step being spoken, and every step's line. */
+  step: number;
+  lines: string[];
+  script: string;
+  /** Sentences as queued: start (Unix ms) and length (ms). */
+  pieces: { text: string; startsAt: number; ms: number }[];
+  /** When the last word stops sounding, once known. */
+  endsAt: number | null;
+  /** Nothing will be heard; the welcome paces the words itself. */
+  silent: boolean;
+  /** Speech is on its way (the model may still be loading). */
+  pending: boolean;
 }
 
 export interface VoiceHeard {
@@ -134,6 +163,10 @@ export interface Turn extends ChatMessage {
   streaming?: boolean;
   /** A screenshot went with this question. */
   screen?: boolean;
+  /** Why the local model suggests continuing in Claude Code. */
+  handoff?: string | null;
+  /** The app tool the local model is using right now. */
+  tool?: string | null;
 }
 
 export interface AskContext {
@@ -154,6 +187,8 @@ export interface AskOpen {
   page: string | null;
   /** Which island panel to show. */
   view?: "ask" | "settings" | "welcome";
+  /** A tool to start with: "screen" or "clipboard". */
+  tool?: "screen" | "clipboard" | null;
 }
 
 export interface SearchHit {
@@ -195,6 +230,8 @@ export interface Suggestion {
   title: string;
   detail: string;
   options: string[];
+  /** Which options can become "Always do this". */
+  always?: boolean[];
 }
 
 export interface StoredEvent {
@@ -225,12 +262,21 @@ export const DEFAULT_SETTINGS: Settings = {
   masterVolume: 0.6,
   cueVolumes: {},
   collapseAfterSecs: 8,
-  launchAtLogin: false,
+  launchAtLogin: true,
   sensors: {},
   pause: { kind: "none" },
   theme: "pearl",
   soundKit: "01",
-  paletteHotkey: "Alt+Space",
+  paletteHotkey: "Ctrl+Space",
+  shortcuts: {
+    talk: "Ctrl+Alt+Space",
+    accept: "Ctrl+Alt+Enter",
+    dismiss: "Ctrl+Alt+Backspace",
+    screen: "Ctrl+Alt+S",
+    clipboard: "Ctrl+Alt+V",
+    pause: "Ctrl+Alt+P",
+    settings: "Ctrl+Alt+Comma",
+  },
   codeFolders: [],
   indexFolders: [],
   endOfDayHour: 18,
@@ -240,7 +286,7 @@ export const DEFAULT_SETTINGS: Settings = {
     local: { enabled: true, baseUrl: "http://localhost:11434/v1", model: "" },
     anthropic: { enabled: true, model: "" },
     semif: {
-      enabled: false,
+      enabled: true,
       command: ["semif-score"],
       mode: "direct",
       backend: "llamacpp",
@@ -250,17 +296,27 @@ export const DEFAULT_SETTINGS: Settings = {
     },
     decisions: true,
   },
-  calendar: { feeds: [], remindMinutes: 5 },
+  calendar: { remindMinutes: 5 },
   semanticSearch: { enabled: true, model: "nomic-embed-text" },
   onboarded: false,
+  welcomeStep: 0,
   checkUpdates: true,
+  composio: { enabled: false, account: "", userId: "", url: "", headers: {} },
   denyApps: ["1password.exe", "bitwarden.exe", "keepass.exe", "keepassxc.exe"],
   denySites: [],
-  voice: { enabled: false, wakeWord: true, speakAnswers: true, voice: "af_bella", speed: 1 },
+  voice: {
+    enabled: true,
+    wakeWord: true,
+    speakAnswers: true,
+    conversation: true,
+    speakSuggestions: true,
+    voice: "f5",
+    speed: 1,
+  },
 };
 
 export const SENSOR_IDS = [
-  { id: "calendar", label: "Calendar", hint: "Reads your calendar's private iCal link for meeting reminders." },
+  { id: "calendar", label: "Calendar", hint: "Reads your calendar through Composio for meeting reminders." },
   { id: "downloads", label: "Downloads", hint: "Notices finished downloads the moment they land." },
   { id: "screenshots", label: "Screenshots", hint: "Notices new screenshots in Pictures\\Screenshots." },
   { id: "ports", label: "Dev servers", hint: "Notices local servers starting, checked every second." },
@@ -282,7 +338,6 @@ export const SENSOR_IDS = [
     label: "Away detection",
     hint: "Holds suggestions while you are away and shows them when you are back.",
   },
-  { id: "heartbeat", label: "Heartbeat (debug)", hint: "A test event every 30 seconds." },
 ] as const;
 
 export interface ActionResult {
@@ -302,6 +357,8 @@ export interface SkillInfo {
   enabled: boolean;
   auto: boolean;
   autoByDefault: boolean;
+  /** Quiet after Not now three times, until this time. */
+  mutedUntil: string | null;
 }
 
 export interface CapabilityInfo {
@@ -352,4 +409,111 @@ export interface SetupItem {
 export interface SetupStatus {
   items: SetupItem[];
   installAll: string | null;
+}
+
+export interface ComposioSettings {
+  enabled: boolean;
+  /** Who signed in (their email). */
+  account: string;
+  userId: string;
+  /** An MCP link given by hand instead of signing in. */
+  url: string;
+  headers: Record<string, string>;
+}
+
+export interface ComposioApp {
+  slug: string;
+  name: string;
+  why: string;
+  logo: string;
+  connected: boolean;
+}
+
+export interface ComposioStatus {
+  signedIn: boolean;
+  account: string;
+  apps: ComposioApp[];
+  error: string | null;
+}
+
+export interface BrowserStatus {
+  id: string;
+  name: string;
+  connected: boolean;
+}
+
+export interface ExtensionGuide {
+  copied: string;
+  steps: string[];
+}
+
+export interface Folder {
+  path: string;
+  label: string;
+  repos: number;
+}
+
+export interface Found {
+  codeFolders: Folder[];
+  searchFolders: Folder[];
+  chatModels: string[];
+  embedModels: string[];
+  claudeInstalled: boolean;
+  claudeHooks: boolean;
+  claudeMcp: boolean;
+  composioSignedIn: boolean;
+  composioInClaude: boolean;
+  browsers: string[];
+  installable: SetupItem[];
+}
+
+/** Older names used by the welcome and setup guides. */
+export type DetectedFolder = Folder;
+export type SetupFound = Found;
+
+export interface SetupPlan {
+  codeFolders: string[];
+  searchFolders: string[];
+  chatModel: string | null;
+  claudeHooks: boolean;
+  claudeMcp: boolean;
+  install: string[];
+  voice: boolean;
+  launchAtLogin: boolean;
+}
+
+export interface LocalModels {
+  reachable: boolean;
+  chat: string[];
+  embed: string[];
+}
+
+export interface LaterItem {
+  id: string;
+  title: string;
+  detail: string;
+  minutesAgo: number;
+}
+
+export interface ChatSummary {
+  id: string;
+  title: string;
+  updated: string;
+}
+
+/** Shortcut actions besides Ask, in the order Settings shows them. */
+export const SHORTCUT_ACTIONS: { id: string; label: string }[] = [
+  { id: "talk", label: "Talk" },
+  { id: "accept", label: "Accept the suggestion" },
+  { id: "dismiss", label: "Not now" },
+  { id: "screen", label: "Ask about the screen" },
+  { id: "clipboard", label: "Clipboard history" },
+  { id: "pause", label: "Pause or resume" },
+  { id: "settings", label: "Settings" },
+];
+
+export interface ComposioCheck {
+  tools: number;
+  reads: number;
+  sample: string[];
 }

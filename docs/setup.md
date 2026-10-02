@@ -1,6 +1,6 @@
 # Setting up Sidekick
 
-Sidekick works on its own after install. Each item below turns on more of it. The same list is in the app: the first-run welcome walks through it, and **Settings > Setup** shows what is done, with the exact command for anything missing. **Run** opens a PowerShell window with that command so you can watch it, and **Check again** (or waiting a few seconds) turns finished items green. Sidekick never installs anything or edits other apps' settings on its own.
+Sidekick works on its own after install. Each item below turns on more of it. The same list is in the app. The first-run welcome looks around first (your code folders, including WSL ones from VS Code, your documents, the Ollama models you have, Claude Code) and **Set it all up** applies what you tick. **Settings > Home > Setup** shows what is left, with the exact command for anything missing. **Run** opens a PowerShell window with that command so you can watch it, and **Check again** (or waiting a few seconds) turns finished items green. Sidekick only installs or changes things when you press a button, and backs up Claude Code's settings before it adds anything.
 
 ## 1. AI (pick at least one)
 
@@ -16,14 +16,13 @@ Sidekick works on its own after install. Each item below turns on more of it. Th
 
 | What | Where | Unlocks |
 | --- | --- | --- |
-| Claude Code hooks | Copy the block from Settings > AI into `~/.claude/settings.json` (merge with any hooks you have) | Know when a session finishes or waits; allow or deny its permission requests from the island |
-| Sidekick tools in Claude Code | Settings > AI shows the `claude mcp add ...` command with your token | Claude Code can search your history, notify you and open links |
-| Browser extension | `chrome://extensions` (or Edge), Developer mode, Load unpacked `apps/extension`, then paste the pairing code from Settings > Browser | Page summaries, form help, duplicate tabs, saved sessions |
-| Code folders | Settings > General | Project status, the project launcher, the end-of-day check |
-| Calendar | Settings > Today: your private iCal link (Google: Settings > your calendar > Secret address in iCal format; Outlook: Settings > Calendar > Shared calendars > Publish) | Meeting reminders with Join and Prep |
-| Folders to search | Settings > Search | Search inside your documents and notes |
-| Voice (optional) | Settings > Voice, about 180 MB once | "Hey Sidekick" and spoken answers, all on this PC |
-| Fathom (optional) | `setx FATHOM_API_KEY "your-key"`, then restart Sidekick | Follow-ups drafted from meeting notes |
+| Claude Code hooks | Settings > Connections > Claude Code > **Add for me** (merges into `~/.claude/settings.json`, keeps your own hooks, saves a dated backup next to it) | Know when a session finishes or waits; allow or deny its permission requests from the island |
+| Sidekick tools in Claude Code | Settings > Connections > Claude Code > **Add for me** (runs `claude mcp add` with your token) | Claude Code can search your history, notify you and open links |
+| Composio | Settings > Connections > **Connect Composio**. Your browser opens; sign in and allow Sidekick, and it connects on its own. Then press **Connect** next to each app you use (Google Calendar, Outlook, Gmail, Slack, Jira, Fathom and more) | Meeting reminders, the morning brief, follow-ups from Fathom notes, and reading your apps in Ask mode |
+| Browser extension | Settings > Connections > Browser > **Install** next to your browser. Sidekick copies the extension folder path and opens the browser's extensions page: turn on Developer mode, click Load unpacked, paste. The extension pairs on its own and the island asks you to Allow it | Page summaries, form help, duplicate tabs, saved sessions |
+| Code folders | Settings > Home > Your code: tick the folders Sidekick found | Project status, the project launcher, the end-of-day check |
+| Folders to search | Settings > Privacy and data > Search: tick the folders Sidekick found | Search inside your documents and notes |
+| Voice (optional) | Settings > AI > Voice, about 205 MB once | "Hey Sidekick", spoken answers and follow-ups without the wake word, all on this PC |
 
 ## 3. Tools
 
@@ -54,3 +53,14 @@ gh auth login
 | Bitwarden CLI (optional) | `Bitwarden.CLI` (or 1Password's `op`) | Fill logins from your password manager |
 
 Install any of them with `winget install -e --id <package>`. Sidekick picks up new tools without a restart.
+
+## Composio and the local model
+
+With Composio on, the local model can read your connected apps in Ask mode, for example "what Jira issues are assigned to me?" or "any unread Slack messages from the client?". It can only read. When a request needs a change (sending, creating, moving, deleting), takes too many steps, or the model gives up, the answer shows **Continue in Claude Code**. That opens Claude Code in a terminal with the whole conversation, and Claude Code asks before it changes anything (or you allow it from the island).
+
+Small models work best with one clear request at a time. If answers cut off or ignore the tools, give Ollama a bigger context window, then restart Ollama:
+
+```powershell
+setx OLLAMA_CONTEXT_LENGTH 16384
+```
+

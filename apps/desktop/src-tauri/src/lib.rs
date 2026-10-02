@@ -2,21 +2,30 @@ mod ai;
 mod ask;
 mod brief;
 mod browser;
+mod claude_config;
 mod commands;
+mod composio;
+mod composio_api;
 mod decide;
+mod detect;
+mod extension;
 mod fathom;
 mod files;
+mod health;
 mod island;
 mod layout;
 mod learn;
 mod mascot;
 mod mcp;
+mod meetings;
 mod pipeline;
 mod privacy;
 mod projects;
 mod screen;
 mod search;
+mod secrets;
 mod setup;
+mod shortcuts;
 mod state;
 mod suggestions;
 mod timetrack;
@@ -28,22 +37,18 @@ mod windows;
 
 use std::error::Error;
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
 
 use chrono::Utc;
 use sidekick_actions::{Capabilities, Executor};
 use sidekick_core::{EventBus, MascotEvent, Settings, Storage};
 use sidekick_sensors::{
-    BrowserBridge, BrowserSensor, ClaudeCodeSensor, ClipboardSensor, DownloadsSensor,
-    HeartbeatSensor, IdleSensor, PortsSensor, ReposSensor, Sensor, SensorGate, SystemSensor,
-    WindowSensor,
+    BrowserBridge, BrowserSensor, ClaudeCodeSensor, ClipboardSensor, DownloadsSensor, IdleSensor,
+    PortsSensor, ReposSensor, Sensor, SensorGate, SystemSensor, WindowSensor,
 };
 use sidekick_skills::Engine;
 use tauri::{AppHandle, Manager};
 
 use crate::state::AppState;
-
-const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 
 pub fn run() {
     tauri::Builder::default()
@@ -83,6 +88,30 @@ pub fn run() {
             commands::calendar_today,
             commands::search_clear,
             commands::setup_status,
+            commands::setup_detect,
+            commands::local_models,
+            commands::running_apps,
+            commands::chats_list,
+            commands::chat_get,
+            commands::chat_save,
+            commands::chat_delete,
+            commands::suggestion_always,
+            commands::later_list,
+            commands::later_open,
+            commands::later_clear,
+            commands::skill_unmute,
+            commands::browsers_status,
+            commands::extension_install,
+            commands::setup_apply,
+            commands::claude_add_hooks,
+            commands::claude_add_mcp,
+            commands::ai_handoff,
+            commands::composio_import,
+            commands::composio_sign_in,
+            commands::composio_sign_out,
+            commands::composio_status,
+            commands::composio_connect,
+            commands::composio_test,
             commands::setup_run,
             commands::backup_export,
             commands::backup_import,
@@ -96,6 +125,9 @@ pub fn run() {
             commands::voice_listen,
             commands::voice_stop,
             commands::voice_test,
+            commands::voice_welcome,
+            commands::voice_welcome_step,
+            commands::voice_say,
             commands::debug_set_state,
             commands::debug_emit_event,
             commands::debug_demo_flow,
@@ -109,6 +141,9 @@ pub fn run() {
             commands::ai_chat,
             commands::ai_cancel,
             commands::ask_open,
+            commands::ask_ensure_welcome,
+            commands::ask_defer_welcome,
+            commands::ask_resume_welcome,
             commands::ask_close,
             commands::browser_info,
             commands::time_today,
@@ -177,6 +212,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         executor: RwLock::new(Arc::new(Executor::new(caps))),
         active: Mutex::default(),
         queue: Mutex::default(),
+        later: Mutex::default(),
         island_hidden: Mutex::default(),
         hovered: Default::default(),
         last_window: Mutex::default(),
@@ -200,20 +236,12 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
 
     pipeline::start(app);
     timetrack::start(app);
+    // Prefer bundled models; only then network. Welcome opens from the island
+    // once it listens (ask_ensure_welcome), or after models become ready.
+    voice::seed_from_bundle(app);
     voice::refresh(app);
-    if !settings_onboarded(app) {
-        // Give the island a moment to load before it grows into the welcome.
-        let app = app.clone();
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(1500)).await;
-            ask::open(
-                &app,
-                ask::Open {
-                    view: Some("welcome"),
-                    ..Default::default()
-                },
-            );
-        });
+    if !settings_onboarded(app) && !voice::voice_ready(app) {
+        voice::prepare_then_welcome(app);
     }
     brief::start(app, data_dir.join("last-brief"), repos.roots.clone());
     search::reindex_folders(app);
@@ -222,6 +250,8 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     files::start_weekly_check(app);
     layout::start(app);
     mcp::start(app, mcp_token);
+    meetings::start(app);
+    health::start(app);
     tauri::async_runtime::spawn(async move {
         let sensors: Vec<Box<dyn Sensor>> = vec![
             Box::new(DownloadsSensor::new()),
@@ -231,18 +261,18 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
             Box::new(WindowSensor),
             Box::new(ClaudeCodeSensor {
                 port: ClaudeCodeSensor::DEFAULT_PORT,
-                approvals,
+                approvals: approvals.clone(),
             }),
             Box::new(BrowserSensor {
                 port: BrowserSensor::DEFAULT_PORT,
                 token: browser_token,
                 bridge,
+                approvals,
             }),
             Box::new(SystemSensor),
             Box::new(sidekick_sensors::CalendarSensor { state: calendar }),
             Box::new(repos),
             Box::new(IdleSensor::default()),
-            Box::new(HeartbeatSensor::new(HEARTBEAT_INTERVAL)),
         ];
         sidekick_sensors::spawn_all(sensors, &bus, &gate);
     });

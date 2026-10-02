@@ -1,7 +1,10 @@
 //! Voice in the app: "Hey Sidekick" opens Ask mode and shows what you say
 //! as you say it; when you stop, the question goes to the AI and the answer
-//! is read aloud with Kokoro. Off until turned on in Settings > Voice. The
-//! microphone stops whenever voice is off or Sidekick is paused.
+//! is read aloud with Supertonic. Speech models are prefetched at build/dev into
+//! resources, copied into app data on launch, and only downloaded from GitHub
+//! when still missing (the voice first). The assistant stays on "Preparing voice"
+//! until the voice can speak; then welcome opens and greets. The microphone stops
+//! whenever voice is off or Sidekick is paused.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -12,7 +15,7 @@ use serde::Serialize;
 use sidekick_core::MascotEvent;
 use sidekick_core::settings::VoiceSettings;
 use sidekick_voice::text::strip_wake;
-use sidekick_voice::{Control, Heard, Listener, ListenerConfig, Speaker, models};
+use sidekick_voice::{Control, Heard, Listener, ListenerConfig, Speaker, SpeechEvent, models};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::ask;
@@ -22,6 +25,56 @@ use crate::state::{AppState, lock};
 pub const STATE_EVENT: &str = "voice://state";
 pub const HEARD_EVENT: &str = "voice://heard";
 pub const DOWNLOAD_EVENT: &str = "voice://download";
+
+pub const WELCOME_EVENT: &str = "voice://welcome";
+
+/// What Sidekick says on each welcome step (Welcome, Your AI, Connect,
+/// Tools, Extras), and what the step shows, word by word as it is heard.
+/// Punctuation is the direction: the voice lifts on "!" and "?" and
+/// breathes at commas.
+pub const WELCOME_LINES: [&str; 5] = [
+    "Hey there! Welcome to the future! I'm Sidekick, your personal AI assistant. I had a quick look around, and here's what I found. Let's get you set up.",
+    "First, my brain. I can think with Claude, or with a model that runs right here on your PC. Pick what you have, and I'll handle the rest.",
+    "Now, your world. Connect your calendar, your mail and the tools you use, and I'll start noticing what matters.",
+    "A few small helpers make me sharper. Install the ones you want, and I'll wait while they finish.",
+    "Almost there. Talk to me anytime, just say Hey Sidekick. And I can start with Windows, so I'm here when you are.",
+];
+
+/// When each sentence of the welcome line sounds, in Unix milliseconds, so
+/// the UI can show the words as they are heard.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WelcomeSpeech {
+    /// The step being spoken, and every step's line.
+    pub step: u32,
+    pub lines: [&'static str; 5],
+    pub script: &'static str,
+    pub pieces: Vec<SpokenPiece>,
+    /// When the last word stops sounding; known once everything is queued.
+    pub ends_at: Option<u64>,
+    /// Nothing will be heard (no speakers, or the voice failed): the UI
+    /// paces the words itself.
+    pub silent: bool,
+    /// Speech was asked for and is on its way (the model may still be
+    /// loading): the UI waits for it instead of pacing the words itself.
+    pub pending: bool,
+    #[serde(skip)]
+    key: Option<(u64, u64)>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpokenPiece {
+    pub text: String,
+    pub starts_at: u64,
+    pub ms: u64,
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
+}
 
 /// What the runtime was built from; a change rebuilds it.
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +93,8 @@ struct Runtime {
 pub struct Voice {
     pub models: PathBuf,
     runtime: Mutex<Option<Runtime>>,
+    /// Speaker kept alive for welcome / say when full voice is not on yet.
+    greeter: Mutex<Option<Speaker>>,
     /// A rebuild is running (loading models takes a moment).
     starting: AtomicBool,
     downloading: AtomicBool,
@@ -47,8 +102,17 @@ pub struct Voice {
     /// Ask mode was opened by the wake word, so it closes again if nothing
     /// was said.
     opened_by_voice: AtomicBool,
+    /// Spoken the first-run welcome line once this process.
+    welcome_greeted: AtomicBool,
+    /// Welcome opened before the voice was ready; greet after download.
+    pending_welcome_greet: AtomicBool,
     /// The chat being read aloud and its utterance.
     speaking: Mutex<Option<(String, u64)>>,
+    /// The first-run welcome line as it is being heard.
+    welcome: Mutex<WelcomeSpeech>,
+    /// A suggestion read aloud, waiting for a spoken choice: its id and
+    /// option labels.
+    choosing: Mutex<Option<(String, Vec<String>)>>,
     last_error: Mutex<Option<String>>,
 }
 
@@ -57,11 +121,20 @@ impl Voice {
         Self {
             models,
             runtime: Mutex::default(),
+            greeter: Mutex::default(),
             starting: AtomicBool::new(false),
             downloading: AtomicBool::new(false),
             cancel_download: AtomicBool::new(false),
             opened_by_voice: AtomicBool::new(false),
+            welcome_greeted: AtomicBool::new(false),
+            pending_welcome_greet: AtomicBool::new(false),
             speaking: Mutex::default(),
+            welcome: Mutex::new(WelcomeSpeech {
+                lines: WELCOME_LINES,
+                script: WELCOME_LINES[0],
+                ..Default::default()
+            }),
+            choosing: Mutex::default(),
             last_error: Mutex::default(),
         }
     }
@@ -183,6 +256,17 @@ pub fn refresh(app: &AppHandle) {
         // Stop the old one first so the microphone is free.
         let old = lock(&voice(&app).runtime).take();
         drop(old);
+        // Full runtime owns the speakers from now on. The welcome greeter
+        // goes once it is quiet, so a line being said is not cut off.
+        if let Some(greeter) = lock(&voice(&app).greeter).take() {
+            std::thread::spawn(move || {
+                let started = std::time::Instant::now();
+                while greeter.busy() && started.elapsed() < MAX_SPEECH {
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                }
+                drop(greeter);
+            });
+        }
         let runtime = build(&app, key, &settings);
         let v = voice(&app);
         *lock(&v.runtime) = Some(runtime);
@@ -193,10 +277,262 @@ pub fn refresh(app: &AppHandle) {
     });
 }
 
+/// True when the voice model is on disk and can speak the welcome line.
+pub fn voice_ready(app: &AppHandle) -> bool {
+    models::VOICE.installed(&voice(app).models)
+}
+
+/// Copies shipped voice models from the install/resources tree into app data
+/// when they are missing. Fast and offline; no network.
+pub fn seed_from_bundle(app: &AppHandle) {
+    let dest = &voice(app).models;
+    let removed = models::remove_retired(dest);
+    if removed > 0 {
+        log::info!("voice: removed {removed} replaced model(s)");
+    }
+    let Some(src) = bundled_models(app) else {
+        return;
+    };
+    for model in models::MODELS {
+        if model.installed(dest) {
+            continue;
+        }
+        let from = src.join(model.dir);
+        if !from.is_dir() {
+            continue;
+        }
+        let to = model.path(dest);
+        match copy_dir(&from, &to) {
+            Ok(()) => log::info!("voice: seeded {} from bundle", model.id),
+            Err(e) => log::warn!("voice: could not seed {}: {e}", model.id),
+        }
+    }
+}
+
+fn bundled_models(app: &AppHandle) -> Option<std::path::PathBuf> {
+    let bundled = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|d| d.join("voice-models"));
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/voice-models");
+    [bundled, Some(repo)]
+        .into_iter()
+        .flatten()
+        .find(|p| p.is_dir())
+}
+
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
+/// Downloads any missing speech models in the background (idempotent).
+/// Installs the voice first so the welcome greeting can speak ASAP.
+pub fn ensure_models(app: &AppHandle) {
+    let v = voice(app);
+    if models::all_installed(&v.models) {
+        return;
+    }
+    if let Err(err) = download(app) {
+        log::warn!("voice models: {err}");
+    }
+}
+
+/// Seeds from bundle, then downloads if the voice is still missing. Opens welcome
+/// once the voice can speak (used when onboarding is locked).
+pub fn prepare_then_welcome(app: &AppHandle) {
+    seed_from_bundle(app);
+    if voice_ready(app) {
+        refresh(app);
+        ask::ensure_welcome(app);
+        return;
+    }
+    // Mark greet pending so download completion opens welcome + speaks.
+    voice(app)
+        .pending_welcome_greet
+        .store(true, Ordering::SeqCst);
+    ensure_models(app);
+    emit_state(app);
+}
+
+/// Speaks `text` with the live runtime speaker, or a short-lived greeter.
+/// `started` gets the speaker and utterance ids before any
+/// audio is made, so its events can be told apart. False if nothing will be
+/// heard.
+fn say_with(app: &AppHandle, text: &str, started: impl FnOnce(u64, u64)) -> bool {
+    let text = text.trim();
+    if text.is_empty() {
+        return false;
+    }
+    let speak = |s: &Speaker| {
+        let id = s.begin();
+        started(s.id(), id);
+        s.push(id, text);
+        s.finish(id);
+    };
+    let v = voice(app);
+    {
+        let runtime = lock(&v.runtime);
+        if let Some(s) = runtime.as_ref().and_then(|r| r.speaker.as_ref()) {
+            speak(s);
+            return true;
+        }
+    }
+    if !models::VOICE.installed(&v.models) {
+        return false;
+    }
+    let settings = lock(&app.state::<AppState>().settings).voice.clone();
+    let mut greeter = lock(&v.greeter);
+    if greeter.is_none() {
+        match Speaker::start_with_events(
+            &v.models,
+            &settings.voice,
+            settings.speed,
+            Some(speech_events(app)),
+        ) {
+            Ok(s) => *greeter = Some(s),
+            Err(e) => {
+                log::warn!("voice greet: {e}");
+                return false;
+            }
+        }
+    }
+    match greeter.as_ref() {
+        Some(s) => {
+            speak(s);
+            true
+        }
+        None => false,
+    }
+}
+
+/// Forwards what a speaker is saying to the welcome timeline, when it is
+/// the welcome line.
+fn speech_events(app: &AppHandle) -> sidekick_voice::SpeechEvents {
+    let app = app.clone();
+    std::sync::Arc::new(move |event| {
+        let v = voice(&app);
+        let mut w = lock(&v.welcome);
+        match event {
+            SpeechEvent::Piece {
+                speaker,
+                utterance,
+                text,
+                starts_in,
+                length,
+            } if w.key == Some((speaker, utterance)) => w.pieces.push(SpokenPiece {
+                text,
+                starts_at: now_ms() + starts_in.as_millis() as u64,
+                ms: length.as_millis() as u64,
+            }),
+            SpeechEvent::End {
+                speaker,
+                utterance,
+                ends_in,
+            } if w.key == Some((speaker, utterance)) => {
+                w.ends_at = Some(now_ms() + ends_in.as_millis() as u64);
+                w.pending = false;
+            }
+            _ => return,
+        }
+        let _ = app.emit(WELCOME_EVENT, w.clone());
+    })
+}
+
+/// The welcome line and when its words are heard.
+pub fn welcome_speech(app: &AppHandle) -> WelcomeSpeech {
+    lock(&voice(app).welcome).clone()
+}
+
+/// Speaks welcome step `step`, cutting off whatever was being said.
+pub fn speak_welcome_step(app: &AppHandle, step: u32) {
+    let step = step.min(WELCOME_LINES.len() as u32 - 1);
+    let script = WELCOME_LINES[step as usize];
+    let v = voice(app);
+    let heard = say_with(app, script, |speaker, utterance| {
+        let mut w = lock(&v.welcome);
+        *w = WelcomeSpeech {
+            step,
+            lines: WELCOME_LINES,
+            script,
+            key: Some((speaker, utterance)),
+            pending: true,
+            ..Default::default()
+        };
+        let _ = app.emit(WELCOME_EVENT, w.clone());
+    });
+    if !heard {
+        let mut w = lock(&v.welcome);
+        *w = WelcomeSpeech {
+            step,
+            lines: WELCOME_LINES,
+            script,
+            silent: true,
+            ..Default::default()
+        };
+        let _ = app.emit(WELCOME_EVENT, w.clone());
+    }
+}
+
+/// Says a short line (e.g. "Done. Composio is connected.") right away.
+pub fn say_now(app: &AppHandle, text: &str) {
+    say_with(app, text, |_, _| {});
+}
+
+/// Speaks the first-run welcome once models are ready. Queues until the voice
+/// finishes downloading if needed.
+pub fn welcome_greet(app: &AppHandle) {
+    if lock(&app.state::<AppState>().settings).onboarded {
+        return;
+    }
+    let v = voice(app);
+    v.pending_welcome_greet.store(true, Ordering::SeqCst);
+    if !models::VOICE.installed(&v.models) {
+        ensure_models(app);
+        return;
+    }
+    enable_voice_for_onboarding(app);
+    if v.welcome_greeted.swap(true, Ordering::SeqCst) {
+        v.pending_welcome_greet.store(false, Ordering::SeqCst);
+        return;
+    }
+    v.pending_welcome_greet.store(false, Ordering::SeqCst);
+    let step = lock(&app.state::<AppState>().settings).welcome_step;
+    speak_welcome_step(app, step);
+}
+
+/// Turns voice on during onboarding so wake word and speaking work after setup.
+fn enable_voice_for_onboarding(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let mut settings = lock(&state.settings).clone();
+    if settings.onboarded || settings.voice.enabled {
+        return;
+    }
+    settings.voice.enabled = true;
+    if let Err(err) = crate::commands::apply_settings(app, settings) {
+        log::warn!("could not enable voice for welcome: {err}");
+    }
+}
+
 fn build(app: &AppHandle, key: Key, settings: &VoiceSettings) -> Runtime {
     let v = voice(app);
     let mut errors = Vec::new();
-    let speaker = match Speaker::start(&v.models, &settings.voice, settings.speed) {
+    let speaker = match Speaker::start_with_events(
+        &v.models,
+        &settings.voice,
+        settings.speed,
+        Some(speech_events(app)),
+    ) {
         Ok(s) => Some(s),
         Err(e) => {
             errors.push(format!("Speech: {e}"));
@@ -236,6 +572,11 @@ fn on_heard(app: &AppHandle, heard: Heard) {
         Heard::Wake => {
             // Talking over an answer stops it.
             stop_speaking(app);
+            if lock(&v.choosing).is_some() {
+                // Listening for a choice, not a question: Ask stays closed.
+                mascot::dispatch(app, MascotEvent::ListenStart);
+                return;
+            }
             if !ask::is_open(app) {
                 v.opened_by_voice.store(true, Ordering::SeqCst);
                 ask::open(app, ask::Open::default());
@@ -246,6 +587,18 @@ fn on_heard(app: &AppHandle, heard: Heard) {
         Heard::Partial(text) => emit_heard(app, strip_wake(&text), false),
         Heard::Final(text) => {
             let text = strip_wake(&text);
+            if let Some((id, labels)) = lock(&v.choosing).take() {
+                mascot::dispatch(app, MascotEvent::Cancelled);
+                let result = match match_choice(&text, &labels) {
+                    Choice::Option(i) => crate::suggestions::choose(app, &id, i),
+                    Choice::Dismiss => crate::suggestions::dismiss(app, &id, "voice"),
+                    Choice::Unclear => Ok(()),
+                };
+                if let Err(err) = result {
+                    log::debug!("spoken choice ignored: {err}");
+                }
+                return;
+            }
             mascot::dispatch(app, MascotEvent::Cancelled);
             emit_heard(app, text, true);
             v.opened_by_voice.store(false, Ordering::SeqCst);
@@ -305,6 +658,9 @@ fn stop_speaking(app: &AppHandle) {
     if let Some(s) = lock(&v.runtime).as_ref().and_then(|r| r.speaker.as_ref()) {
         s.stop();
     }
+    if let Some(s) = lock(&v.greeter).as_ref() {
+        s.stop();
+    }
 }
 
 /// Reads chat `id`'s answer aloud as it streams. False when voice is off.
@@ -336,12 +692,204 @@ pub fn answer_text(app: &AppHandle, id: &str, text: &str) {
 }
 
 pub fn answer_done(app: &AppHandle, id: &str, error: Option<&str>) {
+    let mut spoke = false;
     with_answer(app, id, |s, u| {
         if error.is_some() {
             s.push(u, "\nSorry, that did not work. The details are on screen.");
         }
         s.finish(u);
+        spoke = true;
     });
+    let conversation = lock(&app.state::<AppState>().settings).voice.conversation;
+    if spoke && conversation && error.is_none() {
+        let (app, id) = (app.clone(), id.to_owned());
+        // Listen for a reply once the answer has been read out, unless the
+        // user moved on (closed Ask, or another answer started).
+        listen_after_speaking(&app, move |app| {
+            ask::is_open(app)
+                && lock(&voice(app).speaking)
+                    .as_ref()
+                    .is_some_and(|(chat, _)| *chat == id)
+        });
+    }
+}
+
+/// Waits for the speaker to go quiet (at most `MAX_SPEECH`), then starts
+/// listening if `still_wanted` holds.
+fn listen_after_speaking(
+    app: &AppHandle,
+    still_wanted: impl Fn(&AppHandle) -> bool + Send + 'static,
+) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let started = std::time::Instant::now();
+        // Give the speaker a moment to start, then wait until it is quiet.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        while started.elapsed() < MAX_SPEECH {
+            let busy = lock(&voice(&app).runtime)
+                .as_ref()
+                .and_then(|r| r.speaker.as_ref())
+                .is_some_and(Speaker::busy);
+            if !busy {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        if still_wanted(&app) {
+            let _ = listen(&app);
+        }
+    });
+}
+
+const MAX_SPEECH: std::time::Duration = std::time::Duration::from_secs(90);
+/// How long a spoken suggestion waits for an answer.
+const CHOICE_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
+/// Suggestions below this priority are not read aloud.
+const SPEAK_FROM_PRIORITY: i32 = 50;
+
+/// Reads a suggestion aloud ("Report.pdf downloaded. Say open, show in
+/// folder, or not now.") and takes a spoken choice.
+pub fn offer_spoken(app: &AppHandle, ui: &crate::state::Suggestion, priority: i32) {
+    let settings = lock(&app.state::<AppState>().settings).voice.clone();
+    if !settings.enabled
+        || !settings.speak_suggestions
+        || priority < SPEAK_FROM_PRIORITY
+        || ui.options.is_empty()
+        || ask::is_open(app)
+        || *lock(&app.state::<AppState>().island_hidden)
+    {
+        return;
+    }
+    let v = voice(app);
+    {
+        let runtime = lock(&v.runtime);
+        let Some(speaker) = runtime.as_ref().and_then(|r| r.speaker.as_ref()) else {
+            return;
+        };
+        speaker.say(&spoken_prompt(&ui.title, &ui.detail, &ui.options));
+    }
+    *lock(&v.speaking) = None;
+    let (id, labels) = (ui.id.clone(), ui.options.clone());
+    *lock(&v.choosing) = Some((id.clone(), labels));
+    let wanted_id = id.clone();
+    listen_after_speaking(app, move |app| {
+        crate::suggestions::current(app).is_some_and(|s| s.id == wanted_id)
+            && lock(&voice(app).choosing).is_some()
+    });
+    // Nobody answered: stop listening and leave the suggestion on screen.
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(MAX_SPEECH.min(std::time::Duration::from_secs(30)) + CHOICE_WAIT);
+        let v = voice(&app);
+        let stale = lock(&v.choosing)
+            .as_ref()
+            .is_some_and(|(cid, _)| *cid == id);
+        if stale {
+            lock(&v.choosing).take();
+            if let Some(l) = lock(&v.runtime).as_ref().and_then(|r| r.listener.as_ref()) {
+                l.send(Control::Cancel);
+            }
+        }
+    });
+}
+
+/// "Report.pdf. Downloaded, 2 MB. Say open, show in folder, or not now."
+pub fn spoken_prompt(title: &str, detail: &str, options: &[String]) -> String {
+    let mut out = title.trim().trim_end_matches('.').to_owned();
+    let detail = detail.replace('·', ",");
+    if !detail.trim().is_empty() {
+        out.push_str(". ");
+        out.push_str(detail.trim().trim_end_matches('.'));
+    }
+    let names: Vec<String> = options.iter().take(3).map(|o| o.to_lowercase()).collect();
+    out.push_str(". Say ");
+    out.push_str(&names.join(", "));
+    out.push_str(", or not now.");
+    out
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Choice {
+    Option(usize),
+    Dismiss,
+    Unclear,
+}
+
+/// What a spoken answer picks: an option by name or position, "yes" for
+/// the first, or "not now".
+pub fn match_choice(text: &str, labels: &[String]) -> Choice {
+    let norm = |s: &str| -> String {
+        s.to_lowercase()
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let said = norm(text);
+    if said.is_empty() {
+        return Choice::Unclear;
+    }
+    let padded = format!(" {said} ");
+    // An option named in full wins, longest name first ("open in chrome"
+    // before "open").
+    let mut by_len: Vec<(usize, String)> = labels.iter().map(|l| norm(l)).enumerate().collect();
+    by_len.sort_by_key(|(_, l)| std::cmp::Reverse(l.len()));
+    for (i, label) in &by_len {
+        if !label.is_empty() && padded.contains(&format!(" {label} ")) {
+            return Choice::Option(*i);
+        }
+    }
+    let has = |words: &[&str]| words.iter().any(|w| padded.contains(&format!(" {w} ")));
+    if has(&[
+        "not now",
+        "no",
+        "nope",
+        "later",
+        "dismiss",
+        "cancel",
+        "skip",
+        "never mind",
+        "ignore",
+    ]) {
+        return Choice::Dismiss;
+    }
+    for (i, words) in [
+        &["first", "first one", "number one"][..],
+        &["second", "second one", "two", "number two"][..],
+        &["third", "third one", "three", "number three"][..],
+    ]
+    .iter()
+    .enumerate()
+    {
+        if i < labels.len() && has(words) {
+            return Choice::Option(i);
+        }
+    }
+    // One word of an option ("chrome" for "Open in Chrome"), if only one
+    // option has it.
+    let hits: Vec<usize> = labels
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| {
+            norm(l)
+                .split(' ')
+                .filter(|w| w.len() > 3)
+                .any(|w| padded.contains(&format!(" {w} ")))
+        })
+        .map(|(i, _)| i)
+        .collect();
+    if hits.len() == 1 {
+        return Choice::Option(hits[0]);
+    }
+    if has(&[
+        "yes", "yeah", "yep", "sure", "ok", "okay", "do it", "go ahead", "please",
+    ]) {
+        return Choice::Option(0);
+    }
+    Choice::Unclear
 }
 
 /// Says a sample with the chosen voice.
@@ -356,6 +904,7 @@ pub fn test(app: &AppHandle) -> Result<(), String> {
 }
 
 /// Downloads the missing models in the background, reporting progress.
+/// The voice is installed first so the welcome line can speak before wake/ASR.
 pub fn download(app: &AppHandle) -> Result<(), String> {
     let v = voice(app);
     if v.downloading.swap(true, Ordering::SeqCst) {
@@ -367,11 +916,13 @@ pub fn download(app: &AppHandle) -> Result<(), String> {
     std::thread::spawn(move || {
         let v = voice(&app);
         let mut failure = None;
-        for model in models::MODELS {
+        // Greeting needs the voice; wake/ASR can follow.
+        let order = [&models::VOICE, &models::WAKE, &models::SPEECH];
+        for model in order {
             if model.installed(&v.models) {
                 continue;
             }
-            let result = models::install(&model, &v.models, &v.cancel_download, |done, total| {
+            let result = models::install(model, &v.models, &v.cancel_download, |done, total| {
                 let _ = app.emit(
                     DOWNLOAD_EVENT,
                     DownloadPayload {
@@ -387,6 +938,16 @@ pub fn download(app: &AppHandle) -> Result<(), String> {
                 failure = Some(e.to_string());
                 break;
             }
+            // Open welcome as soon as speech is usable; keep downloading the rest.
+            if model.id == models::VOICE.id && failure.is_none() {
+                enable_voice_for_onboarding(&app);
+                emit_state(&app);
+                let pending = voice(&app).pending_welcome_greet.load(Ordering::SeqCst);
+                let onboarded = lock(&app.state::<AppState>().settings).onboarded;
+                if pending || !onboarded {
+                    ask::ensure_welcome(&app);
+                }
+            }
         }
         v.downloading.store(false, Ordering::SeqCst);
         let _ = app.emit(
@@ -399,15 +960,67 @@ pub fn download(app: &AppHandle) -> Result<(), String> {
                 error: failure.clone(),
             },
         );
-        if let Some(err) = failure {
+        if let Some(ref err) = failure {
             log::warn!("voice models: {err}");
+        } else {
+            enable_voice_for_onboarding(&app);
         }
         refresh(&app);
         emit_state(&app);
+        let pending = voice(&app).pending_welcome_greet.load(Ordering::SeqCst);
+        let onboarded = lock(&app.state::<AppState>().settings).onboarded;
+        if failure.is_none() && (pending || !onboarded) {
+            ask::ensure_welcome(&app);
+        }
     });
     Ok(())
 }
 
 pub fn cancel_download(app: &AppHandle) {
     voice(app).cancel_download.store(true, Ordering::SeqCst);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn labels(l: &[&str]) -> Vec<String> {
+        l.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn matches_spoken_choices() {
+        let opts = labels(&["Open", "Show in folder", "Convert to PNG"]);
+        assert_eq!(match_choice("Open it", &opts), Choice::Option(0));
+        assert_eq!(
+            match_choice("show in folder please", &opts),
+            Choice::Option(1)
+        );
+        assert_eq!(match_choice("the third one", &opts), Choice::Option(2));
+        assert_eq!(
+            match_choice("png", &opts),
+            Choice::Unclear,
+            "too short to guess"
+        );
+        assert_eq!(match_choice("convert it", &opts), Choice::Option(2));
+        assert_eq!(match_choice("Not now.", &opts), Choice::Dismiss);
+        assert_eq!(match_choice("nope", &opts), Choice::Dismiss);
+        assert_eq!(match_choice("yes", &opts), Choice::Option(0));
+        assert_eq!(match_choice("", &opts), Choice::Unclear);
+        assert_eq!(match_choice("what is the weather", &opts), Choice::Unclear);
+        let browsers = labels(&["Open", "Open in Chrome"]);
+        assert_eq!(match_choice("open in chrome", &browsers), Choice::Option(1));
+    }
+
+    #[test]
+    fn reads_a_suggestion_aloud() {
+        assert_eq!(
+            spoken_prompt(
+                "report.pdf",
+                "Downloaded · 2 MB",
+                &labels(&["Open", "Show in folder"])
+            ),
+            "report.pdf. Downloaded , 2 MB. Say open, show in folder, or not now."
+        );
+    }
 }

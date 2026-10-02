@@ -60,9 +60,34 @@ fn local_model(ai: &AiSettings) -> OpenAiCompat {
     )
 }
 
-pub fn router(app: &AppHandle) -> Router {
-    let ai = lock(&app.state::<AppState>().settings).ai.clone();
-    Router::new(providers(app, &ai, false))
+/// The router for one Ask-mode chat: the local model gets Composio's tools
+/// when they are set up and the chat may leave the PC.
+async fn chat_router(
+    app: &AppHandle,
+    chat_id: &str,
+    handoff: &Arc<std::sync::Mutex<Option<String>>>,
+    local_only: bool,
+) -> Router {
+    let settings = lock(&app.state::<AppState>().settings).clone();
+    let server = if local_only || !settings.ai.local.enabled {
+        None
+    } else {
+        crate::composio::server(&settings.composio).await
+    };
+    let list = providers(app, &settings.ai, false)
+        .into_iter()
+        .map(|p| match (&server, p.id()) {
+            (Some(server), "local") => Arc::new(crate::composio::LocalWithTools {
+                inner: local_model(&settings.ai),
+                app: app.clone(),
+                chat_id: chat_id.to_owned(),
+                handoff: handoff.clone(),
+                server: server.clone(),
+            }) as Arc<dyn AiProvider>,
+            _ => p,
+        })
+        .collect();
+    Router::new(list)
 }
 
 fn semif(app: &AppHandle, ai: &AiSettings) -> SemIf {
@@ -271,6 +296,8 @@ struct Done {
     id: String,
     provider: Option<String>,
     error: Option<String>,
+    /// Why the local model suggests continuing in Claude Code, if it does.
+    handoff: Option<String>,
 }
 
 /// Starts a streamed chat. Text arrives as `ai://delta`, the end as `ai://done`.
@@ -295,6 +322,7 @@ pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach,
                             id,
                             provider: None,
                             error: Some(format!("Could not capture the screen: {err}")),
+                            handoff: None,
                         },
                     );
                     return;
@@ -308,7 +336,8 @@ pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach,
             messages,
             image,
         };
-        let router = router(&app);
+        let handoff = Arc::new(std::sync::Mutex::new(None));
+        let router = chat_router(&app, &id, &handoff, local_only).await;
         let speak = attach.speak && crate::voice::begin_answer(&app, &id);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
         let forward = {
@@ -331,15 +360,18 @@ pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach,
         if let (Ok(answer), Some(q)) = (&result, &question) {
             crate::search::index_chat(&app, &id, q, &answer.text);
         }
+        let handoff = lock(&handoff).take();
         let done = match result {
             Ok(answer) => Done {
                 id,
+                handoff: handoff.filter(|_| answer.provider == "local"),
                 provider: Some(answer.provider),
                 error: None,
             },
             Err(err) => Done {
                 id,
                 provider: None,
+                handoff,
                 error: Some(match err {
                     sidekick_ai::AiError::NoProvider => no_provider_hint(local_only),
                     other => other.to_string(),

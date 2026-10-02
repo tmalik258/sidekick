@@ -1,14 +1,15 @@
-//! Calendar (FR-COMM-02): reads your calendar's private iCal link (Google
-//! Calendar "Secret address in iCal format", or an Outlook published ICS
-//! link), so there is no account sign-in. Raises `calendar.meeting_soon` a
-//! few minutes before a meeting and `calendar.meeting_ended` after it.
+//! Calendar (FR-COMM-02): meetings come from Google Calendar or Outlook
+//! through Composio (the app fills [`CalendarState::meetings`]). Raises
+//! `calendar.meeting_soon` a few minutes before a meeting and
+//! `calendar.meeting_ended` after it.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
 use serde::Serialize;
+use serde_json::Value;
 use sidekick_core::{Event, EventBus, Sensitivity};
 use tokio::task::JoinHandle;
 
@@ -28,13 +29,14 @@ pub struct Meeting {
     pub attendees: Vec<String>,
 }
 
-/// Shared between the sensor and the app: the feeds to read and the
-/// meetings found in the next day.
+/// Shared between the sensor and the app: the meetings in the next day,
+/// and where they came from.
 #[derive(Debug, Default)]
 pub struct CalendarState {
-    pub feeds: Vec<String>,
     pub remind_minutes: i64,
     pub meetings: Vec<Meeting>,
+    /// Calendars read, for Settings ("Google Calendar").
+    pub sources: Vec<String>,
     pub error: Option<String>,
 }
 
@@ -50,7 +52,6 @@ impl CalendarSensor {
     pub const ENDED: &'static str = "calendar.meeting_ended";
 }
 
-const FETCH_EVERY: Duration = Duration::from_secs(10 * 60);
 const TICK: Duration = Duration::from_secs(30);
 /// Meeting-ended follow-ups wait for recordings and notes to be processed.
 const ENDED_AFTER_MINUTES: i64 = 5;
@@ -63,13 +64,6 @@ impl Sensor for CalendarSensor {
 
     fn spawn(self: Box<Self>, bus: EventBus, gate: SensorGate) -> JoinHandle<()> {
         tokio::spawn(async move {
-            let client = reqwest::Client::builder()
-                .user_agent("Sidekick")
-                .timeout(Duration::from_secs(30))
-                .build()
-                .unwrap_or_default();
-            let mut last_fetch: Option<tokio::time::Instant> = None;
-            let mut last_feeds: Vec<String> = Vec::new();
             let mut announced: HashSet<String> = HashSet::new();
             let mut tick = tokio::time::interval(TICK);
             loop {
@@ -77,54 +71,12 @@ impl Sensor for CalendarSensor {
                 if !gate.allows(Self::ID) {
                     continue;
                 }
-                let feeds = lock(&self.state).feeds.clone();
-                if feeds.is_empty() {
-                    lock(&self.state).meetings.clear();
-                    continue;
-                }
-                let stale =
-                    last_fetch.is_none_or(|t| t.elapsed() >= FETCH_EVERY) || feeds != last_feeds;
-                if stale {
-                    last_fetch = Some(tokio::time::Instant::now());
-                    last_feeds = feeds.clone();
-                    let now = Utc::now();
-                    let mut meetings = Vec::new();
-                    let mut errors = Vec::new();
-                    for url in &feeds {
-                        match fetch(&client, url).await {
-                            Ok(text) => meetings.extend(parse(
-                                &text,
-                                now - chrono::Duration::hours(2),
-                                now + chrono::Duration::hours(30),
-                            )),
-                            Err(e) => errors.push(e),
-                        }
-                    }
-                    meetings.sort_by_key(|m| m.start);
-                    meetings.dedup_by(|a, b| a.uid == b.uid && a.start == b.start);
-                    let mut s = lock(&self.state);
-                    s.meetings = meetings;
-                    s.error = (!errors.is_empty()).then(|| errors.join("; "));
-                }
                 let (meetings, remind) = {
                     let s = lock(&self.state);
                     (s.meetings.clone(), s.remind_minutes.max(1))
                 };
-                let now = Utc::now();
-                for m in &meetings {
-                    let until = (m.start - now).num_minutes();
-                    let key = format!("soon:{}:{}", m.uid, m.start.timestamp());
-                    if m.start > now && until < remind && announced.insert(key) {
-                        bus.publish(soon_event(m, until + 1));
-                    }
-                    let since_end = (now - m.end).num_minutes();
-                    let key = format!("ended:{}:{}", m.uid, m.start.timestamp());
-                    if (ENDED_AFTER_MINUTES..ENDED_AFTER_MINUTES + 10).contains(&since_end)
-                        && (m.end - m.start).num_minutes() >= 10
-                        && announced.insert(key)
-                    {
-                        bus.publish(ended_event(m));
-                    }
+                for event in due(&meetings, remind, Utc::now(), &mut announced) {
+                    bus.publish(event);
                 }
                 if announced.len() > 500 {
                     announced.clear();
@@ -134,29 +86,36 @@ impl Sensor for CalendarSensor {
     }
 }
 
+/// The reminders and follow-ups due now; each is raised once.
+fn due(
+    meetings: &[Meeting],
+    remind: i64,
+    now: DateTime<Utc>,
+    announced: &mut HashSet<String>,
+) -> Vec<Event> {
+    let mut out = Vec::new();
+    for m in meetings {
+        let until = (m.start - now).num_minutes();
+        let key = format!("soon:{}:{}", m.uid, m.start.timestamp());
+        if m.start > now && until < remind && announced.insert(key) {
+            out.push(soon_event(m, until + 1));
+        }
+        let since_end = (now - m.end).num_minutes();
+        let key = format!("ended:{}:{}", m.uid, m.start.timestamp());
+        if (ENDED_AFTER_MINUTES..ENDED_AFTER_MINUTES + 10).contains(&since_end)
+            && (m.end - m.start).num_minutes() >= 10
+            && announced.insert(key)
+        {
+            out.push(ended_event(m));
+        }
+    }
+    out
+}
+
 fn lock(state: &Calendar) -> std::sync::MutexGuard<'_, CalendarState> {
     state
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-async fn fetch(client: &reqwest::Client, url: &str) -> Result<String, String> {
-    // Only real web links; Google shares webcal:// links for the same feed.
-    let url = url.trim().replacen("webcal://", "https://", 1);
-    if !url.starts_with("https://") {
-        return Err("calendar links must start with https://".into());
-    }
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-        .map_err(|e| format!("calendar: {}", e.without_url()))?;
-    let text = resp.text().await.map_err(|e| e.without_url().to_string())?;
-    if !text.contains("BEGIN:VCALENDAR") {
-        return Err("calendar link did not return an iCal feed".into());
-    }
-    Ok(text)
 }
 
 fn local_time(t: DateTime<Utc>) -> String {
@@ -198,105 +157,6 @@ fn ended_event(m: &Meeting) -> Event {
     .with_sensitivity(Sensitivity::Personal)
 }
 
-// ---------- iCal parsing ----------
-
-struct Prop {
-    name: String,
-    params: Vec<(String, String)>,
-    value: String,
-}
-
-impl Prop {
-    fn param(&self, key: &str) -> Option<&str> {
-        self.params
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case(key))
-            .map(|(_, v)| v.as_str())
-    }
-}
-
-/// Joins folded lines (a line starting with a space continues the last).
-fn unfold(text: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for line in text.lines() {
-        if let Some(rest) = line.strip_prefix([' ', '\t'])
-            && let Some(last) = out.last_mut()
-        {
-            last.push_str(rest);
-        } else {
-            out.push(line.trim_end_matches('\r').to_owned());
-        }
-    }
-    out
-}
-
-fn parse_prop(line: &str) -> Option<Prop> {
-    // The value starts at the first colon outside quotes.
-    let mut quoted = false;
-    let colon = line.char_indices().find_map(|(i, c)| {
-        if c == '"' {
-            quoted = !quoted;
-        }
-        (c == ':' && !quoted).then_some(i)
-    })?;
-    let (head, value) = (&line[..colon], &line[colon + 1..]);
-    let mut parts = head.split(';');
-    let name = parts.next()?.to_ascii_uppercase();
-    let params = parts
-        .filter_map(|p| p.split_once('='))
-        .map(|(k, v)| (k.to_ascii_uppercase(), v.trim_matches('"').to_owned()))
-        .collect();
-    Some(Prop {
-        name,
-        params,
-        value: value.to_owned(),
-    })
-}
-
-fn unescape(v: &str) -> String {
-    let mut out = String::with_capacity(v.len());
-    let mut chars = v.chars();
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            match chars.next() {
-                Some('n' | 'N') => out.push('\n'),
-                Some(other) => out.push(other),
-                None => {}
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
-
-/// A DTSTART/DTEND value, or None for all-day dates.
-fn parse_time(p: &Prop) -> Option<DateTime<Utc>> {
-    if p.param("VALUE") == Some("DATE") || p.value.len() == 8 {
-        return None;
-    }
-    let v = p.value.trim();
-    if let Some(utc) = v.strip_suffix('Z') {
-        let naive = NaiveDateTime::parse_from_str(utc, "%Y%m%dT%H%M%S").ok()?;
-        return Some(Utc.from_utc_datetime(&naive));
-    }
-    let naive = NaiveDateTime::parse_from_str(v, "%Y%m%dT%H%M%S").ok()?;
-    if let Some(tz) = p
-        .param("TZID")
-        .and_then(|t| t.parse::<chrono_tz::Tz>().ok())
-    {
-        return tz
-            .from_local_datetime(&naive)
-            .earliest()
-            .map(|t| t.with_timezone(&Utc));
-    }
-    // Floating time or a Windows zone name: read it as this PC's time.
-    Local
-        .from_local_datetime(&naive)
-        .earliest()
-        .map(|t| t.with_timezone(&Utc))
-}
-
 const CALL_HOSTS: &[&str] = &[
     "https://meet.google.com/",
     "https://zoom.us/",
@@ -328,142 +188,105 @@ pub fn find_join_url(texts: &[&str]) -> Option<String> {
     None
 }
 
-#[derive(Default)]
-struct Raw {
-    uid: String,
-    title: String,
-    location: String,
-    description: String,
-    url: String,
-    start: Option<Prop>,
-    end: Option<DateTime<Utc>>,
-    rrule: Vec<String>,
-    exdates: Vec<String>,
-    recurrence_id: Option<DateTime<Utc>>,
-    cancelled: bool,
-    attendees: Vec<String>,
+fn rfc3339(v: &Value) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(v.as_str()?)
+        .ok()
+        .map(|t| t.with_timezone(&Utc))
 }
 
-/// Meetings starting between `from` and `to`, with recurring ones expanded.
-pub fn parse(text: &str, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<Meeting> {
-    let mut raws: Vec<Raw> = Vec::new();
-    let mut current: Option<Raw> = None;
-    for line in unfold(text) {
-        if line.eq_ignore_ascii_case("BEGIN:VEVENT") {
-            current = Some(Raw::default());
-            continue;
-        }
-        if line.eq_ignore_ascii_case("END:VEVENT") {
-            raws.extend(current.take());
-            continue;
-        }
-        let (Some(raw), Some(p)) = (current.as_mut(), parse_prop(&line)) else {
-            continue;
-        };
-        match p.name.as_str() {
-            "UID" => raw.uid = p.value.clone(),
-            "SUMMARY" => raw.title = unescape(&p.value),
-            "LOCATION" => raw.location = unescape(&p.value),
-            "DESCRIPTION" => raw.description = unescape(&p.value),
-            "URL" => raw.url = p.value.clone(),
-            "DTEND" => raw.end = parse_time(&p),
-            "RRULE" | "RDATE" => raw.rrule.push(line.clone()),
-            "EXDATE" => raw.exdates.push(line.clone()),
-            "RECURRENCE-ID" => raw.recurrence_id = parse_time(&p),
-            "STATUS" => raw.cancelled = p.value.eq_ignore_ascii_case("CANCELLED"),
-            "ATTENDEE" => {
-                if let Some(name) = p.param("CN") {
-                    raw.attendees.push(name.to_owned());
-                } else if let Some(mail) = p.value.strip_prefix("mailto:") {
-                    raw.attendees.push(mail.to_owned());
-                }
-            }
-            "DTSTART" => raw.start = Some(p),
-            _ => {}
-        }
+/// A Google Calendar event (`GOOGLECALENDAR_EVENTS_LIST`). All-day events
+/// (with only a `date`) and cancelled or declined ones are skipped.
+pub fn from_google(e: &Value) -> Option<Meeting> {
+    if e["status"].as_str() == Some("cancelled") {
+        return None;
     }
-
-    // Moved or cancelled single occurrences replace the series' instance.
-    let overrides: HashSet<(String, i64)> = raws
-        .iter()
-        .filter_map(|r| r.recurrence_id.map(|t| (r.uid.clone(), t.timestamp())))
-        .collect();
-
-    let mut out = Vec::new();
-    for raw in raws {
-        let Some(start_prop) = &raw.start else {
-            continue;
-        };
-        let Some(start) = parse_time(start_prop) else {
-            continue; // all-day
-        };
-        let length = raw.end.map_or(chrono::Duration::minutes(30), |e| e - start);
-        let starts: Vec<DateTime<Utc>> = if raw.rrule.is_empty() || raw.recurrence_id.is_some() {
-            vec![start]
-        } else {
-            expand(start_prop, start, &raw.rrule, &raw.exdates, from, to)
-        };
-        if raw.cancelled {
-            continue;
-        }
-        let join_url = find_join_url(&[&raw.location, &raw.url, &raw.description]);
-        for s in starts {
-            if s < from || s > to {
-                continue;
-            }
-            if raw.recurrence_id.is_none() && overrides.contains(&(raw.uid.clone(), s.timestamp()))
-            {
-                continue;
-            }
-            out.push(Meeting {
-                uid: raw.uid.clone(),
-                title: if raw.title.is_empty() {
-                    "Meeting".into()
-                } else {
-                    raw.title.clone()
-                },
-                start: s,
-                end: s + length,
-                location: raw.location.clone(),
-                description: raw.description.clone(),
-                join_url: join_url.clone(),
-                attendees: raw.attendees.clone(),
-            });
-        }
+    let declined = e["attendees"].as_array().is_some_and(|a| {
+        a.iter()
+            .any(|p| p["self"].as_bool() == Some(true) && p["responseStatus"] == "declined")
+    });
+    if declined {
+        return None;
     }
-    out.sort_by_key(|m| m.start);
-    out
+    let start = rfc3339(&e["start"]["dateTime"])?;
+    let end = rfc3339(&e["end"]["dateTime"]).unwrap_or(start + chrono::Duration::minutes(30));
+    let description = e["description"].as_str().unwrap_or_default();
+    let location = e["location"].as_str().unwrap_or_default();
+    let entry_points: Vec<&str> = e["conferenceData"]["entryPoints"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|p| p["uri"].as_str()).collect())
+        .unwrap_or_default();
+    let mut texts: Vec<&str> = vec![e["hangoutLink"].as_str().unwrap_or_default()];
+    texts.extend(entry_points);
+    texts.extend([location, description]);
+    Some(Meeting {
+        uid: e["id"].as_str().unwrap_or_default().to_owned(),
+        title: e["summary"].as_str().unwrap_or("Meeting").to_owned(),
+        start,
+        end,
+        location: location.to_owned(),
+        description: description.to_owned(),
+        join_url: find_join_url(&texts),
+        attendees: e["attendees"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter(|p| p["self"].as_bool() != Some(true))
+                    .filter_map(|p| p["displayName"].as_str().or(p["email"].as_str()))
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default(),
+    })
 }
 
-fn expand(
-    start_prop: &Prop,
-    start: DateTime<Utc>,
-    rules: &[String],
-    exdates: &[String],
-    from: DateTime<Utc>,
-    to: DateTime<Utc>,
-) -> Vec<DateTime<Utc>> {
-    // rrule wants an IANA zone; anything else is rewritten in UTC.
-    let dtstart = match start_prop.param("TZID") {
-        Some(tz) if tz.parse::<chrono_tz::Tz>().is_ok() => {
-            format!("DTSTART;TZID={tz}:{}", start_prop.value.trim())
-        }
-        _ => format!("DTSTART:{}", start.format("%Y%m%dT%H%M%SZ")),
-    };
-    let mut spec = vec![dtstart];
-    spec.extend(rules.iter().cloned());
-    spec.extend(exdates.iter().cloned());
-    let Ok(set) = spec.join("\n").parse::<rrule::RRuleSet>() else {
-        return vec![start];
-    };
-    let tz = rrule::Tz::UTC;
-    set.after(from.with_timezone(&tz))
-        .before(to.with_timezone(&tz))
-        .all(100)
-        .dates
-        .into_iter()
-        .map(|d| d.with_timezone(&Utc))
-        .collect()
+/// Outlook times come as `{dateTime, timeZone}`; Sidekick asks for UTC.
+fn outlook_time(v: &Value) -> Option<DateTime<Utc>> {
+    let s = v["dateTime"].as_str()?;
+    if let Ok(t) = DateTime::parse_from_rfc3339(s) {
+        return Some(t.with_timezone(&Utc));
+    }
+    let naive =
+        chrono::NaiveDateTime::parse_from_str(s.trim_end_matches('Z'), "%Y-%m-%dT%H:%M:%S%.f")
+            .ok()?;
+    Some(Utc.from_utc_datetime(&naive))
+}
+
+/// An Outlook event (`OUTLOOK_GET_CALENDAR_VIEW`, times in UTC).
+pub fn from_outlook(e: &Value) -> Option<Meeting> {
+    if e["isCancelled"].as_bool() == Some(true) || e["isAllDay"].as_bool() == Some(true) {
+        return None;
+    }
+    let start = outlook_time(&e["start"])?;
+    let end = outlook_time(&e["end"]).unwrap_or(start + chrono::Duration::minutes(30));
+    let location = e["location"]["displayName"].as_str().unwrap_or_default();
+    let description = e["bodyPreview"].as_str().unwrap_or_default();
+    let texts = [
+        e["onlineMeeting"]["joinUrl"].as_str().unwrap_or_default(),
+        location,
+        description,
+    ];
+    Some(Meeting {
+        uid: e["id"].as_str().unwrap_or_default().to_owned(),
+        title: e["subject"].as_str().unwrap_or("Meeting").to_owned(),
+        start,
+        end,
+        location: location.to_owned(),
+        description: description.to_owned(),
+        join_url: find_join_url(&texts),
+        attendees: e["attendees"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|p| {
+                        p["emailAddress"]["name"]
+                            .as_str()
+                            .or(p["emailAddress"]["address"].as_str())
+                    })
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default(),
+    })
 }
 
 /// Meetings on a local calendar day.
@@ -478,106 +301,98 @@ pub fn on_day(meetings: &[Meeting], day: NaiveDate) -> Vec<Meeting> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const ICS: &str = "BEGIN:VCALENDAR\r
-VERSION:2.0\r
-BEGIN:VEVENT\r
-UID:one@x\r
-SUMMARY:Design review\\, round 2\r
-DTSTART:20261001T150000Z\r
-DTEND:20261001T154500Z\r
-LOCATION:https://meet.google.com/abc-defg-hij\r
-ATTENDEE;CN=\"Sara Khan\";ROLE=REQ-PARTICIPANT:mailto:sara@x.com\r
-ATTENDEE:mailto:ali@x.com\r
-DESCRIPTION:Agenda:\\n- mocks\\n- next steps\r
-END:VEVENT\r
-BEGIN:VEVENT\r
-UID:standup@x\r
-SUMMARY:Standup\r
-DTSTART;TZID=Asia/Karachi:20260901T100000\r
-DTEND;TZID=Asia/Karachi:20260901T101500\r
-RRULE:FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR\r
-DESCRIPTION:Join: https://us06web.zoom.us/j/123456?pwd=abc. Thanks\r
-END:VEVENT\r
-BEGIN:VEVENT\r
-UID:standup@x\r
-RECURRENCE-ID;TZID=Asia/Karachi:20261002T100000\r
-SUMMARY:Standup (moved)\r
-DTSTART;TZID=Asia/Karachi:20261002T113000\r
-DTEND;TZID=Asia/Karachi:20261002T114500\r
-END:VEVENT\r
-BEGIN:VEVENT\r
-UID:holiday@x\r
-SUMMARY:Holiday\r
-DTSTART;VALUE=DATE:20261001\r
-END:VEVENT\r
-BEGIN:VEVENT\r
-UID:gone@x\r
-SUMMARY:Cancelled thing\r
-STATUS:CANCELLED\r
-DTSTART:20261001T160000Z\r
-END:VEVENT\r
-END:VCALENDAR\r
-";
+    use serde_json::json;
 
     fn at(s: &str) -> DateTime<Utc> {
         DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc)
     }
 
     #[test]
-    fn parses_single_recurring_and_moved_meetings() {
-        let m = parse(ICS, at("2026-10-01T00:00:00Z"), at("2026-10-02T23:59:00Z"));
-        let titles: Vec<(&str, String)> = m
-            .iter()
-            .map(|m| (m.title.as_str(), m.start.format("%d %H:%M").to_string()))
-            .collect();
-        assert_eq!(
-            titles,
-            vec![
-                ("Standup", "01 05:00".to_owned()),
-                ("Design review, round 2", "01 15:00".to_owned()),
-                ("Standup (moved)", "02 06:30".to_owned()),
+    fn reads_google_events() {
+        let e = json!({
+            "id": "e1", "status": "confirmed", "summary": "Design review",
+            "start": { "dateTime": "2026-10-02T15:00:00+05:00" },
+            "end": { "dateTime": "2026-10-02T15:30:00+05:00" },
+            "hangoutLink": "https://meet.google.com/abc-defg-hij",
+            "attendees": [
+                { "email": "me@x.com", "self": true, "responseStatus": "accepted" },
+                { "email": "sara@client.com", "displayName": "Sara" }
             ]
-        );
-        let review = &m[1];
+        });
+        let m = from_google(&e).unwrap();
+        assert_eq!(m.title, "Design review");
+        assert_eq!(m.start, at("2026-10-02T10:00:00Z"));
         assert_eq!(
-            review.join_url.as_deref(),
+            m.join_url.as_deref(),
             Some("https://meet.google.com/abc-defg-hij")
         );
-        assert_eq!(review.attendees, vec!["Sara Khan", "ali@x.com"]);
-        assert_eq!(review.description, "Agenda:\n- mocks\n- next steps");
-        assert_eq!((review.end - review.start).num_minutes(), 45);
-        assert_eq!(
-            m[0].join_url.as_deref(),
-            Some("https://us06web.zoom.us/j/123456?pwd=abc")
-        );
+        assert_eq!(m.attendees, vec!["Sara"]);
+
+        let all_day =
+            json!({ "id": "e2", "summary": "Holiday", "start": { "date": "2026-10-02" } });
+        assert!(from_google(&all_day).is_none());
+        let mut declined = e.clone();
+        declined["attendees"][0]["responseStatus"] = json!("declined");
+        assert!(from_google(&declined).is_none());
+        let mut cancelled = e;
+        cancelled["status"] = json!("cancelled");
+        assert!(from_google(&cancelled).is_none());
     }
 
     #[test]
-    fn unfolds_long_lines() {
-        let text =
-            "BEGIN:VEVENT\nUID:a\nSUMMARY:Long\n  title\nDTSTART:20261001T150000Z\nEND:VEVENT\n";
-        let m = parse(text, at("2026-10-01T00:00:00Z"), at("2026-10-02T00:00:00Z"));
-        assert_eq!(m[0].title, "Long title");
-        assert_eq!(
-            (m[0].end - m[0].start).num_minutes(),
-            30,
-            "no DTEND means 30 min"
+    fn reads_outlook_events() {
+        let e = json!({
+            "id": "o1", "subject": "Standup", "isAllDay": false, "isCancelled": false,
+            "start": { "dateTime": "2026-10-02T09:00:00.0000000", "timeZone": "UTC" },
+            "end": { "dateTime": "2026-10-02T09:15:00.0000000", "timeZone": "UTC" },
+            "onlineMeeting": { "joinUrl": "https://teams.microsoft.com/l/meetup-join/x" },
+            "location": { "displayName": "Teams" },
+            "attendees": [{ "emailAddress": { "name": "Ali", "address": "ali@x.com" } }]
+        });
+        let m = from_outlook(&e).unwrap();
+        assert_eq!(m.start, at("2026-10-02T09:00:00Z"));
+        assert_eq!(m.end, at("2026-10-02T09:15:00Z"));
+        assert!(
+            m.join_url
+                .unwrap()
+                .starts_with("https://teams.microsoft.com/")
         );
+        assert_eq!(m.attendees, vec!["Ali"]);
+        let mut cancelled = e;
+        cancelled["isCancelled"] = json!(true);
+        assert!(from_outlook(&cancelled).is_none());
+    }
+
+    #[test]
+    fn reminds_once_before_and_follows_up_once_after() {
+        let m = Meeting {
+            uid: "u".into(),
+            title: "Sync".into(),
+            start: at("2026-10-02T10:00:00Z"),
+            end: at("2026-10-02T10:30:00Z"),
+            location: String::new(),
+            description: String::new(),
+            join_url: None,
+            attendees: vec![],
+        };
+        let mut seen = HashSet::new();
+        let ms = std::slice::from_ref(&m);
+        assert!(due(ms, 5, at("2026-10-02T09:50:00Z"), &mut seen).is_empty());
+        let soon = due(ms, 5, at("2026-10-02T09:56:00Z"), &mut seen);
+        assert_eq!(soon.len(), 1);
+        assert_eq!(soon[0].kind, CalendarSensor::SOON);
+        assert!(due(ms, 5, at("2026-10-02T09:57:00Z"), &mut seen).is_empty());
+        let ended = due(ms, 5, at("2026-10-02T10:36:00Z"), &mut seen);
+        assert_eq!(ended.len(), 1);
+        assert_eq!(ended[0].kind, CalendarSensor::ENDED);
     }
 
     #[test]
     fn finds_call_links_only_on_known_hosts() {
         assert_eq!(
-            find_join_url(&[
-                "",
-                "Teams: <https://teams.microsoft.com/l/meetup-join/19%3a>"
-            ]),
-            Some("https://teams.microsoft.com/l/meetup-join/19%3a".into())
+            find_join_url(&["Join: https://us05web.zoom.us/j/123?pwd=x."]).as_deref(),
+            Some("https://us05web.zoom.us/j/123?pwd=x")
         );
-        assert_eq!(
-            find_join_url(&["https://evil.example/meet.google.com/x"]),
-            None
-        );
+        assert!(find_join_url(&["https://evil.example/meet.google.com/"]).is_none());
     }
 }

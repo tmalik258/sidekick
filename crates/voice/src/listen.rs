@@ -3,7 +3,6 @@
 //! arrives as you speak, so the island can show it live.
 
 use std::collections::VecDeque;
-use std::ffi::{CStr, CString};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -11,7 +10,10 @@ use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use sherpa_rs_sys as sys;
+use sherpa_onnx::{
+    KeywordSpotter, KeywordSpotterConfig, OnlineModelConfig, OnlineRecognizer,
+    OnlineRecognizerConfig, OnlineStream, OnlineTransducerModelConfig,
+};
 
 use crate::audio::Mic;
 use crate::models::{SPEECH, WAKE};
@@ -49,91 +51,93 @@ pub struct ListenerConfig {
 /// words after it are not lost.
 const PRIME: usize = MIC_RATE as usize * 3 / 2;
 
-/// Owns the native keyword spotter and recognizer.
+/// Owns the keyword spotter and the streaming recognizer.
 pub struct Engine {
-    spotter: Option<(
-        *const sys::SherpaOnnxKeywordSpotter,
-        *const sys::SherpaOnnxOnlineStream,
-    )>,
-    recognizer: *const sys::SherpaOnnxOnlineRecognizer,
-    stream: *const sys::SherpaOnnxOnlineStream,
+    spotter: Option<(KeywordSpotter, OnlineStream)>,
+    recognizer: OnlineRecognizer,
+    stream: OnlineStream,
     listening: bool,
     recent: VecDeque<f32>,
     last: String,
 }
 
-fn cstr(s: &str) -> CString {
-    CString::new(s).unwrap_or_default()
+fn model(
+    dir: &Path,
+    model: &crate::models::Model,
+    enc: &str,
+    dec: &str,
+    joi: &str,
+    threads: i32,
+) -> OnlineModelConfig {
+    OnlineModelConfig {
+        transducer: OnlineTransducerModelConfig {
+            encoder: Some(model.file(dir, enc)),
+            decoder: Some(model.file(dir, dec)),
+            joiner: Some(model.file(dir, joi)),
+        },
+        tokens: Some(model.file(dir, "tokens.txt")),
+        num_threads: threads,
+        provider: Some("cpu".into()),
+        ..Default::default()
+    }
 }
+
+// The engine's default features (16 kHz, 80 bins) are what the models and
+// the microphone resampler use, so feat_config is left at its default.
+const _: () = assert!(MIC_RATE == 16_000);
 
 impl Engine {
     pub fn new(models: &Path, wake_word: bool) -> Result<Self> {
         if !SPEECH.installed(models) || (wake_word && !WAKE.installed(models)) {
             return Err(VoiceError::MissingModels);
         }
-        let cpu = cstr("cpu");
         let spotter = if wake_word {
-            let enc = cstr(&WAKE.file(models, WAKE.files[0]));
-            let dec = cstr(&WAKE.file(models, WAKE.files[1]));
-            let joi = cstr(&WAKE.file(models, WAKE.files[2]));
-            let tok = cstr(&WAKE.file(models, "tokens.txt"));
-            let keywords = cstr(WAKE_KEYWORDS);
-            // SAFETY: a zeroed config is the C API's documented default; every
-            // pointer set here outlives the create call.
-            unsafe {
-                let mut c: sys::SherpaOnnxKeywordSpotterConfig = std::mem::zeroed();
-                c.feat_config.sample_rate = MIC_RATE as i32;
-                c.feat_config.feature_dim = 80;
-                c.model_config.transducer.encoder = enc.as_ptr();
-                c.model_config.transducer.decoder = dec.as_ptr();
-                c.model_config.transducer.joiner = joi.as_ptr();
-                c.model_config.tokens = tok.as_ptr();
-                c.model_config.num_threads = 1;
-                c.model_config.provider = cpu.as_ptr();
-                c.max_active_paths = 4;
-                c.keywords_score = 1.0;
-                c.keywords_threshold = 0.25;
-                c.num_trailing_blanks = 1;
-                c.keywords_buf = keywords.as_ptr();
-                c.keywords_buf_size = keywords.as_bytes().len() as i32;
-                let spotter = sys::SherpaOnnxCreateKeywordSpotter(&c);
-                if spotter.is_null() {
-                    return Err(VoiceError::Engine("wake word model did not load".into()));
-                }
-                let stream = sys::SherpaOnnxCreateKeywordStream(spotter);
-                Some((spotter, stream))
-            }
+            let config = KeywordSpotterConfig {
+                model_config: model(
+                    models,
+                    &WAKE,
+                    WAKE.files[0],
+                    WAKE.files[1],
+                    WAKE.files[2],
+                    1,
+                ),
+                max_active_paths: 4,
+                // Tuned for real voices across a room, not studio audio: a
+                // boost for the phrase and a lower bar to fire. Lower than
+                // this and everyday speech starts to wake it.
+                keywords_score: 1.5,
+                keywords_threshold: 0.15,
+                num_trailing_blanks: 1,
+                keywords_buf: Some(WAKE_KEYWORDS.to_owned()),
+                ..Default::default()
+            };
+            let spotter = KeywordSpotter::create(&config)
+                .ok_or_else(|| VoiceError::Engine("wake word model did not load".into()))?;
+            let stream = spotter.create_stream();
+            Some((spotter, stream))
         } else {
             None
         };
-        let enc = cstr(&SPEECH.file(models, "encoder.onnx"));
-        let dec = cstr(&SPEECH.file(models, "decoder.onnx"));
-        let joi = cstr(&SPEECH.file(models, "joiner.onnx"));
-        let tok = cstr(&SPEECH.file(models, "tokens.txt"));
-        let greedy = cstr("greedy_search");
-        // SAFETY: as above.
-        let (recognizer, stream) = unsafe {
-            let mut c: sys::SherpaOnnxOnlineRecognizerConfig = std::mem::zeroed();
-            c.feat_config.sample_rate = MIC_RATE as i32;
-            c.feat_config.feature_dim = 80;
-            c.model_config.transducer.encoder = enc.as_ptr();
-            c.model_config.transducer.decoder = dec.as_ptr();
-            c.model_config.transducer.joiner = joi.as_ptr();
-            c.model_config.tokens = tok.as_ptr();
-            c.model_config.num_threads = 2;
-            c.model_config.provider = cpu.as_ptr();
-            c.decoding_method = greedy.as_ptr();
-            c.enable_endpoint = 1;
+        let config = OnlineRecognizerConfig {
+            model_config: model(
+                models,
+                &SPEECH,
+                "encoder.onnx",
+                "decoder.onnx",
+                "joiner.onnx",
+                2,
+            ),
+            decoding_method: Some("greedy_search".into()),
+            enable_endpoint: true,
             // Give up after 4 s of silence, end 0.9 s after speech, cap at 30 s.
-            c.rule1_min_trailing_silence = 4.0;
-            c.rule2_min_trailing_silence = 0.9;
-            c.rule3_min_utterance_length = 30.0;
-            let recognizer = sys::SherpaOnnxCreateOnlineRecognizer(&c);
-            if recognizer.is_null() {
-                return Err(VoiceError::Engine("speech model did not load".into()));
-            }
-            (recognizer, sys::SherpaOnnxCreateOnlineStream(recognizer))
+            rule1_min_trailing_silence: 4.0,
+            rule2_min_trailing_silence: 0.9,
+            rule3_min_utterance_length: 30.0,
+            ..Default::default()
         };
+        let recognizer = OnlineRecognizer::create(&config)
+            .ok_or_else(|| VoiceError::Engine("speech model did not load".into()))?;
+        let stream = recognizer.create_stream();
         Ok(Self {
             spotter,
             recognizer,
@@ -155,8 +159,7 @@ impl Engine {
 
     pub fn cancel(&mut self) {
         if self.listening {
-            // SAFETY: the recognizer and stream live as long as `self`.
-            unsafe { sys::SherpaOnnxOnlineStreamReset(self.recognizer, self.stream) };
+            self.recognizer.reset(&self.stream);
         }
         self.listening = false;
         self.last.clear();
@@ -166,16 +169,8 @@ impl Engine {
         self.listening = true;
         self.last.clear();
         let prime: Vec<f32> = self.recent.iter().copied().collect();
-        // SAFETY: as above; the samples outlive the call.
-        unsafe {
-            sys::SherpaOnnxOnlineStreamReset(self.recognizer, self.stream);
-            sys::SherpaOnnxOnlineStreamAcceptWaveform(
-                self.stream,
-                MIC_RATE as i32,
-                prime.as_ptr(),
-                prime.len() as i32,
-            );
-        }
+        self.recognizer.reset(&self.stream);
+        self.stream.accept_waveform(MIC_RATE as i32, &prime);
     }
 
     /// Feeds 16 kHz mono audio and returns what was heard.
@@ -186,101 +181,56 @@ impl Engine {
             self.recent.pop_front();
         }
         if !self.listening {
-            if let Some((spotter, kws)) = self.spotter
-                && self.spot(spotter, kws, chunk)
-            {
+            if self.spot(chunk) {
                 out.push(Heard::Wake);
                 self.start_listening();
             }
             return out;
         }
-        // SAFETY: as above.
-        unsafe {
-            sys::SherpaOnnxOnlineStreamAcceptWaveform(
-                self.stream,
-                MIC_RATE as i32,
-                chunk.as_ptr(),
-                chunk.len() as i32,
-            );
-            while sys::SherpaOnnxIsOnlineStreamReady(self.recognizer, self.stream) == 1 {
-                sys::SherpaOnnxDecodeOnlineStream(self.recognizer, self.stream);
+        self.stream.accept_waveform(MIC_RATE as i32, chunk);
+        while self.recognizer.is_ready(&self.stream) {
+            self.recognizer.decode(&self.stream);
+        }
+        let text = self
+            .recognizer
+            .get_result(&self.stream)
+            .map(|r| r.text.trim().to_owned())
+            .unwrap_or_default();
+        if text != self.last {
+            self.last = text.clone();
+            out.push(Heard::Partial(text.clone()));
+        }
+        if self.recognizer.is_endpoint(&self.stream) {
+            self.recognizer.reset(&self.stream);
+            if let Some((spotter, kws)) = &self.spotter {
+                spotter.reset(kws);
             }
-            let res = sys::SherpaOnnxGetOnlineStreamResult(self.recognizer, self.stream);
-            let text = if res.is_null() || (*res).text.is_null() {
-                String::new()
-            } else {
-                CStr::from_ptr((*res).text)
-                    .to_string_lossy()
-                    .trim()
-                    .to_owned()
-            };
-            if !res.is_null() {
-                sys::SherpaOnnxDestroyOnlineRecognizerResult(res);
-            }
-            if text != self.last {
-                self.last = text.clone();
-                out.push(Heard::Partial(text.clone()));
-            }
-            if sys::SherpaOnnxOnlineStreamIsEndpoint(self.recognizer, self.stream) == 1 {
-                sys::SherpaOnnxOnlineStreamReset(self.recognizer, self.stream);
-                if let Some((spotter, kws)) = self.spotter {
-                    sys::SherpaOnnxResetKeywordStream(spotter, kws);
-                }
-                self.listening = false;
-                self.last.clear();
-                // The words just heard must not wake it again.
-                self.recent.clear();
-                out.push(Heard::Final(text));
-            }
+            self.listening = false;
+            self.last.clear();
+            // The words just heard must not wake it again.
+            self.recent.clear();
+            out.push(Heard::Final(text));
         }
         out
     }
 
-    fn spot(
-        &self,
-        spotter: *const sys::SherpaOnnxKeywordSpotter,
-        kws: *const sys::SherpaOnnxOnlineStream,
-        chunk: &[f32],
-    ) -> bool {
-        // SAFETY: as above.
-        unsafe {
-            sys::SherpaOnnxOnlineStreamAcceptWaveform(
-                kws,
-                MIC_RATE as i32,
-                chunk.as_ptr(),
-                chunk.len() as i32,
-            );
-            let mut found = false;
-            while sys::SherpaOnnxIsKeywordStreamReady(spotter, kws) == 1 {
-                sys::SherpaOnnxDecodeKeywordStream(spotter, kws);
-                let res = sys::SherpaOnnxGetKeywordResult(spotter, kws);
-                if res.is_null() {
-                    continue;
-                }
-                let hit = !(*res).keyword.is_null()
-                    && !CStr::from_ptr((*res).keyword).to_bytes().is_empty();
-                sys::SherpaOnnxDestroyKeywordResult(res);
-                if hit {
-                    sys::SherpaOnnxResetKeywordStream(spotter, kws);
-                    found = true;
-                }
-            }
-            found
-        }
-    }
-}
-
-impl Drop for Engine {
-    fn drop(&mut self) {
-        // SAFETY: created in `new`, destroyed once here.
-        unsafe {
-            sys::SherpaOnnxDestroyOnlineStream(self.stream);
-            sys::SherpaOnnxDestroyOnlineRecognizer(self.recognizer);
-            if let Some((spotter, kws)) = self.spotter {
-                sys::SherpaOnnxDestroyOnlineStream(kws);
-                sys::SherpaOnnxDestroyKeywordSpotter(spotter);
+    fn spot(&self, chunk: &[f32]) -> bool {
+        let Some((spotter, kws)) = &self.spotter else {
+            return false;
+        };
+        kws.accept_waveform(MIC_RATE as i32, chunk);
+        let mut found = false;
+        while spotter.is_ready(kws) {
+            spotter.decode(kws);
+            if spotter
+                .get_result(kws)
+                .is_some_and(|r| !r.keyword.is_empty())
+            {
+                spotter.reset(kws);
+                found = true;
             }
         }
+        found
     }
 }
 

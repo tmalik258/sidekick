@@ -1,0 +1,8 @@
+# sherpa-onnx's Windows libraries are built with the static C runtime (/MT);
+# everything else must match or linking fails. This also means the app does
+# not need the Visual C++ runtime installed.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
