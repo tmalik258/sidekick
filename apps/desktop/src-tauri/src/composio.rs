@@ -28,7 +28,7 @@ pub const TOOL_EVENT: &str = "ai://tool";
 pub const HANDOFF_TOOL: &str = "continue_in_claude_code";
 /// Most Composio tools offered to the local model at once; small models do
 /// worse with long tool lists.
-const MAX_TOOLS: usize = 16;
+const MAX_TOOLS: usize = 6;
 /// Most characters of tool definitions sent to the local model. Ollama's
 /// default context is a few thousand tokens; tools past this budget would
 /// push the question out of it.
@@ -277,11 +277,12 @@ fn handoff_tool() -> ToolDef {
     }
 }
 
-pub const TOOLS_SYSTEM: &str = "\n\nYou can use the tools listed to read from the user's apps \
-(through Composio). Only read: you cannot send, create, change or delete anything. When the \
-request needs a change or is too complex, call continue_in_claude_code with a short reason, \
-then tell the user in one sentence that Claude Code can finish it. Never invent data you did \
-not read with a tool.";
+pub const TOOLS_SYSTEM: &str = "\n\nTools: search finds the user's files and history on this \
+PC, today gives meetings and time, recent shows what just happened, open opens a file, folder \
+or page. Other tools read the user's apps; you cannot send, create, change or delete there. \
+Look things up before answering. When the request needs a change in an app or more than you \
+can do, call continue_in_claude_code with a short reason, then say in one sentence that Claude \
+Code can finish it. Never invent data you did not read with a tool.";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -292,7 +293,7 @@ struct ToolNote<'a> {
 
 /// Runs Composio tools for one chat.
 pub struct Runner {
-    client: McpClient,
+    client: Option<McpClient>,
     app: AppHandle,
     chat_id: String,
     handoff: Arc<Mutex<Option<String>>>,
@@ -329,7 +330,13 @@ impl ToolRunner for Runner {
                  Claude Code can do it."
             );
         }
-        match self.client.call_tool(name, arguments).await {
+        if let Some(out) = crate::ask_tools::run(&self.app, name, arguments).await {
+            return out;
+        }
+        let Some(client) = &self.client else {
+            return format!("Error: there is no tool called {name}.");
+        };
+        match client.call_tool(name, arguments).await {
             Ok(text) => {
                 log_call(&self.app, name, !text.starts_with("Error:"), &text);
                 text
@@ -361,14 +368,14 @@ fn log_call(app: &AppHandle, name: &str, ok: bool, message: &str) {
     }
 }
 
-/// The local model, with Composio's tools when they are set up. Falls back
-/// to a plain answer when Composio cannot be reached.
+/// The local model with Sidekick's own tools (search, today, recent, open),
+/// plus Composio's when they are set up and reachable.
 pub struct LocalWithTools {
     pub inner: OpenAiCompat,
     pub app: AppHandle,
     pub chat_id: String,
     pub handoff: Arc<Mutex<Option<String>>>,
-    pub server: (String, Vec<(String, String)>),
+    pub server: Option<(String, Vec<(String, String)>)>,
 }
 
 #[async_trait]
@@ -391,25 +398,9 @@ impl AiProvider for LocalWithTools {
         sink: &Sink,
         cancel: &CancellationToken,
     ) -> Result<String, AiError> {
-        let (url, headers) = &self.server;
-        let connect = tokio::time::timeout(CONNECT_TIMEOUT, async {
-            let client = McpClient::connect(url, headers.clone()).await?;
-            let tools = client.list_tools().await?;
-            Ok::<_, AiError>((client, tools))
-        });
-        let (client, tools) = match tokio::select! {
-            _ = cancel.cancelled() => return Err(AiError::Cancelled),
-            r = connect => r,
-        } {
-            Ok(Ok(found)) => found,
-            Ok(Err(err)) => {
-                log::warn!("Composio not reachable, answering without it: {err}");
-                return self.inner.chat(req, sink, cancel).await;
-            }
-            Err(_) => {
-                log::warn!("Composio did not answer in time, answering without it");
-                return self.inner.chat(req, sink, cancel).await;
-            }
+        let (client, tools) = match &self.server {
+            Some(server) => connect(server, cancel).await?,
+            None => (None, Vec::new()),
         };
         let question = req
             .messages
@@ -418,7 +409,12 @@ impl AiProvider for LocalWithTools {
             .find(|m| m.role == sidekick_ai::Role::User)
             .map(|m| m.content.as_str())
             .unwrap_or_default();
-        let defs = pick_tools(&tools, question);
+        let mut defs = crate::ask_tools::defs();
+        if client.is_some() {
+            defs.extend(pick_tools(&tools, question));
+        } else {
+            defs.push(handoff_tool());
+        }
         let mut with_tools = req.clone();
         with_tools.system.push_str(TOOLS_SYSTEM);
         let runner = Runner {
@@ -427,10 +423,20 @@ impl AiProvider for LocalWithTools {
             chat_id: self.chat_id.clone(),
             handoff: self.handoff.clone(),
         };
-        let end = self
+        let end = match self
             .inner
             .chat_with_tools(&with_tools, &defs, &runner, sink, cancel)
-            .await?;
+            .await
+        {
+            // Some models (Gemma, older Llama) cannot call tools: answer plainly.
+            Err(AiError::Failed(err))
+                if !sink.has_sent() && err.to_lowercase().contains("tools") =>
+            {
+                log::info!("local model has no tool support, answering without tools: {err}");
+                return self.inner.chat(req, sink, cancel).await;
+            }
+            other => other?,
+        };
         if end.out_of_steps {
             lock(&self.handoff).get_or_insert_with(|| "took too many steps".into());
         }
@@ -438,6 +444,33 @@ impl AiProvider for LocalWithTools {
             lock(&self.handoff).get_or_insert_with(|| "the local model gave no answer".into());
         }
         Ok(end.text)
+    }
+}
+
+/// Connects to Composio for one chat. Unreachable is not an error: the
+/// chat goes on with Sidekick's own tools.
+async fn connect(
+    (url, headers): &(String, Vec<(String, String)>),
+    cancel: &CancellationToken,
+) -> Result<(Option<McpClient>, Vec<McpTool>), AiError> {
+    let connect = tokio::time::timeout(CONNECT_TIMEOUT, async {
+        let client = McpClient::connect(url, headers.clone()).await?;
+        let tools = client.list_tools().await?;
+        Ok::<_, AiError>((client, tools))
+    });
+    match tokio::select! {
+        _ = cancel.cancelled() => return Err(AiError::Cancelled),
+        r = connect => r,
+    } {
+        Ok(Ok((client, tools))) => Ok((Some(client), tools)),
+        Ok(Err(err)) => {
+            log::warn!("Composio not reachable, using local tools only: {err}");
+            Ok((None, Vec::new()))
+        }
+        Err(_) => {
+            log::warn!("Composio did not answer in time, using local tools only");
+            Ok((None, Vec::new()))
+        }
     }
 }
 

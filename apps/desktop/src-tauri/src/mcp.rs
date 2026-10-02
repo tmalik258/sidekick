@@ -215,6 +215,15 @@ async fn handle(app: &AppHandle, msg: &Value) -> Option<Value> {
     })
 }
 
+/// A tool's answer as plain text, for the local model in Ask mode.
+pub async fn call_text(app: &AppHandle, name: &str, args: &Value) -> String {
+    let out = call(app, name, args).await;
+    out["content"][0]["text"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned()
+}
+
 async fn call(app: &AppHandle, name: &str, args: &Value) -> Value {
     match name {
         "sidekick_search" => {
