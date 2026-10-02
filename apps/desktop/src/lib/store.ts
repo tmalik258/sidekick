@@ -203,8 +203,8 @@ export function updateSettings(patch: Partial<Settings>): Promise<Settings> {
   return api.settingsSet(next);
 }
 
-function kokoroReady(voice: VoiceStatus | null): boolean {
-  return voice?.models.some((m) => m.id === "kokoro" && m.installed) ?? false;
+function voiceReady(voice: VoiceStatus | null): boolean {
+  return voice?.models.some((m) => m.id === "voice" && m.installed) ?? false;
 }
 
 /**
@@ -272,7 +272,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       listen(EVENTS.voiceState, (voiceStatus) => {
         useSidekick.setState({ voiceStatus });
         const { settings, ask } = useSidekick.getState();
-        if (!settings.onboarded && !ask && kokoroReady(voiceStatus)) {
+        if (!settings.onboarded && !ask && voiceReady(voiceStatus)) {
           void api.askEnsureWelcome();
         }
       }),

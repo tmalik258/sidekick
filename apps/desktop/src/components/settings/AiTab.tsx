@@ -34,7 +34,7 @@ export function AiTab({ onError }: { onError: (e: string) => void }) {
       <Section
         title="Voice"
         hint="Speech runs on this PC. Audio is never saved or sent anywhere; only the words you say go to your AI, like a typed question."
-        keywords="microphone speak talk wake word hey sidekick kokoro conversation"
+        keywords="microphone speak talk wake word hey sidekick supertonic conversation"
       >
         <VoiceSection voice={voice} onError={onError} />
       </Section>

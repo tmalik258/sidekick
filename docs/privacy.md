@@ -7,7 +7,7 @@ Sidekick runs on your PC and keeps what it sees there.
 - **Clipboard secrets** (keys, tokens, passwords) are detected and never stored, indexed or sent to AI.
 - **Passwords** are filled from your own 1Password or Bitwarden CLI. Sidekick never reads browser password stores or cookies.
 - **AI** only sees what you send it: your question, plus the window, clipboard, page or screenshot you choose to attach. Claude Code runs in an empty folder and Sidekick never reads its credential files.
-- **Voice** is on by default and can be turned off in Settings > AI. Speech recognition and the Kokoro voice run on this PC; audio is never saved or sent. Only the words you say go to your AI, like a typed question.
+- **Voice** is on by default and can be turned off in Settings > AI. Speech recognition and the Supertonic voice run on this PC; audio is never saved or sent. Only the words you say go to your AI, like a typed question.
 - **Search by meaning** uses an embedding model on your own local server; text never leaves the PC.
 - **Localhost endpoints** (Claude Code hooks, browser extension, MCP) listen on 127.0.0.1 only, refuse web pages, and the browser and MCP ones require a token.
 - **Updates**: once a day Sidekick asks GitHub for the latest release number. You can turn this off.

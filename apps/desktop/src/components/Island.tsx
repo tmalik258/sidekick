@@ -70,7 +70,7 @@ export function Island() {
   const paused = isPaused(settings.pause, now);
   const hovered = useIntent(rawHover);
   const preparingVoice =
-    !settings.onboarded && !asking && !(voiceStatus?.models.some((m) => m.id === "kokoro" && m.installed) ?? false);
+    !settings.onboarded && !asking && !(voiceStatus?.models.some((m) => m.id === "voice" && m.installed) ?? false);
   const expanded = asking || preparingVoice || hovered || OPEN_STATES.has(mascot) || !!suggestion;
   // At rest only the sphere shows. The shell keeps its size (so hover and the
   // orb position do not move) but loses its background.

@@ -1,8 +1,8 @@
-// Prefetches the pinned sherpa-onnx / Kokoro voice models into
+// Prefetches the pinned sherpa-onnx voice models into
 // src-tauri/resources/voice-models so first paint never waits on GitHub.
 // Mirrors crates/voice/src/models.rs (URLs, SHA-256, dirs, required files).
 // Skips work when every model is already unpacked. Gitignored; not committed.
-// Kokoro first: the welcome greeting depends on it.
+// The voice first: the welcome greeting depends on it.
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -35,22 +35,20 @@ const MODELS = [
     files: ["encoder.onnx", "decoder.onnx", "joiner.onnx", "tokens.txt"],
   },
   {
-    id: "kokoro",
-    label: "Kokoro voice",
-    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2",
-    sha256: "c5f7e2d2caf082bc1d20fb70334a61d99d20b484500aad32e7cf84c128ea3298",
-    dir: "kokoro-multi-lang-v1_0",
+    id: "voice",
+    label: "Supertonic voice",
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2",
+    sha256: "82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427",
+    dir: "sherpa-onnx-supertonic-3-tts-int8-2026-05-11",
     files: [
-      "model.onnx",
-      "voices.bin",
-      "tokens.txt",
-      "lexicon-us-en.txt",
-      "lexicon-gb-en.txt",
-      "espeak-ng-data",
-      "dict",
+      "duration_predictor.int8.onnx",
+      "text_encoder.int8.onnx",
+      "vector_estimator.int8.onnx",
+      "vocoder.int8.onnx",
+      "tts.json",
+      "unicode_indexer.bin",
+      "voice.bin",
     ],
-    // Chinese only; models.rs skips the same.
-    exclude: ["*lexicon-zh.txt", "*-zh.fst"],
   },
 ];
 
@@ -92,7 +90,7 @@ async function download(url, dest) {
 }
 
 // Replaced models, removed so they are not bundled (models.rs RETIRED).
-const RETIRED = ["kokoro-int8-en-v0_19"];
+const RETIRED = ["kokoro-int8-en-v0_19", "kokoro-multi-lang-v1_0"];
 
 function unpackBz2(archive, destRoot, dirName, exclude = []) {
   const staging = join(destRoot, `.unpack-${dirName}`);
@@ -136,7 +134,7 @@ async function ensure(model) {
 async function main() {
   mkdirSync(OUT, { recursive: true });
   writeFileSync(join(OUT, ".keep"), "");
-  for (const id of ["kokoro", "wake", "speech"]) {
+  for (const id of ["voice", "wake", "speech"]) {
     await ensure(MODELS.find((m) => m.id === id));
   }
   for (const dir of RETIRED) rmSync(join(OUT, dir), { recursive: true, force: true });

@@ -4,7 +4,7 @@
   "packageManager": "pnpm@10.18.0",
   "scripts": {
     "dev": "pnpm --filter desktop tauri dev -- --release",
-    "build": "cargo build --release -p sidekick-voice && pnpm --filter desktop tauri build --config src-tauri/tauri.release.conf.json",
+    "build": "pnpm --filter desktop tauri build --config src-tauri/tauri.release.conf.json",
     "web": "pnpm --filter desktop dev",
     "lint": "biome check .",
     "format": "biome format --write .",

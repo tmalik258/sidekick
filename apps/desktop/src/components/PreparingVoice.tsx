@@ -1,18 +1,18 @@
 "use client";
 
-// Compact island state while Kokoro (and other speech models) are still
+// Compact island state while the voice (and other speech models) are still
 // arriving. Shown until onboarding can speak; never a blank idle orb.
 
 import type { VoiceStatus } from "@/lib/types";
 
 export function PreparingVoice({ voiceStatus }: { voiceStatus: VoiceStatus | null }) {
   const models = voiceStatus?.models ?? [
-    { id: "kokoro", label: "Kokoro voice", size: 0, installed: false },
+    { id: "voice", label: "Supertonic voice", size: 0, installed: false },
     { id: "wake", label: "Wake word", size: 0, installed: false },
     { id: "speech", label: "Speech to text", size: 0, installed: false },
   ];
-  // Show Kokoro first: greeting depends on it.
-  const order = ["kokoro", "wake", "speech"];
+  // Show the voice first: greeting depends on it.
+  const order = ["voice", "wake", "speech"];
   const rows = order.map((id) => models.find((m) => m.id === id)).filter((m): m is NonNullable<typeof m> => Boolean(m));
   return (
     <div className="flex flex-col gap-2 pb-1">

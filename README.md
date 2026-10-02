@@ -31,7 +31,7 @@ crates/sensors/          downloads, ports, clipboard, window, Claude Code hooks,
 crates/skills/           YAML skill engine
 crates/actions/          built-in actions and detection of installed browsers and tools
 crates/ai/               AI providers (Claude Code, local, Anthropic API), router, SemIf decisions
-crates/voice/            Hey Sidekick wake word, live speech to text, Kokoro speech (sherpa-onnx, on this PC)
+crates/voice/            Hey Sidekick wake word, live speech to text, Supertonic speech (sherpa-onnx, on this PC)
 skills/                  built-in skills
 assets/                  mascot art and sounds (separate license)
 ```
@@ -79,7 +79,7 @@ In the browser preview, `window.sidekickMock.go("success")` switches mascot stat
 - **Search my stuff**: type in Ask mode and pick Search. Pick folders under Settings > Privacy and data. With Ollama running, `ollama pull nomic-embed-text` adds search by meaning (embeddings stay on this PC).
 - **Claude Code can use Sidekick** through MCP: press Add for me in Settings > Connections.
 - **What's on my screen?**: pick it in Ask mode, or turn on the Screenshot chip to send one with your next question. Sidekick only captures when you ask.
-- **Voice**: on by default (Settings > AI > Voice; about 425 MB of speech models download once). Say "Hey Sidekick" and your question; the island shows your words as you speak and the answer is read aloud with Kokoro. Talking over an answer stops it, and after an answer you can reply without the wake word. Suggestions are read out too, and you can answer them by voice ("the first one", "not now"). There is a mic button in Ask mode for push to talk.
+- **Voice**: on by default (Settings > AI > Voice; about 205 MB of speech models download once). Say "Hey Sidekick" and your question; the island shows your words as you speak and the answer is read aloud with Supertonic (10 voices to pick from in Settings > AI > Voice). Talking over an answer stops it, and after an answer you can reply without the wake word. Suggestions are read out too, and you can answer them by voice ("the first one", "not now"). There is a mic button in Ask mode for push to talk.
 - **Settings** open inside the island (tray, the island's Settings button, or "Open settings" in Ask mode).
 - **Meetings**: connect Composio in Settings > Connections, then Google Calendar or Outlook. A few minutes before a meeting the island offers Join call and Prep with AI; afterwards it offers to draft the follow-up from your Fathom notes (connect Fathom too). Suggestions wait quietly while you are in a meeting.
 - **Morning brief**: the first time you sit down each day, one card with yesterday's time, repos with unsaved work and PRs waiting on you (if the GitHub CLI `gh` is signed in). Plan my day hands it to your AI.

@@ -195,7 +195,7 @@ function VoiceGuide({ onDone }: { onDone: () => void }) {
   };
   return (
     <div className="flex flex-col gap-2 border-t border-white/10 pt-2 text-[12px] text-[rgb(235_235_245/0.65)]">
-      <p>Downloads about 425 MB of speech models once. Audio stays on this PC.</p>
+      <p>Downloads about 205 MB of speech models once. Audio stays on this PC.</p>
       <GuideButton primary onClick={enable}>
         Turn voice on
       </GuideButton>

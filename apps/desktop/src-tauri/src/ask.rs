@@ -217,8 +217,8 @@ pub fn ensure_welcome(app: &AppHandle) {
     if !needs_welcome(app) || is_deferred() {
         return;
     }
-    // Voice gate: do not show welcome until Kokoro can speak.
-    if !crate::voice::kokoro_ready(app) {
+    // Voice gate: do not show welcome until the voice can speak.
+    if !crate::voice::voice_ready(app) {
         crate::voice::prepare_then_welcome(app);
         return;
     }
