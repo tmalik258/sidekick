@@ -1,6 +1,6 @@
 "use client";
 
-// Connections: Composio (sign in once, then connect apps), the calendar it
+// Connections: Composio (one sign-in brings every app in the account), the calendar it
 // feeds, the browser extension per browser, and Claude Code.
 
 import { useCallback, useEffect, useState } from "react";
@@ -23,7 +23,7 @@ export function ConnectionsTab({ onError }: { onError: (e: string) => void }) {
     <>
       <Section
         title="Composio"
-        hint="Sign in once in the browser. Apps you connect there (calendar, mail, Slack, Jira and more) work in Sidekick: meeting reminders, the morning brief, and reading them in Ask mode. Changes always go through Claude Code, which asks first."
+        hint="One sign-in, the same Composio account as Claude. Every app connected there (calendar, mail, Slack, Jira and more) works in Sidekick: meeting reminders, the morning brief, and reading them in Ask mode. Changes always go through Claude Code, which asks first."
         keywords="apps accounts jira slack gmail notion trello github linear fathom outlook login sign in"
       >
         <ComposioCard onError={onError} />
@@ -57,13 +57,19 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
   const composio = useSidekick((s) => s.settings.composio);
   const justDone = useSidekick((s) => s.justDone);
   const { data: status, refresh: reload } = useCached<ComposioStatus>("composio-status", api.composioStatus);
-  const [waiting, setWaiting] = useState<string | null>(null);
+  const [waiting, setWaiting] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<string | null>(null);
-  const refresh = useCallback(() => void reload().catch(() => undefined), [reload]);
+  const [busy, setBusy] = useState(false);
+  const refresh = useCallback(() => {
+    setBusy(true);
+    void reload()
+      .catch(() => undefined)
+      .finally(() => setBusy(false));
+  }, [reload]);
   useEffect(() => {
     const off = listen(EVENTS.composioChanged, ({ ok, message }) => {
-      setWaiting(null);
+      setWaiting(false);
       setConnecting(null);
       setNote(message);
       if (!ok) onError(message);
@@ -76,21 +82,24 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
 
   const signIn = () => {
     setNote(null);
+    setWaiting(true);
     api
       .composioSignIn()
-      .then((code) => {
-        setWaiting(code);
+      .then(() =>
         startWaiting("composio", "Composio", {
           resumeTab: "connections",
           steps: [
-            "Composio opened in your browser. Sign in there.",
-            `Press Allow. The page shows the code ${code}.`,
-            "Come back here; it connects by itself.",
+            "Composio opened in your browser.",
+            "Sign in and press Allow, the same as in Claude.",
+            "Come back here; every app you connected there shows up by itself.",
           ],
           again: signIn,
-        });
-      })
-      .catch((e) => onError(String(e)));
+        }),
+      )
+      .catch((e) => {
+        setWaiting(false);
+        onError(String(e));
+      });
   };
 
   // Only on the very first run; afterwards the last known state paints at once.
@@ -101,10 +110,10 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
       <div className="flex flex-col gap-3 text-[13px]">
         {waiting ? (
           <div className="flex flex-col gap-1.5 rounded-xl bg-[#0a84ff]/10 p-3">
-            <p className="font-medium">Allow Sidekick in the browser</p>
+            <p className="font-medium">Finish in the browser</p>
             <p className="text-(--muted)">
-              Composio opened in your browser. Sign in and allow access; this connects by itself. The page shows the
-              code <span className="font-mono font-semibold text-(--text)">{waiting}</span>.
+              Sign in to Composio and press Allow. Every app you already connected there (Gmail, Calendar, Slack and the
+              rest) comes with it.
             </p>
             <div>
               <Button small onClick={signIn}>
@@ -114,28 +123,34 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
           </div>
         ) : (
           <div className="flex items-center gap-3">
-            <p className="min-w-0 flex-1 text-(--muted)">Not connected.</p>
+            <p className="min-w-0 flex-1 text-(--muted)">
+              One connection for all your apps. Uses the same Composio account as Claude.
+            </p>
             <Button primary onClick={signIn}>
               Connect Composio
             </Button>
           </div>
         )}
-        <ManualLink onError={onError} />
+        <OtherWays onError={onError} />
       </div>
     );
   }
 
+  const connected = status.apps.filter((a) => a.connected || justDone === `app:${a.slug}`);
+  const missing = status.apps.filter((a) => !a.connected && a.why && justDone !== `app:${a.slug}`);
   return (
     <div className="flex flex-col gap-3 text-[13px]">
       <div className="flex items-center gap-3">
         <p className="min-w-0 flex-1">
-          Connected{status.account ? ` as ${status.account}` : ""}
+          Connected
           <span className="block text-[12px] text-(--muted)">
-            {status.apps.filter((a) => a.connected).length} of {status.apps.length} apps connected
+            {connected.length === 0
+              ? "No apps connected in your Composio account yet."
+              : `${connected.length} ${connected.length === 1 ? "app" : "apps"} from your Composio account`}
           </span>
         </p>
-        <Button small onClick={refresh}>
-          Refresh
+        <Button small onClick={refresh} disabled={busy}>
+          {busy ? "Checking..." : "Refresh"}
         </Button>
         <Button
           small
@@ -149,35 +164,37 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
           Disconnect
         </Button>
       </div>
-      {status.error && <p className="text-[12px] text-red-400">{status.error}</p>}
-      <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-        {status.apps.map((a) => {
-          const done = a.connected || justDone === `app:${a.slug}`;
-          return (
+      {status.error && (
+        <p className="text-[12px] text-(--muted)">Could not check just now, showing the last list. {status.error}</p>
+      )}
+      {connected.length > 0 && (
+        <ul className="flex flex-wrap gap-1.5">
+          {connected.map((a) => (
             <li
               key={a.slug}
-              ref={(el) => {
-                if (el && justDone === `app:${a.slug}`) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
-              }}
-              className={`flex items-center gap-2.5 rounded-xl border px-2.5 py-2 transition-shadow duration-700 ${
-                justDone === `app:${a.slug}`
-                  ? "border-[#30d158]/70 ring-1 ring-inset ring-[#30d158]/70"
-                  : "border-(--border)"
+              title={a.why || undefined}
+              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12.5px] ${
+                justDone === `app:${a.slug}` ? "bg-[#30d158]/25" : "bg-black/5 dark:bg-white/10"
               }`}
             >
-              {a.logo ? (
-                // biome-ignore lint/performance/noImgElement: remote app logos in a static export
-                <img src={a.logo} alt="" className="size-5 shrink-0 rounded" />
-              ) : (
-                <span className="size-5 shrink-0 rounded bg-black/10 dark:bg-white/10" />
-              )}
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium">{a.name}</span>
-                <span className="block truncate text-[11px] text-(--muted)">{a.why}</span>
-              </span>
-              {done ? (
-                <span className="shrink-0 text-[12px] text-[#30d158]">Connected</span>
-              ) : (
+              <span className="size-1.5 rounded-full bg-[#30d158]" />
+              {a.name}
+            </li>
+          ))}
+        </ul>
+      )}
+      {missing.length > 0 && (
+        <details className="text-[12.5px]">
+          <summary className="cursor-pointer text-(--muted)">
+            Sidekick can also use {missing.map((a) => a.name).join(", ")}
+          </summary>
+          <ul className="mt-2 flex flex-col gap-1.5">
+            {missing.map((a) => (
+              <li key={a.slug} className="flex items-center gap-2.5 rounded-xl border border-(--border) px-2.5 py-2">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{a.name}</span>
+                  <span className="block truncate text-[11px] text-(--muted)">{a.why}</span>
+                </span>
                 <Button
                   small
                   disabled={connecting === a.slug}
@@ -189,7 +206,7 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
                       steps: [
                         `${a.name} opened in your browser.`,
                         "Sign in and allow access.",
-                        "Come back here; it turns green by itself.",
+                        "Come back here; it shows up by itself.",
                       ],
                       again: () => void api.composioConnect(a.slug).catch(() => undefined),
                     });
@@ -199,13 +216,13 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
                     });
                   }}
                 >
-                  {connecting === a.slug ? "Waiting..." : `Connect ${a.name}`}
+                  {connecting === a.slug ? "Waiting..." : "Add"}
                 </Button>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {note && <p className="text-[12px] text-(--muted)">{note}</p>}
       <Toggle
         label="Use these apps in Ask mode"
@@ -219,21 +236,55 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
   );
 }
 
-/** For a Composio MCP link from somewhere else (Claude Code, the dashboard). */
-function ManualLink({ onError }: { onError: (e: string) => void }) {
+/** A consumer key, or another MCP link, instead of the browser sign-in. */
+function OtherWays({ onError }: { onError: (e: string) => void }) {
   const composio = useSidekick((s) => s.settings.composio);
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const save = (patch: Partial<typeof composio>) =>
     updateSettings({ composio: { ...composio, ...patch } }).catch((e) => onError(String(e)));
   return (
     <details className="text-[12.5px]">
-      <summary className="cursor-pointer text-(--muted)">Use an MCP link instead</summary>
-      <div className="mt-2 flex flex-col gap-2">
-        <Field label="MCP link">
+      <summary className="cursor-pointer text-(--muted)">Other ways to connect</summary>
+      <div className="mt-2 flex flex-col gap-2.5">
+        <p className="text-(--muted)">
+          Paste a Composio consumer key (starts with ck_), from the Composio website under your account.
+        </p>
+        <div className="flex items-center gap-2">
+          <input
+            type="password"
+            aria-label="Composio consumer key"
+            value={key}
+            placeholder="ck_..."
+            onChange={(e) => setKey(e.target.value)}
+            className="min-w-0 flex-1 rounded-lg border border-(--border) bg-transparent px-2.5 py-1.5 font-mono text-[12px] outline-none focus:border-[#0a84ff]"
+          />
+          <Button
+            small
+            primary
+            disabled={busy || key.trim().length < 8}
+            onClick={() => {
+              setBusy(true);
+              setNote(null);
+              api
+                .composioUseKey(key)
+                .then((m) => {
+                  setKey("");
+                  setNote(m);
+                })
+                .catch((e) => setNote(String(e)))
+                .finally(() => setBusy(false));
+            }}
+          >
+            {busy ? "Checking..." : "Use key"}
+          </Button>
+        </div>
+        <Field label="MCP link" hint="Leave empty for Composio Connect.">
           <TextField
             label="Composio MCP link"
             value={composio.url}
-            placeholder="https://..."
+            placeholder="https://connect.composio.dev/mcp"
             className="w-56"
             mono
             onCommit={(url) => void save({ url, enabled: Boolean(url) || composio.enabled })}
