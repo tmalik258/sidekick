@@ -236,11 +236,18 @@ impl Executor {
         if !(url.starts_with("http://") || url.starts_with("https://")) {
             return Err(ActionError::Invalid(format!("not a web link: {url}")));
         }
+        // No browser named: use the default one directly, so a Chromium
+        // default still gets its profile and skips the picker.
+        let browser = browser.or_else(|| {
+            capabilities::default_browser().filter(|id| self.caps.browser(id).is_some())
+        });
         match (browser, browser.and_then(|b| self.caps.browser(b))) {
             (_, Some(b)) => {
                 let mut cmd = std::process::Command::new(&b.path);
                 if private {
                     cmd.arg(b.private_flag());
+                } else if let Some(profile) = b.profile_arg() {
+                    cmd.arg(profile);
                 }
                 cmd.arg(url);
                 system::spawn_detached(cmd)?;
