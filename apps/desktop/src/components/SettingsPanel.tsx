@@ -105,7 +105,7 @@ export function SettingsPanel() {
       )}
 
       <SettingsQuery.Provider value={query.trim()}>
-        <div className="settings-scroll -mr-3 flex max-h-[430px] flex-col gap-5 overflow-y-auto pr-3 pb-3">
+        <div className="settings-scroll -mr-3 flex max-h-[430px] flex-col gap-5 overflow-y-auto pr-3 pl-0.5 pb-3">
           {show("home") && <HomeTab onError={setError} onOpenTab={open} />}
           {show("ai") && <AiTab onError={setError} />}
           {show("connections") && <ConnectionsTab onError={setError} />}

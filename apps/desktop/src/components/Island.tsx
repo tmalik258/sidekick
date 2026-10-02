@@ -69,17 +69,18 @@ export function Island() {
   const reduced = useReducedMotion() ?? false;
   const now = useNow(15_000);
   const paused = isPaused(settings.pause, now);
-  // Closing a panel (Hide, Esc, a click elsewhere) goes straight to the
-  // small orb: the hovered card stays off until the cursor has left the
-  // island once. Adjusted during render, so no in-between frame is drawn.
+  // Closing a panel (Hide, Esc, Done) goes straight to the small orb. The
+  // hover card stays off until the cursor leaves and comes back; otherwise
+  // shrinking the hit rect clears quiet while useIntent still thinks we are
+  // hovering, and "Watching for moments" flashes.
   const [prevAsking, setPrevAsking] = useState(asking);
   const [quiet, setQuiet] = useState(false);
   if (prevAsking !== asking) {
     setPrevAsking(asking);
-    if (!asking && rawHover) setQuiet(true);
+    if (!asking) setQuiet(true);
   }
   if (quiet && !rawHover) setQuiet(false);
-  const intent = useIntent(rawHover);
+  const intent = useIntent(rawHover && !quiet);
   // Until onboarding is done, hovering only brings the welcome back; the
   // idle card ("watching for moments") would just flash on the way.
   const hovered = intent && !quiet && settings.onboarded;
@@ -93,6 +94,7 @@ export function Island() {
 
   const [contentHeight, setContentHeight] = useState(0);
   const bump = useMotionValue(1);
+  const contentEl = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => connect({ sounds: true }), []);
   useEffect(() => watchWaiting(), []);
@@ -102,12 +104,34 @@ export function Island() {
   const observer = useRef<ResizeObserver | null>(null);
   const contentRef = useCallback((el: HTMLDivElement | null) => {
     observer.current?.disconnect();
+    contentEl.current = el;
+    // Keep the last height while the node is gone (AnimatePresence swaps);
+    // zeroing here collapses Settings/Welcome mid-transition.
     if (!el) return;
     const measure = () => setContentHeight(el.offsetHeight);
     measure();
     observer.current = new ResizeObserver(measure);
     observer.current.observe(el);
   }, []);
+
+  // Remeasure after paint when Ask content swaps (New, stream, view change),
+  // so a stale tall height does not stick after the chat clears.
+  const turnsLen = useSidekick((s) => s.turns.length);
+  const chatId = useSidekick((s) => s.chatId);
+  useEffect(() => {
+    if (!asking) return;
+    let id2 = 0;
+    const id1 = requestAnimationFrame(() => {
+      id2 = requestAnimationFrame(() => {
+        const el = contentEl.current;
+        if (el) setContentHeight(el.offsetHeight);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(id1);
+      cancelAnimationFrame(id2);
+    };
+  }, [asking, view, turnsLen, chatId]);
 
   const width = asking
     ? ASK_WIDTH
@@ -118,7 +142,8 @@ export function Island() {
         : busy
           ? COMPACT.busyWidth
           : COMPACT.width;
-  // The measured content box already includes the top padding.
+  // The island window is already fixed (~560 tall); do not re-cap against
+  // innerHeight or Settings/Welcome get clipped by the shell spring.
   const height = expanded ? Math.max(EXPANDED.minHeight, contentHeight + EXPANDED.pad) : COMPACT.height;
   const radius = expanded ? EXPANDED.radius : COMPACT.radius;
   const transition = reduced ? { duration: 0 } : expanded ? morphOpen : morphClose;

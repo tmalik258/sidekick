@@ -5,8 +5,10 @@
 //! page. Once loaded, the extension asks to connect by itself.
 
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use serde::Serialize;
+use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, executor};
@@ -66,6 +68,42 @@ fn extensions_page(browser: &str) -> Option<(&'static str, bool)> {
     })
 }
 
+/// Chromium user-data root for the last-used profile (Windows paths).
+fn chromium_user_data(browser: &str) -> Option<PathBuf> {
+    let local = dirs::data_local_dir()?;
+    Some(match browser {
+        "chrome" => local.join("Google").join("Chrome").join("User Data"),
+        "edge" => local.join("Microsoft").join("Edge").join("User Data"),
+        "brave" => local
+            .join("BraveSoftware")
+            .join("Brave-Browser")
+            .join("User Data"),
+        _ => return None,
+    })
+}
+
+/// Reads Chromium's `Local State` so we open the last profile and skip the
+/// profile picker. Without `--profile-directory`, Chrome shows the picker and
+/// then drops the `chrome://extensions/` URL (Zen/Firefox do not).
+fn last_used_profile(user_data: &Path) -> String {
+    parse_last_used_profile(
+        &std::fs::read_to_string(user_data.join("Local State")).unwrap_or_default(),
+    )
+}
+
+fn parse_last_used_profile(local_state: &str) -> String {
+    serde_json::from_str::<Value>(local_state)
+        .ok()
+        .and_then(|v| {
+            v.get("profile")?
+                .get("last_used")?
+                .as_str()
+                .map(str::to_owned)
+        })
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "Default".into())
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Guide {
@@ -92,6 +130,20 @@ pub fn steps(firefox: bool) -> Vec<String> {
     }
 }
 
+fn spawn_browser(exe: &Path, args: &[String]) -> Result<(), String> {
+    let mut cmd = Command::new(exe);
+    cmd.args(args);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW: do not flash a console behind the browser.
+        cmd.creation_flags(0x0800_0000);
+    }
+    cmd.spawn()
+        .map(|_| ())
+        .map_err(|e| format!("could not open the browser: {e}"))
+}
+
 /// Opens `browser` on its extensions page with the path on the clipboard.
 pub async fn install(app: &AppHandle, browser: &str) -> Result<Guide, String> {
     let (page, firefox) = extensions_page(browser).ok_or("Unknown browser")?;
@@ -111,10 +163,20 @@ pub async fn install(app: &AppHandle, browser: &str) -> Result<Guide, String> {
         .browser(browser)
         .map(|b| b.path.clone())
         .ok_or("That browser is not installed")?;
-    std::process::Command::new(exe)
-        .arg(page)
-        .spawn()
-        .map_err(|e| format!("could not open the browser: {e}"))?;
+
+    let mut args = Vec::new();
+    if !firefox {
+        // Target the last Chromium profile so the extensions URL is not lost
+        // after the multi-profile picker (cold start).
+        if let Some(data) = chromium_user_data(browser) {
+            let profile = last_used_profile(&data);
+            args.push(format!("--profile-directory={profile}"));
+        }
+        args.push("--new-window".into());
+    }
+    args.push(page.to_owned());
+    spawn_browser(Path::new(&exe), &args)?;
+
     Ok(Guide {
         copied,
         steps: steps(firefox),
@@ -131,5 +193,15 @@ mod tests {
         assert!(extensions_page("zen").unwrap().1);
         assert!(extensions_page("safari").is_none());
         assert_eq!(steps(false).len(), 4);
+    }
+
+    #[test]
+    fn reads_last_used_chromium_profile() {
+        assert_eq!(
+            parse_last_used_profile(r#"{"profile":{"last_used":"Profile 2"}}"#),
+            "Profile 2"
+        );
+        assert_eq!(parse_last_used_profile("{}"), "Default");
+        assert_eq!(parse_last_used_profile(""), "Default");
     }
 }
