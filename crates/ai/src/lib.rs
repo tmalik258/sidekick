@@ -21,7 +21,9 @@ use async_trait::async_trait;
 pub use claude_code::ClaudeCode;
 pub use decide::{Decider, Decision, DecisionOption, LocalDecider, Ranked, SemIf};
 pub use mcp::{McpClient, McpTool};
-pub use openai::{MAX_TOOL_STEPS, OpenAiCompat, ToolChatEnd, strip_thinking};
+pub use openai::{
+    MAX_TOOL_STEPS, OpenAiCompat, ToolChatEnd, first_chat_model, is_embedding_model, strip_thinking,
+};
 pub use router::{Answer, Router};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
