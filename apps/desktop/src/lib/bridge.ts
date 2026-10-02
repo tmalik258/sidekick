@@ -10,16 +10,19 @@ import type {
   AppTime,
   AskOpen,
   BrowserInfo,
+  BrowserStatus,
   CalendarToday,
   CapabilityInfo,
   ChatMessage,
   ComposioCheck,
+  ExtensionGuide,
   HitRect,
   MascotState,
   McpInfo,
   ProviderStatus,
   SearchHit,
   Settings,
+  SetupFound,
   SetupStatus,
   SkillInfo,
   StoredEvent,
@@ -60,7 +63,7 @@ export interface EventPayloads {
   [EVENTS.aiDone]: { id: string; provider: string | null; error: string | null; handoff: string | null };
   [EVENTS.aiTool]: { id: string; name: string };
   [EVENTS.askOpen]: AskOpen;
-  [EVENTS.askClose]: null;
+  [EVENTS.askClose]: { reason: "close" | "defer" };
   [EVENTS.actionResult]: ActionResult;
   [EVENTS.settingsChanged]: Settings;
   [EVENTS.voiceState]: VoiceStatus;
@@ -141,8 +144,14 @@ export const api = {
   aiHandoff: (messages: ChatMessage[], reason: string | null) => invoke<string>("ai_handoff", { messages, reason }),
   composioImport: () => invoke<Settings>("composio_import"),
   composioTest: () => invoke<ComposioCheck>("composio_test"),
+  composioSignIn: () => invoke<string>("composio_sign_in"),
   setupStatus: () => invoke<SetupStatus>("setup_status"),
   setupRun: (id: string) => invoke<void>("setup_run", { id }),
+  setupDetect: () => invoke<SetupFound>("setup_detect"),
+  claudeAddHooks: () => invoke<string | null>("claude_add_hooks"),
+  claudeAddMcp: () => invoke<void>("claude_add_mcp"),
+  browsersStatus: () => invoke<BrowserStatus[]>("browsers_status"),
+  extensionInstall: (browser: string) => invoke<ExtensionGuide>("extension_install", { browser }),
   searchClear: () => invoke<number>("search_clear"),
   backupExport: () => invoke<string>("backup_export"),
   backupImport: (text: string) => invoke<string>("backup_import", { text }),
@@ -154,4 +163,6 @@ export const api = {
   voiceStop: () => invoke<void>("voice_stop"),
   voiceTest: () => invoke<void>("voice_test"),
   askOpen: (prompt: string | null = null, ask = false) => invoke<void>("ask_open", { prompt, ask }),
+  askEnsureWelcome: () => invoke<void>("ask_ensure_welcome"),
+  askDeferWelcome: () => invoke<void>("ask_defer_welcome"),
 };

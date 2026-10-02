@@ -13,9 +13,9 @@ use crate::{Sensor, SensorGate, http};
 
 /// Receives Claude Code hooks (FR-SEN-09) on a local port, so Sidekick knows
 /// when a session finishes or needs the user. Claude Code posts the hook
-/// input here through an HTTP hook the user adds to their own
-/// `~/.claude/settings.json`; Sidekick never edits that file, and never
-/// reads transcripts or credentials.
+/// input here through an HTTP hook in `~/.claude/settings.json`. The user can
+/// add those hooks with "Add for me" (backup + merge); this sensor never
+/// writes that file and never reads transcripts or credentials.
 pub struct ClaudeCodeSensor {
     pub port: u16,
     /// Permission requests waiting for Allow or Deny on the island.

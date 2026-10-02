@@ -45,6 +45,8 @@ export interface Settings {
   calendar: { feeds: string[]; remindMinutes: number };
   semanticSearch: { enabled: boolean; model: string };
   onboarded: boolean;
+  /** 0-based welcome step; resumed until onboarded is true. */
+  welcomeStep: number;
   checkUpdates: boolean;
   composio: ComposioSettings;
   denyApps: string[];
@@ -60,6 +62,8 @@ export interface VoiceSettings {
   enabled: boolean;
   wakeWord: boolean;
   speakAnswers: boolean;
+  conversation: boolean;
+  speakSuggestions: boolean;
   voice: string;
   speed: number;
 }
@@ -191,6 +195,37 @@ export interface BrowserInfo {
   port: number;
 }
 
+export interface BrowserStatus {
+  id: string;
+  name: string;
+  connected: boolean;
+}
+
+export interface ExtensionGuide {
+  copied: string;
+  steps: string[];
+}
+
+export interface DetectedFolder {
+  path: string;
+  label: string;
+  repos: number;
+}
+
+export interface SetupFound {
+  codeFolders: DetectedFolder[];
+  searchFolders: DetectedFolder[];
+  chatModels: string[];
+  embedModels: string[];
+  claudeInstalled: boolean;
+  claudeHooks: boolean;
+  claudeMcp: boolean;
+  composioSignedIn: boolean;
+  composioInClaude: boolean;
+  browsers: string[];
+  installable: SetupItem[];
+}
+
 export const THEMES = ["pearl", "graphite", "midnight"] as const;
 export type Theme = (typeof THEMES)[number];
 
@@ -230,12 +265,12 @@ export const DEFAULT_SETTINGS: Settings = {
   masterVolume: 0.6,
   cueVolumes: {},
   collapseAfterSecs: 8,
-  launchAtLogin: false,
+  launchAtLogin: true,
   sensors: {},
   pause: { kind: "none" },
   theme: "pearl",
   soundKit: "01",
-  paletteHotkey: "Alt+Space",
+  paletteHotkey: "Ctrl+Space",
   codeFolders: [],
   indexFolders: [],
   endOfDayHour: 18,
@@ -245,7 +280,7 @@ export const DEFAULT_SETTINGS: Settings = {
     local: { enabled: true, baseUrl: "http://localhost:11434/v1", model: "" },
     anthropic: { enabled: true, model: "" },
     semif: {
-      enabled: false,
+      enabled: true,
       command: ["semif-score"],
       mode: "direct",
       backend: "llamacpp",
@@ -258,11 +293,20 @@ export const DEFAULT_SETTINGS: Settings = {
   calendar: { feeds: [], remindMinutes: 5 },
   semanticSearch: { enabled: true, model: "nomic-embed-text" },
   onboarded: false,
+  welcomeStep: 0,
   checkUpdates: true,
   composio: { enabled: false, url: "", headers: {} },
   denyApps: ["1password.exe", "bitwarden.exe", "keepass.exe", "keepassxc.exe"],
   denySites: [],
-  voice: { enabled: false, wakeWord: true, speakAnswers: true, voice: "af_bella", speed: 1 },
+  voice: {
+    enabled: true,
+    wakeWord: true,
+    speakAnswers: true,
+    conversation: true,
+    speakSuggestions: true,
+    voice: "af_bella",
+    speed: 1,
+  },
 };
 
 export const SENSOR_IDS = [
@@ -288,7 +332,6 @@ export const SENSOR_IDS = [
     label: "Away detection",
     hint: "Holds suggestions while you are away and shows them when you are back.",
   },
-  { id: "heartbeat", label: "Heartbeat (debug)", hint: "A test event every 30 seconds." },
 ] as const;
 
 export interface ActionResult {

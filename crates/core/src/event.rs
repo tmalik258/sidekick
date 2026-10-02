@@ -80,10 +80,10 @@ mod tests {
 
     #[test]
     fn serializes_with_camel_case_and_snake_case_sensitivity() {
-        let event = Event::new("debug.heartbeat", "heartbeat", serde_json::json!({"n": 1}))
+        let event = Event::new("file.download_completed", "downloads", serde_json::json!({"n": 1}))
             .with_sensitivity(Sensitivity::Personal);
         let json = serde_json::to_value(&event).unwrap();
-        assert_eq!(json["kind"], "debug.heartbeat");
+        assert_eq!(json["kind"], "file.download_completed");
         assert_eq!(json["sensitivity"], "personal");
         assert!(json["context"].get("activeApp").is_some());
     }

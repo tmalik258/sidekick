@@ -4,24 +4,20 @@
 // exact command for each missing piece. Used by the welcome steps and the
 // Setup tab in Settings. Every check runs again on "Check again", and for a
 // couple of minutes after a Run so a finished install turns green.
+// In welcome, items expand their one-click how-to here so onboarding never
+// dumps the user into Settings mid-flow.
+// Rows paint immediately as skeletons (pulse glyphs); never a blank text line.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
-import type { SetupGroup, SetupItem, SetupStatus } from "@/lib/types";
+import type { SetupGroup, SetupStatus } from "@/lib/types";
+import { SETUP_CATALOG, skeletonItem } from "./SetupCatalog";
+import { SetupRow, SmallButton } from "./SetupChecklistRow";
 
 const GROUP_TITLES: Record<SetupGroup, string> = {
   ai: "AI",
   connect: "Connections",
   tools: "Tools",
-};
-
-const TAB_LABELS: Record<string, string> = {
-  ai: "AI",
-  browser: "Browser",
-  general: "General",
-  search: "Search",
-  today: "Today",
-  voice: "Voice",
 };
 
 const WATCH_EVERY_MS = 6000;
@@ -66,15 +62,19 @@ export function SetupChecklist({
   groups,
   onOpenTab,
   compact,
+  /** Keep how-to inside the checklist (welcome) instead of jumping to a Settings tab. */
+  inlineGuides,
 }: {
   groups: SetupGroup[];
-  onOpenTab: (tab: string) => void;
+  onOpenTab?: (tab: string) => void;
   /** Hide optional items behind "More" (the welcome steps). */
   compact?: boolean;
+  inlineGuides?: boolean;
 }) {
   const { status, checking, check, watchForChanges } = useSetupStatus();
   const [error, setError] = useState<string | null>(null);
   const [showOptional, setShowOptional] = useState(!compact);
+  const [openGuide, setOpenGuide] = useState<string | null>(null);
 
   const run = (id: string) => {
     setError(null);
@@ -84,9 +84,11 @@ export function SetupChecklist({
       .catch((e) => setError(String(e)));
   };
 
-  if (!status) return <p className="py-2 text-[12.5px] text-[rgb(235_235_245/0.55)]">Checking this PC...</p>;
-
-  const items = status.items.filter((i) => groups.includes(i.group));
+  const skeletons = SETUP_CATALOG.filter((c) => groups.includes(c.group)).map(skeletonItem);
+  const live = status?.items.filter((i) => groups.includes(i.group)) ?? [];
+  // Keep previous rows while refreshing; otherwise show catalog skeletons.
+  const items = live.length > 0 ? live : skeletons;
+  const pending = status === null || checking;
   const recommended = items.filter((i) => i.recommended);
   const doneCount = recommended.filter((i) => i.done).length;
   const optional = items.filter((i) => !i.recommended);
@@ -95,12 +97,20 @@ export function SetupChecklist({
     <div className="flex flex-col gap-2 text-[13px]">
       <div className="flex items-center gap-2">
         <p className="flex-1 text-[12px] text-[rgb(235_235_245/0.6)]">
-          {recommended.length > 0 && doneCount === recommended.length
-            ? "Everything recommended is set up."
-            : `${doneCount} of ${recommended.length} recommended steps done.`}
+          {status === null
+            ? "\u00a0"
+            : recommended.length > 0 && doneCount === recommended.length
+              ? "Everything recommended is set up."
+              : `${doneCount} of ${recommended.length} recommended steps done.`}
         </p>
-        <SmallButton onClick={() => void check()} disabled={checking}>
-          {checking ? "Checking..." : "Check again"}
+        <SmallButton
+          onClick={() => {
+            void check();
+            watchForChanges();
+          }}
+          disabled={checking}
+        >
+          Check again
         </SmallButton>
       </div>
 
@@ -110,16 +120,27 @@ export function SetupChecklist({
         </p>
       )}
 
-      {groups.includes("tools") && status.installAll && (
+      {groups.includes("tools") && status?.installAll && (
         <div className="flex flex-col gap-1.5 rounded-2xl bg-[#0a84ff]/15 px-3.5 py-2.5 ring-1 ring-[#0a84ff]/40">
           <div className="flex items-center gap-2">
             <p className="flex-1 font-medium text-white">Install all recommended tools</p>
-            <CopyButton text={status.installAll} />
+            <SmallButton
+              onClick={() => {
+                void navigator.clipboard.writeText(status.installAll!).catch(() => undefined);
+              }}
+            >
+              Copy
+            </SmallButton>
             <SmallButton primary onClick={() => run("all")}>
               Run
             </SmallButton>
           </div>
-          <Code text={status.installAll} />
+          <code
+            title={status.installAll}
+            className="block truncate rounded-lg bg-black/30 px-2.5 py-1.5 font-mono text-[11px] text-white/80 select-all"
+          >
+            {status.installAll}
+          </code>
         </div>
       )}
 
@@ -134,7 +155,20 @@ export function SetupChecklist({
               </h3>
             )}
             {rows.map((item) => (
-              <Row key={item.id} item={item} onRun={run} onOpenTab={onOpenTab} />
+              <SetupRow
+                key={item.id}
+                item={item}
+                checking={pending}
+                onRun={run}
+                guideOpen={openGuide === item.id}
+                onToggleGuide={() => setOpenGuide(openGuide === item.id ? null : item.id)}
+                onOpenTab={onOpenTab}
+                inlineGuides={inlineGuides}
+                onDone={() => {
+                  void check();
+                  watchForChanges();
+                }}
+              />
             ))}
           </section>
         );
@@ -150,107 +184,5 @@ export function SetupChecklist({
         </button>
       )}
     </div>
-  );
-}
-
-function Row({
-  item,
-  onRun,
-  onOpenTab,
-}: {
-  item: SetupItem;
-  onRun: (id: string) => void;
-  onOpenTab: (tab: string) => void;
-}) {
-  const multiline = item.command?.includes("\n") ?? false;
-  return (
-    <div className="flex flex-col gap-1.5 rounded-2xl bg-white/[0.06] px-3.5 py-2.5">
-      <div className="flex items-center gap-3">
-        <span
-          role="img"
-          aria-label={item.done ? "Done" : "Not done"}
-          className={`grid size-[18px] shrink-0 place-items-center rounded-full text-[10px] font-bold ${
-            item.done ? "bg-[#30d158] text-black" : "ring-1 ring-white/30 ring-inset"
-          }`}
-        >
-          {item.done ? "✓" : ""}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="font-medium text-white">
-            {item.title}{" "}
-            <span className={`font-normal ${item.done ? "text-[#30d158]" : "text-[rgb(235_235_245/0.5)]"}`}>
-              {item.status}
-            </span>
-          </p>
-          <p className="text-[11.5px] leading-snug text-[rgb(235_235_245/0.55)]">{item.why}</p>
-        </div>
-        {!item.done && (
-          <div className="flex shrink-0 gap-1.5">
-            {item.command && <CopyButton text={item.command} />}
-            {item.runnable && (
-              <SmallButton primary onClick={() => onRun(item.id)}>
-                Run
-              </SmallButton>
-            )}
-            {item.tab && !item.runnable && (
-              <SmallButton primary={!item.command} onClick={() => onOpenTab(item.tab as string)}>
-                {TAB_LABELS[item.tab] ? `Open ${TAB_LABELS[item.tab]}` : "Open"}
-              </SmallButton>
-            )}
-          </div>
-        )}
-      </div>
-      {!item.done && item.command && !multiline && <Code text={item.command} />}
-    </div>
-  );
-}
-
-function Code({ text }: { text: string }) {
-  return (
-    <code
-      title={text}
-      className="block truncate rounded-lg bg-black/30 px-2.5 py-1.5 font-mono text-[11px] text-white/80 select-all"
-    >
-      {text}
-    </code>
-  );
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard access can be refused; the command is selectable anyway.
-    }
-  };
-  return <SmallButton onClick={() => void copy()}>{copied ? "Copied" : "Copy"}</SmallButton>;
-}
-
-function SmallButton({
-  children,
-  onClick,
-  disabled,
-  primary,
-}: {
-  children: string;
-  onClick: () => void;
-  disabled?: boolean;
-  primary?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`chip rounded-full px-2.5 py-1 text-[12px] font-medium disabled:opacity-50 ${
-        primary ? "bg-white text-black hover:bg-white/90" : "bg-white/[0.12] text-white/90 hover:bg-white/[0.2]"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
