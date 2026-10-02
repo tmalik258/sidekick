@@ -85,16 +85,16 @@ export const SetupRow = memo(function SetupRow({
     void work
       .then(() => {
         onDone();
-        // Finishing happens in the browser: wait there, not here.
-        if (outside && inlineGuides) startWaiting(item.id, item.title);
+        // Finishing happens in the browser: wait as a pill, then speak and reopen.
+        if (outside) startWaiting(item.id, item.title, { resumeTab: item.tab ?? "connections" });
       })
       .catch((e) => setActionError(String(e)))
       .finally(() => setBusy(false));
   };
   const run = () => {
     onRun(item.id);
-    // The install runs in PowerShell: the welcome waits as a small pill.
-    if (inlineGuides) startWaiting(item.id, item.title);
+    // Install runs in PowerShell: shrink to a pill until setup status flips.
+    startWaiting(item.id, item.title, { resumeTab: item.tab ?? "home" });
   };
   const isWaiting = waiting?.id === item.id && !item.done;
 
@@ -107,7 +107,7 @@ export const SetupRow = memo(function SetupRow({
 
   return (
     <div
-      className={`flex flex-col gap-1.5 rounded-2xl bg-white/[0.06] px-3.5 py-2.5 ring-1 transition-shadow duration-700 ${
+      className={`flex flex-col gap-1.5 rounded-2xl bg-white/[0.06] px-3.5 py-2.5 ring-1 ring-inset transition-shadow duration-700 ${
         justDone ? "ring-[#30d158]/70" : "ring-transparent"
       }`}
     >

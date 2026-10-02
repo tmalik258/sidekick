@@ -145,7 +145,7 @@ export function SetupChecklist({
       )}
 
       {groups.includes("tools") && status?.installAll && (
-        <div className="flex flex-col gap-1.5 rounded-2xl bg-[#0a84ff]/15 px-3.5 py-2.5 ring-1 ring-[#0a84ff]/40">
+        <div className="flex flex-col gap-1.5 rounded-2xl bg-[#0a84ff]/15 px-3.5 py-2.5 ring-1 ring-inset ring-[#0a84ff]/40">
           <div className="flex items-center gap-2">
             <p className="flex-1 font-medium text-white">Install all recommended tools</p>
             <SmallButton

@@ -69,7 +69,7 @@ export function IslandWelcome() {
           animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
           exit={{ opacity: 0, x: -12, filter: "blur(4px)", transition: { duration: 0.12 } }}
           transition={{ duration: 0.26, ease: [0.23, 1, 0.32, 1] }}
-          className="settings-scroll -mr-3 max-h-95 overflow-y-auto pr-3"
+          className="settings-scroll -mr-3 max-h-95 overflow-y-auto pr-3 pl-0.5"
         >
           <Spoken step={step}>
             {step === 0 && (
@@ -331,7 +331,7 @@ function Choice({
       role="switch"
       aria-checked={on}
       onClick={() => onChange(!on)}
-      className={`chip flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-left ring-1 ${
+      className={`chip flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-left ring-1 ring-inset ${
         on ? "bg-white/10 ring-[#0a84ff]" : "bg-white/6 ring-transparent hover:bg-white/9"
       }`}
     >
