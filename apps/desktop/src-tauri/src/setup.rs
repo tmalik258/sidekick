@@ -157,7 +157,7 @@ fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_default()
 }
 
-async fn ollama_models(base_url: &str) -> Option<Vec<String>> {
+pub async fn ollama_models(base_url: &str) -> Option<Vec<String>> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_millis(1500))
         .build()
@@ -638,6 +638,36 @@ pub async fn run(app: &AppHandle, id: &str) -> Result<(), String> {
     open_terminal(&command)
 }
 
+/// After an installer runs, PowerShell still has the old PATH; read it again
+/// so the next step (say, `ollama pull` after installing Ollama) is found.
+const REFRESH_PATH: &str = "$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')";
+
+/// Joins several steps into one script, in the given order.
+pub fn chain(commands: &[String]) -> String {
+    commands.join(&format!("; {REFRESH_PATH}; "))
+}
+
+/// Runs several setup steps one after another in one PowerShell window:
+/// installs first, then model downloads and sign-ins.
+pub async fn run_many(app: &AppHandle, ids: &[String]) -> Result<(), String> {
+    let items = status(app).await;
+    let mut steps: Vec<&SetupItem> = items
+        .iter()
+        .filter(|i| ids.contains(&i.id.to_owned()) && i.runnable && !i.done)
+        .collect();
+    // Installers before anything that needs what they install.
+    steps.sort_by_key(|i| {
+        !i.command
+            .as_deref()
+            .is_some_and(|c| c.starts_with("winget "))
+    });
+    let commands: Vec<String> = steps.iter().filter_map(|i| i.command.clone()).collect();
+    if commands.is_empty() {
+        return Ok(());
+    }
+    open_terminal(&chain(&commands))
+}
+
 #[cfg(windows)]
 fn open_terminal(command: &str) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
@@ -751,6 +781,17 @@ mod tests {
             merge_path(r"C:\Windows;C:\Tools\", r"c:\windows;C:\Tools;D:\Own"),
             r"C:\Windows;C:\Tools\;D:\Own"
         );
+    }
+
+    #[test]
+    fn chains_steps_with_a_path_refresh() {
+        let script = chain(&[
+            "winget install -e --id Ollama.Ollama".into(),
+            "ollama pull qwen3:1.7b".into(),
+        ]);
+        assert!(script.starts_with("winget install"));
+        assert!(script.ends_with("ollama pull qwen3:1.7b"));
+        assert!(script.contains("GetEnvironmentVariable('Path','User')"));
     }
 
     #[test]

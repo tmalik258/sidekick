@@ -2,10 +2,12 @@ mod ai;
 mod ask;
 mod brief;
 mod browser;
+mod claude_config;
 mod commands;
 mod composio;
 mod composio_api;
 mod decide;
+mod detect;
 mod fathom;
 mod files;
 mod island;
@@ -87,6 +89,10 @@ pub fn run() {
             commands::calendar_today,
             commands::search_clear,
             commands::setup_status,
+            commands::setup_detect,
+            commands::setup_apply,
+            commands::claude_add_hooks,
+            commands::claude_add_mcp,
             commands::ai_handoff,
             commands::composio_import,
             commands::composio_sign_in,
