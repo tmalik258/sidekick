@@ -417,6 +417,30 @@ impl AiProvider for LocalWithTools {
         }
         let mut with_tools = req.clone();
         with_tools.system.push_str(TOOLS_SYSTEM);
+        // A screenshot: a vision model sees it when one is set; otherwise
+        // the text model gets the screen's text, read here with OCR.
+        if let Some(png) = req.image.as_ref() {
+            let ai = lock(&self.app.state::<AppState>().settings)
+                .ai
+                .local
+                .clone();
+            if !ai.vision_model.trim().is_empty() {
+                let vision = OpenAiCompat::new(Some(ai.base_url), Some(ai.vision_model));
+                return vision.chat(req, sink, cancel).await;
+            }
+            with_tools.image = None;
+            match crate::ask_tools::screen_text(&self.app, png).await {
+                Ok(text) if !text.is_empty() => with_tools.system.push_str(&format!(
+                    "\n\nText on the user's screen (read with OCR, layout lost):\n```\n{text}\n```"
+                )),
+                Ok(_) => with_tools.system.push_str(
+                    "\n\nThe screenshot has no readable text; say so and ask what they need.",
+                ),
+                Err(err) => with_tools.system.push_str(&format!(
+                    "\n\nThe screen could not be read ({err}); say so in one sentence."
+                )),
+            }
+        }
         let runner = Runner {
             client,
             app: self.app.clone(),

@@ -87,6 +87,11 @@ impl Executor {
         &self.caps
     }
 
+    /// The text in an image (OCR), for questions about the screen.
+    pub async fn read_text(&self, image: &Path) -> Result<String, ActionError> {
+        convert::ocr_text(&self.caps, image).await
+    }
+
     /// Runs one action. Blocking work happens off the async runtime.
     pub async fn run(&self, action: &str, args: &Value) -> Result<Outcome, ActionError> {
         match action {

@@ -241,6 +241,9 @@ pub struct LocalModelPref {
     pub base_url: String,
     /// Empty means the first model the server lists.
     pub model: String,
+    /// A small model that sees pictures (e.g. moondream), used only for
+    /// questions about the screen. Empty: the screen is read as text (OCR).
+    pub vision_model: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -296,6 +299,7 @@ impl Default for LocalModelPref {
             enabled: true,
             base_url: "http://localhost:11434/v1".into(),
             model: String::new(),
+            vision_model: String::new(),
         }
     }
 }
