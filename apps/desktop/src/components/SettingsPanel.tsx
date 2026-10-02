@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSidekick } from "@/lib/store";
 import { AiTab } from "./settings/AiTab";
 import { ConnectionsTab } from "./settings/ConnectionsTab";
@@ -47,13 +47,13 @@ export function SettingsPanel() {
     if (t) setTab(t);
   }, [wantedTab]);
   const [error, setError] = useState<string | null>(null);
-  const open = (id: string) => {
+  const open = useCallback((id: string) => {
     const t = tabFor(id);
     if (t) {
       setQuery("");
       setTab(t);
     }
-  };
+  }, []);
 
   if (!ready) return null;
   const searching = query.trim() !== "";

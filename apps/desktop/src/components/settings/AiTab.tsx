@@ -3,8 +3,9 @@
 // AI: which providers answer and in what order, their models (picked from
 // what is installed), SemIf ranking, and voice.
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
+import { useCached } from "@/lib/cache";
 import { updateSettings, useSidekick } from "@/lib/store";
 import {
   AI_PROVIDERS,
@@ -69,15 +70,19 @@ const ANTHROPIC_MODELS: [string, string][] = [
 ];
 
 function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => void }) {
-  const [status, setStatus] = useState<ProviderStatus[] | null>(null);
-  const [models, setModels] = useState<LocalModels | null>(null);
-  const refresh = useCallback(() => {
-    setStatus(null);
-    void api.aiStatus().then(setStatus);
-    void api.localModels().then(setModels);
-  }, []);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-check whenever the AI settings change
-  useEffect(refresh, [refresh, ai.local.baseUrl]);
+  // Last known answers paint at once; dots and lists only change when the data does.
+  const { data: status, refresh: reloadStatus } = useCached<ProviderStatus[]>("ai-status", api.aiStatus);
+  const { data: models, refresh: reloadModels } = useCached<LocalModels>("local-models", api.localModels);
+  const first = useRef(true);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-check when the local server address changes
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    void reloadStatus().catch(() => undefined);
+    void reloadModels().catch(() => undefined);
+  }, [ai.local.baseUrl]);
 
   const save = (next: Partial<AiSettings>) =>
     updateSettings({ ai: { ...ai, ...next } }).catch((e: unknown) => onError(String(e)));
@@ -169,7 +174,7 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
                   label="Model"
                   hint={
                     models === null
-                      ? "Checking Ollama..."
+                      ? "\u00a0"
                       : models.reachable
                         ? `${models.chat.length} chat ${models.chat.length === 1 ? "model" : "models"} installed`
                         : "Ollama is not running"
@@ -202,7 +207,13 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
         ))}
       </ol>
       <div>
-        <Button small onClick={refresh}>
+        <Button
+          small
+          onClick={() => {
+            void reloadStatus().catch(() => undefined);
+            void reloadModels().catch(() => undefined);
+          }}
+        >
           Check again
         </Button>
       </div>

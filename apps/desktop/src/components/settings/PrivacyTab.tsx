@@ -5,9 +5,18 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
+import { useCached } from "@/lib/cache";
 import { useNow } from "@/lib/hooks";
 import { updateSettings, useSidekick } from "@/lib/store";
-import { type CapabilityInfo, type Folder, isPaused, type LocalModels, type Pause, SENSOR_IDS } from "@/lib/types";
+import {
+  type CapabilityInfo,
+  type Folder,
+  type Found,
+  isPaused,
+  type LocalModels,
+  type Pause,
+  SENSOR_IDS,
+} from "@/lib/types";
 import { Button, ChipList, Field, FolderPicker, Section, Select, Toggle } from "./ui";
 
 export function PrivacyTab({ onError }: { onError: (e: string) => void }) {
@@ -101,21 +110,11 @@ function PauseStatus({ pause }: { pause: Pause }) {
 function SearchSettings({ onError }: { onError: (e: string) => void }) {
   const folders = useSidekick((s) => s.settings.indexFolders);
   const semantic = useSidekick((s) => s.settings.semanticSearch);
-  const [found, setFound] = useState<Folder[]>([]);
-  const [models, setModels] = useState<LocalModels | null>(null);
-  const [status, setStatus] = useState<{ items: number; embedded: number; embedError: string | null } | null>(null);
-  const refresh = useCallback(() => void api.searchStatus().then(setStatus), []);
-  useEffect(refresh, [refresh]);
-  useEffect(() => {
-    void api
-      .setupDetect()
-      .then((f) => setFound(f.searchFolders))
-      .catch(() => setFound([]));
-    void api
-      .localModels()
-      .then(setModels)
-      .catch(() => setModels(null));
-  }, []);
+  const { data: detected } = useCached<Found>("setup-detect", api.setupDetect);
+  const found: Folder[] = detected?.searchFolders ?? [];
+  const { data: models } = useCached<LocalModels>("local-models", api.localModels);
+  const { data: status, refresh: reload } = useCached("search-status", api.searchStatus);
+  const refresh = () => void reload().catch(() => undefined);
   const setSemantic = (patch: Partial<typeof semantic>) =>
     updateSettings({ semanticSearch: { ...semantic, ...patch } }).catch((e: unknown) => onError(String(e)));
   const embed = models?.embed ?? [];
@@ -124,7 +123,7 @@ function SearchSettings({ onError }: { onError: (e: string) => void }) {
       <FolderPicker
         found={found}
         chosen={folders}
-        empty="No usual folders found. Add one below."
+        empty={detected ? "No usual folders found. Add one below." : ""}
         onChange={(indexFolders) =>
           void updateSettings({ indexFolders })
             .then(() => api.searchReindex())
@@ -133,7 +132,7 @@ function SearchSettings({ onError }: { onError: (e: string) => void }) {
       />
       <div className="flex items-center justify-between gap-2">
         <span className="text-(--muted)">
-          {status === null ? "..." : `${status.items.toLocaleString()} items indexed`}
+          {status === null ? "\u00a0" : `${status.items.toLocaleString()} items indexed`}
           {semantic.enabled && status && status.embedded > 0 && `, ${status.embedded.toLocaleString()} by meaning`}
         </span>
         <div className="flex gap-1.5">

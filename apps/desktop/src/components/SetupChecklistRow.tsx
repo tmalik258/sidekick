@@ -2,7 +2,7 @@
 
 // One setup checklist row: status, Run / Add for me / Set up, and inline guides.
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { api } from "@/lib/bridge";
 import type { SetupItem } from "@/lib/types";
 import { ItemGuide } from "./SetupGuides";
@@ -35,7 +35,8 @@ function oneClickLabel(id: string): string {
   return "Set up";
 }
 
-export function SetupRow({
+/** Memoized: re-renders only when this row's own data or open state changes. */
+export const SetupRow = memo(function SetupRow({
   item,
   onRun,
   onOpenTab,
@@ -50,7 +51,7 @@ export function SetupRow({
   onOpenTab?: (tab: string) => void;
   inlineGuides?: boolean;
   guideOpen: boolean;
-  onToggleGuide: () => void;
+  onToggleGuide: (id: string) => void;
   onDone: () => void;
   /** Pulse glyph while probes are in flight. */
   checking?: boolean;
@@ -66,7 +67,7 @@ export function SetupRow({
 
   const runDirect = () => {
     if (item.id === "browser" || item.id === "code_folders" || item.id === "search_folders" || item.id === "voice") {
-      onToggleGuide();
+      onToggleGuide(item.id);
       return;
     }
     setBusy(true);
@@ -93,31 +94,30 @@ export function SetupRow({
   return (
     <div className="flex flex-col gap-1.5 rounded-2xl bg-white/[0.06] px-3.5 py-2.5">
       <div className="flex items-center gap-3">
-        {checking ? (
-          <span
-            role="img"
-            aria-label="Checking"
-            className="size-[18px] shrink-0 animate-pulse rounded-full bg-amber-400/90"
-          />
-        ) : (
-          <span
-            role="img"
-            aria-label={item.done ? "Done" : "Not done"}
-            className={`grid size-[18px] shrink-0 place-items-center rounded-full text-[10px] font-bold ${
-              item.done ? "bg-[#30d158] text-black" : "ring-1 ring-white/30 ring-inset"
-            }`}
-          >
-            {item.done ? "✓" : ""}
-          </span>
-        )}
+        {/* One element whose look changes, so the glyph eases instead of popping. */}
+        <span
+          role="img"
+          aria-label={checking ? "Checking" : item.done ? "Done" : "Not done"}
+          className={`grid size-[18px] shrink-0 place-items-center rounded-full text-[10px] font-bold transition-colors duration-300 ${
+            checking
+              ? "animate-pulse bg-white/15"
+              : item.done
+                ? "bg-[#30d158] text-black"
+                : "ring-1 ring-white/30 ring-inset"
+          }`}
+        >
+          {!checking && item.done ? "✓" : ""}
+        </span>
         <div className="min-w-0 flex-1">
           <p className="font-medium text-white">
             {item.title}{" "}
-            {!checking && (
-              <span className={`font-normal ${item.done ? "text-[#30d158]" : "text-[rgb(235_235_245/0.5)]"}`}>
-                {item.status}
-              </span>
-            )}
+            <span
+              className={`font-normal transition-opacity duration-300 ${checking ? "opacity-0" : "opacity-100"} ${
+                item.done ? "text-[#30d158]" : "text-[rgb(235_235_245/0.5)]"
+              }`}
+            >
+              {item.status}
+            </span>
           </p>
           <p className="text-[11.5px] leading-snug text-[rgb(235_235_245/0.55)]">{item.why}</p>
         </div>
@@ -135,7 +135,7 @@ export function SetupRow({
                 disabled={busy}
                 onClick={() => {
                   if (isDirect) runDirect();
-                  else onToggleGuide();
+                  else onToggleGuide(item.id);
                 }}
               >
                 {busy ? "…" : guideOpen ? "Hide" : oneClickLabel(item.id)}
@@ -169,7 +169,7 @@ export function SetupRow({
       {!checking && !item.done && showInline && guideOpen && <ItemGuide id={item.id} onDone={onDone} />}
     </div>
   );
-}
+});
 
 function Code({ text }: { text: string }) {
   return (
