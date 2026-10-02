@@ -72,6 +72,9 @@ const HOVER_OUT_MS = 320;
 
 const morphOpen = { type: "spring", bounce: 0.3, duration: 0.55 } as const;
 const morphClose = { type: "spring", bounce: 0.12, duration: 0.42 } as const;
+/** Growing or shrinking while already open (an answer streaming in, New):
+ * no bounce, so the panel never overshoots and settles back. */
+const resize = { type: "spring", bounce: 0, duration: 0.34 } as const;
 
 export function Island() {
   const { mascot, settings, suggestion, hovered: rawHover, visible, ready } = useSidekick();
@@ -177,8 +180,7 @@ export function Island() {
     };
   }, [asking, view, turnsLen, chatId]);
 
-  const showGuide =
-    !!waiting && !waiting.background && !suggestion && (mascot === "idle" || mascot === "sleeping");
+  const showGuide = !!waiting && !waiting.background && !suggestion && (mascot === "idle" || mascot === "sleeping");
   const width = asking
     ? ASK_WIDTH
     : expanded
@@ -196,7 +198,17 @@ export function Island() {
   // innerHeight or Settings/Welcome get clipped by the shell spring.
   const height = expanded ? Math.max(EXPANDED.minHeight, contentHeight + EXPANDED.pad) : COMPACT.height;
   const radius = expanded ? EXPANDED.radius : COMPACT.radius;
-  const transition = reduced ? { duration: 0 } : expanded ? morphOpen : morphClose;
+  // The bounce is for opening only; once open, size changes are calm.
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    if (!expanded) {
+      setSettled(false);
+      return;
+    }
+    const id = setTimeout(() => setSettled(true), 600);
+    return () => clearTimeout(id);
+  }, [expanded]);
+  const transition = reduced ? { duration: 0 } : expanded ? (settled ? resize : morphOpen) : morphClose;
 
   // Report the target shape as the interactive area; outside it the window
   // stays click-through. Sent once per change, not per animation frame.

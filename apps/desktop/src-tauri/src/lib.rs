@@ -14,6 +14,7 @@ mod detect;
 mod extension;
 mod fathom;
 mod files;
+mod find;
 mod health;
 mod island;
 mod layout;
@@ -121,6 +122,7 @@ pub fn run() {
             commands::composio_connect,
             commands::composio_use_key,
             commands::agents_status,
+            commands::ai_open_link,
             commands::codex_add_notify,
             commands::codex_add_mcp,
             commands::composio_test,

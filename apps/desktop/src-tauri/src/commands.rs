@@ -803,6 +803,13 @@ pub async fn ai_handoff(
     crate::agents::hand_off(&app, &messages, reason.as_deref()).await
 }
 
+/// Opens a file, folder or web link from an answer (a clicked link).
+/// Programs are never started this way.
+#[tauri::command]
+pub async fn ai_open_link(app: AppHandle, target: String) -> CmdResult<String> {
+    crate::ask_tools::open_target(&app, &target).await
+}
+
 /// Which coding agents are installed and which one gets handoffs.
 #[tauri::command]
 pub fn agents_status(state: State<'_, AppState>) -> crate::agents::Agents {

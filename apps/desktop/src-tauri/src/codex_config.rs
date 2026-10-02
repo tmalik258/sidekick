@@ -109,7 +109,7 @@ pub fn merge_mcp(text: &str, url: &str, token: &str) -> String {
         out.push('\n');
     }
     out.push_str(&format!(
-        "[mcp_servers.sidekick]\nurl = {}\nhttp_headers = {{ \"Authorization\" = {} }}\n",
+        "[mcp_servers.sidekick]\nurl = {}\nhttp_headers = {{ \"Authorization\" = {} }}\ndefault_tools_approval_mode = \"approve\"\n",
         lit(url),
         lit(&format!("Bearer {token}")),
     ));
