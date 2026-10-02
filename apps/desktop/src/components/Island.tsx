@@ -47,7 +47,17 @@ const DETAIL: Record<MascotState, string> = {
 const OPEN_STATES: ReadonlySet<MascotState> = new Set(["suggesting", "listening", "working", "success", "error"]);
 
 const ORB = 44;
-const COMPACT = { width: 39, busyWidth: 109, waitWidth: 248, voiceWidth: 320, height: 36, radius: 18, orb: 26 };
+const COMPACT = {
+  width: 39,
+  busyWidth: 109,
+  waitWidth: 248,
+  /** Orb + "Listening..." + bars; grows with transcript up to voiceWidth. */
+  voiceMinWidth: 156,
+  voiceWidth: 320,
+  height: 36,
+  radius: 18,
+  orb: 26,
+};
 const EXPANDED = { width: 388, minHeight: 78, radius: 30, pad: 16 };
 /** Ask mode: wider, so commands and answers have room. */
 const ASK_WIDTH = 560;
@@ -175,7 +185,7 @@ export function Island() {
         ? GUIDE_WIDTH
         : EXPANDED.width
       : voicePill
-        ? COMPACT.voiceWidth
+        ? voiceShellWidth(voicePill.text, voicePill.thinking)
         : waiting
           ? COMPACT.waitWidth
           : busy
@@ -301,14 +311,29 @@ export function Island() {
   );
 }
 
-/** The newest words of a long sentence, which matter most while talking. */
+/** Newest words matter most while talking; keep the pill from growing forever. */
 function tail(text: string): string {
   return text.length > 38 ? `...${text.slice(-38).replace(/^\S*\s/, "")}` : text;
+}
+
+function voiceLabel(text: string, thinking: boolean): string {
+  if (thinking) return `Thinking: ${text}`;
+  return text.trim() ? tail(text) : "Listening...";
+}
+
+/** Compact listening shell: tight when empty, grows with speech up to voiceWidth. */
+function voiceShellWidth(text: string, thinking: boolean): number {
+  const label = voiceLabel(text, thinking);
+  // Orb column, gaps, green bars, right pad.
+  const chrome = COMPACT.height + 4 + 10 + 20 + 14;
+  const textPx = Math.ceil([...label].length * 7.4);
+  return Math.min(COMPACT.voiceWidth, Math.max(COMPACT.voiceMinWidth, chrome + textPx));
 }
 
 /** Voice in the compact island: green bars and the words as they come
  * while listening, then "Thinking" with the question until the answer. */
 function VoicePill({ text, thinking }: { text: string; thinking: boolean }) {
+  const label = voiceLabel(text, thinking);
   return (
     <motion.div
       className="absolute top-0 right-0 flex h-9 items-center gap-2.5 pr-3.5"
@@ -318,8 +343,12 @@ function VoicePill({ text, thinking }: { text: string; thinking: boolean }) {
       exit={{ opacity: 0, transition: { duration: 0.08 } }}
       aria-live="polite"
     >
-      <span className={`min-w-0 flex-1 truncate text-[12.5px] font-medium ${text ? "text-white/90" : "text-white/50"}`}>
-        {thinking ? `Thinking: ${text}` : text ? tail(text) : "Listening..."}
+      <span
+        className={`min-w-0 flex-1 truncate text-[12.5px] font-medium ${
+          text.trim() || thinking ? "text-white/90" : "text-white/50"
+        }`}
+      >
+        {label}
       </span>
       {thinking ? (
         <Activity />

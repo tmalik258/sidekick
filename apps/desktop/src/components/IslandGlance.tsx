@@ -124,9 +124,9 @@ function LaterList() {
           key={l.id}
           type="button"
           onClick={() => void api.laterOpen(l.id)}
-          className="chip flex items-center justify-between gap-3 rounded-xl bg-white/[0.07] px-3 py-1.5 text-left hover:bg-white/[0.12]"
+          className="chip flex w-full items-center gap-3 rounded-xl bg-white/[0.07] px-3 py-1.5 text-left hover:bg-white/12"
         >
-          <span className="min-w-0">
+          <span className="min-w-0 flex-1 overflow-hidden">
             <span className="block truncate text-[13px] font-medium text-white">{l.title}</span>
             <span className="block truncate text-[12px] text-[rgb(235_235_245/0.55)]">{l.detail}</span>
           </span>
