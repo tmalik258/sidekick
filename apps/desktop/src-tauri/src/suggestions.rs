@@ -150,6 +150,7 @@ fn show(app: &AppHandle, proposal: Proposal) {
         detail: proposal.detail.clone(),
         options: proposal.options.iter().map(|o| o.label.clone()).collect(),
     };
+    let priority = proposal.priority;
     let auto = proposal.trust == Trust::Auto
         && proposal.options.first().is_some_and(|o| is_safe(&o.action));
     let id = ui.id.clone();
@@ -169,6 +170,7 @@ fn show(app: &AppHandle, proposal: Proposal) {
         let _ = run_choice(app, &id, 0, true);
     } else {
         bind_keys(app, ui.options.len());
+        crate::voice::offer_spoken(app, &ui, priority);
         expire_when_ignored(app, id);
     }
 }
@@ -548,6 +550,7 @@ pub fn demo(app: &AppHandle) {
             ],
             trust: Trust::Suggest,
             remember: None,
+            priority: 50,
         },
     );
 }

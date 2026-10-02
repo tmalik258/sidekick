@@ -146,6 +146,10 @@ pub struct VoiceSettings {
     pub wake_word: bool,
     /// Read answers aloud when the question was spoken.
     pub speak_answers: bool,
+    /// After a spoken answer, listen for a reply without the wake phrase.
+    pub conversation: bool,
+    /// Read suggestions aloud and take a spoken choice ("open", "not now").
+    pub speak_suggestions: bool,
     /// Kokoro voice id, e.g. "af_bella".
     pub voice: String,
     /// 0.5 to 2.0.
@@ -158,6 +162,8 @@ impl Default for VoiceSettings {
             enabled: false,
             wake_word: true,
             speak_answers: true,
+            conversation: true,
+            speak_suggestions: true,
             voice: "af_bella".into(),
             speed: 1.0,
         }

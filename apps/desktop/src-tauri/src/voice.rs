@@ -49,6 +49,9 @@ pub struct Voice {
     opened_by_voice: AtomicBool,
     /// The chat being read aloud and its utterance.
     speaking: Mutex<Option<(String, u64)>>,
+    /// A suggestion read aloud, waiting for a spoken choice: its id and
+    /// option labels.
+    choosing: Mutex<Option<(String, Vec<String>)>>,
     last_error: Mutex<Option<String>>,
 }
 
@@ -62,6 +65,7 @@ impl Voice {
             cancel_download: AtomicBool::new(false),
             opened_by_voice: AtomicBool::new(false),
             speaking: Mutex::default(),
+            choosing: Mutex::default(),
             last_error: Mutex::default(),
         }
     }
@@ -236,6 +240,11 @@ fn on_heard(app: &AppHandle, heard: Heard) {
         Heard::Wake => {
             // Talking over an answer stops it.
             stop_speaking(app);
+            if lock(&v.choosing).is_some() {
+                // Listening for a choice, not a question: Ask stays closed.
+                mascot::dispatch(app, MascotEvent::ListenStart);
+                return;
+            }
             if !ask::is_open(app) {
                 v.opened_by_voice.store(true, Ordering::SeqCst);
                 ask::open(app, ask::Open::default());
@@ -246,6 +255,18 @@ fn on_heard(app: &AppHandle, heard: Heard) {
         Heard::Partial(text) => emit_heard(app, strip_wake(&text), false),
         Heard::Final(text) => {
             let text = strip_wake(&text);
+            if let Some((id, labels)) = lock(&v.choosing).take() {
+                mascot::dispatch(app, MascotEvent::Cancelled);
+                let result = match match_choice(&text, &labels) {
+                    Choice::Option(i) => crate::suggestions::choose(app, &id, i),
+                    Choice::Dismiss => crate::suggestions::dismiss(app, &id, "voice"),
+                    Choice::Unclear => Ok(()),
+                };
+                if let Err(err) = result {
+                    log::debug!("spoken choice ignored: {err}");
+                }
+                return;
+            }
             mascot::dispatch(app, MascotEvent::Cancelled);
             emit_heard(app, text, true);
             v.opened_by_voice.store(false, Ordering::SeqCst);
@@ -336,12 +357,204 @@ pub fn answer_text(app: &AppHandle, id: &str, text: &str) {
 }
 
 pub fn answer_done(app: &AppHandle, id: &str, error: Option<&str>) {
+    let mut spoke = false;
     with_answer(app, id, |s, u| {
         if error.is_some() {
             s.push(u, "\nSorry, that did not work. The details are on screen.");
         }
         s.finish(u);
+        spoke = true;
     });
+    let conversation = lock(&app.state::<AppState>().settings).voice.conversation;
+    if spoke && conversation && error.is_none() {
+        let (app, id) = (app.clone(), id.to_owned());
+        // Listen for a reply once the answer has been read out, unless the
+        // user moved on (closed Ask, or another answer started).
+        listen_after_speaking(&app, move |app| {
+            ask::is_open(app)
+                && lock(&voice(app).speaking)
+                    .as_ref()
+                    .is_some_and(|(chat, _)| *chat == id)
+        });
+    }
+}
+
+/// Waits for the speaker to go quiet (at most `MAX_SPEECH`), then starts
+/// listening if `still_wanted` holds.
+fn listen_after_speaking(
+    app: &AppHandle,
+    still_wanted: impl Fn(&AppHandle) -> bool + Send + 'static,
+) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let started = std::time::Instant::now();
+        // Give the speaker a moment to start, then wait until it is quiet.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        while started.elapsed() < MAX_SPEECH {
+            let busy = lock(&voice(&app).runtime)
+                .as_ref()
+                .and_then(|r| r.speaker.as_ref())
+                .is_some_and(Speaker::busy);
+            if !busy {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        if still_wanted(&app) {
+            let _ = listen(&app);
+        }
+    });
+}
+
+const MAX_SPEECH: std::time::Duration = std::time::Duration::from_secs(90);
+/// How long a spoken suggestion waits for an answer.
+const CHOICE_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
+/// Suggestions below this priority are not read aloud.
+const SPEAK_FROM_PRIORITY: i32 = 50;
+
+/// Reads a suggestion aloud ("Report.pdf downloaded. Say open, show in
+/// folder, or not now.") and takes a spoken choice.
+pub fn offer_spoken(app: &AppHandle, ui: &crate::state::Suggestion, priority: i32) {
+    let settings = lock(&app.state::<AppState>().settings).voice.clone();
+    if !settings.enabled
+        || !settings.speak_suggestions
+        || priority < SPEAK_FROM_PRIORITY
+        || ui.options.is_empty()
+        || ask::is_open(app)
+        || *lock(&app.state::<AppState>().island_hidden)
+    {
+        return;
+    }
+    let v = voice(app);
+    {
+        let runtime = lock(&v.runtime);
+        let Some(speaker) = runtime.as_ref().and_then(|r| r.speaker.as_ref()) else {
+            return;
+        };
+        speaker.say(&spoken_prompt(&ui.title, &ui.detail, &ui.options));
+    }
+    *lock(&v.speaking) = None;
+    let (id, labels) = (ui.id.clone(), ui.options.clone());
+    *lock(&v.choosing) = Some((id.clone(), labels));
+    let wanted_id = id.clone();
+    listen_after_speaking(app, move |app| {
+        crate::suggestions::current(app).is_some_and(|s| s.id == wanted_id)
+            && lock(&voice(app).choosing).is_some()
+    });
+    // Nobody answered: stop listening and leave the suggestion on screen.
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(MAX_SPEECH.min(std::time::Duration::from_secs(30)) + CHOICE_WAIT);
+        let v = voice(&app);
+        let stale = lock(&v.choosing)
+            .as_ref()
+            .is_some_and(|(cid, _)| *cid == id);
+        if stale {
+            lock(&v.choosing).take();
+            if let Some(l) = lock(&v.runtime).as_ref().and_then(|r| r.listener.as_ref()) {
+                l.send(Control::Cancel);
+            }
+        }
+    });
+}
+
+/// "Report.pdf. Downloaded, 2 MB. Say open, show in folder, or not now."
+pub fn spoken_prompt(title: &str, detail: &str, options: &[String]) -> String {
+    let mut out = title.trim().trim_end_matches('.').to_owned();
+    let detail = detail.replace('·', ",");
+    if !detail.trim().is_empty() {
+        out.push_str(". ");
+        out.push_str(detail.trim().trim_end_matches('.'));
+    }
+    let names: Vec<String> = options.iter().take(3).map(|o| o.to_lowercase()).collect();
+    out.push_str(". Say ");
+    out.push_str(&names.join(", "));
+    out.push_str(", or not now.");
+    out
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Choice {
+    Option(usize),
+    Dismiss,
+    Unclear,
+}
+
+/// What a spoken answer picks: an option by name or position, "yes" for
+/// the first, or "not now".
+pub fn match_choice(text: &str, labels: &[String]) -> Choice {
+    let norm = |s: &str| -> String {
+        s.to_lowercase()
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let said = norm(text);
+    if said.is_empty() {
+        return Choice::Unclear;
+    }
+    let padded = format!(" {said} ");
+    // An option named in full wins, longest name first ("open in chrome"
+    // before "open").
+    let mut by_len: Vec<(usize, String)> = labels.iter().map(|l| norm(l)).enumerate().collect();
+    by_len.sort_by_key(|(_, l)| std::cmp::Reverse(l.len()));
+    for (i, label) in &by_len {
+        if !label.is_empty() && padded.contains(&format!(" {label} ")) {
+            return Choice::Option(*i);
+        }
+    }
+    let has = |words: &[&str]| words.iter().any(|w| padded.contains(&format!(" {w} ")));
+    if has(&[
+        "not now",
+        "no",
+        "nope",
+        "later",
+        "dismiss",
+        "cancel",
+        "skip",
+        "never mind",
+        "ignore",
+    ]) {
+        return Choice::Dismiss;
+    }
+    for (i, words) in [
+        &["first", "first one", "number one"][..],
+        &["second", "second one", "two", "number two"][..],
+        &["third", "third one", "three", "number three"][..],
+    ]
+    .iter()
+    .enumerate()
+    {
+        if i < labels.len() && has(words) {
+            return Choice::Option(i);
+        }
+    }
+    // One word of an option ("chrome" for "Open in Chrome"), if only one
+    // option has it.
+    let hits: Vec<usize> = labels
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| {
+            norm(l)
+                .split(' ')
+                .filter(|w| w.len() > 3)
+                .any(|w| padded.contains(&format!(" {w} ")))
+        })
+        .map(|(i, _)| i)
+        .collect();
+    if hits.len() == 1 {
+        return Choice::Option(hits[0]);
+    }
+    if has(&[
+        "yes", "yeah", "yep", "sure", "ok", "okay", "do it", "go ahead", "please",
+    ]) {
+        return Choice::Option(0);
+    }
+    Choice::Unclear
 }
 
 /// Says a sample with the chosen voice.
@@ -410,4 +623,49 @@ pub fn download(app: &AppHandle) -> Result<(), String> {
 
 pub fn cancel_download(app: &AppHandle) {
     voice(app).cancel_download.store(true, Ordering::SeqCst);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn labels(l: &[&str]) -> Vec<String> {
+        l.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn matches_spoken_choices() {
+        let opts = labels(&["Open", "Show in folder", "Convert to PNG"]);
+        assert_eq!(match_choice("Open it", &opts), Choice::Option(0));
+        assert_eq!(
+            match_choice("show in folder please", &opts),
+            Choice::Option(1)
+        );
+        assert_eq!(match_choice("the third one", &opts), Choice::Option(2));
+        assert_eq!(
+            match_choice("png", &opts),
+            Choice::Unclear,
+            "too short to guess"
+        );
+        assert_eq!(match_choice("convert it", &opts), Choice::Option(2));
+        assert_eq!(match_choice("Not now.", &opts), Choice::Dismiss);
+        assert_eq!(match_choice("nope", &opts), Choice::Dismiss);
+        assert_eq!(match_choice("yes", &opts), Choice::Option(0));
+        assert_eq!(match_choice("", &opts), Choice::Unclear);
+        assert_eq!(match_choice("what is the weather", &opts), Choice::Unclear);
+        let browsers = labels(&["Open", "Open in Chrome"]);
+        assert_eq!(match_choice("open in chrome", &browsers), Choice::Option(1));
+    }
+
+    #[test]
+    fn reads_a_suggestion_aloud() {
+        assert_eq!(
+            spoken_prompt(
+                "report.pdf",
+                "Downloaded · 2 MB",
+                &labels(&["Open", "Show in folder"])
+            ),
+            "report.pdf. Downloaded , 2 MB. Say open, show in folder, or not now."
+        );
+    }
 }
