@@ -279,7 +279,8 @@ fn handoff_tool() -> ToolDef {
 
 pub const TOOLS_SYSTEM: &str = "\n\nTools: search finds the user's files and history on this \
 PC, today gives meetings and time, recent shows what just happened, open opens a file, folder \
-or page. Other tools read the user's apps; you cannot send, create, change or delete there. \
+or page, propose offers an action (move, zip, convert, open) as a button the user taps; \
+never say you did something you only proposed. Other tools read the user's apps; you cannot send, create, change or delete there. \
 Look things up before answering. When the request needs a change in an app or more than you \
 can do, call continue_in_claude_code with a short reason, then say in one sentence that Claude \
 Code can finish it. Never invent data you did not read with a tool.";
@@ -330,7 +331,7 @@ impl ToolRunner for Runner {
                  Claude Code can do it."
             );
         }
-        if let Some(out) = crate::ask_tools::run(&self.app, name, arguments).await {
+        if let Some(out) = crate::ask_tools::run(&self.app, &self.chat_id, name, arguments).await {
             return out;
         }
         let Some(client) = &self.client else {
@@ -417,6 +418,30 @@ impl AiProvider for LocalWithTools {
         }
         let mut with_tools = req.clone();
         with_tools.system.push_str(TOOLS_SYSTEM);
+        // A screenshot: a vision model sees it when one is set; otherwise
+        // the text model gets the screen's text, read here with OCR.
+        if let Some(png) = req.image.as_ref() {
+            let ai = lock(&self.app.state::<AppState>().settings)
+                .ai
+                .local
+                .clone();
+            if !ai.vision_model.trim().is_empty() {
+                let vision = OpenAiCompat::new(Some(ai.base_url), Some(ai.vision_model));
+                return vision.chat(req, sink, cancel).await;
+            }
+            with_tools.image = None;
+            match crate::ask_tools::screen_text(&self.app, png).await {
+                Ok(text) if !text.is_empty() => with_tools.system.push_str(&format!(
+                    "\n\nText on the user's screen (read with OCR, layout lost):\n```\n{text}\n```"
+                )),
+                Ok(_) => with_tools.system.push_str(
+                    "\n\nThe screenshot has no readable text; say so and ask what they need.",
+                ),
+                Err(err) => with_tools.system.push_str(&format!(
+                    "\n\nThe screen could not be read ({err}); say so in one sentence."
+                )),
+            }
+        }
         let runner = Runner {
             client,
             app: self.app.clone(),

@@ -16,6 +16,20 @@ use crate::state::{AppState, lock};
 /// clipboard or page text, which can hold private material.
 pub const SHAREABLE: &[&str] = &["file", "download", "screenshot", "action", "chat", "claude"];
 
+/// Sources the local model may search in Ask: everything, since nothing
+/// it reads leaves this PC.
+pub const LOCAL: &[&str] = &[
+    "file",
+    "download",
+    "screenshot",
+    "action",
+    "chat",
+    "claude",
+    "clipboard",
+    "page",
+    "meeting",
+];
+
 /// Clipboard items kept (FR-CLIP-01).
 const CLIPBOARD_HISTORY: u32 = 500;
 const MAX_FILE_BYTES: u64 = 1_000_000;

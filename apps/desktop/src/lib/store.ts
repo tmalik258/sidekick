@@ -8,6 +8,7 @@ import {
   DEFAULT_SETTINGS,
   type ExtensionGuide,
   type MascotState,
+  type Proposal,
   type Settings,
   type Suggestion,
   type Turn,
@@ -244,6 +245,25 @@ export function watchWaiting(): () => void {
   return () => clearInterval(id);
 }
 
+/** Runs an action Ask offered, and records what happened on its button. */
+export async function runProposal(id: string) {
+  const mark = (ran: NonNullable<Proposal["ran"]>) =>
+    useSidekick.setState({
+      turns: useSidekick
+        .getState()
+        .turns.map((t) =>
+          t.proposals?.some((p) => p.id === id)
+            ? { ...t, proposals: t.proposals.map((p) => (p.id === id ? { ...p, ran } : p)) }
+            : t,
+        ),
+    });
+  try {
+    mark(await api.aiRunProposal(id));
+  } catch (e) {
+    mark({ ok: false, message: String(e), undoId: null, path: null });
+  }
+}
+
 export const setAsk = (patch: Partial<AskState>) => {
   const ask = useSidekick.getState().ask;
   if (ask) useSidekick.setState({ ask: { ...ask, ...patch } });
@@ -472,6 +492,9 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       }),
       listen(EVENTS.aiDelta, ({ id, text }) => updateLastTurn(id, (t) => ({ ...t, content: t.content + text }))),
       listen(EVENTS.aiTool, ({ id, name }) => updateLastTurn(id, (t) => ({ ...t, tool: name }))),
+      listen(EVENTS.aiProposal, ({ chatId, id, label }) =>
+        updateLastTurn(chatId, (t) => ({ ...t, proposals: [...(t.proposals ?? []), { id, label }] })),
+      ),
       listen(EVENTS.aiDone, ({ id, provider, error, handoff }) => {
         updateLastTurn(id, (t) => ({ ...t, provider, error, handoff, tool: null, streaming: false }));
         if (useSidekick.getState().chatId === id) {

@@ -121,7 +121,7 @@ export type AiProviderId = (typeof AI_PROVIDERS)[number];
 export interface AiSettings {
   order: AiProviderId[];
   claudeCode: { enabled: boolean; path: string; model: string };
-  local: { enabled: boolean; baseUrl: string; model: string };
+  local: { enabled: boolean; baseUrl: string; model: string; visionModel: string };
   anthropic: { enabled: boolean; model: string };
   semif: {
     enabled: boolean;
@@ -167,6 +167,15 @@ export interface Turn extends ChatMessage {
   handoff?: string | null;
   /** The app tool the local model is using right now. */
   tool?: string | null;
+  /** Actions offered as buttons; each runs on a tap. */
+  proposals?: Proposal[];
+}
+
+export interface Proposal {
+  id: string;
+  label: string;
+  /** Set once tapped: what happened, and Undo if it can be undone. */
+  ran?: { ok: boolean; message: string; undoId: number | null; path: string | null; undone?: boolean };
 }
 
 export interface AskContext {
@@ -283,7 +292,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ai: {
     order: ["claude_code", "anthropic", "local"],
     claudeCode: { enabled: true, path: "", model: "" },
-    local: { enabled: true, baseUrl: "http://localhost:11434/v1", model: "" },
+    local: { enabled: true, baseUrl: "http://localhost:11434/v1", model: "", visionModel: "" },
     anthropic: { enabled: true, model: "" },
     semif: {
       enabled: true,

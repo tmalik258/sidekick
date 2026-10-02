@@ -122,6 +122,18 @@ pub async fn follow_up(app: &AppHandle, start: &str, title: &str) -> Result<Stri
     if let Some(url) = &notes.share_url {
         page.push_str(&format!("\nRecording: {url}\n"));
     }
+    // Meeting notes become searchable in Ask ("what did we decide on X").
+    crate::search::put(
+        app,
+        "meeting",
+        notes
+            .share_url
+            .as_deref()
+            .unwrap_or(&format!("meeting:{}", notes.title)),
+        &notes.title,
+        &page,
+        &chrono::Utc::now().to_rfc3339(),
+    );
     crate::ask::open(
         app,
         crate::ask::Open {
