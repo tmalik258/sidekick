@@ -40,7 +40,7 @@ export function Section({
   return (
     <section className="flex flex-col gap-2">
       <div className="px-4">
-        <h2 className="text-[13px] font-semibold tracking-[-0.005em] text-(--muted) uppercase">{title}</h2>
+        <h2 className="text-[13px] font-semibold tracking-[-0.005em] text-[rgb(235_235_245/0.7)]">{title}</h2>
       </div>
       <div className="flex flex-col gap-3.5 rounded-2xl bg-(--surface) p-4 shadow-[0_0_0_0.5px_var(--border),0_1px_2px_rgb(0_0_0/0.04)]">
         {children}
@@ -70,12 +70,46 @@ export function Button({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`rounded-lg font-medium transition-colors disabled:opacity-40 ${
-        primary ? "bg-[#0a84ff] text-white hover:bg-[#0a84ff]/90" : "border border-(--border) hover:bg-(--hover)"
-      } ${small ? "px-2 py-0.5 text-xs" : "px-3 py-1.5 text-sm"} ${active ? "bg-(--hover) ring-1 ring-(--accent)" : ""}`}
+      className={`chip shrink-0 rounded-full font-medium transition-colors disabled:opacity-40 ${
+        primary ? "bg-white text-black hover:bg-white/90" : "bg-white/[0.1] text-white/90 hover:bg-white/[0.16]"
+      } ${small ? "px-2.5 py-1 text-[12px]" : "px-3.5 py-1.5 text-[13px]"} ${active ? "ring-1 ring-white/40" : ""}`}
     >
       {children}
     </button>
+  );
+}
+
+/** A few choices side by side, one picked (Off, Ask, Auto). */
+export function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+  label,
+  disabled,
+}: {
+  value: T;
+  options: [T, string][];
+  onChange: (v: T) => void;
+  label: string;
+  disabled?: boolean;
+}) {
+  return (
+    <fieldset aria-label={label} className="flex shrink-0 rounded-full bg-white/[0.08] p-0.5">
+      {options.map(([v, text]) => (
+        <button
+          key={v}
+          type="button"
+          aria-pressed={value === v}
+          disabled={disabled}
+          onClick={() => onChange(v)}
+          className={`chip rounded-full px-2.5 py-0.5 text-[12px] font-medium transition-colors disabled:opacity-40 ${
+            value === v ? "bg-white text-black" : "text-white/70 hover:text-white"
+          }`}
+        >
+          {text}
+        </button>
+      ))}
+    </fieldset>
   );
 }
 
@@ -386,12 +420,15 @@ export function ChipList({
   suggestions,
   placeholder,
   label,
+  format = (v: string) => v,
 }: {
   items: string[];
   onChange: (next: string[]) => void;
   suggestions: string[];
   placeholder: string;
   label: string;
+  /** How an item reads, e.g. "bitwarden.exe" as "Bitwarden". */
+  format?: (v: string) => string;
 }) {
   const [draft, setDraft] = useState("");
   const add = (v: string) => {
@@ -406,12 +443,13 @@ export function ChipList({
         {items.map((i) => (
           <span
             key={i}
+            title={i}
             className="flex items-center gap-1 rounded-full bg-black/5 py-0.5 pr-1 pl-2.5 text-[12px] dark:bg-white/10"
           >
-            {i}
+            {format(i)}
             <button
               type="button"
-              aria-label={`Remove ${i}`}
+              aria-label={`Remove ${format(i)}`}
               onClick={() => onChange(items.filter((x) => x !== i))}
               className="grid size-4 place-items-center rounded-full text-(--muted) hover:bg-black/10 hover:text-(--text) dark:hover:bg-white/15"
             >
@@ -476,7 +514,7 @@ export function FolderPicker({
             type="checkbox"
             checked={chosen.includes(f.path)}
             onChange={(e) => onChange(e.target.checked ? [...chosen, f.path] : chosen.filter((c) => c !== f.path))}
-            className="size-3.5 accent-[#0a84ff]"
+            className="check shrink-0"
           />
           <span className="min-w-0">
             <span className="font-medium">{f.label}</span>
@@ -592,4 +630,13 @@ export function comboFrom(e: { key: string; ctrlKey: boolean; altKey: boolean; s
   if (mods.length === 0 && !/^F\d{1,2}$/.test(e.key)) return null;
   const key = KEY_NAMES[e.key] ?? (e.key.length === 1 ? e.key.toUpperCase() : e.key);
   return [...mods, key].join("+");
+}
+
+/** "keepassxc.exe" reads as "Keepassxc", "1password.exe" as "1password". */
+export function appName(exe: string): string {
+  const base = exe
+    .replace(/\.exe$/i, "")
+    .replace(/[-_]+/g, " ")
+    .trim();
+  return base ? base.charAt(0).toUpperCase() + base.slice(1) : exe;
 }

@@ -3,7 +3,8 @@
 // AI: which providers answer and in what order, their models (picked from
 // what is installed), SemIf ranking, and voice.
 
-import { useEffect, useRef, useState } from "react";
+import { Reorder, useDragControls } from "motion/react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { updateSettings, useSidekick } from "@/lib/store";
@@ -102,7 +103,14 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
     else if (id === "anthropic") void save({ anthropic: { ...ai.anthropic, enabled: on } });
     else void save({ local: { ...ai.local, enabled: on } });
   };
-  const order = ai.order.filter((id) => AI_PROVIDERS.includes(id));
+  const saved = ai.order.filter((id) => AI_PROVIDERS.includes(id));
+  // While dragging, the list follows the cursor; it is saved on drop.
+  const [dragged, setDragged] = useState<AiProviderId[] | null>(null);
+  const order = dragged ?? saved;
+  const drop = () => {
+    if (dragged) void save({ order: dragged });
+    setDragged(null);
+  };
   const chatModels: [string, string][] = [
     ["", models?.chat.length ? `Newest (${models.chat[0]})` : "Newest installed"],
     ...(models?.chat ?? []).map((m) => [m, m] as [string, string]),
@@ -110,102 +118,99 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
 
   return (
     <div className="flex flex-col gap-3">
-      <ol className="flex flex-col gap-3">
+      <Reorder.Group as="ol" axis="y" values={order} onReorder={setDragged} className="flex flex-col gap-3">
         {order.map((id, i) => (
-          <li key={id} className="flex flex-col gap-2 rounded-xl border border-(--border) p-3">
-            <div className="flex items-center gap-3">
-              <StatusDot state={status === null ? "checking" : available(id) ? "ok" : "off"} />
-              <div className="min-w-0 flex-1">
-                <p className="text-[14px] font-medium">
-                  {i + 1}. {PROVIDER_LABELS[id]}
-                </p>
-                <p className="text-[12px] text-(--muted)">{PROVIDER_HINTS[id]}</p>
-              </div>
-              <div className="flex gap-1">
-                <Button small onClick={() => move(id, -1)} disabled={i === 0}>
-                  Up
-                </Button>
-                <Button small onClick={() => move(id, 1)} disabled={i === order.length - 1}>
-                  Down
-                </Button>
-              </div>
-              <Switch checked={enabled(id)} onChange={(on) => setEnabled(id, on)} label={PROVIDER_LABELS[id]} />
-            </div>
-            {id === "claude_code" && (
+          <DragRow key={id} value={id} onDrop={drop} onStep={(delta) => move(id, delta)}>
+            {(handle) => (
               <>
-                <Field label="Model">
-                  <Select
-                    label="Claude Code model"
-                    value={ai.claudeCode.model}
-                    options={CLAUDE_CODE_MODELS}
-                    onChange={(model) => void save({ claudeCode: { ...ai.claudeCode, model } })}
-                  />
-                </Field>
-                <details className="text-[12.5px]">
-                  <summary className="cursor-pointer text-(--muted)">Where claude is</summary>
-                  <div className="mt-2">
-                    <Field label="Path to claude" hint="Empty finds it on PATH">
-                      <TextField
-                        label="Path to claude"
-                        value={ai.claudeCode.path}
-                        placeholder="claude"
-                        mono
-                        className="w-56"
-                        onCommit={(path) => save({ claudeCode: { ...ai.claudeCode, path } })}
+                <div className="flex items-center gap-3">
+                  {handle}
+                  <StatusDot state={status === null ? "checking" : available(id) ? "ok" : "off"} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[14px] font-medium">
+                      {i + 1}. {PROVIDER_LABELS[id]}
+                    </p>
+                    <p className="text-[12px] text-(--muted)">{PROVIDER_HINTS[id]}</p>
+                  </div>
+                  <Switch checked={enabled(id)} onChange={(on) => setEnabled(id, on)} label={PROVIDER_LABELS[id]} />
+                </div>
+                {id === "claude_code" && (
+                  <>
+                    <Field label="Model">
+                      <Select
+                        label="Claude Code model"
+                        value={ai.claudeCode.model}
+                        options={CLAUDE_CODE_MODELS}
+                        onChange={(model) => void save({ claudeCode: { ...ai.claudeCode, model } })}
                       />
                     </Field>
-                  </div>
-                </details>
-              </>
-            )}
-            {id === "anthropic" && (
-              <Field label="Model">
-                <Select
-                  label="Anthropic model"
-                  value={ai.anthropic.model}
-                  options={[["", "Default"], ...ANTHROPIC_MODELS]}
-                  onChange={(model) => void save({ anthropic: { ...ai.anthropic, model } })}
-                />
-              </Field>
-            )}
-            {id === "local" && (
-              <>
-                <Field
-                  label="Model"
-                  hint={
-                    models === null
-                      ? "\u00a0"
-                      : models.reachable
-                        ? `${models.chat.length} chat ${models.chat.length === 1 ? "model" : "models"} installed`
-                        : "Ollama is not running"
-                  }
-                >
-                  <Select
-                    label="Local model"
-                    value={ai.local.model}
-                    options={chatModels}
-                    onChange={(model) => void save({ local: { ...ai.local, model } })}
-                  />
-                </Field>
-                <details className="text-[12.5px]">
-                  <summary className="cursor-pointer text-(--muted)">Server</summary>
-                  <div className="mt-2">
-                    <Field label="Server URL">
-                      <TextField
-                        label="Server URL"
-                        value={ai.local.baseUrl}
-                        mono
-                        className="w-56"
-                        onCommit={(baseUrl) => save({ local: { ...ai.local, baseUrl } })}
+                    <details className="text-[12.5px]">
+                      <summary className="cursor-pointer text-(--muted)">Where claude is</summary>
+                      <div className="mt-2">
+                        <Field label="Path to claude" hint="Empty finds it on PATH">
+                          <TextField
+                            label="Path to claude"
+                            value={ai.claudeCode.path}
+                            placeholder="claude"
+                            mono
+                            className="w-56"
+                            onCommit={(path) => save({ claudeCode: { ...ai.claudeCode, path } })}
+                          />
+                        </Field>
+                      </div>
+                    </details>
+                  </>
+                )}
+                {id === "anthropic" && (
+                  <Field label="Model">
+                    <Select
+                      label="Anthropic model"
+                      value={ai.anthropic.model}
+                      options={[["", "Default"], ...ANTHROPIC_MODELS]}
+                      onChange={(model) => void save({ anthropic: { ...ai.anthropic, model } })}
+                    />
+                  </Field>
+                )}
+                {id === "local" && (
+                  <>
+                    <Field
+                      label="Model"
+                      hint={
+                        models === null
+                          ? "\u00a0"
+                          : models.reachable
+                            ? `${models.chat.length} chat ${models.chat.length === 1 ? "model" : "models"} installed`
+                            : "Ollama is not running"
+                      }
+                    >
+                      <Select
+                        label="Local model"
+                        value={ai.local.model}
+                        options={chatModels}
+                        onChange={(model) => void save({ local: { ...ai.local, model } })}
                       />
                     </Field>
-                  </div>
-                </details>
+                    <details className="text-[12.5px]">
+                      <summary className="cursor-pointer text-(--muted)">Server</summary>
+                      <div className="mt-2">
+                        <Field label="Server URL">
+                          <TextField
+                            label="Server URL"
+                            value={ai.local.baseUrl}
+                            mono
+                            className="w-56"
+                            onCommit={(baseUrl) => save({ local: { ...ai.local, baseUrl } })}
+                          />
+                        </Field>
+                      </div>
+                    </details>
+                  </>
+                )}
               </>
             )}
-          </li>
+          </DragRow>
         ))}
-      </ol>
+      </Reorder.Group>
       <div>
         <Button
           small
@@ -411,5 +416,58 @@ function VoiceSection({ voice, onError }: { voice: VoiceSettings; onError: (e: s
         />
       </Field>
     </>
+  );
+}
+
+/** A provider row you can drag by its handle; arrow keys on the handle move it too. */
+function DragRow({
+  value,
+  onDrop,
+  onStep,
+  children,
+}: {
+  value: AiProviderId;
+  onDrop: () => void;
+  onStep: (delta: number) => void;
+  children: (handle: ReactNode) => ReactNode;
+}) {
+  const controls = useDragControls();
+  const handle = (
+    <button
+      type="button"
+      aria-label="Drag to reorder, or use the arrow keys"
+      title="Drag to reorder"
+      onPointerDown={(e) => controls.start(e)}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+          e.preventDefault();
+          onStep(e.key === "ArrowUp" ? -1 : 1);
+        }
+      }}
+      className="chip grid h-8 w-5 shrink-0 cursor-grab touch-none place-items-center rounded-md text-white/40 hover:text-white/80 active:cursor-grabbing"
+    >
+      <svg aria-hidden="true" viewBox="0 0 8 14" className="h-3.5 w-2">
+        <g fill="currentColor">
+          <circle cx="2" cy="2" r="1.2" />
+          <circle cx="6" cy="2" r="1.2" />
+          <circle cx="2" cy="7" r="1.2" />
+          <circle cx="6" cy="7" r="1.2" />
+          <circle cx="2" cy="12" r="1.2" />
+          <circle cx="6" cy="12" r="1.2" />
+        </g>
+      </svg>
+    </button>
+  );
+  return (
+    <Reorder.Item
+      as="li"
+      value={value}
+      dragListener={false}
+      dragControls={controls}
+      onDragEnd={onDrop}
+      className="flex flex-col gap-2 rounded-xl bg-(--surface) p-3 ring-1 ring-(--border) ring-inset"
+    >
+      {children(handle)}
+    </Reorder.Item>
   );
 }
