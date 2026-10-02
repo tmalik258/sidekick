@@ -28,6 +28,7 @@ mod secrets;
 mod setup;
 mod shortcuts;
 mod state;
+mod stuck;
 mod suggestions;
 mod timetrack;
 mod tray;

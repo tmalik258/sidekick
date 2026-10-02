@@ -77,7 +77,8 @@ pub fn defs() -> Vec<ToolDef> {
         ToolDef {
             name: SEARCH.into(),
             description: "Find the user's own files, downloads, screenshots, copied text, \
-                notes and past answers on this PC. Use for any question about their stuff."
+                pages they read, meeting notes and past answers on this PC. Use for any question about \
+                their stuff."
                 .into(),
             parameters: json!({
                 "type": "object",
@@ -141,15 +142,7 @@ pub fn defs() -> Vec<ToolDef> {
 pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Option<String> {
     Some(match name {
         PROPOSE => propose(app, chat_id, args),
-        SEARCH => {
-            let query = args["query"].as_str().unwrap_or_default();
-            crate::mcp::call_text(
-                app,
-                "sidekick_search",
-                &json!({ "query": query, "limit": 6 }),
-            )
-            .await
-        }
+        SEARCH => search(app, args["query"].as_str().unwrap_or_default()).await,
         TODAY => today(app).await,
         RECENT => recent(app),
         OPEN => open(app, args["target"].as_str().unwrap_or_default()).await,
@@ -163,6 +156,30 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
         },
         _ => return None,
     })
+}
+
+/// Searches everything on this PC (files, downloads, screenshots, clipboard,
+/// pages read, meeting notes, past answers), by words and by meaning.
+async fn search(app: &AppHandle, query: &str) -> String {
+    let hits = crate::search::hybrid(app, query, crate::search::LOCAL, 6).await;
+    if hits.is_empty() {
+        return format!("Nothing found for \"{query}\".");
+    }
+    hits.iter()
+        .enumerate()
+        .map(|(i, h)| {
+            format!(
+                "{}. [{}] {} ({}, {})\n   {}",
+                i + 1,
+                h.source,
+                h.title,
+                h.reference,
+                short_time(&h.ts),
+                clip(&h.snippet, 200)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Keeps an action as a button under the answer; it runs on a tap.

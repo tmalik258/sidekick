@@ -60,6 +60,7 @@ async fn handle(app: &AppHandle, event: Event) {
     }
     store(app, event.clone()).await;
     search::index_event(app, &event);
+    crate::stuck::observe(app, &event);
 
     if event.kind == IdleSensor::IDLE || event.kind == IdleSensor::ACTIVE {
         let away = event.kind == IdleSensor::IDLE;
