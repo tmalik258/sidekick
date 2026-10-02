@@ -445,6 +445,20 @@ async fn execute(
                 path: None,
             });
         }
+        "health_fix" => {
+            let message = crate::health::fix(app, arg("what").unwrap_or_default()).await?;
+            return Ok(sidekick_actions::Outcome {
+                message,
+                path: None,
+            });
+        }
+        "install_update" => {
+            let message = crate::updates::install(app).await?;
+            return Ok(sidekick_actions::Outcome {
+                message,
+                path: None,
+            });
+        }
         "claude_always" => {
             let id = arg("id").ok_or("no request id")?;
             crate::claude_config::allow_in_project(
