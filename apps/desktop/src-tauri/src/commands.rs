@@ -1066,3 +1066,81 @@ pub fn chat_delete(state: State<'_, AppState>, id: String) -> CmdResult<()> {
         .delete_chat(&id)
         .map_err(|e| e.to_string())
 }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalModels {
+    reachable: bool,
+    chat: Vec<String>,
+    embed: Vec<String>,
+}
+
+/// Models on the local AI server, split into chat and search models.
+#[tauri::command]
+pub async fn local_models(app: AppHandle) -> LocalModels {
+    let base = lock(&app.state::<AppState>().settings)
+        .ai
+        .local
+        .base_url
+        .clone();
+    let Some(models) = crate::setup::ollama_models(&base).await else {
+        return LocalModels {
+            reachable: false,
+            chat: Vec::new(),
+            embed: Vec::new(),
+        };
+    };
+    let (embed, chat) = models
+        .into_iter()
+        .partition(|m| sidekick_ai::is_embedding_model(m));
+    LocalModels {
+        reachable: true,
+        chat,
+        embed,
+    }
+}
+
+/// Programs running now with a window, for the ignore list picker.
+#[tauri::command]
+pub async fn running_apps() -> Vec<String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let mut sys = sysinfo::System::new();
+        sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        let mut names: Vec<String> = sys
+            .processes()
+            .values()
+            .filter_map(|p| p.name().to_str().map(str::to_ascii_lowercase))
+            .filter(|n| n.ends_with(".exe") && !SYSTEM_EXES.contains(&n.as_str()))
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// Windows' own processes; never worth ignoring.
+const SYSTEM_EXES: &[&str] = &[
+    "svchost.exe",
+    "csrss.exe",
+    "wininit.exe",
+    "winlogon.exe",
+    "services.exe",
+    "lsass.exe",
+    "smss.exe",
+    "dwm.exe",
+    "fontdrvhost.exe",
+    "conhost.exe",
+    "runtimebroker.exe",
+    "sihost.exe",
+    "taskhostw.exe",
+    "ctfmon.exe",
+    "searchindexer.exe",
+    "spoolsv.exe",
+    "audiodg.exe",
+    "dllhost.exe",
+    "registry",
+    "system",
+    "memory compression",
+];

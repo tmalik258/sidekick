@@ -10,21 +10,30 @@ import type {
   AppTime,
   AskOpen,
   BrowserInfo,
+  BrowserStatus,
   CalendarToday,
   CapabilityInfo,
   ChatMessage,
+  ChatSummary,
   ComposioCheck,
+  ComposioStatus,
+  ExtensionGuide,
+  Found,
   HitRect,
+  LaterItem,
+  LocalModels,
   MascotState,
   McpInfo,
   ProviderStatus,
   SearchHit,
   Settings,
+  SetupPlan,
   SetupStatus,
   SkillInfo,
   StoredEvent,
   Suggestion,
   Transition,
+  Turn,
   VoiceDownload,
   VoiceHeard,
   VoiceStatus,
@@ -47,6 +56,8 @@ export const EVENTS = {
   voiceState: "voice://state",
   voiceHeard: "voice://heard",
   voiceDownload: "voice://download",
+  suggestionLater: "suggestion://later",
+  composioChanged: "composio://changed",
 } as const;
 
 export interface EventPayloads {
@@ -66,6 +77,8 @@ export interface EventPayloads {
   [EVENTS.voiceState]: VoiceStatus;
   [EVENTS.voiceHeard]: VoiceHeard;
   [EVENTS.voiceDownload]: VoiceDownload;
+  [EVENTS.suggestionLater]: number;
+  [EVENTS.composioChanged]: { ok: boolean; message: string };
 }
 
 export function isTauri(): boolean {
@@ -140,6 +153,27 @@ export const api = {
   projectLaunch: (path: string) => invoke<string>("project_launch", { path }),
   aiHandoff: (messages: ChatMessage[], reason: string | null) => invoke<string>("ai_handoff", { messages, reason }),
   composioImport: () => invoke<Settings>("composio_import"),
+  composioSignIn: () => invoke<string>("composio_sign_in"),
+  composioSignOut: () => invoke<void>("composio_sign_out"),
+  composioStatus: () => invoke<ComposioStatus>("composio_status"),
+  composioConnect: (slug: string) => invoke<void>("composio_connect", { slug }),
+  setupDetect: () => invoke<Found>("setup_detect"),
+  setupApply: (plan: SetupPlan) => invoke<string[]>("setup_apply", { plan }),
+  claudeAddHooks: () => invoke<string | null>("claude_add_hooks"),
+  claudeAddMcp: () => invoke<void>("claude_add_mcp"),
+  browsersStatus: () => invoke<BrowserStatus[]>("browsers_status"),
+  extensionInstall: (browser: string) => invoke<ExtensionGuide>("extension_install", { browser }),
+  localModels: () => invoke<LocalModels>("local_models"),
+  runningApps: () => invoke<string[]>("running_apps"),
+  suggestionAlways: (id: string, index: number) => invoke<void>("suggestion_always", { id, index }),
+  laterList: () => invoke<LaterItem[]>("later_list"),
+  laterOpen: (id: string) => invoke<void>("later_open", { id }),
+  laterClear: () => invoke<void>("later_clear"),
+  skillUnmute: (id: string) => invoke<void>("skill_unmute", { id }),
+  chatsList: () => invoke<ChatSummary[]>("chats_list"),
+  chatGet: (id: string) => invoke<Turn[]>("chat_get", { id }),
+  chatSave: (id: string, title: string, turns: Turn[]) => invoke<void>("chat_save", { id, title, turns }),
+  chatDelete: (id: string) => invoke<void>("chat_delete", { id }),
   composioTest: () => invoke<ComposioCheck>("composio_test"),
   setupStatus: () => invoke<SetupStatus>("setup_status"),
   setupRun: (id: string) => invoke<void>("setup_run", { id }),
