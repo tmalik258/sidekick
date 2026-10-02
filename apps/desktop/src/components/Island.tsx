@@ -459,7 +459,7 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
           title={`From now on, "${suggestion.options[alwaysAt]}" without asking. Undo in Settings > Skills.`}
           className="chip rounded-full px-2.5 py-1.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
         >
-          Always do this
+          Always {suggestion.options[alwaysAt].toLowerCase()}
         </motion.button>
       )}
       <motion.button
