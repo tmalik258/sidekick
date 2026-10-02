@@ -83,6 +83,8 @@ impl SetupItem {
 }
 
 pub const CLAUDE_HOOK_URL: &str = "http://127.0.0.1:47821/claude-code";
+/// Where Codex's notify script sends each finished turn.
+pub const CODEX_HOOK_URL: &str = "http://127.0.0.1:47821/codex";
 
 fn winget(id: &str) -> String {
     format!("winget install -e --id {id} --accept-source-agreements")
@@ -255,6 +257,22 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         .run("irm https://claude.ai/install.ps1 | iex")
         .recommended(),
     );
+    let codex_path = settings.ai.codex.path.trim();
+    let codex = if codex_path.is_empty() {
+        found("codex")
+    } else {
+        Path::new(codex_path).is_file()
+    };
+    items.push(
+        SetupItem::new(
+            "codex",
+            Group::Ai,
+            "Codex",
+            "OpenAI's coding agent, with your ChatGPT plan. Use it instead of Claude Code or next to it. Run codex once afterwards to sign in.",
+        )
+        .done(codex, "Installed", "Not installed")
+        .run("npm install -g @openai/codex"),
+    );
 
     let ollama_installed = found("ollama");
     let ollama = SetupItem::new(
@@ -415,6 +433,30 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         mcp.copy(mcp_cmd)
     };
     items.push(mcp);
+
+    let (codex_notify, codex_mcp) = crate::codex_config::status();
+    let mut notify_item = SetupItem::new(
+        "codex_notify",
+        Group::Connect,
+        "Codex notifications",
+        "Know when a Codex turn is done. Add for me adds Sidekick to Codex settings (backed up first).",
+    )
+    .done(codex_notify, "Added", "Not added")
+    .tab("connections");
+    if codex && !claude {
+        notify_item = notify_item.recommended();
+    }
+    items.push(notify_item);
+    items.push(
+        SetupItem::new(
+            "codex_mcp",
+            Group::Connect,
+            "Sidekick tools in Codex",
+            "Lets Codex search your history, notify you and open links.",
+        )
+        .done(codex_mcp, "Added", "Not added")
+        .tab("connections"),
+    );
 
     // Match Connections: only count authenticated check-ins, not pair_request
     // events stored before the user clicks Allow on the island.

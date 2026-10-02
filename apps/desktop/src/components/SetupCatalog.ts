@@ -18,6 +18,13 @@ export const SETUP_CATALOG: Array<{
     recommended: true,
   },
   {
+    id: "codex",
+    group: "ai",
+    title: "Codex",
+    why: "OpenAI's coding agent, with your ChatGPT plan. Use it instead of Claude Code or next to it. Run codex once afterwards to sign in.",
+    recommended: false,
+  },
+  {
     id: "ollama",
     group: "ai",
     title: "Ollama",
@@ -64,6 +71,20 @@ export const SETUP_CATALOG: Array<{
     group: "connect",
     title: "Sidekick tools in Claude Code",
     why: "Lets Claude Code search your history, notify you and open links.",
+    recommended: false,
+  },
+  {
+    id: "codex_notify",
+    group: "connect",
+    title: "Codex notifications",
+    why: "Know when a Codex turn is done. Add for me adds Sidekick to Codex settings (backed up first).",
+    recommended: false,
+  },
+  {
+    id: "codex_mcp",
+    group: "connect",
+    title: "Sidekick tools in Codex",
+    why: "Lets Codex search your history, notify you and open links.",
     recommended: false,
   },
   {
