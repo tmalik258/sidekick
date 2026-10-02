@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
 import type { SkillInfo } from "@/lib/types";
-import { Button, Section, Switch } from "./ui";
+import { Button, Section, Segmented } from "./ui";
 
 export function SkillsTab({ onError }: { onError: (e: string) => void }) {
   const [skills, setSkills] = useState<SkillInfo[]>([]);
@@ -33,7 +33,7 @@ export function SkillsTab({ onError }: { onError: (e: string) => void }) {
     <>
       <Section
         title="Automations"
-        hint="These run their first safe option without asking. Turn on more with Always do this on a suggestion, or the Auto box below."
+        hint="These run their first safe option without asking. Set more to Auto below, or press Always on a suggestion."
         keywords="auto always automatic rules"
       >
         {automations.length === 0 ? (
@@ -79,7 +79,7 @@ export function SkillsTab({ onError }: { onError: (e: string) => void }) {
       )}
       <Section
         title="All skills"
-        hint="Deleting files, running installers or stopping processes always ask first, even on Auto."
+        hint="Off: never shows. Ask: suggests and waits. Auto: does it and shows Undo. Deleting files, installers and stopping processes always ask."
         keywords="skills enable disable"
       >
         <ul className="flex flex-col divide-y divide-(--border)">
@@ -89,19 +89,16 @@ export function SkillsTab({ onError }: { onError: (e: string) => void }) {
                 <p className="text-[14px] font-medium">{s.name}</p>
                 <p className="text-[12px] text-(--muted)">{s.description}</p>
               </div>
-              <div className="flex shrink-0 items-center gap-3 pt-0.5">
-                <label className="flex items-center gap-1.5 text-[12px] text-(--muted)">
-                  Auto
-                  <input
-                    type="checkbox"
-                    checked={s.auto}
-                    disabled={!s.enabled}
-                    onChange={(e) => change(s, s.enabled, e.target.checked)}
-                    className="size-3.5 accent-[#0a84ff]"
-                  />
-                </label>
-                <Switch checked={s.enabled} onChange={(on) => change(s, on, s.auto)} label={`Enable ${s.name}`} />
-              </div>
+              <Segmented
+                label={`${s.name}: off, ask or automatic`}
+                value={!s.enabled ? "off" : s.auto ? "auto" : "ask"}
+                options={[
+                  ["off", "Off"],
+                  ["ask", "Ask"],
+                  ["auto", "Auto"],
+                ]}
+                onChange={(v) => change(s, v !== "off", v === "auto")}
+              />
             </li>
           ))}
         </ul>

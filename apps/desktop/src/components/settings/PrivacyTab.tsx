@@ -17,7 +17,7 @@ import {
   type Pause,
   SENSOR_IDS,
 } from "@/lib/types";
-import { Button, ChipList, Field, FolderPicker, Section, Select, Toggle } from "./ui";
+import { appName, Button, ChipList, Field, FolderPicker, Section, Select, Toggle } from "./ui";
 
 export function PrivacyTab({ onError }: { onError: (e: string) => void }) {
   const settings = useSidekick((s) => s.settings);
@@ -40,9 +40,11 @@ export function PrivacyTab({ onError }: { onError: (e: string) => void }) {
           <Button onClick={() => run(api.sensorsPause(15))}>15 min</Button>
           <Button onClick={() => run(api.sensorsPause(60))}>1 hour</Button>
           <Button onClick={() => run(api.sensorsPause(null))}>Until I resume</Button>
-          <Button onClick={() => run(api.sensorsResume())} disabled={!isPaused(settings.pause)}>
-            Resume
-          </Button>
+          {isPaused(settings.pause) && (
+            <Button primary onClick={() => run(api.sensorsResume())}>
+              Resume
+            </Button>
+          )}
         </div>
       </Section>
       <Section
@@ -56,6 +58,7 @@ export function PrivacyTab({ onError }: { onError: (e: string) => void }) {
           items={settings.denyApps}
           suggestions={apps}
           placeholder="Pick a running app or type its name"
+          format={appName}
           onChange={(denyApps) => void save({ denyApps })}
         />
         <p className="mt-1 text-[13px] font-medium">Sites</p>

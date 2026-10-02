@@ -61,6 +61,8 @@ export const SetupRow = memo(function SetupRow({
   const waiting = useSidekick((s) => s.waiting);
   const justDone = useSidekick((s) => s.justDone === item.id);
   const [actionError, setActionError] = useState<string | null>(null);
+  // The command is there for those who want it, not the first thing you see.
+  const [showCommand, setShowCommand] = useState(false);
   const multiline = item.command?.includes("\n") ?? false;
   const oneClick = ONE_CLICK.has(item.id);
   const needsGuide = (Boolean(item.tab) && !item.runnable) || oneClick;
@@ -166,10 +168,14 @@ export const SetupRow = memo(function SetupRow({
         )}
         {!checking && !item.done && !isWaiting && (
           <div className="flex shrink-0 gap-1.5">
-            {item.command && !oneClick && <CopyButton text={item.command} />}
+            {item.command && !oneClick && (
+              <SmallButton onClick={() => setShowCommand((v) => !v)}>
+                {showCommand ? "Hide command" : "Command"}
+              </SmallButton>
+            )}
             {showRun && (
               <SmallButton primary={!showInline && !isDirect} onClick={run}>
-                Run
+                Install
               </SmallButton>
             )}
             {showInline && (
@@ -208,7 +214,14 @@ export const SetupRow = memo(function SetupRow({
         )}
       </div>
       {actionError && <p className="text-[11px] text-[#ff453a]">{actionError}</p>}
-      {!checking && !item.done && item.command && !multiline && !oneClick && <Code text={item.command} />}
+      {!checking && !item.done && item.command && !oneClick && showCommand && (
+        <div className="flex items-center gap-1.5">
+          <div className="min-w-0 flex-1">
+            <Code text={multiline ? item.command.split("\n")[0] : item.command} />
+          </div>
+          <CopyButton text={item.command} />
+        </div>
+      )}
       {!checking && !item.done && showInline && guideOpen && <ItemGuide id={item.id} onDone={onDone} />}
     </div>
   );
