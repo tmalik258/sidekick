@@ -3,7 +3,16 @@
 // Building blocks shared by the settings tabs. Sections hide themselves when
 // the settings search does not match their title, hint or keywords.
 
-import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 
 /** The settings search text; empty shows everything. */
 export const SettingsQuery = createContext("");
@@ -203,22 +212,112 @@ export function Select({
   label: string;
   className?: string;
 }) {
-  const list = options.some(([v]) => v === value)
-    ? options
-    : [[value, value || "Default"] as [string, string], ...options];
+  // Keep an unknown current value visible, but never invent a second row that
+  // matches an existing option (empty/"Default" aliases, same label).
+  const list = (() => {
+    if (options.some(([v]) => v === value)) return options;
+    const labelFor = value || "Default";
+    if (options.some(([v, l]) => v === "" || l.toLowerCase() === labelFor.toLowerCase())) return options;
+    return [[value, labelFor] as [string, string], ...options];
+  })();
+  const current = list.find(([v]) => v === value)?.[1] ?? (value || "Default");
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(() => Math.max(0, list.findIndex(([v]) => v === value)));
+  const root = useRef<HTMLDivElement>(null);
+  const listId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    setActive(Math.max(0, list.findIndex(([v]) => v === value)));
+    const onDoc = (e: MouseEvent) => {
+      if (root.current && !root.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open, value]); // list identity changes every render; reseat from value when opened
+
+  const pick = (v: string) => {
+    onChange(v);
+    setOpen(false);
+  };
+
+  const onKey = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setOpen(false);
+      return;
+    }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!open) {
+        setOpen(true);
+        return;
+      }
+      const dir = e.key === "ArrowDown" ? 1 : -1;
+      setActive((i) => (i + dir + list.length) % list.length);
+      return;
+    }
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      if (!open) {
+        setOpen(true);
+        return;
+      }
+      const next = list[active];
+      if (next) pick(next[0]);
+    }
+  };
+
   return (
-    <select
-      value={value}
-      aria-label={label}
-      onChange={(e) => onChange(e.target.value)}
-      className={`max-w-56 rounded-md border border-(--border) bg-(--surface) px-2 py-1 text-[13px] ${className}`}
-    >
-      {list.map(([v, l]) => (
-        <option key={v} value={v}>
-          {l}
-        </option>
-      ))}
-    </select>
+    <div ref={root} className={`relative max-w-52 ${className}`}>
+      <button
+        type="button"
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={onKey}
+        className={`chip flex w-full items-center gap-2 rounded-xl bg-(--surface) px-3 py-1.5 text-left text-[13px] outline-none ring-1 ring-inset transition-colors ${
+          open ? "ring-(--accent)" : "ring-(--border) hover:bg-(--hover)"
+        } focus-visible:ring-(--accent)`}
+      >
+        <span className="min-w-0 flex-1 truncate">{current}</span>
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 12 12"
+          className={`size-3 shrink-0 text-(--muted) transition-transform ${open ? "rotate-180" : ""}`}
+        >
+          <path fill="currentColor" d="M2.2 4.2a.75.75 0 0 1 1.06 0L6 6.94l2.74-2.74a.75.75 0 1 1 1.06 1.06l-3.27 3.27a.75.75 0 0 1-1.06 0L2.2 5.26a.75.75 0 0 1 0-1.06Z" />
+        </svg>
+      </button>
+      {open && (
+        <ul
+          id={listId}
+          role="listbox"
+          aria-label={label}
+          className="absolute top-[calc(100%+4px)] right-0 z-30 max-h-56 w-max min-w-full max-w-64 overflow-y-auto rounded-xl bg-[#1c1c24] py-1 shadow-[0_12px_40px_rgb(0_0_0/0.55)] ring-1 ring-inset ring-white/15"
+        >
+          {list.map(([v, l], i) => {
+            const selected = v === value;
+            return (
+              <li key={v || "__default"} role="option" aria-selected={selected}>
+                <button
+                  type="button"
+                  onMouseEnter={() => setActive(i)}
+                  onClick={() => pick(v)}
+                  className={`flex w-full items-center px-3 py-1.5 text-left text-[13px] ${
+                    i === active || selected ? "bg-white/12 text-white" : "text-white/80"
+                  } ${selected ? "font-medium" : ""}`}
+                >
+                  <span className="truncate">{l}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 

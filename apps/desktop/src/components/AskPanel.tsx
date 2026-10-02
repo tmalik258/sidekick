@@ -46,6 +46,17 @@ const ease = [0.23, 1, 0.32, 1] as const;
 /** Space the island's orb takes at the top-left in Ask mode. */
 export const ASK_ORB = 30;
 
+/** Input + chips + footer + gaps; scroll area keeps the rest under the Ask cap. */
+const ASK_CHROME = 118;
+const ASK_SCROLL_CAP = 330;
+/** Island window is ~560 tall (tauri.conf); leave room for chrome + pad. */
+const ASK_SCROLL_FLOOR = 120;
+
+function askScrollMax(): number {
+  const available = window.innerHeight - ASK_CHROME - 40;
+  return Math.min(ASK_SCROLL_CAP, Math.max(ASK_SCROLL_FLOOR, available));
+}
+
 export function AskPanel() {
   const ask = useSidekick((s) => s.ask);
   const turns = useSidekick((s) => s.turns);
@@ -62,7 +73,16 @@ export function AskPanel() {
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const nearBottom = useRef(true);
   const seq = ask?.seq;
+  const [scrollMax, setScrollMax] = useState(ASK_SCROLL_CAP);
+
+  useEffect(() => {
+    const sync = () => setScrollMax(askScrollMax());
+    sync();
+    window.addEventListener("resize", sync);
+    return () => window.removeEventListener("resize", sync);
+  }, []);
 
   // Every open: focus the input and refresh which AI is reachable.
   useEffect(() => {
@@ -87,10 +107,10 @@ export function AskPanel() {
     return () => cancelAnimationFrame(id);
   }, [seq]);
 
-  // Keep the newest text in view while an answer streams in.
+  // Keep the newest text in view while an answer streams, only if already near the bottom.
   useEffect(() => {
     const el = scrollRef.current;
-    if (el && turns.length) el.scrollTop = el.scrollHeight;
+    if (el && turns.length && nearBottom.current) el.scrollTop = el.scrollHeight;
   }, [turns]);
 
   const paused = isPaused(settings.pause);
@@ -224,6 +244,12 @@ export function AskPanel() {
     }
   };
 
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+  };
+
   return (
     <div className="flex flex-col">
       <div className="flex h-[30px] items-center gap-2" style={{ paddingLeft: ASK_ORB + 10 }}>
@@ -269,14 +295,15 @@ export function AskPanel() {
 
       <ContextChips />
 
-      <AnimatePresence initial={false} mode="popLayout">
+      <AnimatePresence initial={false}>
         {showClips && clips ? (
           <motion.div
             key="clips"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, transition: { duration: 0.08 } }}
-            className="ask-scroll mt-2 max-h-[330px] overflow-y-auto pr-1"
+            className="ask-scroll mt-2 overflow-y-auto pr-1"
+            style={{ maxHeight: scrollMax }}
           >
             <Clips items={clips} />
           </motion.div>
@@ -286,7 +313,8 @@ export function AskPanel() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, transition: { duration: 0.08 } }}
-            className="ask-scroll mt-2 max-h-[330px] overflow-y-auto pr-1"
+            className="ask-scroll mt-2 overflow-y-auto pr-1"
+            style={{ maxHeight: scrollMax }}
           >
             <Results query={hits.query} items={hits.items} />
           </motion.div>
@@ -294,10 +322,12 @@ export function AskPanel() {
           <motion.div
             key="chat"
             ref={scrollRef}
+            onScroll={onScroll}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, transition: { duration: 0.08 } }}
-            className="ask-scroll mt-2 max-h-[330px] overflow-y-auto pr-1"
+            className="ask-scroll mt-2 overflow-y-auto pr-1"
+            style={{ maxHeight: scrollMax }}
           >
             <Chat turns={turns} />
           </motion.div>
@@ -732,14 +762,9 @@ function Handoff({ turns, reason }: { turns: Turn[]; reason: string | null }) {
 function Thinking() {
   return (
     <span className="inline-flex gap-1 py-2" role="status" aria-label="Thinking">
-      {[0, 1, 2].map((i) => (
-        <motion.span
-          key={i}
-          className="size-1.5 rounded-full bg-white/50"
-          animate={{ opacity: [0.25, 1, 0.25] }}
-          transition={{ duration: 1.1, repeat: Number.POSITIVE_INFINITY, delay: i * 0.15 }}
-        />
-      ))}
+      <span className="thinking-dot" />
+      <span className="thinking-dot" />
+      <span className="thinking-dot" />
     </span>
   );
 }

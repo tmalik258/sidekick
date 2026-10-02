@@ -48,11 +48,13 @@ interface SidekickState {
 }
 
 export interface Waiting {
-  /** The setup item, e.g. "composio". */
+  /** The setup item (e.g. "composio"). */
   id: string;
   /** What the island says, e.g. "Composio". */
   label: string;
   since: number;
+  /** Settings tab to reopen when this finishes after onboarding. */
+  resumeTab?: string;
 }
 
 export interface AskState {
@@ -99,14 +101,16 @@ export const useSidekick = create<SidekickState>(() => ({
 const WAIT_LIMIT_MS = 10 * 60_000;
 const WAIT_POLL_MS = 3000;
 
+/** Settings tab to open once a waited-for step finishes (post-onboarding). */
+let resumeSettingsTab: string | null = null;
+
 /**
- * Shrinks the welcome to a "Waiting for …" pill while a step is finished
- * elsewhere (sign in, install), and brings it back once that step is done.
+ * Shrinks to a "Waiting for …" pill while a step is finished elsewhere
+ * (browser sign-in, install), then brings Settings or welcome back when done.
  */
-export function startWaiting(id: string, label: string, { shrink = true } = {}) {
-  useSidekick.setState({ waiting: { id, label, since: Date.now() } });
-  // Some steps need the welcome's instructions on screen; those keep it open
-  // (it never takes focus from other apps) and still get watched.
+export function startWaiting(id: string, label: string, { shrink = true, resumeTab }: { shrink?: boolean; resumeTab?: string } = {}) {
+  useSidekick.setState({ waiting: { id, label, since: Date.now(), resumeTab } });
+  // ask_defer_welcome parks welcome, or closes Settings/Ask when already onboarded.
   if (shrink) void api.askDeferWelcome();
 }
 
@@ -114,7 +118,26 @@ export function stopWaiting() {
   useSidekick.setState({ waiting: null });
 }
 
-/** Checks the step being waited for; done or too long brings the welcome back. */
+/** Marks a waited-for step done: speak, highlight, reopen welcome or Settings. */
+export function finishWaiting(waiting: Waiting, line: string) {
+  if (useSidekick.getState().waiting?.id !== waiting.id) return;
+  stopWaiting();
+  useSidekick.setState({ justDone: waiting.id });
+  setTimeout(() => {
+    if (useSidekick.getState().justDone === waiting.id) useSidekick.setState({ justDone: null });
+  }, 6000);
+  const { settings } = useSidekick.getState();
+  playCue("ding", cueVolume(settings, "ding"), settings.soundKit);
+  void api.voiceSay(line);
+  if (settings.onboarded) {
+    resumeSettingsTab = waiting.resumeTab ?? "home";
+    void api.openSettings();
+  } else {
+    void api.askResumeWelcome();
+  }
+}
+
+/** Checks the step being waited for; done or too long brings the panel back. */
 export function watchWaiting(): () => void {
   let busy = false;
   const id = setInterval(() => {
@@ -124,6 +147,8 @@ export function watchWaiting(): () => void {
       stopWaiting();
       return;
     }
+    // Composio apps finish via composio://changed, not setup status.
+    if (waiting.id.startsWith("app:")) return;
     busy = true;
     api
       .setupStatus()
@@ -131,22 +156,11 @@ export function watchWaiting(): () => void {
         if (useSidekick.getState().waiting?.id !== waiting.id) return;
         const item = status.items.find((i) => i.id === waiting.id);
         if (item?.done) {
-          stopWaiting();
-          useSidekick.setState({ justDone: waiting.id });
-          setTimeout(() => {
-            if (useSidekick.getState().justDone === waiting.id) useSidekick.setState({ justDone: null });
-          }, 6000);
-          const { settings } = useSidekick.getState();
-          if (settings.onboarded) {
-            playCue("ding", cueVolume(settings, "ding"), settings.soundKit);
-          } else {
-            // During the welcome Sidekick says it, then picks up where it was.
-            const name = waiting.label.charAt(0).toUpperCase() + waiting.label.slice(1);
-            void api.voiceSay(
-              item.group === "connect" ? `Done. ${name} is connected.` : `All set. ${name} is installed.`,
-            );
-            void api.askResumeWelcome();
-          }
+          const name = waiting.label.charAt(0).toUpperCase() + waiting.label.slice(1);
+          finishWaiting(
+            waiting,
+            item.group === "connect" ? `Done. ${name} is connected.` : `All set. ${name} is installed.`,
+          );
         }
       })
       .catch(() => undefined)
@@ -314,6 +328,19 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       listen(EVENTS.suggestionLater, (later) => useSidekick.setState({ later })),
       listen(EVENTS.islandHover, setHovered),
       listen(EVENTS.islandVisible, (visible) => useSidekick.setState({ visible })),
+      listen(EVENTS.composioChanged, ({ ok, message }) => {
+        const waiting = useSidekick.getState().waiting;
+        if (!ok || !waiting) return;
+        if (waiting.id === "composio") {
+          finishWaiting(waiting, message.trim() || "Done. Composio is connected.");
+          return;
+        }
+        if (waiting.id.startsWith("app:")) {
+          // Only finish when this app connected (message is e.g. "Gmail connected").
+          if (!message.toLowerCase().includes(waiting.label.toLowerCase())) return;
+          finishWaiting(waiting, message.trim() || `Done. ${waiting.label} is connected.`);
+        }
+      }),
       listen(EVENTS.askOpen, (open) => {
         const seq = (useSidekick.getState().ask?.seq ?? 0) + 1;
         const clip = open.clipboard && !open.context.clipboardSecret;
@@ -321,6 +348,8 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           newChat();
           useSidekick.setState({ chatPage: open.page });
         }
+        const settingsTab = resumeSettingsTab ?? undefined;
+        resumeSettingsTab = null;
         useSidekick.setState({
           ask: {
             view: open.view ?? "ask",
@@ -332,6 +361,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
             attachScreen: false,
             localOnly: false,
             tool: open.tool ?? null,
+            settingsTab,
           },
         });
         if (open.ask && open.prompt) sendChat(open.prompt, { clipboard: clip });

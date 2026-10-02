@@ -70,7 +70,7 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
               aria-pressed={settings.theme === t}
               onClick={() => save({ theme: t })}
               className={`chip flex flex-col items-center gap-2.5 rounded-xl bg-black py-4 text-[13px] font-medium text-white/90 ${
-                settings.theme === t ? "ring-2 ring-[#0a84ff]" : "ring-1 ring-white/10"
+                settings.theme === t ? "ring-2 ring-inset ring-[#0a84ff]" : "ring-1 ring-inset ring-white/10"
               }`}
             >
               <Orb state="idle" size={40} theme={t} magnetic={false} />
