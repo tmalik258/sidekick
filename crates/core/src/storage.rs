@@ -70,7 +70,26 @@ const MIGRATIONS: &[&str] = &[
         vec BLOB NOT NULL,
         PRIMARY KEY (source, ref)
     );",
+    // Ask mode conversations, so they can be reopened.
+    "CREATE TABLE chats (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        updated TEXT NOT NULL,
+        turns_json TEXT NOT NULL
+    );
+    CREATE INDEX chats_updated ON chats(updated);",
 ];
+
+/// A saved Ask conversation, without its turns.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatSummary {
+    pub id: String,
+    pub title: String,
+    pub updated: String,
+}
+
+const MAX_CHATS: i64 = 200;
 
 /// Cosine similarity; vectors of different lengths score 0.
 pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
@@ -670,6 +689,52 @@ impl Storage {
         )?)
     }
 
+    /// Saves a conversation (turns as the UI keeps them); the oldest go once
+    /// there are too many.
+    pub fn save_chat(&self, id: &str, title: &str, turns_json: &str) -> Result<(), StorageError> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO chats (id, title, updated, turns_json) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET title = ?2, updated = ?3, turns_json = ?4",
+            params![id, title, now, turns_json],
+        )?;
+        self.conn.execute(
+            "DELETE FROM chats WHERE id NOT IN (SELECT id FROM chats ORDER BY updated DESC LIMIT ?1)",
+            [MAX_CHATS],
+        )?;
+        Ok(())
+    }
+
+    pub fn recent_chats(&self, limit: u32) -> Result<Vec<ChatSummary>, StorageError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, title, updated FROM chats ORDER BY updated DESC LIMIT ?1")?;
+        let rows = stmt.query_map([limit], |r| {
+            Ok(ChatSummary {
+                id: r.get(0)?,
+                title: r.get(1)?,
+                updated: r.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn chat_turns(&self, id: &str) -> Result<Option<String>, StorageError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT turns_json FROM chats WHERE id = ?1")?;
+        let mut rows = stmt.query([id])?;
+        Ok(match rows.next()? {
+            Some(r) => Some(r.get(0)?),
+            None => None,
+        })
+    }
+
+    pub fn delete_chat(&self, id: &str) -> Result<(), StorageError> {
+        self.conn.execute("DELETE FROM chats WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
     pub fn count_events(&self) -> Result<u64, StorageError> {
         let count: i64 = self
             .conn
@@ -680,6 +745,20 @@ impl Storage {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn saves_and_reopens_chats() {
+        let s = Storage::open_in_memory().unwrap();
+        s.save_chat("a", "Fix port 3000", "[1]").unwrap();
+        s.save_chat("b", "Jira issues", "[2]").unwrap();
+        s.save_chat("a", "Fix port 3000", "[1,3]").unwrap();
+        let list = s.recent_chats(10).unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].id, "a", "the last one saved comes first");
+        assert_eq!(s.chat_turns("a").unwrap().as_deref(), Some("[1,3]"));
+        s.delete_chat("a").unwrap();
+        assert!(s.chat_turns("a").unwrap().is_none());
+    }
+
     use super::*;
 
     #[test]

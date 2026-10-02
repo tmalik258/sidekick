@@ -1028,3 +1028,41 @@ pub fn skill_unmute(state: State<'_, AppState>, id: String) -> CmdResult<()> {
     h.dismiss_streak = 0;
     storage.save_habit(&h).map_err(|e| e.to_string())
 }
+
+/// Recent Ask conversations, newest first.
+#[tauri::command]
+pub fn chats_list(state: State<'_, AppState>) -> CmdResult<Vec<sidekick_core::ChatSummary>> {
+    lock(&state.storage)
+        .recent_chats(30)
+        .map_err(|e| e.to_string())
+}
+
+/// A saved conversation's turns, as the UI saved them.
+#[tauri::command]
+pub fn chat_get(state: State<'_, AppState>, id: String) -> CmdResult<serde_json::Value> {
+    let text = lock(&state.storage)
+        .chat_turns(&id)
+        .map_err(|e| e.to_string())?
+        .ok_or("That conversation is gone")?;
+    serde_json::from_str(&text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn chat_save(
+    state: State<'_, AppState>,
+    id: String,
+    title: String,
+    turns: serde_json::Value,
+) -> CmdResult<()> {
+    let title: String = title.trim().chars().take(80).collect();
+    lock(&state.storage)
+        .save_chat(&id, &title, &turns.to_string())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn chat_delete(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    lock(&state.storage)
+        .delete_chat(&id)
+        .map_err(|e| e.to_string())
+}
