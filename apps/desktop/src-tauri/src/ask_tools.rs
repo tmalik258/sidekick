@@ -405,6 +405,6 @@ mod tests {
     #[test]
     fn tools_have_short_names() {
         let names: Vec<_> = defs().into_iter().map(|d| d.name).collect();
-        assert_eq!(names, [SEARCH, TODAY, RECENT, SCREEN, OPEN]);
+        assert_eq!(names, [SEARCH, TODAY, RECENT, SCREEN, PROPOSE, OPEN]);
     }
 }
