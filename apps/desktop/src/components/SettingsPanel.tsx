@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
 import { checkKit, cueVolume, playCue } from "@/lib/sound";
@@ -33,6 +33,7 @@ import {
   type VoiceSettings,
 } from "@/lib/types";
 import { Orb, THEME_STYLES } from "./Orb";
+import { BrowserInstallPanel } from "./SetupBrowser";
 import { SetupChecklist } from "./SetupChecklist";
 
 export const SETTINGS_TABS = [
@@ -139,12 +140,11 @@ export function SettingsPanel() {
               <div className="flex items-center justify-between gap-4 text-sm">
                 <span>
                   Ask shortcut
-                  <span className="block text-[12px] text-(--muted)">For example Alt+Space or Ctrl+Shift+K</span>
+                  <span className="block text-[12px] text-(--muted)">Click, press the keys, then Enter</span>
                 </span>
-                <TextField
+                <ShortcutField
                   value={settings.paletteHotkey}
                   onCommit={(paletteHotkey) => run(() => updateSettings({ paletteHotkey }))}
-                  className="w-40 text-right"
                   label="Ask shortcut"
                 />
               </div>
@@ -318,7 +318,7 @@ export function SettingsPanel() {
                   key={id}
                   label={label}
                   hint={hint}
-                  checked={settings.sensors[id] ?? id !== "heartbeat"}
+                  checked={settings.sensors[id] ?? true}
                   onChange={(on) => run(() => updateSettings({ sensors: { ...settings.sensors, [id]: on } }))}
                 />
               ))}
@@ -759,6 +759,118 @@ function TextField({
   );
 }
 
+/** Click, hold modifiers and a key, then Enter to save. Esc cancels. */
+function ShortcutField({
+  value,
+  onCommit,
+  label,
+}: {
+  value: string;
+  onCommit: (v: string) => void;
+  label: string;
+}) {
+  const [recording, setRecording] = useState(false);
+  const [draft, setDraft] = useState(value);
+  useEffect(() => {
+    if (!recording) setDraft(value);
+  }, [value, recording]);
+
+  const commit = (next: string) => {
+    const trimmed = next.trim();
+    setRecording(false);
+    setDraft(trimmed || value);
+    if (trimmed && trimmed !== value) onCommit(trimmed);
+  };
+
+  return (
+    <input
+      readOnly
+      value={recording ? draft || "Press keys…" : value}
+      aria-label={label}
+      aria-pressed={recording}
+      spellCheck={false}
+      onFocus={() => {
+        setRecording(true);
+        setDraft("");
+      }}
+      onBlur={() => {
+        if (recording) commit(draft || value);
+      }}
+      onKeyDown={(e) => {
+        if (!recording) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === "Escape") {
+          setRecording(false);
+          setDraft(value);
+          e.currentTarget.blur();
+          return;
+        }
+        if (e.key === "Enter") {
+          if (draft) commit(draft);
+          else {
+            setRecording(false);
+            setDraft(value);
+          }
+          e.currentTarget.blur();
+          return;
+        }
+        if (e.key === "Backspace" || e.key === "Delete") {
+          setDraft("");
+          return;
+        }
+        const chord = chordFromEvent(e);
+        if (chord) setDraft(chord);
+      }}
+      className={`w-44 cursor-pointer rounded-md border bg-transparent px-2 py-1 text-right text-[13px] outline-none ${
+        recording ? "border-(--accent) text-(--muted)" : "border-(--border)"
+      }`}
+    />
+  );
+}
+
+/** Turns a keydown into the `Ctrl+Alt+K` form global-shortcut expects. */
+function chordFromEvent(e: KeyboardEvent): string | null {
+  if (e.key === "Control" || e.key === "Alt" || e.key === "Shift" || e.key === "Meta") {
+    return null;
+  }
+  const parts: string[] = [];
+  if (e.ctrlKey) parts.push("Ctrl");
+  if (e.altKey) parts.push("Alt");
+  if (e.shiftKey) parts.push("Shift");
+  if (e.metaKey) parts.push("Super");
+  const key = shortcutKeyName(e);
+  if (!key) return null;
+  parts.push(key);
+  return parts.join("+");
+}
+
+function shortcutKeyName(e: KeyboardEvent): string | null {
+  if (e.key === " ") return "Space";
+  if (e.key.length === 1) {
+    const ch = e.key.toUpperCase();
+    if (/^[A-Z0-9]$/.test(ch)) return ch;
+  }
+  const named: Record<string, string> = {
+    ArrowUp: "Up",
+    ArrowDown: "Down",
+    ArrowLeft: "Left",
+    ArrowRight: "Right",
+    Escape: "Esc",
+    Tab: "Tab",
+    Backspace: "Backspace",
+    Delete: "Delete",
+    Home: "Home",
+    End: "End",
+    PageUp: "PageUp",
+    PageDown: "PageDown",
+    Insert: "Insert",
+  };
+  if (named[e.key]) return named[e.key];
+  if (/^F\d{1,2}$/.test(e.key)) return e.key;
+  return null;
+}
+
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-4 text-[13px]">
@@ -1027,9 +1139,12 @@ const HOOK_SNIPPET = JSON.stringify(
   2,
 );
 
-/** The hook users add to their own Claude Code settings. Sidekick never edits that file. */
+/** Adds Sidekick hooks to Claude Code settings (backup first), with Copy as fallback. */
 function ClaudeHook() {
   const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(HOOK_SNIPPET);
@@ -1039,21 +1154,38 @@ function ClaudeHook() {
       // Clipboard access can be refused; the text is selectable anyway.
     }
   };
+  const add = () => {
+    setBusy(true);
+    setError(null);
+    void api
+      .claudeAddHooks()
+      .then((backup) => setNote(backup ? `Added. Backup at ${backup}.` : "Added."))
+      .catch((e) => setError(String(e)))
+      .finally(() => setBusy(false));
+  };
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-(--border) p-3">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-[14px] font-medium">Claude Code hooks</p>
           <p className="text-[12px] text-(--muted)">
-            Add this to <code className="font-mono">~/.claude/settings.json</code> (merge with any hooks you have) so
-            Sidekick knows when a session finishes or is waiting for you, and you can allow or deny its permission
-            requests from the island.
+            One click merges Sidekick&apos;s hooks into{" "}
+            <code className="font-mono">~/.claude/settings.json</code> (other hooks kept; file backed up first). Then
+            Sidekick knows when a session finishes or waits, and you can allow or deny permission requests from the
+            island.
           </p>
         </div>
-        <Button small onClick={copy}>
-          {copied ? "Copied" : "Copy"}
-        </Button>
+        <div className="flex shrink-0 gap-1.5">
+          <Button small onClick={copy}>
+            {copied ? "Copied" : "Copy"}
+          </Button>
+          <Button small onClick={add} disabled={busy}>
+            {busy ? "Adding..." : "Add for me"}
+          </Button>
+        </div>
       </div>
+      {note && <p className="text-[12px] text-[#30d158]">{note}</p>}
+      {error && <p className="text-[12px] text-red-500">{error}</p>}
       <pre className="overflow-x-auto rounded-lg bg-black/5 p-3 font-mono text-[11.5px] leading-relaxed select-all dark:bg-white/5">
         {HOOK_SNIPPET}
       </pre>
@@ -1061,7 +1193,7 @@ function ClaudeHook() {
   );
 }
 
-/** Pairing code and setup steps for the browser extension. */
+/** Stages the extension, opens the browser extensions page, shows pairing code. */
 function BrowserPairing() {
   const [info, setInfo] = useState<BrowserInfo | null>(null);
   const [copied, setCopied] = useState(false);
@@ -1080,23 +1212,19 @@ function BrowserPairing() {
   };
   return (
     <div className="flex flex-col gap-3 text-[13px]">
-      <ol className="list-decimal space-y-1 pl-5 text-(--muted)">
-        <li>
-          Open <code className="font-mono">chrome://extensions</code> (or Edge, or Zen&apos;s{" "}
-          <code className="font-mono">about:debugging</code>) and turn on Developer mode.
-        </li>
-        <li>
-          Load unpacked: pick the <code className="font-mono">apps/extension</code> folder of the Sidekick repo.
-        </li>
-        <li>Paste this pairing code in the extension&apos;s options and press Save and test.</li>
-      </ol>
-      <div className="flex items-center gap-2">
-        <code className="min-w-0 flex-1 truncate rounded-lg bg-black/5 px-3 py-2 font-mono text-[12px] select-all dark:bg-white/5">
-          {info?.token || "…"}
-        </code>
-        <Button small onClick={copy}>
-          {copied ? "Copied" : "Copy"}
-        </Button>
+      <BrowserInstallPanel />
+      <div>
+        <p className="mb-1.5 text-[12px] text-(--muted)">
+          After Load unpacked, paste this pairing code in the extension options if it does not pair on its own.
+        </p>
+        <div className="flex items-center gap-2">
+          <code className="min-w-0 flex-1 truncate rounded-lg bg-black/5 px-3 py-2 font-mono text-[12px] select-all dark:bg-white/5">
+            {info?.token || "…"}
+          </code>
+          <Button small onClick={copy}>
+            {copied ? "Copied" : "Copy"}
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -1424,6 +1552,9 @@ function SearchSettings({ onError }: { onError: (e: string) => void }) {
 function McpSetup() {
   const [info, setInfo] = useState<McpInfo | null>(null);
   const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     void api.mcpInfo().then(setInfo);
   }, []);
@@ -1439,20 +1570,36 @@ function McpSetup() {
       // Clipboard access can be refused; the text is selectable anyway.
     }
   };
+  const add = () => {
+    setBusy(true);
+    setError(null);
+    void api
+      .claudeAddMcp()
+      .then(() => setNote("Added to Claude Code."))
+      .catch((e) => setError(String(e)))
+      .finally(() => setBusy(false));
+  };
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-(--border) p-3">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-[14px] font-medium">Sidekick in Claude Code (MCP)</p>
           <p className="text-[12px] text-(--muted)">
-            Run this once in a terminal. Claude Code can then search your files and history, show notes on the island,
-            open links, and read today&apos;s time. It only works on this PC.
+            One click registers Sidekick with Claude Code so it can search your files and history, show notes on the
+            island, open links, and read today&apos;s time. It only works on this PC.
           </p>
         </div>
-        <Button small onClick={copy}>
-          {copied ? "Copied" : "Copy"}
-        </Button>
+        <div className="flex shrink-0 gap-1.5">
+          <Button small onClick={copy}>
+            {copied ? "Copied" : "Copy"}
+          </Button>
+          <Button small onClick={add} disabled={busy}>
+            {busy ? "Adding..." : "Add for me"}
+          </Button>
+        </div>
       </div>
+      {note && <p className="text-[12px] text-[#30d158]">{note}</p>}
+      {error && <p className="text-[12px] text-red-500">{error}</p>}
       <pre className="overflow-x-auto rounded-lg bg-black/5 p-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap select-all dark:bg-white/5">
         {command || "…"}
       </pre>

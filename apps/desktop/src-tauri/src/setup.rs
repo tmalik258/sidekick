@@ -1,8 +1,8 @@
 //! Setup checklist: what is installed, connected and configured, and the
-//! exact command or Settings tab for each item that is not. Every check is
-//! read-only; Sidekick never edits Claude Code's files or installs anything
-//! on its own. "Run" opens a visible PowerShell window with a command from
-//! this file, never text from the page.
+//! exact command or Settings tab for each item that is not. Status checks are
+//! read-only. "Run" opens a visible PowerShell window with an allowlisted
+//! command from this file. "Add for me" (hooks/MCP) and the browser helper
+//! live in other modules and run only when the user presses the button.
 
 use std::path::Path;
 use std::time::Duration;
@@ -204,10 +204,28 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     refresh_path();
     let state = app.state::<AppState>();
     let settings = lock(&state.settings).clone();
-    // Look again, so a tool installed a minute ago counts.
-    let caps = tauri::async_runtime::spawn_blocking(sidekick_actions::Capabilities::detect)
-        .await
-        .unwrap_or_else(|_| executor(&state).capabilities().clone());
+    let base_url = settings.ai.local.base_url.clone();
+    let composio_settings = settings.composio.clone();
+    let composio_on = crate::composio::is_set_up(&composio_settings);
+    let need_composio_apps = composio_on && crate::composio::signed_in();
+
+    // Independent probes run together so wall time ≈ the slowest one.
+    let caps_fut = tauri::async_runtime::spawn_blocking(sidekick_actions::Capabilities::detect);
+    let models_fut = ollama_models(&base_url);
+    let composio_fut = async {
+        if need_composio_apps {
+            crate::composio::apps(&composio_settings)
+                .await
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        }
+    };
+    let gh_fut = gh_signed_in();
+    let (caps_res, models, composio_apps, gh_ok) =
+        tokio::join!(caps_fut, models_fut, composio_fut, gh_fut);
+
+    let caps = caps_res.unwrap_or_else(|_| executor(&state).capabilities().clone());
     *state
         .executor
         .write()
@@ -236,7 +254,6 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     );
 
     let ollama_installed = found("ollama");
-    let models = ollama_models(&settings.ai.local.base_url).await;
     let ollama = SetupItem::new(
         "ollama",
         Group::Ai,
@@ -329,7 +346,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         "claude_hooks",
         Group::Connect,
         "Claude Code hooks",
-        "Know when a session finishes or waits, and allow or deny its requests from the island. Merge into ~/.claude/settings.json.",
+        "Know when a session finishes or waits, and allow or deny its requests from the island. Add for me merges into Claude Code settings (backed up first).",
     )
     .copy(hook_snippet())
     .tab("ai");
@@ -398,13 +415,6 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     );
 
     let composio_on = crate::composio::is_set_up(&settings.composio);
-    let composio_apps = if composio_on && crate::composio::signed_in() {
-        crate::composio::apps(&settings.composio)
-            .await
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
     let has_app = |slug: &str| composio_apps.iter().any(|a| a.slug == slug && a.connected);
     items.push(
         SetupItem::new(
@@ -501,7 +511,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         gh_item
             .done(false, "", "Not installed")
             .run(winget("GitHub.cli"))
-    } else if gh_signed_in().await {
+    } else if gh_ok {
         gh_item.done(true, "Signed in", "")
     } else {
         gh_item
@@ -672,14 +682,34 @@ pub async fn run_many(app: &AppHandle, ids: &[String]) -> Result<(), String> {
 #[cfg(windows)]
 fn open_terminal(command: &str) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
-    const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+    use std::process::Stdio;
+    // Sidekick is a GUI process with no console. If we spawn PowerShell with
+    // inherited stdio, it gets invalid handles and tools like ollama print
+    // "failed to get console mode for stderr". `cmd /c start` opens a real
+    // console window; CREATE_NO_WINDOW only hides the brief cmd trampoline.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let script = format!(
         "Write-Host 'Sidekick setup: {}' -ForegroundColor Cyan; {command}; Write-Host ''; Write-Host 'Done. Close this window and press Check again in Sidekick.' -ForegroundColor Green",
         command.replace('\'', "''")
     );
-    std::process::Command::new("powershell.exe")
-        .args(["-NoExit", "-NoLogo", "-NoProfile", "-Command", &script])
-        .creation_flags(CREATE_NEW_CONSOLE)
+    // `start "title" prog` — the quoted title is required so `start` does not
+    // treat the first quoted arg as the window title and drop the program.
+    std::process::Command::new("cmd.exe")
+        .args([
+            "/c",
+            "start",
+            "Sidekick setup",
+            "powershell.exe",
+            "-NoExit",
+            "-NoLogo",
+            "-NoProfile",
+            "-Command",
+            &script,
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn()
         .map(|_| ())
         .map_err(|e| format!("could not open PowerShell: {e}"))

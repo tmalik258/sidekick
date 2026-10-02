@@ -87,6 +87,9 @@ pub struct Settings {
     pub semantic_search: SemanticSearch,
     /// The first-run welcome was finished or skipped.
     pub onboarded: bool,
+    /// Step index inside the welcome flow (0-based). Kept so a restart
+    /// resumes where the user left off until they skip or finish.
+    pub welcome_step: u32,
     /// Look for a newer release once a day.
     pub check_updates: bool,
     /// Programs whose windows and copies Sidekick ignores (FR-SET-02).
@@ -158,7 +161,9 @@ pub struct ComposioSettings {
     pub headers: BTreeMap<String, String>,
 }
 
-/// Voice (FR-VOICE): off until the user turns it on and downloads the models.
+/// Voice (FR-VOICE): on by default. Speech models download on launch when
+/// missing. The microphone is open only while voice is on and Sidekick is not
+/// paused.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct VoiceSettings {
@@ -180,7 +185,7 @@ pub struct VoiceSettings {
 impl Default for VoiceSettings {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             wake_word: true,
             speak_answers: true,
             conversation: true,
@@ -294,7 +299,7 @@ impl Default for AnthropicPref {
 impl Default for SemIfPref {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             command: vec!["semif-score".into()],
             mode: "direct".into(),
             backend: "llamacpp".into(),
@@ -342,7 +347,9 @@ pub struct SkillPref {
 }
 
 /// Sensors that only run when switched on explicitly.
-pub const SENSORS_OFF_BY_DEFAULT: [&str; 1] = ["heartbeat"];
+/// Sensors that start switched off. Empty: every sensor is on unless the user
+/// turns it off.
+pub const SENSORS_OFF_BY_DEFAULT: [&str; 0] = [];
 
 pub const THEMES: [&str; 3] = ["pearl", "graphite", "midnight"];
 pub const SOUND_KITS: [&str; 1] = ["01"];
@@ -354,7 +361,7 @@ impl Default for Settings {
             master_volume: 0.6,
             cue_volumes: BTreeMap::new(),
             collapse_after_secs: 8,
-            launch_at_login: false,
+            launch_at_login: true,
             sensors: BTreeMap::new(),
             pause: Pause::None,
             theme: THEMES[0].to_string(),
@@ -371,6 +378,7 @@ impl Default for Settings {
             composio: ComposioSettings::default(),
             semantic_search: SemanticSearch::default(),
             onboarded: false,
+            welcome_step: 0,
             check_updates: true,
             deny_apps: DEFAULT_DENY_APPS.iter().map(|s| (*s).to_owned()).collect(),
             deny_sites: Vec::new(),
@@ -378,7 +386,9 @@ impl Default for Settings {
     }
 }
 
-pub const DEFAULT_PALETTE_HOTKEY: &str = "Alt+Space";
+pub const DEFAULT_PALETTE_HOTKEY: &str = "Ctrl+Space";
+/// Screens in the first-run welcome (Welcome, Your AI, Connect, Tools, Extras).
+pub const WELCOME_STEP_COUNT: u32 = 5;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SettingsError {
@@ -447,6 +457,9 @@ impl Settings {
         if self.voice.voice.trim().is_empty() {
             self.voice.voice = VoiceSettings::default().voice;
         }
+        if self.welcome_step >= WELCOME_STEP_COUNT {
+            self.welcome_step = WELCOME_STEP_COUNT.saturating_sub(1);
+        }
         self.end_of_day_hour = self.end_of_day_hour.min(23);
         self.code_folders.retain(|f| !f.trim().is_empty());
         for (action, default) in SHORTCUTS {
@@ -492,7 +505,7 @@ mod tests {
         assert!(s.muted);
         assert!(s.ai.claude_code.enabled);
         assert_eq!(s.ai.local.base_url, "http://localhost:11434/v1");
-        assert!(!s.ai.semif.enabled);
+        assert!(s.ai.semif.enabled);
     }
 
     #[test]
@@ -523,15 +536,15 @@ mod tests {
         let path = dir.join("settings.json");
         let s = Settings {
             muted: true,
-            sensors: BTreeMap::from([("heartbeat".to_string(), false)]),
+            sensors: BTreeMap::from([("clipboard".to_string(), false)]),
             ..Settings::default()
         };
         s.save(&path).unwrap();
         let loaded = Settings::load(&path);
         assert_eq!(loaded, s);
-        assert!(!loaded.sensor_enabled("heartbeat"));
+        assert!(!loaded.sensor_enabled("clipboard"));
         assert!(loaded.sensor_enabled("files"));
-        assert!(!Settings::default().sensor_enabled("heartbeat"));
+        assert!(Settings::default().sensor_enabled("clipboard"));
 
         fs::write(&path, r#"{"muted": true}"#).unwrap();
         let partial = Settings::load(&path);
@@ -557,11 +570,13 @@ mod tests {
         let s = Settings {
             master_volume: 3.0,
             collapse_after_secs: 0,
+            welcome_step: 99,
             ..Settings::default()
         }
         .sanitized();
         assert_eq!(s.master_volume, 1.0);
         assert_eq!(s.collapse_after_secs, 2);
+        assert_eq!(s.welcome_step, WELCOME_STEP_COUNT - 1);
     }
 
     #[test]

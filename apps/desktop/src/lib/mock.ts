@@ -157,8 +157,16 @@ function mockChat(a: Record<string, unknown>) {
 
 commands.ai_chat = (a) => mockChat(a);
 commands.ai_cancel = () => undefined;
-commands.ask_close = () => emit("ask://close", null);
-commands.ask_open = (a) =>
+let welcomeDeferred = false;
+commands.ask_close = () => {
+  if (!settings.onboarded && !welcomeDeferred) {
+    commands.ask_open?.({ view: "welcome" });
+    return;
+  }
+  emit("ask://close", { reason: "close" });
+};
+commands.ask_open = (a) => {
+  welcomeDeferred = false;
   emit("ask://open", {
     context: {
       app: "Visual Studio Code",
@@ -171,8 +179,49 @@ commands.ask_open = (a) =>
     ask: Boolean(a.ask),
     clipboard: false,
     page: null,
-    view: (a.view as string | undefined) ?? "ask",
+    view: settings.onboarded ? ((a.view as string | undefined) ?? "ask") : "welcome",
   });
+};
+commands.ask_ensure_welcome = () => {
+  if (settings.onboarded || welcomeDeferred) return;
+  commands.ask_open?.({ view: "welcome" });
+};
+commands.ask_defer_welcome = () => {
+  if (settings.onboarded) {
+    emit("ask://close", { reason: "close" });
+    return;
+  }
+  welcomeDeferred = true;
+  emit("ask://close", { reason: "defer" });
+};
+commands.claude_add_hooks = () => null;
+commands.claude_add_mcp = () => undefined;
+commands.browsers_status = () => [
+  { id: "chrome", name: "Chrome", connected: false },
+  { id: "edge", name: "Edge", connected: false },
+];
+commands.extension_install = (a) => ({
+  copied: "C:\\Users\\you\\AppData\\Local\\Sidekick\\extension",
+  steps: [
+    "Turn on Developer mode (top right).",
+    `Load unpacked and paste the path (copied for ${(a.browser as string) || "chrome"}).`,
+    "Press Allow on Sidekick's island when it asks.",
+  ],
+});
+commands.setup_detect = () => ({
+  codeFolders: [{ path: "C:\\Users\\you\\code", label: "code", repos: 2 }],
+  searchFolders: [{ path: "C:\\Users\\you\\Documents", label: "Documents", repos: 0 }],
+  chatModels: ["llama3.2"],
+  embedModels: ["nomic-embed-text"],
+  claudeInstalled: true,
+  claudeHooks: false,
+  claudeMcp: false,
+  composioSignedIn: false,
+  composioInClaude: false,
+  browsers: ["chrome", "edge"],
+  installable: [],
+});
+commands.composio_sign_in = () => "Signed in as you@example.com";
 commands.skill_install = () => "Screenshots";
 const voiceStatus = () => ({
   models: [

@@ -22,25 +22,56 @@ pub fn spawn_detached(mut cmd: Command) -> Result<(), ActionError> {
     cmd.spawn().map(drop).map_err(fail)
 }
 
-pub fn reveal(path: &Path) -> Result<(), ActionError> {
+/// Opens a folder with the user's default file manager (Files, Explorer, …).
+/// Does not call explorer.exe or SHOpenFolderAndSelectItems, which always
+/// force Windows Explorer even when another app is the Directory default.
+pub fn open_folder_path(path: &Path) -> Result<(), ActionError> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // explorer needs `/select,"C:\path"` as one raw argument.
-        let mut cmd = Command::new("explorer.exe");
-        cmd.raw_arg(format!("/select,\"{}\"", path.display()));
+        // Invoke-Item uses the shell association for Directory / Folder.
+        let mut cmd = Command::new("powershell.exe");
+        cmd.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            "Invoke-Item -LiteralPath $env:SIDEKICK_OPEN",
+        ])
+        .env("SIDEKICK_OPEN", path.as_os_str())
+        .creation_flags(0x0800_0000);
         cmd.spawn().map(drop).map_err(fail)
     }
     #[cfg(target_os = "macos")]
     {
         let mut cmd = Command::new("open");
-        cmd.arg("-R").arg(path);
+        cmd.arg(path);
         spawn_detached(cmd)
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        let dir = path.parent().unwrap_or(path);
-        open::that_detached(dir).map_err(fail)
+        open::that_detached(path).map_err(fail)
+    }
+}
+
+/// Opens the folder that contains `path` (or `path` itself when it is a folder)
+/// in the default file manager.
+pub fn reveal(path: &Path) -> Result<(), ActionError> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut cmd = Command::new("open");
+        cmd.arg("-R").arg(path);
+        return spawn_detached(cmd);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let folder = if path.is_dir() {
+            path
+        } else {
+            path.parent().unwrap_or(path)
+        };
+        open_folder_path(folder)
     }
 }
 
