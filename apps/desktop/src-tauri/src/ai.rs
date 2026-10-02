@@ -84,6 +84,7 @@ async fn chat_router(
     chat_id: &str,
     handoff: &Arc<std::sync::Mutex<Option<String>>>,
     local_only: bool,
+    prefer: Option<&str>,
 ) -> Router {
     let settings = lock(&app.state::<AppState>().settings).clone();
     let server = if local_only || !settings.ai.local.enabled {
@@ -104,7 +105,18 @@ async fn chat_router(
             _ => p,
         })
         .collect();
-    Router::new(list)
+    Router::new(prefer_first(list, prefer))
+}
+
+/// The picked provider first; the rest keep the user's order.
+fn prefer_first(
+    mut list: Vec<Arc<dyn AiProvider>>,
+    prefer: Option<&str>,
+) -> Vec<Arc<dyn AiProvider>> {
+    if let Some(id) = prefer {
+        list.sort_by_key(|p| p.id() != id);
+    }
+    list
 }
 
 fn semif(app: &AppHandle, ai: &AiSettings) -> SemIf {
@@ -182,6 +194,10 @@ pub struct Attach {
     /// The question was spoken; read the answer aloud.
     #[serde(default)]
     pub speak: bool,
+    /// The model picked in Ask mode ("claude_code", "codex", "anthropic",
+    /// "local"); it goes first, the others stay as a fallback.
+    #[serde(default)]
+    pub prefer: Option<String>,
 }
 
 /// What Sidekick can notice, for AI writing skills. Keep in sync with the
@@ -362,7 +378,7 @@ pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach,
             image,
         };
         let handoff = Arc::new(std::sync::Mutex::new(None));
-        let router = chat_router(&app, &id, &handoff, local_only).await;
+        let router = chat_router(&app, &id, &handoff, local_only, attach.prefer.as_deref()).await;
         let speak = attach.speak && crate::voice::begin_answer(&app, &id);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
         let forward = {

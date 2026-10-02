@@ -636,7 +636,8 @@ commands.time_today = () => [
 commands.browser_info = () => ({ token: "browser-preview-pairing-code", port: 47822 });
 commands.action_undo = () => "Moved photo.webp to the Recycle Bin";
 commands.ai_status = () => [
-  { id: "claude_code", available: false, local: false },
+  { id: "claude_code", available: true, local: false },
+  { id: "codex", available: true, local: false },
   { id: "anthropic", available: false, local: false },
   { id: "local", available: true, local: true },
   { id: "semif", available: false, local: true },
