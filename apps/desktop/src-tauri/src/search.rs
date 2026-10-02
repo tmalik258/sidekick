@@ -112,6 +112,12 @@ pub fn index_event(app: &AppHandle, e: &Event) {
             format!("Claude Code in {}", s("project")),
             format!("{} {}", s("message"), s("cwd")),
         )),
+        "codex.stop" => Some((
+            "claude",
+            format!("{}:{}", s("session"), ts),
+            format!("Codex in {}", s("project")),
+            format!("{} {}", s("message"), s("cwd")),
+        )),
         _ => None,
     };
     if let Some((source, reference, title, body)) = item {

@@ -55,6 +55,8 @@ export interface Settings {
   denySites: string[];
   routines: boolean;
   routinesAuto: boolean;
+  /** Fade the island while a fullscreen app is in front. */
+  hideInFullscreen: boolean;
 }
 
 export interface CalendarToday {
@@ -117,12 +119,15 @@ export interface VoiceDownload {
   error: string | null;
 }
 
-export const AI_PROVIDERS = ["claude_code", "anthropic", "local"] as const;
+export const AI_PROVIDERS = ["claude_code", "codex", "anthropic", "local"] as const;
 export type AiProviderId = (typeof AI_PROVIDERS)[number];
 
 export interface AiSettings {
   order: AiProviderId[];
   claudeCode: { enabled: boolean; path: string; model: string };
+  codex: { enabled: boolean; path: string; model: string };
+  /** Who gets handoffs: "auto", "claude_code" or "codex". */
+  codingAgent: string;
   local: { enabled: boolean; baseUrl: string; model: string; visionModel: string };
   anthropic: { enabled: boolean; model: string };
   semif: {
@@ -139,6 +144,7 @@ export interface AiSettings {
 
 export const PROVIDER_LABELS: Record<string, string> = {
   claude_code: "Claude Code",
+  codex: "Codex",
   anthropic: "Anthropic API",
   local: "Local model",
   semif: "SemIf",
@@ -292,8 +298,10 @@ export const DEFAULT_SETTINGS: Settings = {
   indexFolders: [],
   endOfDayHour: 18,
   ai: {
-    order: ["claude_code", "anthropic", "local"],
+    order: ["claude_code", "codex", "anthropic", "local"],
     claudeCode: { enabled: true, path: "", model: "" },
+    codex: { enabled: true, path: "", model: "" },
+    codingAgent: "auto",
     local: { enabled: true, baseUrl: "http://localhost:11434/v1", model: "", visionModel: "" },
     anthropic: { enabled: true, model: "" },
     semif: {
@@ -317,6 +325,7 @@ export const DEFAULT_SETTINGS: Settings = {
   denySites: [],
   routines: true,
   routinesAuto: false,
+  hideInFullscreen: false,
   voice: {
     enabled: true,
     wakeWord: true,
@@ -544,4 +553,12 @@ export interface RoutineItem {
   browser: string;
   /** Of the last five matching days. */
   days: number;
+}
+
+/** Coding agents on this PC, and which one gets handoffs. */
+export interface Agents {
+  claudeCode: boolean;
+  codex: boolean;
+  /** "Claude Code" or "Codex", or null when neither is installed. */
+  handoff: string | null;
 }

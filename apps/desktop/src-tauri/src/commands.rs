@@ -311,7 +311,10 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
         tauri::async_runtime::spawn(async move { ai::refresh_readiness(&app).await });
     }
     // Without the window sensor nothing would bring a hidden island back.
-    if next.pause.is_active(now) || !next.sensor_enabled("window") {
+    if next.pause.is_active(now)
+        || !next.sensor_enabled("window")
+        || (previous.hide_in_fullscreen && !next.hide_in_fullscreen)
+    {
         island::follow_fullscreen(app, &serde_json::Value::Null);
     }
 
@@ -789,17 +792,21 @@ pub async fn ai_run_proposal(app: AppHandle, id: String) -> CmdResult<crate::ask
     crate::ask_tools::run_proposal(&app, &id).await
 }
 
-/// Opens Claude Code in a terminal with this conversation, to finish what
-/// the local model could not.
+/// Opens the coding agent (Claude Code or Codex) in a terminal with this
+/// conversation, to finish what the local model could not. Returns its name.
 #[tauri::command]
 pub async fn ai_handoff(
     app: AppHandle,
     messages: Vec<sidekick_ai::Message>,
     reason: Option<String>,
 ) -> CmdResult<String> {
-    crate::composio::open_in_claude_code(&app, &messages, reason.as_deref())
-        .await
-        .map(|dir| dir.display().to_string())
+    crate::agents::hand_off(&app, &messages, reason.as_deref()).await
+}
+
+/// Which coding agents are installed and which one gets handoffs.
+#[tauri::command]
+pub fn agents_status(state: State<'_, AppState>) -> crate::agents::Agents {
+    crate::agents::status(&lock(&state.settings))
 }
 
 /// Opens Composio Connect in the browser to sign in.
@@ -1011,6 +1018,21 @@ pub async fn claude_add_mcp(app: AppHandle) -> CmdResult<()> {
     };
     let url = format!("http://127.0.0.1:{}/mcp", crate::mcp::PORT);
     crate::claude_config::add_mcp(&claude, &url, &state.mcp_token).await
+}
+
+/// Adds Sidekick's notify script to Codex, so the island hears when a turn
+/// is done. Returns the backup of Codex's settings, if one was made.
+#[tauri::command]
+pub fn codex_add_notify(app: AppHandle) -> CmdResult<Option<String>> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    crate::codex_config::add_notify(&dir).map(|b| b.map(|p| p.display().to_string()))
+}
+
+/// Adds Sidekick's MCP server to Codex's settings.
+#[tauri::command]
+pub fn codex_add_mcp(state: State<'_, AppState>) -> CmdResult<Option<String>> {
+    let url = format!("http://127.0.0.1:{}/mcp", crate::mcp::PORT);
+    crate::codex_config::add_mcp(&url, &state.mcp_token).map(|b| b.map(|p| p.display().to_string()))
 }
 
 #[derive(Serialize)]

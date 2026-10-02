@@ -64,3 +64,11 @@ Small models work best with one clear request at a time. If answers cut off or i
 setx OLLAMA_CONTEXT_LENGTH 16384
 ```
 
+## Codex
+
+Sidekick works with OpenAI's Codex CLI the same way as Claude Code, for people who use it instead or as well. Install it from Settings > Home > Setup (`npm install -g @openai/codex`) and run `codex` once to sign in. Then:
+
+- **Chat**: Codex is in Settings > AI next to Claude Code. It runs read-only in an empty folder.
+- **Continue in...**: Settings > AI > Coding agent picks who gets handoffs from Ask mode. Auto takes Claude Code when it is installed, else Codex.
+- **Notifications and tools**: Settings > Connections > Codex > Add for me adds a `notify` script and Sidekick's MCP server to `~/.codex/config.toml` (backed up first), so the island tells you when a Codex turn is done.
+

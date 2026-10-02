@@ -52,9 +52,22 @@ export function AiTab({ onError }: { onError: (e: string) => void }) {
 
 const PROVIDER_HINTS: Record<AiProviderId, string> = {
   claude_code: "Your own Claude subscription through the claude CLI. Sidekick never reads its sign-in files.",
+  codex: "Your own ChatGPT plan through OpenAI's codex CLI, read-only. Sidekick never reads its sign-in files.",
   anthropic: "Uses ANTHROPIC_API_KEY from your environment. The key is never stored.",
   local: "Ollama or any OpenAI-compatible server. Nothing leaves this PC.",
 };
+
+const CODEX_MODELS: [string, string][] = [
+  ["", "Codex's default"],
+  ["gpt-5-codex", "GPT-5 Codex"],
+  ["gpt-5", "GPT-5"],
+];
+
+const CODING_AGENTS: [string, string][] = [
+  ["auto", "Whichever is installed (Claude Code first)"],
+  ["claude_code", "Claude Code"],
+  ["codex", "Codex"],
+];
 
 const CLAUDE_CODE_MODELS: [string, string][] = [
   ["", "Claude Code's default"],
@@ -97,9 +110,16 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
     void save({ order });
   };
   const enabled = (id: AiProviderId) =>
-    id === "claude_code" ? ai.claudeCode.enabled : id === "anthropic" ? ai.anthropic.enabled : ai.local.enabled;
+    id === "claude_code"
+      ? ai.claudeCode.enabled
+      : id === "codex"
+        ? ai.codex.enabled
+        : id === "anthropic"
+          ? ai.anthropic.enabled
+          : ai.local.enabled;
   const setEnabled = (id: AiProviderId, on: boolean) => {
     if (id === "claude_code") void save({ claudeCode: { ...ai.claudeCode, enabled: on } });
+    else if (id === "codex") void save({ codex: { ...ai.codex, enabled: on } });
     else if (id === "anthropic") void save({ anthropic: { ...ai.anthropic, enabled: on } });
     else void save({ local: { ...ai.local, enabled: on } });
   };
@@ -155,6 +175,33 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
                             mono
                             className="w-56"
                             onCommit={(path) => save({ claudeCode: { ...ai.claudeCode, path } })}
+                          />
+                        </Field>
+                      </div>
+                    </details>
+                  </>
+                )}
+                {id === "codex" && (
+                  <>
+                    <Field label="Model">
+                      <Select
+                        label="Codex model"
+                        value={ai.codex.model}
+                        options={CODEX_MODELS}
+                        onChange={(model) => void save({ codex: { ...ai.codex, model } })}
+                      />
+                    </Field>
+                    <details className="text-[12.5px]">
+                      <summary className="cursor-pointer text-(--muted)">Where codex is</summary>
+                      <div className="mt-2">
+                        <Field label="Path to codex" hint="Empty finds it on PATH">
+                          <TextField
+                            label="Path to codex"
+                            value={ai.codex.path}
+                            placeholder="codex"
+                            mono
+                            className="w-56"
+                            onCommit={(path) => save({ codex: { ...ai.codex, path } })}
                           />
                         </Field>
                       </div>
@@ -225,6 +272,17 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
           </DragRow>
         ))}
       </Reorder.Group>
+      <Field
+        label="Coding agent"
+        hint="Gets Continue in... from Ask mode when the local model needs help or a change has to be made."
+      >
+        <Select
+          label="Coding agent"
+          value={ai.codingAgent}
+          options={CODING_AGENTS}
+          onChange={(codingAgent) => void save({ codingAgent })}
+        />
+      </Field>
       <div>
         <Button
           small

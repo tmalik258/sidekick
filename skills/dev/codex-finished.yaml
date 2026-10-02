@@ -1,0 +1,14 @@
+id: dev.codex-finished
+name: Codex finished
+description: Tell you when a Codex session finishes its turn. Needs Sidekick's notify in Codex (Settings > Connections > Codex).
+priority: 70
+cooldown_secs: 20
+dedupe: "{{session}}"
+trigger:
+  event: codex.stop
+suggestion:
+  title: "Codex finished in {{project}}"
+  detail: "{{message}}"
+  options:
+    - { label: Open in VS Code, action: open_in_editor, args: { path: "{{cwd}}" }, requires: ["tool:code"] }
+    - { label: Open folder, action: open_folder, args: { path: "{{cwd}}" } }

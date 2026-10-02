@@ -1,9 +1,11 @@
+mod agents;
 mod ai;
 mod ask;
 mod ask_tools;
 mod brief;
 mod browser;
 mod claude_config;
+mod codex_config;
 mod commands;
 mod composio;
 mod composio_api;
@@ -118,6 +120,9 @@ pub fn run() {
             commands::composio_status,
             commands::composio_connect,
             commands::composio_use_key,
+            commands::agents_status,
+            commands::codex_add_notify,
+            commands::codex_add_mcp,
             commands::composio_test,
             commands::setup_run,
             commands::backup_export,

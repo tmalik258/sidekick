@@ -23,7 +23,7 @@ export function ConnectionsTab({ onError }: { onError: (e: string) => void }) {
     <>
       <Section
         title="Composio"
-        hint="One sign-in, the same Composio account as Claude. Every app connected there (calendar, mail, Slack, Jira and more) works in Sidekick: meeting reminders, the morning brief, and reading them in Ask mode. Changes always go through Claude Code, which asks first."
+        hint="One sign-in, the same Composio account as Claude. Every app connected there (calendar, mail, Slack, Jira and more) works in Sidekick: meeting reminders, the morning brief, and reading them in Ask mode. Changes always go through your coding agent (Claude Code or Codex), which asks first."
         keywords="apps accounts jira slack gmail notion trello github linear fathom outlook login sign in"
       >
         <ComposioCard onError={onError} />
@@ -48,6 +48,13 @@ export function ConnectionsTab({ onError }: { onError: (e: string) => void }) {
         keywords="hooks mcp permission settings.json terminal"
       >
         <ClaudeCard onError={onError} />
+      </Section>
+      <Section
+        title="Codex"
+        hint="OpenAI's coding agent, if you use it instead of Claude Code or next to it. Notifications tell Sidekick when a turn is done; Sidekick's tools let Codex search your history and show notes on the island."
+        keywords="openai codex chatgpt notify mcp config.toml terminal"
+      >
+        <CodexCard onError={onError} />
       </Section>
     </>
   );
@@ -226,7 +233,7 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
       {note && <p className="text-[12px] text-(--muted)">{note}</p>}
       <Toggle
         label="Use these apps in Ask mode"
-        hint="The local model reads them; Continue in Claude Code for changes. Off for questions marked This PC only."
+        hint="The local model reads them; changes go through your coding agent (Claude Code or Codex). Off for questions marked This PC only."
         checked={composio.enabled}
         onChange={(enabled) =>
           void updateSettings({ composio: { ...composio, enabled } }).catch((e) => onError(String(e)))
@@ -514,6 +521,55 @@ function ClaudeCard({ onError }: { onError: (e: string) => void }) {
           </div>
         </div>
       </details>
+    </div>
+  );
+}
+
+function CodexCard({ onError }: { onError: (e: string) => void }) {
+  // Shares the setup checklist's cache, so both show the same state at once.
+  const { data: status, refresh: reload } = useCached<SetupStatus>("setup-status", api.setupStatus);
+  const items = status?.items ?? null;
+  const [note, setNote] = useState<string | null>(null);
+  const refresh = () => void reload().catch(() => undefined);
+  const item = (id: string) => items?.find((i) => i.id === id);
+  const installed = item("codex")?.done ?? false;
+  const run = (what: "notify" | "mcp") => {
+    setNote(null);
+    const p = what === "notify" ? api.codexAddNotify() : api.codexAddMcp();
+    p.then((backup) => setNote(backup ? `Added. Codex's old settings are saved as ${backup}.` : "Added."))
+      .then(refresh)
+      .catch((e) => onError(String(e)));
+  };
+  const notify = item("codex_notify");
+  const tools = item("codex_mcp");
+  return (
+    <div className="flex flex-col gap-2.5 text-[13px]">
+      {!installed && items && (
+        <p className="text-(--muted)">
+          Codex is not installed. Install it from Home &gt; Setup, then run codex once to sign in.
+        </p>
+      )}
+      <Row
+        title="Notifications"
+        status={notify?.status ?? "..."}
+        done={notify?.done ?? false}
+        action={
+          <Button small primary onClick={() => run("notify")}>
+            Add for me
+          </Button>
+        }
+      />
+      <Row
+        title="Sidekick's tools (MCP)"
+        status={tools?.status ?? "..."}
+        done={tools?.done ?? false}
+        action={
+          <Button small primary onClick={() => run("mcp")}>
+            Add for me
+          </Button>
+        }
+      />
+      {note && <p className="text-[12px] text-(--muted) break-all">{note}</p>}
     </div>
   );
 }

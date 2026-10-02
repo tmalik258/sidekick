@@ -22,6 +22,8 @@ const TAB_LABELS: Record<string, string> = {
 const ONE_CLICK = new Set([
   "claude_hooks",
   "claude_mcp",
+  "codex_notify",
+  "codex_mcp",
   "browser",
   "code_folders",
   "search_folders",
@@ -32,7 +34,7 @@ const ONE_CLICK = new Set([
 ]);
 
 function oneClickLabel(id: string): string {
-  if (id === "claude_hooks" || id === "claude_mcp") return "Add for me";
+  if (id === "claude_hooks" || id === "claude_mcp" || id === "codex_notify" || id === "codex_mcp") return "Add for me";
   if (id === "composio" || id === "calendar" || id === "fathom") return "Connect";
   return "Set up";
 }
@@ -88,7 +90,11 @@ export const SetupRow = memo(function SetupRow({
         ? api.claudeAddHooks().then(() => undefined)
         : item.id === "claude_mcp"
           ? api.claudeAddMcp().catch(() => api.setupRun("claude_mcp"))
-          : api.composioSignIn();
+          : item.id === "codex_notify"
+            ? api.codexAddNotify().then(() => undefined)
+            : item.id === "codex_mcp"
+              ? api.codexAddMcp().then(() => undefined)
+              : api.composioSignIn();
     const outside = item.id === "composio" || item.id === "calendar" || item.id === "fathom";
     void work
       .then(() => {
@@ -127,6 +133,8 @@ export const SetupRow = memo(function SetupRow({
   const isDirect =
     item.id === "claude_hooks" ||
     item.id === "claude_mcp" ||
+    item.id === "codex_notify" ||
+    item.id === "codex_mcp" ||
     item.id === "composio" ||
     item.id === "calendar" ||
     item.id === "fathom";

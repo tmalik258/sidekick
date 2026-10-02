@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use sidekick_ai::{
-    AiProvider, Anthropic, CancellationToken, ChatRequest, ClaudeCode, Decider, LocalDecider,
-    Message, OpenAiCompat, Router, SemIf, Sink,
+    AiProvider, Anthropic, CancellationToken, ChatRequest, ClaudeCode, Codex, Decider,
+    LocalDecider, Message, OpenAiCompat, Router, SemIf, Sink,
 };
 use sidekick_core::{AiSettings, Settings};
 use sidekick_sensors::classify::{ClipKind, clip_kind};
@@ -47,6 +47,17 @@ fn providers(app: &AppHandle, ai: &AiSettings, all: bool) -> Vec<Arc<dyn AiProvi
                 model: Some(ai.claude_code.model.clone()).filter(|m| !m.is_empty()),
                 workdir: state.ai_workdir.clone(),
                 mcp_config: Some(state.ai_workdir.join(crate::mcp::CONFIG_FILE)),
+            })),
+            "codex" if all || ai.codex.enabled => out.push(Arc::new(Codex {
+                path: Some(ai.codex.path.trim())
+                    .filter(|p| !p.is_empty())
+                    .map(Into::into),
+                model: Some(ai.codex.model.clone()).filter(|m| !m.is_empty()),
+                workdir: state.ai_workdir.join("codex"),
+                mcp: Some((
+                    format!("http://127.0.0.1:{}/mcp", crate::mcp::PORT),
+                    state.mcp_token.clone(),
+                )),
             })),
             "anthropic" if all || ai.anthropic.enabled => {
                 out.push(Arc::new(Anthropic::new(Some(ai.anthropic.model.clone()))))
@@ -180,7 +191,7 @@ file.download_completed: path, dir, name, ext, kind (image|video|audio|document|
 port.listening / port.closed: port, pid, process (lowercase, no .exe), address, url
 clipboard.changed: kind (url|json|color|email|path|stack_trace|code|text|secret), preview, text (never for secret), entity (address|phone|date) with address+maps_url, number+whatsapp_url, or when+calendar_url
 window.focused: app, exe, title, pid
-claude.stop / claude.notification: project, cwd, session, message
+claude.stop / claude.notification / codex.stop: project, cwd, session, message
 claude.permission: id, project, tool, summary, seconds
 browser.login_form / browser.long_read / browser.upwork_job: url, domain, title, text, words, tab
 browser.site: domain, browser
