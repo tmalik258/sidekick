@@ -463,7 +463,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             "voice",
             Group::Connect,
             "Voice",
-            "Say \"Hey Sidekick\" and hear answers. About 180 MB, all on this PC.",
+            "Say \"Hey Sidekick\" and hear answers. About 425 MB, all on this PC.",
         )
         .done(
             voice_ready && settings.voice.enabled,

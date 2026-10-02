@@ -98,7 +98,7 @@ export const SETUP_CATALOG: Array<{
     id: "voice",
     group: "connect",
     title: "Voice",
-    why: 'Say "Hey Sidekick" and hear answers. About 180 MB, all on this PC.',
+    why: 'Say "Hey Sidekick" and hear answers. About 425 MB, all on this PC.',
     recommended: false,
   },
   {

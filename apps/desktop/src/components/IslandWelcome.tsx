@@ -15,6 +15,7 @@ import { updateSettings, useSidekick } from "@/lib/store";
 import type { SetupFound } from "@/lib/types";
 import { ASK_ORB } from "./AskPanel";
 import { SetupChecklist } from "./SetupChecklist";
+import { SpokenIntro } from "./SpokenIntro";
 
 const STEPS = ["Welcome", "Your AI", "Connect", "Tools", "Extras"] as const;
 
@@ -63,12 +64,7 @@ export function IslandWelcome() {
           transition={{ duration: 0.26, ease: [0.23, 1, 0.32, 1] }}
           className="settings-scroll -mr-3 max-h-95 min-h-55 overflow-y-auto pr-3"
         >
-          {step === 0 && (
-            <>
-              <Intro />
-              <FoundCard onDone={() => go(1)} />
-            </>
-          )}
+          {step === 0 && <FirstStep onFound={() => go(1)} />}
           {step === 1 && (
             <Step text="Chat, summaries and drafts use one of these. I try them in order, and still work without any.">
               <SetupChecklist groups={["ai"]} compact inlineGuides />
@@ -128,6 +124,29 @@ export function IslandWelcome() {
   );
 }
 
+/** Sidekick says hello (each word shown as it is heard), then the rest of
+ * the step appears. */
+function FirstStep({ onFound }: { onFound: () => void }) {
+  const [spoken, setSpoken] = useState(false);
+  return (
+    <div className="flex flex-col gap-3">
+      <SpokenIntro onDone={() => setSpoken(true)} />
+      <AnimatePresence initial={false}>
+        {spoken && (
+          <motion.div
+            initial={{ opacity: 0, y: 8, filter: "blur(4px)" }}
+            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+            transition={{ duration: 0.35, ease: [0.23, 1, 0.32, 1] }}
+          >
+            <Intro />
+            <FoundCard onDone={onFound} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function Intro() {
   const hotkey = useSidekick((s) => s.settings.paletteHotkey);
   const voiceStatus = useSidekick((s) => s.voiceStatus);
@@ -135,14 +154,10 @@ function Intro() {
   const missing = (voiceStatus?.missingBytes ?? 0) > 0;
   return (
     <div className="flex flex-col gap-3 text-[13.5px] leading-relaxed text-white/90">
-      <p>
-        I live up here and notice moments I can help with: a finished download, a dev server starting, a meeting about
-        to begin. I offer one or two buttons, and you decide.
-      </p>
       {(downloading || missing) && (
         <p className="rounded-2xl bg-white/[0.06] px-3.5 py-2.5 text-[12.5px] text-[rgb(235_235_245/0.7)]">
           {downloading
-            ? "Getting my voice ready (speech models download once, about 180 MB)…"
+            ? "Getting my voice ready (speech models download once, about 425 MB)…"
             : "Speech models will download so I can talk with you."}
         </p>
       )}
@@ -283,7 +298,7 @@ function Extras() {
     <div className="flex flex-col gap-2.5 text-[13px]">
       <Choice
         title="Talk to me"
-        hint='Say "Hey Sidekick". Downloads about 180 MB of speech models once; all on this PC.'
+        hint='Say "Hey Sidekick". Downloads about 425 MB of speech models once; all on this PC.'
         on={settings.voice.enabled}
         onChange={(enabled) => {
           void updateSettings({ voice: { ...settings.voice, enabled } });

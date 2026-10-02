@@ -1,0 +1,161 @@
+"use client";
+
+// The first thing Sidekick says, shown word by word as it is heard. Rust
+// reports when each sentence starts sounding and how long it lasts (Unix ms,
+// so a late-mounting panel still lines up); words inside a sentence are
+// spread by length, with a beat after punctuation. Every word is in the
+// layout from the start, so revealing one never moves the others. With no
+// audio (no speakers, or voice failed) the words keep a natural speaking pace
+// on their own.
+
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { api, EVENTS, listen } from "@/lib/bridge";
+import type { WelcomeSpeech } from "@/lib/types";
+
+/** Pace when nothing is heard: about 3 words a second, like speech. */
+const WORD_MS = 330;
+/** How long to wait for audio before pacing the words ourselves. */
+const AUDIO_WAIT_MS = 4000;
+
+/** Revealed once per run; going Back to this step shows it whole. */
+let finishedThisRun = false;
+
+function words(text: string): string[] {
+  return text.split(/\s+/).filter(Boolean);
+}
+
+/** Relative time a word takes: its letters, plus a beat after punctuation. */
+function weight(word: string): number {
+  const end = word.at(-1) ?? "";
+  return word.length + 1 + (/[.!?]/.test(end) ? 4 : /[,;:]/.test(end) ? 2 : 0);
+}
+
+/**
+ * When each word of `script` appears (Unix ms), from the sentences heard so
+ * far. Words not heard yet get Infinity.
+ */
+export function revealTimes(script: string, speech: WelcomeSpeech | null, pacedFrom: number | null): number[] {
+  const all = words(script);
+  const times = all.map(() => Number.POSITIVE_INFINITY);
+  if (speech && speech.pieces.length > 0) {
+    let i = 0;
+    for (const piece of speech.pieces) {
+      const own = words(piece.text);
+      const total = own.reduce((n, w) => n + weight(w), 0) || 1;
+      let at = piece.startsAt;
+      for (const w of own) {
+        if (i >= times.length) break;
+        times[i] = at;
+        at += (piece.ms * weight(w)) / total;
+        i += 1;
+      }
+    }
+    return times;
+  }
+  if (pacedFrom !== null) {
+    let at = pacedFrom;
+    for (let i = 0; i < all.length; i += 1) {
+      times[i] = at;
+      at += (WORD_MS * weight(all[i])) / 6;
+    }
+  }
+  return times;
+}
+
+/** When the line is over: the voice's own end, or the last paced word. */
+function endTime(times: number[], speech: WelcomeSpeech | null, paced: boolean): number | null {
+  if (speech?.endsAt && speech.pieces.length > 0) return speech.endsAt;
+  if (paced && times.length > 0) return (times.at(-1) ?? 0) + 600;
+  return null;
+}
+
+export function SpokenIntro({ onDone }: { onDone: () => void }) {
+  const [speech, setSpeech] = useState<WelcomeSpeech | null>(null);
+  const [pacedFrom, setPacedFrom] = useState<number | null>(null);
+  const [shown, setShown] = useState(finishedThisRun ? Number.POSITIVE_INFINITY : 0);
+  const done = useRef(finishedThisRun);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+
+  // The timeline so far, then each update as sentences are queued.
+  useEffect(() => {
+    let live = true;
+    void api
+      .voiceWelcome()
+      .then((s) => live && setSpeech(s))
+      .catch(() => undefined);
+    const off = listen(EVENTS.voiceWelcome, (s) => live && setSpeech(s));
+    return () => {
+      live = false;
+      void off.then((f) => f());
+    };
+  }, []);
+
+  // No audio coming: pace the words ourselves.
+  useEffect(() => {
+    if (finishedThisRun || pacedFrom !== null) return;
+    if (speech?.silent) {
+      setPacedFrom(Date.now());
+      return;
+    }
+    if (speech && speech.pieces.length > 0) return;
+    const id = setTimeout(() => setPacedFrom(Date.now()), AUDIO_WAIT_MS);
+    return () => clearTimeout(id);
+  }, [speech, pacedFrom]);
+
+  const script = speech?.script ?? "";
+  const list = useMemo(() => words(script), [script]);
+  const usePaced = pacedFrom !== null && !(speech && speech.pieces.length > 0);
+  const times = useMemo(
+    () => revealTimes(script, speech, usePaced ? pacedFrom : null),
+    [script, speech, usePaced, pacedFrom],
+  );
+  const ends = endTime(times, speech, usePaced);
+
+  // One clock for the whole line; state changes only when another word
+  // appears, so the paragraph re-renders once per word, not per frame.
+  useEffect(() => {
+    if (done.current || list.length === 0) return;
+    let frame = 0;
+    const tick = () => {
+      const now = Date.now();
+      const count = times.filter((t) => t <= now).length;
+      setShown((n) => (n === count ? n : count));
+      if (ends !== null && now >= ends && count >= list.length) {
+        done.current = true;
+        finishedThisRun = true;
+        onDoneRef.current();
+        return;
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [times, ends, list.length]);
+
+  // Already finished earlier in this run: tell the step at once.
+  useEffect(() => {
+    if (finishedThisRun) onDoneRef.current();
+  }, []);
+
+  return (
+    <p className="min-h-[4.5em] font-display text-[17px] leading-snug tracking-[-0.01em] text-white">
+      {/* Screen readers get the whole line at once. */}
+      <span className="sr-only">{script}</span>
+      {list.map((w, i) => (
+        // Words are fixed for the line; the index is their identity.
+        // biome-ignore lint/suspicious/noArrayIndexKey: stable list
+        <Fragment key={i}>
+          <span
+            aria-hidden="true"
+            className={`inline-block transition-[opacity,filter,transform] duration-300 ease-out ${
+              i < shown ? "translate-y-0 opacity-100 blur-0" : "translate-y-[2px] opacity-0 blur-[3px]"
+            }`}
+          >
+            {w}
+          </span>{" "}
+        </Fragment>
+      ))}
+    </p>
+  );
+}

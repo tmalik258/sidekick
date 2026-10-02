@@ -176,11 +176,22 @@ pub struct VoiceSettings {
     pub conversation: bool,
     /// Read suggestions aloud and take a spoken choice ("open", "not now").
     pub speak_suggestions: bool,
-    /// Kokoro voice id, e.g. "af_bella".
+    /// Kokoro voice id, e.g. "af_heart".
     pub voice: String,
     /// 0.5 to 2.0.
     pub speed: f32,
+    /// Which Kokoro model the voice was picked for. Files saved before v1.0
+    /// lack it and read as 1, so the old default moves to the new one once.
+    #[serde(default = "voice_model_v1")]
+    pub model: u32,
 }
+
+/// Settings saved before the v1.0 voice model had no `model` field.
+fn voice_model_v1() -> u32 {
+    1
+}
+
+pub const VOICE_MODEL: u32 = 2;
 
 impl Default for VoiceSettings {
     fn default() -> Self {
@@ -190,8 +201,9 @@ impl Default for VoiceSettings {
             speak_answers: true,
             conversation: true,
             speak_suggestions: true,
-            voice: "af_bella".into(),
+            voice: "af_heart".into(),
             speed: 1.0,
+            model: VOICE_MODEL,
         }
     }
 }
@@ -454,6 +466,14 @@ impl Settings {
             self.semantic_search.model = SemanticSearch::default().model;
         }
         self.calendar.remind_minutes = self.calendar.remind_minutes.clamp(1, 30);
+        // The v0.19 default (Bella) gives way to Heart, v1.0's most natural
+        // voice; a voice picked on purpose since then is kept.
+        if self.voice.model < VOICE_MODEL {
+            if matches!(self.voice.voice.as_str(), "af_bella" | "af") {
+                self.voice.voice = VoiceSettings::default().voice;
+            }
+            self.voice.model = VOICE_MODEL;
+        }
         if self.voice.voice.trim().is_empty() {
             self.voice.voice = VoiceSettings::default().voice;
         }
@@ -486,6 +506,19 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn moves_the_old_default_voice_to_heart_once() {
+        let old: Settings = serde_json::from_str(r#"{"voice": {"voice": "af_bella"}}"#).unwrap();
+        let mut old = old.sanitized();
+        assert_eq!(old.voice.voice, "af_heart");
+        // Picking Bella again later is respected.
+        old.voice.voice = "af_bella".into();
+        assert_eq!(old.sanitized().voice.voice, "af_bella");
+        let chosen: Settings =
+            serde_json::from_str(r#"{"voice": {"voice": "bm_george"}}"#).unwrap();
+        assert_eq!(chosen.sanitized().voice.voice, "bm_george");
+    }
 
     #[test]
     fn ai_order_keeps_known_ids_once_and_adds_missing() {
