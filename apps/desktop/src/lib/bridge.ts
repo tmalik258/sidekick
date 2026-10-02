@@ -50,6 +50,7 @@ export const EVENTS = {
   aiDelta: "ai://delta",
   aiDone: "ai://done",
   aiTool: "ai://tool",
+  aiProposal: "ai://proposal",
   askOpen: "ask://open",
   askClose: "ask://close",
   actionResult: "action://result",
@@ -72,6 +73,7 @@ export interface EventPayloads {
   [EVENTS.aiDelta]: { id: string; text: string };
   [EVENTS.aiDone]: { id: string; provider: string | null; error: string | null; handoff: string | null };
   [EVENTS.aiTool]: { id: string; name: string };
+  [EVENTS.aiProposal]: { chatId: string; id: string; label: string };
   [EVENTS.askOpen]: AskOpen;
   [EVENTS.askClose]: { reason: "close" | "defer" };
   [EVENTS.actionResult]: ActionResult;
@@ -155,6 +157,8 @@ export const api = {
   projectsList: () => invoke<{ name: string; path: string }[]>("projects_list"),
   projectLaunch: (path: string) => invoke<string>("project_launch", { path }),
   aiHandoff: (messages: ChatMessage[], reason: string | null) => invoke<string>("ai_handoff", { messages, reason }),
+  aiRunProposal: (id: string) =>
+    invoke<{ ok: boolean; message: string; undoId: number | null; path: string | null }>("ai_run_proposal", { id }),
   composioImport: () => invoke<Settings>("composio_import"),
   composioSignIn: () => invoke<string>("composio_sign_in"),
   composioSignOut: () => invoke<void>("composio_sign_out"),

@@ -279,7 +279,8 @@ fn handoff_tool() -> ToolDef {
 
 pub const TOOLS_SYSTEM: &str = "\n\nTools: search finds the user's files and history on this \
 PC, today gives meetings and time, recent shows what just happened, open opens a file, folder \
-or page. Other tools read the user's apps; you cannot send, create, change or delete there. \
+or page, propose offers an action (move, zip, convert, open) as a button the user taps; \
+never say you did something you only proposed. Other tools read the user's apps; you cannot send, create, change or delete there. \
 Look things up before answering. When the request needs a change in an app or more than you \
 can do, call continue_in_claude_code with a short reason, then say in one sentence that Claude \
 Code can finish it. Never invent data you did not read with a tool.";
@@ -330,7 +331,7 @@ impl ToolRunner for Runner {
                  Claude Code can do it."
             );
         }
-        if let Some(out) = crate::ask_tools::run(&self.app, name, arguments).await {
+        if let Some(out) = crate::ask_tools::run(&self.app, &self.chat_id, name, arguments).await {
             return out;
         }
         let Some(client) = &self.client else {

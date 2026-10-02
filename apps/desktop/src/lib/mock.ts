@@ -181,10 +181,17 @@ function mockChat(a: Record<string, unknown>) {
     }
   };
   emit("ai://tool", { id, name: "search" });
+  later(1200, () => emit("ai://proposal", { chatId: id, id: `p-${id}`, label: "Move invoice-sept.pdf to Invoices" }));
   setTimeout(tick, 900);
 }
 
 commands.ai_chat = (a) => mockChat(a);
+commands.ai_run_proposal = () => ({
+  ok: true,
+  message: "Moved invoice-sept.pdf to Invoices",
+  undoId: 1,
+  path: "C:/Users/you/Documents/Invoices/invoice-sept.pdf",
+});
 commands.ai_cancel = () => undefined;
 let welcomeDeferred = false;
 commands.ask_close = () => {
