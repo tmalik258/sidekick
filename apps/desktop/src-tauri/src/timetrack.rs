@@ -102,8 +102,13 @@ pub fn on_window(app: &AppHandle, payload: &Value) {
         write(app, span, now);
     }
     let editor = EDITORS.contains(&exe);
+    let project = if crate::routines::is_browser(exe) {
+        crate::routines::current_site()
+    } else {
+        project_from_title(exe, title)
+    };
     *current = Some(Span {
-        project: project_from_title(exe, title),
+        project,
         app: name,
         editor,
         counted_to: now,

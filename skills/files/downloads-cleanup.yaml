@@ -1,13 +1,15 @@
 id: files.downloads-cleanup
 name: Downloads cleanup
-description: Once a week, when Downloads has piled up, offer to move files older than 30 days to the Recycle Bin (FR-FILE-07).
+description: When Downloads piles up, offer to sort loose files into folders, clear installers you most likely ran already, and move files older than 30 days to the Recycle Bin (FR-FILE-07). About once a week at most.
 priority: 20
 cooldown_secs: 518400
 trigger:
   event: files.downloads_old
 suggestion:
-  title: "Clean up Downloads?"
-  detail: "{{count}} files older than 30 days, {{mb}} MB"
+  title: "Downloads is piling up"
+  detail: "{{summary}}"
   options:
-    - { label: Move to Recycle Bin, action: clean_downloads }
+    - { label: Sort into folders, action: sort_downloads, when: { loose: { range: [1, 1000000] } } }
+    - { label: Remove old installers, action: clean_installers, when: { installers: { range: [1, 1000000] } } }
+    - { label: Move old files to Recycle Bin, action: clean_downloads, when: { count: { range: [1, 1000000] } } }
     - { label: Look first, action: open_folder, args: { path: "{{dir}}" } }

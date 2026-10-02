@@ -4,6 +4,8 @@ Sidekick runs on your PC and keeps what it sees there.
 
 - **Events and history** are stored in a local SQLite database. You can pause all sensors from the tray or Ask mode, and switch each one off in Settings > Privacy and data.
 - **Ignored apps and sites** (Settings > Privacy and data): nothing from them is stored, indexed or shown to skills. Password managers are on the list from the start.
+- **Routines** (Settings > Privacy and data): the first time you open each app, and each site in your active tab (with the browser extension, domain only, never the page), during the first hour of a day. Kept for 60 days on this PC to suggest your usual start. Switch it off or press Forget routines any time.
+- **Work log**: Save to work log appends to Documents\Sidekick\worklog.md, only when you press it.
 - **Clipboard secrets** (keys, tokens, passwords) are detected and never stored, indexed or sent to AI.
 - **Passwords** are filled from your own 1Password or Bitwarden CLI. Sidekick never reads browser password stores or cookies.
 - **AI** only sees what you send it: your question, plus the window, clipboard, page or screenshot you choose to attach. Claude Code runs in an empty folder and Sidekick never reads its credential files.

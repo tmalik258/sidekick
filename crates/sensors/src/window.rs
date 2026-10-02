@@ -73,6 +73,7 @@ impl Sensor for WindowSensor {
                         serde_json::json!({
                             "app": win.app_name,
                             "exe": exe,
+                            "path": win.process_path.to_string_lossy(),
                             "title": win.title,
                             "pid": win.process_id,
                             "x": win.position.x,

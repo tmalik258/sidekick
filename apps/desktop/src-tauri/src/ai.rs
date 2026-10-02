@@ -178,11 +178,12 @@ pub struct Attach {
 const EVENT_CATALOG: &str = "\
 file.download_completed: path, dir, name, ext, kind (image|video|audio|document|archive|installer|code|other), size, size_human, stem, duplicate_of, duplicate_name, signature (installers)
 port.listening / port.closed: port, pid, process (lowercase, no .exe), address, url
-clipboard.changed: kind (url|json|color|email|path|stack_trace|code|text|secret), preview, text (never for secret)
+clipboard.changed: kind (url|json|color|email|path|stack_trace|code|text|secret), preview, text (never for secret), entity (address|phone|date) with address+maps_url, number+whatsapp_url, or when+calendar_url
 window.focused: app, exe, title, pid
 claude.stop / claude.notification: project, cwd, session, message
 claude.permission: id, project, tool, summary, seconds
 browser.login_form / browser.long_read / browser.upwork_job: url, domain, title, text, words, tab
+browser.site: domain, browser
 browser.many_tabs: count, duplicates
 system.disk_low: mount, free_human, total_human, percent_free
 system.memory_high: percent, process, process_mb
@@ -190,12 +191,15 @@ focus.long_session: app, project, minutes
 file.screenshot: path, dir, name, ext, kind, size
 dev.unsaved_work: count, names, first, first_path, changed, unpushed
 time.day_summary: total_human, top, text
-day.morning_brief: headline, text, reviews, first_url, first_title
-calendar.meeting_soon: title, minutes, start, join_url, location, attendees, details
+day.morning_brief: headline, text, reviews, first_url, first_title, routine_count, routine_text, item1..item3, offer_auto, auto
+calendar.meeting_soon: title, minutes, start, join_url, location, attendees, details, doc_title, doc_url or doc_path (what matches it in history)
 calendar.meeting_ended: title, start, start_utc, attendees
 dev.repo_opened: name, path, branch, behind, ahead, changed, env_missing, docker_needed, docker_running, deps_needed
 dev.stuck: preview, minutes (the same error copied again)
-files.downloads_old: count, mb, dir
+day.back: minutes, app, title, page_title, page_url, recap
+time.late_night: time
+time.week_summary: total_human, top, text
+files.downloads_old: count, mb, loose, installers, summary, dir
 system.monitor_connected: monitors
 system.battery_low: percent
 user.idle / user.active: idle_secs / away_secs";

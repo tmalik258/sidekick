@@ -1,0 +1,20 @@
+id: system.week-summary
+name: Weekly summary
+description: On Friday afternoon, where your week went by day and project, ready for a client update or a timesheet.
+priority: 45
+cooldown_secs: 259200
+trigger:
+  event: time.week_summary
+suggestion:
+  title: "This week: {{total_human}}"
+  detail: "{{top}}"
+  options:
+    - label: Write my weekly update
+      action: ask_ai
+      args:
+        prompt: "Write a short weekly update for my client or team from this time summary: what I worked on, in three to five bullets, plain and friendly."
+        page: "{{text}}"
+        clipboard: "false"
+      requires: ["ai"]
+    - { label: Copy, action: copy_text, args: { text: "{{text}}" } }
+    - { label: Save to work log, action: save_log, args: { text: "{{text}}" } }

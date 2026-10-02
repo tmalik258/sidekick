@@ -57,9 +57,25 @@ pub fn compose(
     reviews: &[Pr],
     mine: &[Pr],
     waiting: &Waiting,
+    routine: &[(String, String)],
 ) -> Option<Event> {
     let mut parts = Vec::new();
     let mut lines = Vec::new();
+
+    if !routine.is_empty() {
+        parts.push(format!(
+            "Your usual: {}",
+            routine
+                .iter()
+                .map(|(_, label)| label.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        lines.push("Usual start:".into());
+        for (kind, label) in routine {
+            lines.push(format!("- {label} ({kind})"));
+        }
+    }
 
     let total: i64 = yesterday.iter().map(|r| r.secs).sum();
     if total >= 30 * 60 {
@@ -130,6 +146,11 @@ pub fn compose(
     }
     if parts.is_empty() {
         return None;
+    }
+    // The setup line goes below the day's news on the card.
+    if !routine.is_empty() && parts.len() > 1 {
+        let usual = parts.remove(0);
+        parts.push(usual);
     }
     let first_url = reviews.first().or(mine.first()).map(|p| p.url.clone());
     Some(Event::new(
@@ -360,7 +381,13 @@ fn unsaved_repos(roots: &[PathBuf]) -> Vec<Repo> {
         .collect()
 }
 
-fn gather(app: &AppHandle, roots: &[PathBuf], waiting: &Waiting) -> Option<Event> {
+fn gather(
+    app: &AppHandle,
+    roots: &[PathBuf],
+    waiting: &Waiting,
+    routine: &[crate::routines::Item],
+    auto: bool,
+) -> Option<Event> {
     let yesterday = (Local::now() - chrono::Duration::days(1))
         .format("%Y-%m-%d")
         .to_string();
@@ -386,7 +413,16 @@ fn gather(app: &AppHandle, roots: &[PathBuf], waiting: &Waiting) -> Option<Event
     let repos = unsaved_repos(roots);
     let reviews = gh("--review-requested=@me");
     let mine = gh("--author=@me");
-    compose(&rows, &meetings, &repos, &reviews, &mine, waiting)
+    let shown: Vec<(String, String)> = routine
+        .iter()
+        .map(|i| (i.kind.clone(), i.label.clone()))
+        .collect();
+    let mut event = compose(&rows, &meetings, &repos, &reviews, &mine, waiting, &shown)?;
+    let fields = crate::routines::card_fields(routine, &crate::routines::memory(app), auto);
+    if let Some(obj) = event.payload.as_object_mut() {
+        obj.extend(fields);
+    }
+    Some(event)
 }
 
 /// The day the last brief was shown, kept in a small file so a restart does
@@ -415,12 +451,31 @@ pub fn start(app: &AppHandle, marker: PathBuf, roots: Vec<PathBuf>) {
                 continue;
             }
             let _ = std::fs::write(&marker, &today);
+            crate::routines::prune(&app);
+            let (on, auto) = {
+                let s = lock(&state.settings);
+                (s.routines, s.routines_auto)
+            };
+            let routine = if on && crate::routines::memory(&app).hidden_day != today {
+                crate::routines::today(&app)
+            } else {
+                Vec::new()
+            };
+            let auto = auto && !routine.is_empty();
+            if auto {
+                match crate::routines::open_all(&app, false).await {
+                    Ok(msg) => log::info!("routine: {msg}"),
+                    Err(err) => log::warn!("routine: {err}"),
+                }
+            }
             let waiting = waiting(&app).await;
             let (app2, roots2) = (app.clone(), roots.clone());
-            let event = tokio::task::spawn_blocking(move || gather(&app2, &roots2, &waiting))
-                .await
-                .ok()
-                .flatten();
+            let event = tokio::task::spawn_blocking(move || {
+                gather(&app2, &roots2, &waiting, &routine, auto)
+            })
+            .await
+            .ok()
+            .flatten();
             if let Some(e) = event {
                 app.state::<AppState>().bus.publish(e);
             }
@@ -467,7 +522,7 @@ mod tests {
             mail: parse_mail(&mail),
             slack: parse_slack(&slack),
         };
-        let e = compose(&[], &[], &[], &[], &[], &w).unwrap();
+        let e = compose(&[], &[], &[], &[], &[], &w, &[]).unwrap();
         assert_eq!(
             e.payload["headline"],
             "1 Jira issue · 1 unread email · 1 Slack message"
@@ -500,6 +555,7 @@ mod tests {
             &[pr("me/api", "Fix login")],
             &[],
             &Waiting::default(),
+            &[],
         )
         .unwrap();
         assert_eq!(
@@ -514,13 +570,29 @@ mod tests {
     }
 
     #[test]
+    fn the_usual_setup_goes_below_the_news() {
+        let routine = [
+            ("app".to_owned(), "Code".to_owned()),
+            ("site".to_owned(), "github.com".to_owned()),
+        ];
+        let only = compose(&[], &[], &[], &[], &[], &Waiting::default(), &routine).unwrap();
+        assert_eq!(only.payload["headline"], "Your usual: Code, github.com");
+        let meetings = [("10:00".to_owned(), "Standup".to_owned())];
+        let both = compose(&[], &meetings, &[], &[], &[], &Waiting::default(), &routine).unwrap();
+        assert_eq!(
+            both.payload["headline"],
+            "1 meeting · Your usual: Code, github.com"
+        );
+    }
+
+    #[test]
     fn nothing_to_say_is_no_brief() {
         let short = [AppTime {
             app: "Code".into(),
             project: String::new(),
             secs: 600,
         }];
-        assert!(compose(&short, &[], &[], &[], &[], &Waiting::default()).is_none());
+        assert!(compose(&short, &[], &[], &[], &[], &Waiting::default(), &[]).is_none());
     }
 
     #[test]

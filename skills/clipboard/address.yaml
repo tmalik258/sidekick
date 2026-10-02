@@ -1,0 +1,16 @@
+id: clipboard.address
+name: Copied addresses
+description: When you copy a street address, offer to open it in Google Maps.
+priority: 35
+cooldown_secs: 20
+dedupe: "{{address}}"
+trigger:
+  event: clipboard.changed
+  where:
+    entity: { equals: address }
+suggestion:
+  title: "Address copied"
+  detail: "{{address}}"
+  options:
+    - { label: Open in Maps, action: open_url, args: { url: "{{maps_url}}" } }
+    - { label: Copy as one line, action: copy_text, args: { text: "{{address}}" } }

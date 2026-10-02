@@ -73,6 +73,30 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/clipboard/format-json.yaml"),
     ),
     (
+        "clipboard/address.yaml",
+        include_str!("../../../skills/clipboard/address.yaml"),
+    ),
+    (
+        "clipboard/phone.yaml",
+        include_str!("../../../skills/clipboard/phone.yaml"),
+    ),
+    (
+        "clipboard/date.yaml",
+        include_str!("../../../skills/clipboard/date.yaml"),
+    ),
+    (
+        "system/back.yaml",
+        include_str!("../../../skills/system/back.yaml"),
+    ),
+    (
+        "system/late-night.yaml",
+        include_str!("../../../skills/system/late-night.yaml"),
+    ),
+    (
+        "system/week-summary.yaml",
+        include_str!("../../../skills/system/week-summary.yaml"),
+    ),
+    (
         "dev/explain-error.yaml",
         include_str!("../../../skills/dev/explain-error.yaml"),
     ),
@@ -217,6 +241,8 @@ pub const ACTIONS: &[&str] = &[
     "launch_project",
     "trash_download",
     "clean_downloads",
+    "sort_downloads",
+    "clean_installers",
     "summarize_file",
     "restore_layout",
     "claude_allow",
@@ -230,6 +256,11 @@ pub const ACTIONS: &[&str] = &[
     "browser_fill",
     "browser_close_duplicates",
     "browser_save_session",
+    "save_log",
+    "routine_open_all",
+    "routine_open",
+    "routine_skip",
+    "routine_auto",
     "noop",
 ];
 

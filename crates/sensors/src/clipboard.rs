@@ -91,6 +91,15 @@ fn clip_event(text: &str) -> Event {
         {
             obj.extend(extra);
         }
+        // An address, a phone number or a date in plain text.
+        if kind == ClipKind::Text
+            && let (Some(obj), Some(serde_json::Value::Object(extra))) = (
+                payload.as_object_mut(),
+                crate::entity::detect(trimmed, chrono::Local::now().date_naive()),
+            )
+        {
+            obj.extend(extra);
+        }
         payload
     };
     let sensitivity = if kind == ClipKind::Secret {
