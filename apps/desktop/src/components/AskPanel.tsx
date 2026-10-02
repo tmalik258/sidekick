@@ -8,7 +8,9 @@
 import { AnimatePresence, motion } from "motion/react";
 import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
+import { useCached } from "@/lib/cache";
 import { Markdown } from "@/lib/markdown";
+import { splitOptions } from "@/lib/options";
 import {
   cancelChat,
   newChat,
@@ -22,6 +24,8 @@ import {
   useSidekick,
 } from "@/lib/store";
 import {
+  type AskContext,
+  type CalendarToday,
   type ChatSummary,
   isPaused,
   PROVIDER_LABELS,
@@ -114,6 +118,23 @@ export function AskPanel() {
   }, [turns]);
 
   const paused = isPaused(settings.pause);
+  const chatPage = useSidekick((s) => s.chatPage);
+  const { data: calendar } = useCached<CalendarToday>("calendar-today", api.calendarToday);
+  const starters = useMemo(
+    () =>
+      contextStarters({
+        context: ask?.context ?? null,
+        page: chatPage,
+        meeting: soonestMeeting(calendar),
+        // After the row runs (which clears the input), type the prefix in.
+        focusInput: (prefix) =>
+          requestAnimationFrame(() => {
+            setText(prefix);
+            inputRef.current?.focus();
+          }),
+      }),
+    [ask?.context, chatPage, calendar],
+  );
   const commands = useMemo<Command[]>(() => {
     const all: Command[] = [
       paused
@@ -169,7 +190,7 @@ export function AskPanel() {
       stay: true,
     }));
     const q = text.trim().toLowerCase();
-    if (!q) return turns.length ? all : [...all, ...recent.slice(0, 3)];
+    if (!q) return turns.length ? all : [...starters, ...all, ...recent.slice(0, 3)];
     // Typing a project's name offers to open it (FR-DEV-10).
     const launch: Command[] = projects
       .filter((p) => p.name.toLowerCase().includes(q.replace(/^open\s+/, "")))
@@ -183,7 +204,7 @@ export function AskPanel() {
       }));
     const pickUp = recent.filter((c) => c.label.toLowerCase().includes(q)).slice(0, 3);
     return [...all.filter((c) => c.label.toLowerCase().includes(q)), ...launch, ...pickUp];
-  }, [paused, settings.muted, turns.length, text, projects, chats]);
+  }, [paused, settings.muted, turns.length, text, projects, chats, starters]);
 
   if (!ask) return null;
 
@@ -230,6 +251,16 @@ export function AskPanel() {
     } else if (e.key === "ArrowUp" && rows) {
       e.preventDefault();
       setSelected((s) => (s - 1 + rows) % rows);
+    } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      // Ctrl Enter: this conversation (and what is typed) goes to Claude Code.
+      e.preventDefault();
+      const messages = turns
+        .filter((t) => !t.error && t.content.trim())
+        .map(({ role, content }) => ({ role, content }));
+      if (text.trim()) messages.push({ role: "user", content: text.trim() });
+      if (messages.length === 0) return;
+      setText("");
+      void api.aiHandoff(messages, null).then(() => api.askClose());
     } else if (e.key === "Enter") {
       e.preventDefault();
       if (rows) runRow(selected);
@@ -406,6 +437,11 @@ export function AskPanel() {
           <span>
             <Kbd>Enter</Kbd> {asking ? "ask" : "run"}
           </span>
+          {(asking || turns.length > 0) && (
+            <span>
+              <Kbd>Ctrl Enter</Kbd> Claude Code
+            </span>
+          )}
           <span>
             <Kbd>Esc</Kbd> {streaming ? "stop" : "close"}
           </span>
@@ -670,6 +706,8 @@ function AddSkill({ yaml }: { yaml: string }) {
 
 function Chat({ turns }: { turns: Turn[] }) {
   const skillMode = useSidekick((s) => s.chatSkill);
+  const last = turns.at(-1);
+  const options = last?.role === "assistant" && !last.streaming ? splitOptions(last.content).options : [];
   return (
     <div className="space-y-2.5 py-1">
       {turns.map((t, i) => (
@@ -690,9 +728,13 @@ function Chat({ turns }: { turns: Turn[] }) {
             </div>
           ) : (
             <div className="text-[13.5px] leading-relaxed text-white/90">
-              {t.content ? <Markdown text={t.content} /> : t.streaming ? <Thinking /> : null}
+              {t.content ? (
+                <Markdown text={splitOptions(t.content, t.streaming).body} />
+              ) : t.streaming ? (
+                <Thinking />
+              ) : null}
               {t.streaming && t.tool && (
-                <p className="mt-0.5 text-[11.5px] text-[rgb(235_235_245/0.5)]">Reading with {toolLabel(t.tool)}...</p>
+                <p className="mt-0.5 text-[11.5px] text-[rgb(235_235_245/0.5)]">{toolStatus(t.tool)}</p>
               )}
               {t.error && (
                 <p className="mt-1 rounded-xl bg-[#ff453a]/15 px-3 py-2 text-[12.5px] text-[#ffb4ae]">{t.error}</p>
@@ -703,7 +745,9 @@ function Chat({ turns }: { turns: Turn[] }) {
                   {PROVIDER_LABELS[t.provider] ?? t.provider}
                 </p>
               )}
-              {!t.streaming && i === turns.length - 1 && (t.provider === "local" || t.error) && (
+              {i === turns.length - 1 && options.length > 0 && <AnswerOptions options={options} />}
+              {/* Offered when the local model gives up; Ctrl Enter works any time. */}
+              {!t.streaming && i === turns.length - 1 && (t.handoff || t.error) && (
                 <Handoff turns={turns} reason={t.handoff ?? null} />
               )}
             </div>
@@ -712,6 +756,134 @@ function Chat({ turns }: { turns: Turn[] }) {
       ))}
     </div>
   );
+}
+
+/** A meeting starting within the hour, from today's "HH:MM" list. */
+function soonestMeeting(calendar: CalendarToday | null): { title: string; start: string } | null {
+  const now = new Date();
+  for (const m of calendar?.meetings ?? []) {
+    const [h, min] = m.start.split(":").map(Number);
+    const at = new Date(now);
+    at.setHours(h ?? 0, min ?? 0, 0, 0);
+    const mins = (at.getTime() - now.getTime()) / 60_000;
+    if (mins >= -5 && mins <= 60) return m;
+  }
+  return null;
+}
+
+/**
+ * What Ask offers before you type, from what you are doing: the error you
+ * copied, the page you are on, the meeting coming up. Enter runs the first.
+ */
+function contextStarters({
+  context,
+  page,
+  meeting,
+  focusInput,
+}: {
+  context: AskContext | null;
+  page: string | null;
+  meeting: { title: string; start: string } | null;
+  focusInput: (prefix: string) => void;
+}): Command[] {
+  const out: Command[] = [];
+  const clip = context?.clipboardSecret ? null : context?.clipboardKind;
+  if (clip === "stack_trace") {
+    out.push({
+      id: "starter:error",
+      label: "Explain the error I copied",
+      hint: "Two ways to fix it",
+      icon: "ask",
+      run: () => sendChat("Explain the error I copied and give me the two most likely fixes.", { clipboard: true }),
+      stay: true,
+    });
+  }
+  if (page) {
+    out.push({
+      id: "starter:page",
+      label: "Summarize this page",
+      hint: "In three lines",
+      icon: "ask",
+      run: () => sendChat("Summarize this page in three short lines."),
+      stay: true,
+    });
+  }
+  if (meeting) {
+    out.push({
+      id: "starter:meeting",
+      label: `Prepare for ${meeting.title}`,
+      hint: `At ${meeting.start}`,
+      icon: "ask",
+      run: () =>
+        sendChat(`Help me prepare for "${meeting.title}" at ${meeting.start}: related notes, files and open items.`),
+      stay: true,
+    });
+  }
+  out.push(
+    {
+      id: "starter:find",
+      label: "Find a file...",
+      hint: "Searches your PC",
+      icon: "folder",
+      run: () => focusInput("Find "),
+      stay: true,
+    },
+    {
+      id: "starter:today",
+      label: "What did I work on today?",
+      icon: "ask",
+      run: () => sendChat("What did I work on today? Two lines."),
+      stay: true,
+    },
+  );
+  return out.slice(0, 3);
+}
+
+/** Next steps the answer offers: click one or press Alt 1-3 to ask it. */
+function AnswerOptions({ options }: { options: string[] }) {
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (!e.altKey) return;
+      const n = Number(e.key);
+      if (n >= 1 && n <= options.length) {
+        e.preventDefault();
+        sendChat(options[n - 1]);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [options]);
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {options.map((o, i) => (
+        <button
+          key={o}
+          type="button"
+          onClick={() => sendChat(o)}
+          className={`chip flex min-h-8 max-w-full items-center gap-2 rounded-full px-3 py-1.5 text-left text-[13px] font-medium ${
+            i === 0 ? "bg-white text-black hover:bg-white/90" : "bg-white/[0.12] text-white hover:bg-white/[0.2]"
+          }`}
+        >
+          <span className="leading-snug">{o}</span>
+          <kbd className={`shrink-0 font-sans text-[11px] ${i === 0 ? "text-black/40" : "text-white/35"}`}>
+            Alt {i + 1}
+          </kbd>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** What a tool call looks like while it runs. Sidekick's own tools by name. */
+const LOCAL_TOOLS: Record<string, string> = {
+  search: "Searching your PC...",
+  today: "Checking your day...",
+  recent: "Looking at what just happened...",
+  open: "Opening...",
+};
+
+function toolStatus(name: string): string {
+  return LOCAL_TOOLS[name] ?? `Reading with ${toolLabel(name)}...`;
 }
 
 /** `JIRA_SEARCH_ISSUES` reads as "Jira search issues". */
