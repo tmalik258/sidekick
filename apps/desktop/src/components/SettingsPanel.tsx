@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { friendlyError } from "@/lib/friendly";
 import { useSidekick } from "@/lib/store";
 import { AiTab } from "./settings/AiTab";
 import { ConnectionsTab } from "./settings/ConnectionsTab";
@@ -47,6 +48,8 @@ export function SettingsPanel() {
     if (t) setTab(t);
   }, [wantedTab]);
   const [error, setError] = useState<string | null>(null);
+  // Errors read as what to do next, not raw messages.
+  const report = useCallback((e: string) => setError(friendlyError(e)), []);
   const open = useCallback((id: string) => {
     const t = tabFor(id);
     if (t) {
@@ -106,11 +109,11 @@ export function SettingsPanel() {
 
       <SettingsQuery.Provider value={query.trim()}>
         <div className="settings-scroll -mr-3 flex max-h-[430px] flex-col gap-5 overflow-y-auto pr-3 pl-0.5 pb-3">
-          {show("home") && <HomeTab onError={setError} onOpenTab={open} />}
-          {show("ai") && <AiTab onError={setError} />}
-          {show("connections") && <ConnectionsTab onError={setError} />}
-          {show("privacy") && <PrivacyTab onError={setError} />}
-          {show("skills") && <SkillsTab onError={setError} />}
+          {show("home") && <HomeTab onError={report} onOpenTab={open} />}
+          {show("ai") && <AiTab onError={report} />}
+          {show("connections") && <ConnectionsTab onError={report} />}
+          {show("privacy") && <PrivacyTab onError={report} />}
+          {show("skills") && <SkillsTab onError={report} />}
         </div>
       </SettingsQuery.Provider>
     </div>

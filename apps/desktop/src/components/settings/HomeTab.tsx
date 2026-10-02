@@ -88,6 +88,8 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
         </Field>
       </Section>
       <Section
+        collapsible
+        summary={`Ask with ${settings.paletteHotkey}`}
         title="Shortcuts"
         hint="Click a shortcut, then press the keys you want. They work from any app."
         keywords="hotkey keyboard keys talk accept dismiss screen clipboard pause"
@@ -110,6 +112,8 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
         ))}
       </Section>
       <Section
+        collapsible
+        summary="Folders where your projects live"
         title="Your code"
         hint="For the end of day check on uncommitted work and the project launcher."
         keywords="code folders repos git projects end of day wsl"
@@ -124,7 +128,12 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
           />
         </Field>
       </Section>
-      <Section title="Startup and updates" keywords="launch login windows start update version">
+      <Section
+        collapsible
+        summary="Start with Windows, updates"
+        title="Startup and updates"
+        keywords="launch login windows start update version"
+      >
         <Toggle
           label="Start Sidekick with Windows"
           checked={settings.launchAtLogin}
@@ -138,6 +147,8 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
         />
       </Section>
       <Section
+        collapsible
+        summary={settings.muted ? "Muted" : "On"}
         title="Sound"
         hint="Sounds by SND (snd.dev), designed by Dentsu Inc. and Starryworks Inc."
         keywords="volume mute audio cue"
@@ -168,6 +179,8 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
         </details>
       </Section>
       <Section
+        collapsible
+        summary="What Sidekick did, with Undo"
         title="History"
         hint="Files Sidekick created can be undone for 24 hours; they go to the Recycle Bin."
         keywords="undo actions recent"
@@ -175,6 +188,8 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
         <RecentActions onError={onError} />
       </Section>
       <Section
+        collapsible
+        summary="Export or restore your settings"
         title="Backup"
         hint="One file with your settings, your own skills and the action history. Keys and sign-ins are left out."
         keywords="export import restore"
@@ -182,7 +197,7 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
         <Backup onError={onError} />
       </Section>
       {info && (
-        <Section title="About" keywords="version database path">
+        <Section collapsible summary={info.version} title="About" keywords="version database path">
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
             <dt className="text-(--muted)">Version</dt>
             <dd>{info.version}</dd>

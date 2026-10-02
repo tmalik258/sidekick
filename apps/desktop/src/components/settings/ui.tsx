@@ -27,20 +27,57 @@ export function Section({
   title,
   hint,
   keywords,
+  collapsible,
+  summary,
   children,
 }: {
   title: string;
   hint?: string;
   /** Extra words people might search for, e.g. "hotkey keyboard". */
   keywords?: string;
+  /** Shown as one row that opens on tap; searching opens it. */
+  collapsible?: boolean;
+  /** One line under a collapsed title, e.g. the current value. */
+  summary?: string;
   children: ReactNode;
 }) {
   const query = useContext(SettingsQuery);
+  const [open, setOpen] = useState(false);
   if (query && !matches(query, title, hint, keywords)) return null;
+  if (collapsible && !open && !query) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-expanded={false}
+        className="chip flex items-center gap-3 rounded-2xl bg-(--surface) px-4 py-3 text-left shadow-[0_0_0_0.5px_var(--border)] hover:bg-white/[0.06]"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] font-medium text-white">{title}</span>
+          {summary && <span className="block truncate text-[12px] text-(--muted)">{summary}</span>}
+        </span>
+        <svg aria-hidden="true" viewBox="0 0 12 12" className="size-3 shrink-0 -rotate-90 text-(--muted)">
+          <path
+            fill="currentColor"
+            d="M2.2 4.2a.75.75 0 0 1 1.06 0L6 6.94l2.74-2.74a.75.75 0 1 1 1.06 1.06l-3.27 3.27a.75.75 0 0 1-1.06 0L2.2 5.26a.75.75 0 0 1 0-1.06Z"
+          />
+        </svg>
+      </button>
+    );
+  }
   return (
     <section className="flex flex-col gap-2">
-      <div className="px-4">
-        <h2 className="text-[13px] font-semibold tracking-[-0.005em] text-[rgb(235_235_245/0.7)]">{title}</h2>
+      <div className="flex items-center px-4">
+        <h2 className="flex-1 text-[13px] font-semibold tracking-[-0.005em] text-[rgb(235_235_245/0.7)]">{title}</h2>
+        {collapsible && !query && (
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="chip text-[12px] text-(--muted) hover:text-white"
+          >
+            Close
+          </button>
+        )}
       </div>
       <div className="flex flex-col gap-3.5 rounded-2xl bg-(--surface) p-4 shadow-[0_0_0_0.5px_var(--border),0_1px_2px_rgb(0_0_0/0.04)]">
         {children}
