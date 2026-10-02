@@ -163,7 +163,7 @@ function mockChat(a: Record<string, unknown>) {
   const id = a.id as string;
   const messages = a.messages as { content: string }[];
   const last = messages[messages.length - 1]?.content ?? "";
-  const answer = `This is the browser preview, so no AI is connected.\n\nYou asked: "${last}"\n\n\`\`\`powershell\nwinget install Ollama.Ollama\nollama pull qwen3:4b\n\`\`\``;
+  const answer = `Found invoice-sept.pdf in Downloads, from Ali on Tuesday (preview, you asked "${last}").\nOPTION: Open invoice-sept.pdf\nOPTION: Show the folder\nOPTION: Find other invoices`;
   const words = answer.split(/(?<=\s)/);
   let i = 0;
   const tick = () => {
@@ -180,7 +180,7 @@ function mockChat(a: Record<string, unknown>) {
       });
     }
   };
-  emit("ai://tool", { id, name: "JIRA_SEARCH_ISSUES" });
+  emit("ai://tool", { id, name: "search" });
   setTimeout(tick, 900);
 }
 
