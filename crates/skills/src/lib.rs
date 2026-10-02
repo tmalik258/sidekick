@@ -230,6 +230,10 @@ pub const ACTIONS: &[&str] = &[
     "browser_fill",
     "browser_close_duplicates",
     "browser_save_session",
+    "routine_open_all",
+    "routine_open",
+    "routine_skip",
+    "routine_auto",
     "noop",
 ];
 

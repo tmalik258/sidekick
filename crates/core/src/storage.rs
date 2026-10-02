@@ -78,6 +78,18 @@ const MIGRATIONS: &[&str] = &[
         turns_json TEXT NOT NULL
     );
     CREATE INDEX chats_updated ON chats(updated);",
+    // What was opened in the first hour of each day, for routines.
+    "CREATE TABLE routine_opens (
+        day TEXT NOT NULL,
+        weekday INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        key TEXT NOT NULL,
+        label TEXT NOT NULL,
+        target TEXT NOT NULL,
+        browser TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        PRIMARY KEY (day, kind, key)
+    );",
 ];
 
 /// A saved Ask conversation, without its turns.
@@ -181,6 +193,22 @@ pub struct AppTime {
     pub app: String,
     pub project: String,
     pub secs: i64,
+}
+
+/// Something opened early in a day: an app (`kind` "app", `key` its exe)
+/// or a site (`kind` "site", `key` its domain). `seq` is the order it came
+/// in that day.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoutineOpen {
+    pub day: String,
+    pub weekday: u32,
+    pub kind: String,
+    pub key: String,
+    pub label: String,
+    pub target: String,
+    pub browser: String,
+    pub seq: u32,
 }
 
 /// One entry of the action log, newest first in [`Storage::recent_actions`].
@@ -735,6 +763,47 @@ impl Storage {
         Ok(())
     }
 
+    /// Records the first time `key` was opened on `o.day`; later opens that
+    /// day change nothing.
+    pub fn record_open(&self, o: &RoutineOpen) -> Result<bool, StorageError> {
+        Ok(self.conn.execute(
+            "INSERT OR IGNORE INTO routine_opens (day, weekday, kind, key, label, target, browser, seq)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![o.day, o.weekday, o.kind, o.key, o.label, o.target, o.browser, o.seq],
+        )? > 0)
+    }
+
+    /// Everything opened on or after `day` (YYYY-MM-DD), oldest day first.
+    pub fn opens_since(&self, day: &str) -> Result<Vec<RoutineOpen>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT day, weekday, kind, key, label, target, browser, seq FROM routine_opens
+             WHERE day >= ?1 ORDER BY day, seq",
+        )?;
+        let rows = stmt.query_map([day], |r| {
+            Ok(RoutineOpen {
+                day: r.get(0)?,
+                weekday: r.get(1)?,
+                kind: r.get(2)?,
+                key: r.get(3)?,
+                label: r.get(4)?,
+                target: r.get(5)?,
+                browser: r.get(6)?,
+                seq: r.get(7)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Forgets routines; `before` keeps the days on or after it.
+    pub fn clear_opens(&self, before: Option<&str>) -> Result<usize, StorageError> {
+        Ok(match before {
+            Some(day) => self
+                .conn
+                .execute("DELETE FROM routine_opens WHERE day < ?1", [day])?,
+            None => self.conn.execute("DELETE FROM routine_opens", [])?,
+        })
+    }
+
     pub fn count_events(&self) -> Result<u64, StorageError> {
         let count: i64 = self
             .conn
@@ -745,6 +814,29 @@ impl Storage {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn keeps_the_first_open_of_each_day() {
+        let s = Storage::open_in_memory().unwrap();
+        let open = |day: &str, key: &str, seq: u32| RoutineOpen {
+            day: day.into(),
+            weekday: 1,
+            kind: "app".into(),
+            key: key.into(),
+            label: key.into(),
+            target: String::new(),
+            browser: String::new(),
+            seq,
+        };
+        assert!(s.record_open(&open("2026-09-28", "code.exe", 1)).unwrap());
+        assert!(!s.record_open(&open("2026-09-28", "code.exe", 5)).unwrap());
+        s.record_open(&open("2026-09-21", "slack.exe", 1)).unwrap();
+        let rows = s.opens_since("2026-09-22").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].seq, 1);
+        assert_eq!(s.clear_opens(Some("2026-09-22")).unwrap(), 1);
+        assert_eq!(s.clear_opens(None).unwrap(), 1);
+    }
+
     #[test]
     fn saves_and_reopens_chats() {
         let s = Storage::open_in_memory().unwrap();

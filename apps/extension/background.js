@@ -172,6 +172,29 @@ async function checkTabs() {
 chrome.tabs.onCreated.addListener(checkTabs);
 chrome.tabs.onRemoved.addListener(checkTabs);
 
+// The site in the active tab, for routines and time per site. Only the
+// origin is sent (never the path), and only when it changes.
+let lastSite = "";
+async function reportSite() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    const url = tab?.url || "";
+    if (!url.startsWith("http")) return;
+    const origin = new URL(url).origin;
+    if (origin === lastSite) return;
+    lastSite = origin;
+    await report({ kind: "site", url: `${origin}/` });
+  } catch {
+    // No window or tab right now.
+  }
+}
+
+chrome.tabs.onActivated.addListener(reportSite);
+chrome.tabs.onUpdated.addListener((_id, change, tab) => {
+  if (change.status === "complete" && tab.active) reportSite();
+});
+chrome.windows?.onFocusChanged.addListener(reportSite);
+
 // Page events from the content script, with the tab they came from.
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg?.type === "sidekick-pair") {

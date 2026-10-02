@@ -225,6 +225,18 @@ pub fn choices_reset(app: AppHandle, state: State<'_, AppState>) -> CmdResult<us
         .map_err(|e| e.to_string())
 }
 
+/// Today's learned routine, for Settings.
+#[tauri::command]
+pub fn routines_today(app: AppHandle) -> Vec<crate::routines::Item> {
+    crate::routines::today(&app)
+}
+
+/// Forgets every learned routine.
+#[tauri::command]
+pub fn routines_forget(app: AppHandle) -> CmdResult<usize> {
+    crate::routines::forget(&app)
+}
+
 #[tauri::command]
 pub fn actions_recent(
     state: State<'_, AppState>,

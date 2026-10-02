@@ -134,6 +134,12 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   skill_set: () => settings,
   capabilities_get: () => ({ found: ["Chrome (mock)"], skillsDir: "-", skillErrors: [] }),
   choices_reset: () => 0,
+  routines_today: () => [
+    { kind: "app", key: "code.exe", label: "Visual Studio Code", target: "", browser: "", days: 5 },
+    { kind: "site", key: "github.com", label: "github.com", target: "https://github.com/", browser: "Chrome", days: 4 },
+    { kind: "app", key: "slack.exe", label: "Slack", target: "", browser: "", days: 3 },
+  ],
+  routines_forget: () => 12,
   actions_recent: () => [],
   reveal_path: () => undefined,
   open_settings: () => commands.ask_open?.({ view: "settings" }),

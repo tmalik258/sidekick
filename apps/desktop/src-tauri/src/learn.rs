@@ -25,7 +25,8 @@ pub fn tracked(skill_id: &str) -> bool {
 
 /// Skills never offered as automatic: each time needs its own choice.
 /// A screenshot is already on the clipboard, so "always copy" adds nothing.
-const NEVER_AUTO: &[&str] = &["files.screenshot"];
+/// The morning card asks for itself (after five Open alls), so it is left out.
+const NEVER_AUTO: &[&str] = &["files.screenshot", "system.morning-brief"];
 
 /// Whether a skill may become automatic ("Always do this").
 pub fn can_automate(skill_id: &str) -> bool {

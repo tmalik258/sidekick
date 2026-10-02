@@ -18,4 +18,6 @@ pub use mascot::{Cue, MascotEvent, MascotMachine, MascotState, Transition};
 pub use settings::{
     AI_PROVIDERS, AiSettings, ComposioSettings, Pause, SHORTCUTS, Settings, SkillPref,
 };
-pub use storage::{ActionRecord, AppTime, ChatSummary, Habit, SearchHit, Storage, StoredEvent};
+pub use storage::{
+    ActionRecord, AppTime, ChatSummary, Habit, RoutineOpen, SearchHit, Storage, StoredEvent,
+};
