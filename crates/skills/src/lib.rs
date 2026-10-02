@@ -161,6 +161,10 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/calendar/follow-up.yaml"),
     ),
     (
+        "system/health.yaml",
+        include_str!("../../../skills/system/health.yaml"),
+    ),
+    (
         "system/battery-low.yaml",
         include_str!("../../../skills/system/battery-low.yaml"),
     ),
@@ -214,6 +218,8 @@ pub const ACTIONS: &[&str] = &[
     "claude_allow",
     "claude_deny",
     "claude_pass",
+    "install_update",
+    "health_fix",
     "claude_always",
     "browser_pair_allow",
     "browser_pair_deny",

@@ -11,6 +11,7 @@ mod detect;
 mod extension;
 mod fathom;
 mod files;
+mod health;
 mod island;
 mod layout;
 mod learn;
@@ -254,6 +255,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     layout::start(app);
     mcp::start(app, mcp_token);
     meetings::start(app);
+    health::start(app);
     tauri::async_runtime::spawn(async move {
         let sensors: Vec<Box<dyn Sensor>> = vec![
             Box::new(DownloadsSensor::new()),
