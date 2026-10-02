@@ -94,6 +94,8 @@ export interface WelcomeSpeech {
   endsAt: number | null;
   /** Nothing will be heard; the welcome paces the words itself. */
   silent: boolean;
+  /** Speech is on its way (the model may still be loading). */
+  pending: boolean;
 }
 
 export interface VoiceHeard {

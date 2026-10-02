@@ -125,15 +125,15 @@ export const SETUP_CATALOG: Array<{
   {
     id: "vscode",
     group: "tools",
-    title: "VS Code",
-    why: "Open projects and files in your editor.",
+    title: "Code editor",
+    why: "Opens your projects and files. VS Code, Cursor or Windsurf.",
     recommended: true,
   },
   {
     id: "tesseract",
     group: "tools",
     title: "Tesseract",
-    why: "Copy text out of screenshots.",
+    why: "Reads text in screenshots, so Copy text works on a screenshot of an error or a page.",
     recommended: true,
   },
   {

@@ -1,7 +1,15 @@
 // Browser-only stand-in for the Rust core, used when the UI runs outside
 // Tauri. It mimics the demo flow loosely; the real rules live in Rust.
 
-import { CUES, type Cue, DEFAULT_SETTINGS, type MascotState, type Settings, type Suggestion } from "./types";
+import {
+  CUES,
+  type Cue,
+  DEFAULT_SETTINGS,
+  type MascotState,
+  type Settings,
+  type Suggestion,
+  type WelcomeSpeech,
+} from "./types";
 
 type Handler = (payload: unknown) => void;
 
@@ -523,18 +531,22 @@ commands.voice_listen = () => {
 };
 commands.voice_stop = () => undefined;
 // The welcome line as Rust would report it while it is spoken.
-const WELCOME_LINE =
-  "Hi there! I'm Sidekick. I live up here, and I'll keep an eye out for little moments where I can help. Don't worry, I always ask before I do anything. Ready? Let's get you set up. It only takes a minute.";
-let welcome = {
+const WELCOME_LINE = "Online. I'm Sidekick, your AI on this machine. I notice, I suggest, you decide. Let's begin.";
+let welcome: WelcomeSpeech = {
   script: WELCOME_LINE,
-  pieces: [] as { text: string; startsAt: number; ms: number }[],
-  endsAt: null as number | null,
+  pieces: [],
+  endsAt: null,
   silent: false,
+  pending: false,
 };
 function speakWelcome() {
   const sentences = WELCOME_LINE.match(/[^.!?]+[.!?]/g) ?? [WELCOME_LINE];
   let at = Date.now() + 400;
-  welcome = { ...welcome, pieces: [], endsAt: null };
+  // Like the real app: speech is pending while the model loads (here 7 s,
+  // longer than the old 4 s fallback, to check words never restart).
+  welcome = { ...welcome, pieces: [], endsAt: null, pending: true };
+  emit("voice://welcome", welcome);
+  at += 7000;
   sentences.forEach((raw, i) => {
     const text = raw.trim();
     const ms = text.split(/\s+/).length * 330;

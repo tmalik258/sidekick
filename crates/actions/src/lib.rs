@@ -174,13 +174,14 @@ impl Executor {
                     .caps
                     .code
                     .as_ref()
-                    .ok_or_else(|| ActionError::Failed("VS Code is not installed".into()))?;
+                    .ok_or_else(|| ActionError::Failed("No code editor found".into()))?;
                 let mut cmd = std::process::Command::new(code);
                 cmd.arg(&path);
                 system::spawn_detached(cmd)?;
                 Ok(Outcome::msg(format!(
-                    "Opened {} in VS Code",
-                    file_name(&path)
+                    "Opened {} in {}",
+                    file_name(&path),
+                    self.caps.code_name.as_deref().unwrap_or("your editor")
                 )))
             }
             "open_system_page" => system::open_system_page(arg(args, "page")?),
@@ -202,7 +203,13 @@ impl Executor {
             "clean_downloads" => tokio::task::spawn_blocking(cleanup::clean_downloads)
                 .await
                 .map_err(fail)?,
-            "launch_project" => dev::launch(&existing_path(args)?, self.caps.code.as_deref()),
+            "launch_project" => dev::launch(
+                &existing_path(args)?,
+                self.caps
+                    .code
+                    .as_deref()
+                    .map(|p| (p, self.caps.code_name.as_deref().unwrap_or("your editor"))),
+            ),
             "extract_text" => {
                 let path = existing_path(args)?;
                 convert::ocr(&self.caps, &path).await

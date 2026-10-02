@@ -520,7 +520,23 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     };
     items.push(gh_item);
 
-    let tools: [(&str, &str, &str, bool, &str, bool); 10] = [
+    // Any VS Code style editor will do (Cursor, Windsurf...); only offer
+    // VS Code when none is installed.
+    let editor = SetupItem::new(
+        "vscode",
+        Group::Tools,
+        "Code editor",
+        "Opens your projects and files. VS Code, Cursor or Windsurf.",
+    )
+    .recommended();
+    items.push(match caps.code_name.as_deref() {
+        Some(name) => editor.done(true, name, ""),
+        None => editor
+            .done(false, "", "Not installed")
+            .run(winget("Microsoft.VisualStudioCode")),
+    });
+
+    let tools: [(&str, &str, &str, bool, &str, bool); 9] = [
         (
             "git",
             "Git",
@@ -530,17 +546,9 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             true,
         ),
         (
-            "vscode",
-            "VS Code",
-            "Open projects and files in your editor.",
-            caps.code.is_some(),
-            "Microsoft.VisualStudioCode",
-            true,
-        ),
-        (
             "tesseract",
             "Tesseract",
-            "Copy text out of screenshots.",
+            "Reads text in screenshots, so Copy text works on a screenshot of an error or a page.",
             caps.tesseract.is_some(),
             "UB-Mannheim.TesseractOCR",
             true,

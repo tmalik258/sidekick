@@ -62,7 +62,7 @@ export function IslandWelcome() {
           animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
           exit={{ opacity: 0, x: -12, filter: "blur(4px)", transition: { duration: 0.12 } }}
           transition={{ duration: 0.26, ease: [0.23, 1, 0.32, 1] }}
-          className="settings-scroll -mr-3 max-h-95 min-h-55 overflow-y-auto pr-3"
+          className="settings-scroll -mr-3 max-h-95 overflow-y-auto pr-3"
         >
           {step === 0 && <FirstStep onFound={() => go(1)} />}
           {step === 1 && (
@@ -162,13 +162,11 @@ function Intro() {
         </p>
       )}
       <ul className="flex flex-col gap-2">
-        <Point title="Press anytime">
-          <Kbd>{hotkey}</Kbd> opens Ask mode for commands, search and chat.
+        <Point title="Summon">
+          <Kbd>{hotkey}</Kbd> or say "Hey Sidekick".
         </Point>
-        <Point title="Private by default">Everything I see stays on this PC. Pause me from the tray.</Point>
-        <Point title="Nothing risky on its own">
-          Deleting, installing or stopping things always asks first, and files I create can be undone.
-        </Point>
+        <Point title="Local">What I see stays on this PC.</Point>
+        <Point title="Consent">I act only when you say. Anything I make can be undone.</Point>
       </ul>
     </div>
   );
@@ -177,6 +175,8 @@ function Intro() {
 interface Pick {
   id: string;
   label: string;
+  /** What it is for, shown under the label. */
+  hint?: string;
   on: boolean;
 }
 
@@ -197,7 +197,7 @@ function picksFrom(f: SetupFound, off: Set<string>): Pick[] {
     list.push({ id: "mcp", label: "Claude Code: let it use Sidekick's tools" });
   }
   for (const item of f.installable.filter((i) => i.recommended && !i.done && i.runnable)) {
-    list.push({ id: `install:${item.id}`, label: `Install ${item.title}` });
+    list.push({ id: `install:${item.id}`, label: `Install ${item.title}`, hint: item.why });
   }
   return list.map((p) => ({ ...p, on: !off.has(p.id) }));
 }
@@ -258,7 +258,10 @@ function FoundCard({ onDone }: { onDone: () => void }) {
                 }
                 className="mt-0.5 size-3.5 shrink-0 accent-[#0a84ff]"
               />
-              <span className="min-w-0">{p.label}</span>
+              <span className="min-w-0">
+                {p.label}
+                {p.hint && <span className="block text-[11.5px] text-[rgb(235_235_245/0.5)]">{p.hint}</span>}
+              </span>
             </label>
           </li>
         ))}

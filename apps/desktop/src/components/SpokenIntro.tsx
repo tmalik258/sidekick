@@ -14,8 +14,10 @@ import type { WelcomeSpeech } from "@/lib/types";
 
 /** Pace when nothing is heard: about 3 words a second, like speech. */
 const WORD_MS = 330;
-/** How long to wait for audio before pacing the words ourselves. */
-const AUDIO_WAIT_MS = 4000;
+/** With no word from the voice at all, pace the words after this long. */
+const AUDIO_WAIT_MS = 6000;
+/** Audio is on its way (the model may be loading): wait this long at most. */
+const PENDING_WAIT_MS = 20_000;
 
 /** Revealed once per run; going Back to this step shows it whole. */
 let finishedThisRun = false;
@@ -99,7 +101,8 @@ export function SpokenIntro({ onDone }: { onDone: () => void }) {
       return;
     }
     if (speech && speech.pieces.length > 0) return;
-    const id = setTimeout(() => setPacedFrom(Date.now()), AUDIO_WAIT_MS);
+    const wait = speech?.pending ? PENDING_WAIT_MS : AUDIO_WAIT_MS;
+    const id = setTimeout(() => setPacedFrom(Date.now()), wait);
     return () => clearTimeout(id);
   }, [speech, pacedFrom]);
 
@@ -120,8 +123,10 @@ export function SpokenIntro({ onDone }: { onDone: () => void }) {
     const tick = () => {
       const now = Date.now();
       const count = times.filter((t) => t <= now).length;
-      setShown((n) => (n === count ? n : count));
-      if (ends !== null && now >= ends && count >= list.length) {
+      // A word once shown stays shown, even if the audio's own timing
+      // (arriving after a paced start) would reveal it a little later.
+      setShown((n) => Math.max(n, count));
+      if (ends !== null && now >= ends) {
         done.current = true;
         finishedThisRun = true;
         onDoneRef.current();
@@ -138,20 +143,18 @@ export function SpokenIntro({ onDone }: { onDone: () => void }) {
     if (finishedThisRun) onDoneRef.current();
   }, []);
 
+  // Only the words heard so far are in the layout, so the island grows
+  // with the line instead of opening at its full height.
+  const visible = list.slice(0, Math.min(shown, list.length));
   return (
-    <p className="min-h-[4.5em] font-display text-[17px] leading-snug tracking-[-0.01em] text-white">
+    <p className="font-display text-[17px] leading-snug tracking-[-0.01em] text-white">
       {/* Screen readers get the whole line at once. */}
       <span className="sr-only">{script}</span>
-      {list.map((w, i) => (
+      {visible.map((w, i) => (
         // Words are fixed for the line; the index is their identity.
         // biome-ignore lint/suspicious/noArrayIndexKey: stable list
         <Fragment key={i}>
-          <span
-            aria-hidden="true"
-            className={`inline-block transition-[opacity,filter,transform] duration-300 ease-out ${
-              i < shown ? "translate-y-0 opacity-100 blur-0" : "translate-y-[2px] opacity-0 blur-[3px]"
-            }`}
-          >
+          <span aria-hidden="true" className="spoken-word inline-block">
             {w}
           </span>{" "}
         </Fragment>
