@@ -396,36 +396,44 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         .recommended(),
     );
 
-    items.push(
-        SetupItem::new(
-            "calendar",
-            Group::Connect,
-            "Calendar",
-            "Meeting reminders with Join and Prep. Paste your private iCal link.",
-        )
-        .done(
-            !settings.calendar.feeds.is_empty(),
-            "Connected",
-            "Not connected",
-        )
-        .tab("today"),
-    );
-
+    let composio_on = crate::composio::is_set_up(&settings.composio);
+    let composio_apps = if composio_on && crate::composio::signed_in() {
+        crate::composio::apps(&settings.composio)
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let has_app = |slug: &str| composio_apps.iter().any(|a| a.slug == slug && a.connected);
     items.push(
         SetupItem::new(
             "composio",
             Group::Connect,
             "Composio",
-            "Jira, Trello, Slack, Gmail, Notion and more in Ask mode. Reads use the local model; changes go to Claude Code.",
+            "Connect once in the browser. Your calendar, Gmail, Slack, Jira and more then work in Sidekick.",
+        )
+        .done(composio_on, "Connected", "Not connected")
+        .tab("connections")
+        .recommended(),
+    );
+    items.push(
+        SetupItem::new(
+            "calendar",
+            Group::Connect,
+            "Calendar",
+            "Meeting reminders with Join and Prep. Connect Google Calendar or Outlook on Composio.",
         )
         .done(
-            crate::composio::configured(&settings.composio).is_some(),
+            has_app("googlecalendar") || has_app("outlook"),
             "Connected",
-            "Not set up",
+            if composio_on {
+                "Not connected"
+            } else {
+                "Needs Composio"
+            },
         )
-        .tab("ai"),
+        .tab("connections"),
     );
-
     items.push(
         SetupItem::new(
             "search_folders",
@@ -465,10 +473,18 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             "fathom",
             Group::Connect,
             "Fathom",
-            "Follow-ups drafted from your meeting notes. Restart Sidekick after setting it.",
+            "Follow-ups drafted from your meeting notes. Connect Fathom on Composio.",
         )
-        .done(caps.fathom, "Set", "Not set")
-        .copy("setx FATHOM_API_KEY \"your-key\""),
+        .done(
+            has_app("fathom"),
+            "Connected",
+            if composio_on {
+                "Not connected"
+            } else {
+                "Needs Composio"
+            },
+        )
+        .tab("connections"),
     );
 
     // Tools

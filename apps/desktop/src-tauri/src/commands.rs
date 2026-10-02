@@ -480,12 +480,11 @@ pub fn voice_test(app: AppHandle) -> CmdResult<()> {
     crate::voice::test(&app)
 }
 
-/// Hands the calendar links and reminder lead time to the calendar sensor.
+/// Hands the reminder lead time to the calendar sensor.
 pub fn sync_calendar(calendar: &sidekick_sensors::Calendar, settings: &Settings) {
     let mut c = calendar
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    c.feeds = settings.calendar.feeds.clone();
     c.remind_minutes = i64::from(settings.calendar.remind_minutes);
 }
 
@@ -509,7 +508,7 @@ pub fn calendar_today(app: AppHandle) -> serde_json::Value {
             })
         })
         .collect();
-    serde_json::json!({ "meetings": meetings, "error": c.error })
+    serde_json::json!({ "meetings": meetings, "error": c.error, "sources": c.sources })
 }
 
 #[derive(Serialize)]
@@ -584,8 +583,8 @@ pub fn search_clear(state: State<'_, AppState>) -> CmdResult<usize> {
 const BACKUP_VERSION: u32 = 1;
 
 /// Saves settings, your own skills and the action history to one file in
-/// Documents and shows it (FR-SET-04). Calendar links and Composio headers
-/// are secrets, so they are left out.
+/// Documents and shows it (FR-SET-04). Composio headers are secrets, so they
+/// are left out.
 #[tauri::command]
 pub async fn backup_export(app: AppHandle) -> CmdResult<String> {
     let path = write_backup(&app)?;
@@ -598,7 +597,6 @@ pub async fn backup_export(app: AppHandle) -> CmdResult<String> {
 fn write_backup(app: &AppHandle) -> CmdResult<String> {
     let state = app.state::<AppState>();
     let mut settings = lock(&state.settings).clone();
-    settings.calendar.feeds.clear();
     settings.composio.headers.clear();
     let mut skills = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&state.skills_dir) {
@@ -672,9 +670,8 @@ pub fn backup_import(app: AppHandle, text: String) -> CmdResult<String> {
     }
     let mut restored = false;
     if let Ok(mut settings) = serde_json::from_value::<Settings>(bundle["settings"].clone()) {
-        // Keep this PC's calendar links and onboarding state.
+        // Keep this PC's onboarding state.
         let current = lock(&state.settings).clone();
-        settings.calendar.feeds = current.calendar.feeds;
         settings.composio.headers = current.composio.headers;
         settings.onboarded = true;
         apply_settings(&app, settings)?;
@@ -712,13 +709,64 @@ pub async fn setup_run(app: AppHandle, id: String) -> CmdResult<()> {
 /// Opens Claude Code in a terminal with this conversation, to finish what
 /// the local model could not.
 #[tauri::command]
-pub fn ai_handoff(
+pub async fn ai_handoff(
     app: AppHandle,
     messages: Vec<sidekick_ai::Message>,
     reason: Option<String>,
 ) -> CmdResult<String> {
     crate::composio::open_in_claude_code(&app, &messages, reason.as_deref())
+        .await
         .map(|dir| dir.display().to_string())
+}
+
+/// Opens Composio in the browser to sign in; returns the code it shows.
+#[tauri::command]
+pub async fn composio_sign_in(app: AppHandle) -> CmdResult<String> {
+    crate::composio::sign_in(&app).await
+}
+
+#[tauri::command]
+pub fn composio_sign_out(app: AppHandle) -> CmdResult<()> {
+    crate::composio::sign_out(&app)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComposioStatus {
+    signed_in: bool,
+    account: String,
+    apps: Vec<crate::composio_api::App>,
+    error: Option<String>,
+}
+
+/// Whether Composio is connected, and which of Sidekick's apps are.
+#[tauri::command]
+pub async fn composio_status(app: AppHandle) -> ComposioStatus {
+    let c = lock(&app.state::<AppState>().settings).composio.clone();
+    if !crate::composio::signed_in() {
+        return ComposioStatus {
+            signed_in: false,
+            account: String::new(),
+            apps: Vec::new(),
+            error: None,
+        };
+    }
+    let (apps, error) = match crate::composio::apps(&c).await {
+        Ok(a) => (a, None),
+        Err(e) => (Vec::new(), Some(e)),
+    };
+    ComposioStatus {
+        signed_in: true,
+        account: c.account,
+        apps,
+        error,
+    }
+}
+
+/// Opens the browser to connect one app on Composio.
+#[tauri::command]
+pub async fn composio_connect(app: AppHandle, slug: String) -> CmdResult<()> {
+    crate::composio::connect_app(&app, &slug).await
 }
 
 /// Copies the Composio server from Claude Code's config into Settings.

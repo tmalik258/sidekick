@@ -104,22 +104,17 @@ impl Default for SemanticSearch {
     }
 }
 
-/// Calendars read through their private iCal links (FR-COMM-02).
+/// Meeting reminders (FR-COMM-02); meetings come from Composio.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct CalendarSettings {
-    /// Private iCal (ICS) links. They are secrets: stored only here.
-    pub feeds: Vec<String>,
     /// Minutes before a meeting to offer Join and Prep.
     pub remind_minutes: u32,
 }
 
 impl Default for CalendarSettings {
     fn default() -> Self {
-        Self {
-            feeds: Vec::new(),
-            remind_minutes: 5,
-        }
+        Self { remind_minutes: 5 }
     }
 }
 
@@ -130,6 +125,11 @@ impl Default for CalendarSettings {
 #[serde(rename_all = "camelCase", default)]
 pub struct ComposioSettings {
     pub enabled: bool,
+    /// Who signed in (their email), for Settings. The key itself is in
+    /// Credential Manager.
+    pub account: String,
+    /// The Composio user the apps are connected under.
+    pub user_id: String,
     /// The MCP server link from Composio (or from Claude Code's config).
     pub url: String,
     /// Extra request headers, such as `x-api-key`. Secrets: kept only here
@@ -412,13 +412,6 @@ impl Settings {
         } else {
             1.0
         };
-        self.calendar.feeds = self
-            .calendar
-            .feeds
-            .iter()
-            .map(|f| f.trim().to_owned())
-            .filter(|f| f.starts_with("https://") || f.starts_with("webcal://"))
-            .collect();
         if self.semantic_search.model.trim().is_empty() {
             self.semantic_search.model = SemanticSearch::default().model;
         }
