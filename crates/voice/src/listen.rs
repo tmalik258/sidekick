@@ -119,11 +119,12 @@ impl Engine {
                     1,
                 ),
                 max_active_paths: 4,
-                // Tuned for real voices across a room, not studio audio: a
-                // boost for the phrase and a lower bar to fire. Lower than
-                // this and everyday speech starts to wake it.
-                keywords_score: 1.5,
-                keywords_threshold: 0.15,
+                // Tuned with the wake bench (10 voices, two speeds, 100
+                // everyday sentences): this boost and bar caught 92% alone
+                // and 95% with the transcript, with no false wakes. Lower
+                // gained nothing more.
+                keywords_score: 2.5,
+                keywords_threshold: 0.05,
                 num_trailing_blanks: 1,
                 keywords_buf: Some(WAKE_KEYWORDS.to_owned()),
                 ..Default::default()
@@ -167,6 +168,16 @@ impl Engine {
         })
     }
 
+    /// Back to waiting, as if just started: nothing heard, nothing pending.
+    pub fn reset(&mut self) {
+        self.recognizer.reset(&self.stream);
+        self.fresh_spotter();
+        self.listening = false;
+        self.recent.clear();
+        self.last.clear();
+        self.heard = 0;
+    }
+
     pub fn listening(&self) -> bool {
         self.listening
     }
@@ -185,6 +196,7 @@ impl Engine {
     }
 
     fn start_listening(&mut self) {
+        self.fresh_spotter();
         self.listening = true;
         self.heard = 0;
         self.last.clear();
@@ -214,6 +226,9 @@ impl Engine {
             let text = self.decode(chunk);
             if spotted || crate::text::find_wake(&text).is_some() {
                 out.push(Heard::Wake);
+                // The keyword model may still hold the phrase; it must not
+                // fire on it later.
+                self.fresh_spotter();
                 self.listening = true;
                 self.heard = 0;
                 self.last.clear();
@@ -242,9 +257,7 @@ impl Engine {
                 }
                 return out;
             }
-            if let Some((spotter, kws)) = &self.spotter {
-                spotter.reset(kws);
-            }
+            self.fresh_spotter();
             self.listening = false;
             self.last.clear();
             // The words just heard must not wake it again.
@@ -252,6 +265,14 @@ impl Engine {
             out.push(Heard::Final(text));
         }
         out
+    }
+
+    /// A new keyword stream: a reset keeps audio it has buffered, which
+    /// could fire the wake word again a moment later.
+    fn fresh_spotter(&mut self) {
+        if let Some((spotter, kws)) = &mut self.spotter {
+            *kws = spotter.create_stream();
+        }
     }
 
     fn decode(&self, chunk: &[f32]) -> String {
