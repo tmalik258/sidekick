@@ -105,8 +105,117 @@ fn pick(app: &AppHandle, n: usize) {
     }
 }
 
-/// Shows a proposal now, or queues it while the island is busy.
+pub const LATER_EVENT: &str = "suggestion://later";
+/// Below this priority a suggestion never interrupts; it waits in the list.
+const QUIET_BELOW: i32 = 40;
+/// During a meeting, only this urgent and above interrupts.
+const MEETING_FROM: i32 = 80;
+const MAX_LATER: usize = 20;
+const LATER_KEEP: chrono::Duration = chrono::Duration::hours(3);
+
+/// The user is in a meeting now (one from the calendar, under four hours).
+fn in_meeting(app: &AppHandle) -> bool {
+    let now = chrono::Utc::now();
+    let state = app.state::<AppState>();
+    let c = state
+        .calendar
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    c.meetings
+        .iter()
+        .any(|m| m.start <= now && now < m.end && (m.end - m.start).num_hours() < 4)
+}
+
+/// Whether a suggestion should wait quietly instead of showing now.
+/// Suggestions about something the user just did (copied, opened a page)
+/// are only useful right away, so they never wait.
+pub fn should_wait(skill_id: &str, priority: i32, meeting: bool) -> bool {
+    let just_did = skill_id.starts_with("clipboard.") || skill_id.starts_with("browser.");
+    !just_did && (priority < QUIET_BELOW || (meeting && priority < MEETING_FROM))
+}
+
+fn keep_for_later(app: &AppHandle, proposal: Proposal) {
+    let state = app.state::<AppState>();
+    let now = chrono::Utc::now();
+    let mut later = lock(&state.later);
+    later.retain(|l| {
+        now - l.at < LATER_KEEP
+            && !(l.proposal.skill_id == proposal.skill_id && l.proposal.title == proposal.title)
+    });
+    if later.len() >= MAX_LATER {
+        later.remove(0);
+    }
+    later.push(crate::state::Later {
+        id: ulid::Ulid::new().to_string(),
+        proposal,
+        at: now,
+    });
+    let count = later.len();
+    drop(later);
+    let _ = app.emit(LATER_EVENT, count);
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LaterItem {
+    pub id: String,
+    pub title: String,
+    pub detail: String,
+    pub minutes_ago: i64,
+}
+
+pub fn later_list(app: &AppHandle) -> Vec<LaterItem> {
+    let now = chrono::Utc::now();
+    let state = app.state::<AppState>();
+    let mut later = lock(&state.later);
+    later.retain(|l| now - l.at < LATER_KEEP);
+    later
+        .iter()
+        .rev()
+        .map(|l| LaterItem {
+            id: l.id.clone(),
+            title: l.proposal.title.clone(),
+            detail: l.proposal.detail.clone(),
+            minutes_ago: (now - l.at).num_minutes(),
+        })
+        .collect()
+}
+
+/// Shows one waiting suggestion now (the user asked for it).
+pub fn later_open(app: &AppHandle, id: &str) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let proposal = {
+        let mut later = lock(&state.later);
+        let i = later
+            .iter()
+            .position(|l| l.id == id)
+            .ok_or("That one has expired")?;
+        later.remove(i).proposal
+    };
+    let count = lock(&state.later).len();
+    let _ = app.emit(LATER_EVENT, count);
+    show_or_queue(app, proposal);
+    Ok(())
+}
+
+pub fn later_clear(app: &AppHandle) {
+    lock(&app.state::<AppState>().later).clear();
+    let _ = app.emit(LATER_EVENT, 0);
+}
+
+/// Shows a proposal now, keeps a minor one (or one during a meeting) in the
+/// quiet list, or queues it while the island is busy.
 pub fn offer(app: &AppHandle, proposal: Proposal) {
+    if proposal.trust != Trust::Auto
+        && should_wait(&proposal.skill_id, proposal.priority, in_meeting(app))
+    {
+        keep_for_later(app, proposal);
+        return;
+    }
+    show_or_queue(app, proposal);
+}
+
+fn show_or_queue(app: &AppHandle, proposal: Proposal) {
     let state = app.state::<AppState>();
     // While the user is away, suggestions wait instead of showing to no one.
     let busy = lock(&state.active).is_some()
@@ -149,6 +258,12 @@ fn show(app: &AppHandle, proposal: Proposal) {
         title: proposal.title.clone(),
         detail: proposal.detail.clone(),
         options: proposal.options.iter().map(|o| o.label.clone()).collect(),
+        always: proposal
+            .options
+            .iter()
+            .enumerate()
+            .map(|(i, o)| can_always(&proposal, i, &o.action))
+            .collect(),
     };
     let priority = proposal.priority;
     let auto = proposal.trust == Trust::Auto
@@ -173,6 +288,38 @@ fn show(app: &AppHandle, proposal: Proposal) {
         crate::voice::offer_spoken(app, &ui, priority);
         expire_when_ignored(app, id);
     }
+}
+
+/// An option can become "Always do this" when it is safe to run alone and
+/// it will be the one auto runs: the first, or any when the skill remembers
+/// the last choice (which then comes first).
+pub fn can_always(proposal: &Proposal, index: usize, action: &str) -> bool {
+    proposal.trust == Trust::Suggest
+        && crate::learn::tracked(&proposal.skill_id)
+        && sidekick_actions::is_safe(action)
+        && (index == 0 || proposal.remember.is_some())
+}
+
+/// Runs the option and makes the skill automatic from now on.
+pub fn always(app: &AppHandle, id: &str, index: usize) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let (skill, ok) = {
+        let active = lock(&state.active);
+        let a = active
+            .as_ref()
+            .filter(|a| a.ui.id == id)
+            .ok_or("That suggestion is gone")?;
+        let option = a.proposal.options.get(index).ok_or("No such option")?;
+        (
+            a.proposal.skill_id.clone(),
+            can_always(&a.proposal, index, &option.action),
+        )
+    };
+    if !ok {
+        return Err("This one always asks, because it changes things.".into());
+    }
+    choose(app, id, index)?;
+    crate::learn::make_auto(app, &skill).map(|_| ())
 }
 
 /// Dismisses a suggestion nobody looked at (FR-UI-02). Hovering the island
@@ -553,4 +700,22 @@ pub fn demo(app: &AppHandle) {
             priority: 50,
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn minor_suggestions_wait_but_what_you_just_did_does_not() {
+        assert!(should_wait("files.copy", 10, false));
+        assert!(!should_wait("files.download", 50, false));
+        assert!(
+            should_wait("files.download", 50, true),
+            "meetings hold most things"
+        );
+        assert!(!should_wait("dev.claude-permission", 95, true));
+        assert!(!should_wait("clipboard.color", 35, true));
+        assert!(!should_wait("browser.login", 50, true));
+    }
 }

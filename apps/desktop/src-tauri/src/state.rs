@@ -47,6 +47,8 @@ pub struct AppState {
     pub active: Mutex<Option<Active>>,
     /// Suggestions waiting for the island to be free.
     pub queue: Mutex<VecDeque<Queued>>,
+    /// Suggestions waiting quietly; the island shows how many.
+    pub later: Mutex<Vec<Later>>,
     pub island_hidden: Mutex<bool>,
     /// The cursor is over the island (kept by the hover tracker).
     pub hovered: AtomicBool,
@@ -111,6 +113,8 @@ pub struct Suggestion {
     pub title: String,
     pub detail: String,
     pub options: Vec<String>,
+    /// Which options can become "Always do this": safe to run on their own.
+    pub always: Vec<bool>,
 }
 
 pub struct Active {
@@ -121,6 +125,14 @@ pub struct Active {
 pub struct Queued {
     pub proposal: Proposal,
     pub at: Instant,
+}
+
+/// A suggestion kept for later instead of interrupting: a minor one, or one
+/// that came in during a meeting.
+pub struct Later {
+    pub id: String,
+    pub proposal: Proposal,
+    pub at: chrono::DateTime<chrono::Utc>,
 }
 
 pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
