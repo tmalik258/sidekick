@@ -440,10 +440,12 @@ commands.extension_install = (a) => {
   later(4000, () => browsersSeen.add(a.browser as string));
   return {
     copied: "C:\\Users\\you\\AppData\\Local\\Sidekick\\extension",
+    page: "chrome://extensions/",
     steps: [
-      "Turn on Developer mode (top right).",
-      "Click Load unpacked and paste the folder path (it is on your clipboard).",
-      "Sidekick asks you to allow it. Click Allow.",
+      "If the extensions page is not showing, paste its address into the address bar and press Enter (it is copied).",
+      "Turn on Developer mode (top right), then click Load unpacked.",
+      "Click Copy folder path below, paste it into the folder box and press Enter, then Select Folder.",
+      "Press Allow on Sidekick's island when it asks.",
     ],
   };
 };

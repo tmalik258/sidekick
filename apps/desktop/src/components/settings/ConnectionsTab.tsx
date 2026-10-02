@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
-import { startWaiting, updateSettings, useSidekick } from "@/lib/store";
+import { installExtension, startWaiting, updateSettings, useSidekick } from "@/lib/store";
 import type {
   BrowserInfo,
   BrowserStatus,
@@ -80,7 +80,15 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
       .composioSignIn()
       .then((code) => {
         setWaiting(code);
-        startWaiting("composio", "Composio", { resumeTab: "connections" });
+        startWaiting("composio", "Composio", {
+          resumeTab: "connections",
+          steps: [
+            "Composio opened in your browser. Sign in there.",
+            `Press Allow. The page shows the code ${code}.`,
+            "Come back here; it connects by itself.",
+          ],
+          again: signIn,
+        });
       })
       .catch((e) => onError(String(e)));
   };
@@ -173,7 +181,15 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
                   onClick={() => {
                     setConnecting(a.slug);
                     setNote(`Finish connecting ${a.name} in the browser.`);
-                    startWaiting(`app:${a.slug}`, a.name, { resumeTab: "connections" });
+                    startWaiting(`app:${a.slug}`, a.name, {
+                      resumeTab: "connections",
+                      steps: [
+                        `${a.name} opened in your browser.`,
+                        "Sign in and allow access.",
+                        "Come back here; it turns green by itself.",
+                      ],
+                      again: () => void api.composioConnect(a.slug).catch(() => undefined),
+                    });
                     api.composioConnect(a.slug).catch((e) => {
                       setConnecting(null);
                       onError(String(e));
@@ -322,8 +338,7 @@ function BrowserCard() {
                 primary={guide?.id !== b.id}
                 onClick={() => {
                   setError(null);
-                  api
-                    .extensionInstall(b.id)
+                  installExtension(b.id, b.name)
                     .then((g) => setGuide({ id: b.id, guide: g }))
                     .catch((e) => setError(String(e)));
                 }}
@@ -334,10 +349,7 @@ function BrowserCard() {
           </div>
           {guide?.id === b.id && (
             <div className="flex flex-col gap-1.5 rounded-lg bg-[#0a84ff]/10 p-2.5 text-[12.5px]">
-              <p>{b.name} opened its extensions page in your last-used profile. The folder path is copied:</p>
-              <code className="truncate rounded bg-black/5 px-2 py-1 font-mono text-[11px] select-all dark:bg-white/5">
-                {guide.guide.copied}
-              </code>
+              <p>{b.name} opened in your last-used profile. The steps also stay on the island:</p>
               <ol className="list-decimal space-y-0.5 pl-5">
                 {guide.guide.steps.map((s) => (
                   <li key={s}>{s}</li>

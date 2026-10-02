@@ -107,24 +107,29 @@ fn parse_last_used_profile(local_state: &str) -> String {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Guide {
-    /// What was copied: the folder (Chromium) or manifest.json (Firefox).
+    /// The folder (Chromium) or manifest.json (Firefox) to load.
     pub copied: String,
+    /// The extensions page. Browsers refuse to open it for other apps, so
+    /// the user pastes it into the address bar.
+    pub page: String,
     pub steps: Vec<String>,
 }
 
 pub fn steps(firefox: bool) -> Vec<String> {
+    let open = "If the extensions page is not showing, paste its address into the address bar and press Enter (it is copied).";
     if firefox {
         vec![
+            open.into(),
             "Click Load Temporary Add-on.".into(),
-            "Paste the path into the file name box (it is copied) and press Enter.".into(),
+            "Click Copy file path below, paste it into the file box and press Enter.".into(),
             "Press Allow on Sidekick's island when it asks.".into(),
             "Firefox forgets temporary add-ons when it restarts; do this again then, or use a signed build.".into(),
         ]
     } else {
         vec![
-            "Turn on Developer mode (top right).".into(),
-            "Click Load unpacked.".into(),
-            "Paste the path into the folder box (it is copied) and press Enter, then Select Folder.".into(),
+            open.into(),
+            "Turn on Developer mode (top right), then click Load unpacked.".into(),
+            "Click Copy folder path below, paste it into the folder box and press Enter, then Select Folder.".into(),
             "Press Allow on Sidekick's island when it asks.".into(),
         ]
     }
@@ -155,9 +160,11 @@ pub async fn install(app: &AppHandle, browser: &str) -> Result<Guide, String> {
     }
     .display()
     .to_string();
+    // The address goes first: the browser will not open its own extensions
+    // page when asked by another app, so it is pasted into the address bar.
     arboard::Clipboard::new()
-        .and_then(|mut c| c.set_text(copied.clone()))
-        .map_err(|e| format!("could not copy the path: {e}"))?;
+        .and_then(|mut c| c.set_text(page.to_owned()))
+        .map_err(|e| format!("could not copy the address: {e}"))?;
     let exe = executor(&app.state::<AppState>())
         .capabilities()
         .browser(browser)
@@ -179,6 +186,7 @@ pub async fn install(app: &AppHandle, browser: &str) -> Result<Guide, String> {
 
     Ok(Guide {
         copied,
+        page: page.to_owned(),
         steps: steps(firefox),
     })
 }

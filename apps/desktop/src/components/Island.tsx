@@ -15,6 +15,7 @@ import { isPaused, type MascotState, type Suggestion } from "@/lib/types";
 import { ASK_ORB, AskPanel } from "./AskPanel";
 import { Icon } from "./Icon";
 import { Glance, RoundButton } from "./IslandGlance";
+import { IslandGuide } from "./IslandGuide";
 import { IslandSettings } from "./IslandSettings";
 import { IslandWelcome } from "./IslandWelcome";
 import { Orb } from "./Orb";
@@ -50,6 +51,8 @@ const COMPACT = { width: 39, busyWidth: 109, waitWidth: 248, height: 36, radius:
 const EXPANDED = { width: 388, minHeight: 78, radius: 30, pad: 16 };
 /** Ask mode: wider, so commands and answers have room. */
 const ASK_WIDTH = 560;
+/** A setup guide: room for its steps and copy buttons. */
+const GUIDE_WIDTH = 452;
 const TOP = 6;
 
 /** Delay before hover expands, so a cursor passing over the top edge does not trigger it. */
@@ -87,7 +90,9 @@ export function Island() {
   const hovered = intent && !quiet && settings.onboarded;
   const preparingVoice =
     !settings.onboarded && !asking && !(voiceStatus?.models.some((m) => m.id === "voice" && m.installed) ?? false);
-  const expanded = asking || preparingVoice || hovered || OPEN_STATES.has(mascot) || !!suggestion;
+  // A guide stays open while Sidekick waits on something you finish elsewhere.
+  const guiding = !!waiting && !waiting.minimized && (waiting.steps?.length ?? 0) > 0;
+  const expanded = asking || preparingVoice || hovered || guiding || OPEN_STATES.has(mascot) || !!suggestion;
   // At rest only the sphere shows. The shell keeps its size (so hover and the
   // orb position do not move) but loses its background.
   const bare = !expanded && !chatting && !waiting && (mascot === "idle" || mascot === "sleeping");
@@ -104,11 +109,13 @@ export function Island() {
   // callback ref, because the content node mounts and unmounts with expansion.
   const observer = useRef<ResizeObserver | null>(null);
   const contentRef = useCallback((el: HTMLDivElement | null) => {
+    // Keep the last height while the node is gone (AnimatePresence swaps);
+    // zeroing here collapses Settings/Welcome mid-transition. The outgoing
+    // panel's null comes after the new panel attached, so it must not
+    // disconnect the new panel's observer.
+    if (!el) return;
     observer.current?.disconnect();
     contentEl.current = el;
-    // Keep the last height while the node is gone (AnimatePresence swaps);
-    // zeroing here collapses Settings/Welcome mid-transition.
-    if (!el) return;
     const measure = () => setContentHeight(el.offsetHeight);
     measure();
     observer.current = new ResizeObserver(measure);
@@ -135,10 +142,13 @@ export function Island() {
     };
   }, [asking, view, turnsLen, chatId]);
 
+  const showGuide = !!waiting && !suggestion && (mascot === "idle" || mascot === "sleeping");
   const width = asking
     ? ASK_WIDTH
     : expanded
-      ? EXPANDED.width
+      ? showGuide
+        ? GUIDE_WIDTH
+        : EXPANDED.width
       : waiting
         ? COMPACT.waitWidth
         : busy
@@ -247,7 +257,11 @@ export function Island() {
                 exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
                 transition={{ duration: 0.28, delay: 0.06, ease: [0.23, 1, 0.32, 1] }}
               >
-                <ExpandedContent mascot={mascot} paused={paused} suggestion={suggestion} />
+                {showGuide && waiting ? (
+                  <IslandGuide waiting={waiting} />
+                ) : (
+                  <ExpandedContent mascot={mascot} paused={paused} suggestion={suggestion} />
+                )}
               </motion.div>
             )
           )}
@@ -410,7 +424,7 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
           title={`From now on, "${suggestion.options[alwaysAt]}" without asking. Undo in Settings > Skills.`}
           className="chip rounded-full px-2.5 py-1.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
         >
-          Always do this
+          Always {suggestion.options[alwaysAt].toLowerCase()}
         </motion.button>
       )}
       <motion.button
