@@ -451,8 +451,8 @@ commands.local_models = () => ({ reachable: true, chat: ["qwen3:1.7b", "llama3.2
 commands.running_apps = () => ["code.exe", "chrome.exe", "slack.exe", "windowsterminal.exe", "keepassxc.exe"];
 commands.suggestion_always = (a) => commands.suggestion_choose?.(a);
 let laterItems = [
-  { id: "l1", title: "3 new screenshots", detail: "Copy text or move them to a folder", minutesAgo: 12 },
-  { id: "l2", title: "Download finished", detail: "invoice-sept.pdf", minutesAgo: 25 },
+  { id: "l1", title: "3 new screenshots", detail: "Copy text or move them to a folder", minutesAgo: 12, missed: true },
+  { id: "l2", title: "Download finished", detail: "invoice-sept.pdf", minutesAgo: 25, missed: false },
 ];
 commands.later_list = () => laterItems;
 commands.later_open = (a) => {

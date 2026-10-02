@@ -137,6 +137,14 @@ pub fn status(repo: &Path) -> serde_json::Value {
     let behind = count(&["rev-list", "--count", "HEAD..@{u}"]);
     let ahead = count(&["rev-list", "--count", "@{u}..HEAD"]);
     let changed = git(repo, &["status", "--porcelain"]).map_or(0, |s| s.lines().count());
+    // Only offer an install when it would do something: the incoming
+    // commits change a lockfile, or the packages were never installed.
+    let incoming = if behind > 0 {
+        git(repo, &["diff", "--name-only", "HEAD...@{u}"]).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let deps_needed = locks_changed(&incoming) || deps_missing(repo);
     let env_missing = !repo.join(".env").exists() && repo.join(".env.example").exists();
     let docker_needed = [
         "docker-compose.yml",
@@ -159,7 +167,32 @@ pub fn status(repo: &Path) -> serde_json::Value {
         "changed": changed,
         "env_missing": env_missing,
         "docker_needed": docker_needed,
+        "deps_needed": deps_needed,
     })
+}
+
+/// Lockfiles and the folder each installs into, if it has one.
+const LOCKS: &[(&str, Option<&str>)] = &[
+    ("pnpm-lock.yaml", Some("node_modules")),
+    ("package-lock.json", Some("node_modules")),
+    ("yarn.lock", Some("node_modules")),
+    ("bun.lockb", Some("node_modules")),
+    ("uv.lock", Some(".venv")),
+    ("poetry.lock", None),
+    ("Cargo.lock", None),
+];
+
+fn locks_changed(files: &str) -> bool {
+    files
+        .lines()
+        .any(|f| LOCKS.iter().any(|(lock, _)| f.trim().ends_with(lock)))
+}
+
+/// A lockfile at the root whose install folder is not there yet.
+fn deps_missing(repo: &Path) -> bool {
+    LOCKS
+        .iter()
+        .any(|(lock, dir)| dir.is_some_and(|d| repo.join(lock).exists() && !repo.join(d).exists()))
 }
 
 /// The GitHub page of a repo's `origin`, if it is on github.com.
@@ -349,6 +382,17 @@ mod tests {
         assert_eq!(st["ahead"], 0);
         assert_eq!(st["env_missing"], true);
         assert_eq!(st["docker_needed"], true);
+        assert_eq!(st["deps_needed"], false, "no lockfile, nothing to install");
+        std::fs::write(clone.join("pnpm-lock.yaml"), "").unwrap();
+        assert_eq!(status(&clone)["deps_needed"], true, "never installed");
+        std::fs::create_dir(clone.join("node_modules")).unwrap();
+        assert_eq!(
+            status(&clone)["deps_needed"],
+            false,
+            "installed, lockfile unchanged"
+        );
+        assert!(locks_changed("src/main.rs\napps/web/pnpm-lock.yaml"));
+        assert!(!locks_changed("src/main.rs\nREADME.md"));
         assert_eq!(github_url(&clone), None, "a local remote is not GitHub");
         let _ = std::fs::remove_dir_all(root);
     }
