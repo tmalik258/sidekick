@@ -32,6 +32,20 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
+        with:
+          # sherpa-rs-sys downloads the speech libraries here, outside target/.
+          cache-directories: ~/AppData/Local/sherpa-rs
+      # If target/ came back from the cache without those libraries, make
+      # sherpa-rs-sys's build script run again so it downloads them;
+      # otherwise linking fails with "cannot open input file 'cargs.lib'".
+      - name: Make sure the speech libraries are present
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "$env:LOCALAPPDATA\sherpa-rs")) {
+            Get-ChildItem target -Recurse -Directory -Filter "sherpa-rs-sys-*" -ErrorAction SilentlyContinue |
+              Where-Object { $_.Parent.Name -in @("build", ".fingerprint") } |
+              Remove-Item -Recurse -Force
+          }
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
