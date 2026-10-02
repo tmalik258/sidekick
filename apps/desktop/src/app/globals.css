@@ -310,7 +310,37 @@ body {
   }
 }
 
+/* Welcome "thinking" words: a light sweeping across the text. */
+.thinking-words {
+  background: linear-gradient(
+    90deg,
+    rgb(235 235 245 / 0.45) 0%,
+    rgb(255 255 255 / 0.95) 50%,
+    rgb(235 235 245 / 0.45) 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation:
+    spoken-in 280ms cubic-bezier(0.23, 1, 0.32, 1) both,
+    thinking-shimmer 1.6s linear infinite;
+}
+
+@keyframes thinking-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .thinking-words {
+    animation: none;
+    color: rgb(235 235 245 / 0.6);
+  }
   .thinking-dot {
     animation: none;
     opacity: 0.6;

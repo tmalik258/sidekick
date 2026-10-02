@@ -334,9 +334,7 @@ function BrowserCard() {
           </div>
           {guide?.id === b.id && (
             <div className="flex flex-col gap-1.5 rounded-lg bg-[#0a84ff]/10 p-2.5 text-[12.5px]">
-              <p>
-                {b.name} opened its extensions page in your last-used profile. The folder path is copied:
-              </p>
+              <p>{b.name} opened its extensions page in your last-used profile. The folder path is copied:</p>
               <code className="truncate rounded bg-black/5 px-2 py-1 font-mono text-[11px] select-all dark:bg-white/5">
                 {guide.guide.copied}
               </code>

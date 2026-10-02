@@ -486,7 +486,7 @@ function Chip({
 }
 
 /** Live transcript while listening, with a breathing level bar. */
-function Hearing({ text }: { text: string }) {
+export function Hearing({ text }: { text: string }) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2.5" aria-live="polite">
       <span className="flex h-4 items-center gap-[3px]" role="img" aria-label="Listening">

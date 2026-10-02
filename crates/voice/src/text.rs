@@ -19,6 +19,16 @@ const NAMES: &[&[&str]] = &[
     &["psych", "kick"],
 ];
 
+/// After a greeting, any word starting with one of these counts as the name,
+/// so accents and loose transcripts still work ("hey sidecaig", "hey sidekey").
+const NAME_STARTS: &[&str] = &["side", "sight", "syde"];
+
+/// Whether `word` could be the end of a split name ("side caig", "side kick"):
+/// a short fragment with a k, c, q or g sound up front.
+fn name_tail(word: &str) -> bool {
+    word.len() <= 6 && word.starts_with(['k', 'c', 'q', 'g'])
+}
+
 /// The transcript without the wake phrase at its start.
 pub fn strip_wake(text: &str) -> String {
     let trimmed = text.trim();
@@ -47,7 +57,7 @@ pub fn strip_wake(text: &str) -> String {
     let end = name_at(0).or_else(|| {
         first
             .filter(|w| GREETINGS.contains(w))
-            .and_then(|_| name_at(1))
+            .and_then(|_| name_at(1).or_else(|| loose_name(&words)))
     });
     match end {
         Some(n) => trimmed[words[n - 1].1..]
@@ -55,6 +65,17 @@ pub fn strip_wake(text: &str) -> String {
             .to_owned(),
         None => trimmed.to_owned(),
     }
+}
+
+/// "hey side*": the greeting's next word starts like the name. A bare "side"
+/// or "sight" also takes a short k/c/g fragment after it ("side caig").
+fn loose_name(words: &[(String, usize)]) -> Option<usize> {
+    let word = words.get(1)?.0.as_str();
+    if !NAME_STARTS.iter().any(|p| word.starts_with(p)) {
+        return None;
+    }
+    let split = NAME_STARTS.contains(&word) && words.get(2).is_some_and(|(w, _)| name_tail(w));
+    Some(if split { 3 } else { 2 })
 }
 
 /// Removes what sounds wrong when read aloud: markdown marks, link targets
@@ -190,6 +211,20 @@ mod tests {
         assert_eq!(strip_wake("Okay side kick open settings"), "open settings");
         assert_eq!(strip_wake("Hi Sidekik. Pause"), "Pause");
         assert_eq!(strip_wake("hey there"), "hey there");
+        assert_eq!(
+            strip_wake("Hey sidecaig, open my downloads"),
+            "open my downloads"
+        );
+        assert_eq!(
+            strip_wake("hey side caig what time is it"),
+            "what time is it"
+        );
+        assert_eq!(strip_wake("Hey sidekey. Next"), "Next");
+        assert_eq!(strip_wake("hey side open settings"), "open settings");
+        assert_eq!(
+            strip_wake("sidecaig open settings"),
+            "sidecaig open settings"
+        );
     }
 
     #[test]
