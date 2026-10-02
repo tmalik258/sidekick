@@ -12,7 +12,7 @@ git push origin v0.2.0
 ```
 
 3. The Release workflow builds the NSIS and MSI installers on Windows and attaches them to a draft release with generated notes. Review the draft on GitHub and publish it.
-4. Installed copies see the new version within a day (Settings > General > Tell me about new versions) and link to the release page. Nothing installs on its own.
+4. Installed copies see the new version within a day (Settings > Home > Tell me about new versions). The island offers Install: it downloads the installer, checks it against SHA256SUMS.txt from the release, then runs it. Nothing installs without that click.
 
 To build installers locally on Windows:
 

@@ -921,7 +921,6 @@ pub async fn setup_apply(app: AppHandle, plan: Plan) -> CmdResult<Vec<String>> {
     }
     settings.voice.enabled |= plan.voice;
     settings.launch_at_login = plan.launch_at_login;
-    settings.onboarded = true;
     apply_settings(&app, settings)?;
     if plan.voice {
         let _ = crate::voice::download(&app);

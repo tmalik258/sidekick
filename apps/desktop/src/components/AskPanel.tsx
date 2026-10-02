@@ -12,6 +12,7 @@ import { Markdown } from "@/lib/markdown";
 import {
   cancelChat,
   newChat,
+  openChat,
   sendChat,
   setAsk,
   startListening,
@@ -20,7 +21,14 @@ import {
   updateSettings,
   useSidekick,
 } from "@/lib/store";
-import { isPaused, PROVIDER_LABELS, type ProviderStatus, type SearchHit, type Turn } from "@/lib/types";
+import {
+  type ChatSummary,
+  isPaused,
+  PROVIDER_LABELS,
+  type ProviderStatus,
+  type SearchHit,
+  type Turn,
+} from "@/lib/types";
 import { Icon, type IconName } from "./Icon";
 
 interface Command {
@@ -51,6 +59,7 @@ export function AskPanel() {
   const [hits, setHits] = useState<{ query: string; items: SearchHit[] } | null>(null);
   const [clips, setClips] = useState<{ text: string; ts: string }[] | null>(null);
   const [projects, setProjects] = useState<{ name: string; path: string }[]>([]);
+  const [chats, setChats] = useState<ChatSummary[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const seq = ask?.seq;
@@ -63,6 +72,17 @@ export function AskPanel() {
     setClips(null);
     void api.aiStatus().then(setProviders);
     void api.projectsList().then(setProjects);
+    void api
+      .chatsList()
+      .then(setChats)
+      .catch(() => setChats([]));
+    // A shortcut can open Ask mode straight into a tool.
+    const tool = useSidekick.getState().ask?.tool;
+    if (tool) setAsk({ tool: null });
+    if (tool === "clipboard") void api.clipboardHistory().then(setClips);
+    if (tool === "screen") {
+      sendChat("What's on my screen? Explain it briefly and point out anything I should act on.", { screen: true });
+    }
     const id = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(id);
   }, [seq]);
@@ -119,8 +139,17 @@ export function AskPanel() {
           ]
         : []),
     ];
+    // Recent conversations to pick up again.
+    const recent: Command[] = chats.slice(0, 20).map((c) => ({
+      id: `chat:${c.id}`,
+      label: c.title,
+      hint: `Continue · ${ago(c.updated)}`,
+      icon: "ask",
+      run: () => void openChat(c.id),
+      stay: true,
+    }));
     const q = text.trim().toLowerCase();
-    if (!q) return all;
+    if (!q) return turns.length ? all : [...all, ...recent.slice(0, 3)];
     // Typing a project's name offers to open it (FR-DEV-10).
     const launch: Command[] = projects
       .filter((p) => p.name.toLowerCase().includes(q.replace(/^open\s+/, "")))
@@ -132,8 +161,9 @@ export function AskPanel() {
         icon: "folder",
         run: () => void api.projectLaunch(p.path),
       }));
-    return [...all.filter((c) => c.label.toLowerCase().includes(q)), ...launch];
-  }, [paused, settings.muted, turns.length, text, projects]);
+    const pickUp = recent.filter((c) => c.label.toLowerCase().includes(q)).slice(0, 3);
+    return [...all.filter((c) => c.label.toLowerCase().includes(q)), ...launch, ...pickUp];
+  }, [paused, settings.muted, turns.length, text, projects, chats]);
 
   if (!ask) return null;
 
@@ -712,6 +742,17 @@ function Thinking() {
       ))}
     </span>
   );
+}
+
+/** "5 min ago", "yesterday", or a date. */
+function ago(iso: string): string {
+  const mins = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  if (!Number.isFinite(mins)) return "";
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  if (mins < 24 * 60) return `${Math.round(mins / 60)} h ago`;
+  if (mins < 48 * 60) return "yesterday";
+  return new Date(iso).toLocaleDateString();
 }
 
 function Kbd({ children }: { children: ReactNode }) {

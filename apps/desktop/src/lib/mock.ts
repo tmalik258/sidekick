@@ -401,8 +401,6 @@ commands.setup_detect = () => ({
   installable: [],
 });
 commands.setup_apply = () => {
-  settings = { ...settings, onboarded: true };
-  emit("settings://changed", settings);
   return ["Picked 2 code folders", "Added Claude Code hooks", "Installing the search model"];
 };
 commands.claude_add_hooks = () => "C:/Users/you/.claude/settings.json.sidekick-backup-20261002-101500";
