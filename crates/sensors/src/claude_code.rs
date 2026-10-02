@@ -160,6 +160,32 @@ async fn serve(mut sock: TcpStream, bus: &EventBus, gate: &SensorGate, approvals
 
 /// A `PermissionRequest` hook as an event: what the tool wants to do, in
 /// one line. The id ties the island's answer to the waiting request.
+/// The narrowest Claude Code permission rule that allows this request
+/// again: the exact command for Bash, the site for WebFetch, otherwise the
+/// tool. Empty when there is nothing safe to remember.
+pub fn allow_rule(tool: &str, input: &serde_json::Value) -> String {
+    let clean = |s: &str| !s.is_empty() && !s.contains(['(', ')']) && s.len() <= 200;
+    match tool {
+        "Bash" => input["command"]
+            .as_str()
+            .map(str::trim)
+            .filter(|c| clean(c) && !c.contains('\n'))
+            .map(|c| format!("Bash({c})"))
+            .unwrap_or_default(),
+        "WebFetch" => input["url"]
+            .as_str()
+            .and_then(|u| u.split("://").nth(1))
+            .and_then(|r| r.split(['/', '?', '#', ':']).next())
+            .filter(|h| clean(h))
+            .map(|h| format!("WebFetch(domain:{h})"))
+            .unwrap_or_default(),
+        t if t.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') && !t.is_empty() => {
+            t.to_owned()
+        }
+        _ => String::new(),
+    }
+}
+
 pub fn permission_event(input: &serde_json::Value) -> Option<Event> {
     if input["hook_event_name"].as_str()? != "PermissionRequest" {
         return None;
@@ -196,8 +222,10 @@ pub fn permission_event(input: &serde_json::Value) -> Option<Event> {
             serde_json::json!({
                 "id": id,
                 "project": project,
+                "cwd": cwd,
                 "tool": tool,
                 "summary": summary,
+                "rule": allow_rule(tool, ti),
                 "seconds": APPROVAL_WAIT.as_secs(),
             }),
         )
@@ -243,6 +271,37 @@ pub fn hook_event(input: &serde_json::Value) -> Option<Event> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn remembers_the_narrowest_rule() {
+        use serde_json::json;
+        assert_eq!(
+            allow_rule("Bash", &json!({ "command": "npm test" })),
+            "Bash(npm test)"
+        );
+        assert_eq!(
+            allow_rule("Bash", &json!({ "command": "rm -rf $(pwd)" })),
+            "",
+            "parentheses would widen the rule"
+        );
+        assert_eq!(allow_rule("Bash", &json!({ "command": "a\nb" })), "");
+        assert_eq!(
+            allow_rule(
+                "WebFetch",
+                &json!({ "url": "https://docs.rs/serde/latest" })
+            ),
+            "WebFetch(domain:docs.rs)"
+        );
+        assert_eq!(
+            allow_rule("Edit", &json!({ "file_path": "src/a.rs" })),
+            "Edit"
+        );
+        assert_eq!(
+            allow_rule("mcp__github__create_issue", &json!({})),
+            "mcp__github__create_issue"
+        );
+        assert_eq!(allow_rule("Weird(x)", &json!({})), "");
+    }
+
     use super::*;
     use crate::GateState;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};

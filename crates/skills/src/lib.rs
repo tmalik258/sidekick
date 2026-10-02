@@ -214,6 +214,7 @@ pub const ACTIONS: &[&str] = &[
     "claude_allow",
     "claude_deny",
     "claude_pass",
+    "claude_always",
     "browser_pair_allow",
     "browser_pair_deny",
     "browser_fill",

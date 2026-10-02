@@ -445,6 +445,27 @@ async fn execute(
                 path: None,
             });
         }
+        "claude_always" => {
+            let id = arg("id").ok_or("no request id")?;
+            crate::claude_config::allow_in_project(
+                arg("cwd").unwrap_or_default(),
+                arg("rule").unwrap_or_default(),
+            )?;
+            let state = app.state::<AppState>();
+            if !state.approvals.decide(id, Some(true)) {
+                return Ok(sidekick_actions::Outcome {
+                    message: "Saved for next time; answer this one in the terminal".into(),
+                    path: None,
+                });
+            }
+            return Ok(sidekick_actions::Outcome {
+                message: format!(
+                    "Allowed, and from now on in this project: {}",
+                    arg("rule").unwrap_or_default()
+                ),
+                path: None,
+            });
+        }
         "browser_pair_allow" | "browser_pair_deny" => {
             let id = arg("id").ok_or("no request id")?;
             let allow = option.action == "browser_pair_allow";

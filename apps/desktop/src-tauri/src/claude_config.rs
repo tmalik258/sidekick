@@ -120,6 +120,48 @@ pub async fn add_mcp(claude: &Path, url: &str, token: &str) -> Result<(), String
     }
 }
 
+/// Adds `rule` to the project's `.claude/settings.local.json` allow list
+/// (Claude Code's own per-project, not-committed settings).
+pub fn allow_in_project(cwd: &str, rule: &str) -> Result<(), String> {
+    let dir = Path::new(cwd);
+    if rule.trim().is_empty() {
+        return Err("Nothing to remember for this request".into());
+    }
+    if !dir.is_absolute() || !dir.is_dir() {
+        return Err("The project folder is not there".into());
+    }
+    let path = dir.join(".claude").join("settings.local.json");
+    let old = std::fs::read_to_string(&path).unwrap_or_default();
+    let new = add_allow_rule(&old, rule)?;
+    std::fs::create_dir_all(path.parent().unwrap_or(dir)).map_err(|e| e.to_string())?;
+    std::fs::write(&path, new).map_err(|e| format!("could not save the rule: {e}"))
+}
+
+pub fn add_allow_rule(text: &str, rule: &str) -> Result<String, String> {
+    let mut v: Value = if text.trim().is_empty() {
+        json!({})
+    } else {
+        serde_json::from_str(text).map_err(|_| "settings.local.json is not valid JSON")?
+    };
+    let root = v
+        .as_object_mut()
+        .ok_or("settings.local.json is not an object")?;
+    let perms = root
+        .entry("permissions")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or("permissions is not an object")?;
+    let allow = perms
+        .entry("allow")
+        .or_insert_with(|| json!([]))
+        .as_array_mut()
+        .ok_or("permissions.allow is not a list")?;
+    if !allow.iter().any(|r| r.as_str() == Some(rule)) {
+        allow.push(json!(rule));
+    }
+    serde_json::to_string_pretty(&v).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,6 +193,18 @@ mod tests {
             merge_hooks(&merge_hooks(old).unwrap()).unwrap(),
             merge_hooks(old).unwrap()
         );
+    }
+
+    #[test]
+    fn adds_an_allow_rule_once() {
+        let first = add_allow_rule("", "Bash(npm test)").unwrap();
+        let again = add_allow_rule(&first, "Bash(npm test)").unwrap();
+        let v: Value = serde_json::from_str(&again).unwrap();
+        assert_eq!(v["permissions"]["allow"], json!(["Bash(npm test)"]));
+        let kept = add_allow_rule(r#"{"permissions":{"deny":["Bash(rm:*)"]}}"#, "Edit").unwrap();
+        let v: Value = serde_json::from_str(&kept).unwrap();
+        assert_eq!(v["permissions"]["deny"], json!(["Bash(rm:*)"]));
+        assert!(add_allow_rule("[]", "Edit").is_err());
     }
 
     #[test]
