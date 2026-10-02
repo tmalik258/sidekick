@@ -3,6 +3,7 @@ mod ask;
 mod brief;
 mod browser;
 mod commands;
+mod composio;
 mod decide;
 mod fathom;
 mod files;
@@ -83,6 +84,9 @@ pub fn run() {
             commands::calendar_today,
             commands::search_clear,
             commands::setup_status,
+            commands::ai_handoff,
+            commands::composio_import,
+            commands::composio_test,
             commands::setup_run,
             commands::backup_export,
             commands::backup_import,

@@ -61,6 +61,8 @@ pub struct Settings {
     pub ai: AiSettings,
     pub voice: VoiceSettings,
     pub calendar: CalendarSettings,
+    /// Composio's MCP server, for apps like Jira, Slack and Gmail in chat.
+    pub composio: ComposioSettings,
     pub semantic_search: SemanticSearch,
     /// The first-run welcome was finished or skipped.
     pub onboarded: bool,
@@ -119,6 +121,20 @@ impl Default for CalendarSettings {
             remind_minutes: 5,
         }
     }
+}
+
+/// Composio's MCP server: the apps connected there (Jira, Trello, Slack,
+/// Gmail, Notion and more) become tools in Ask mode. The local model may
+/// only read; anything that changes something goes to Claude Code.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ComposioSettings {
+    pub enabled: bool,
+    /// The MCP server link from Composio (or from Claude Code's config).
+    pub url: String,
+    /// Extra request headers, such as `x-api-key`. Secrets: kept only here
+    /// and left out of backups.
+    pub headers: BTreeMap<String, String>,
 }
 
 /// Voice (FR-VOICE): off until the user turns it on and downloads the models.
@@ -324,6 +340,7 @@ impl Default for Settings {
             ai: AiSettings::default(),
             voice: VoiceSettings::default(),
             calendar: CalendarSettings::default(),
+            composio: ComposioSettings::default(),
             semantic_search: SemanticSearch::default(),
             onboarded: false,
             check_updates: true,

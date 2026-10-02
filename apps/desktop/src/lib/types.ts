@@ -46,6 +46,7 @@ export interface Settings {
   semanticSearch: { enabled: boolean; model: string };
   onboarded: boolean;
   checkUpdates: boolean;
+  composio: ComposioSettings;
   denyApps: string[];
   denySites: string[];
 }
@@ -134,6 +135,10 @@ export interface Turn extends ChatMessage {
   streaming?: boolean;
   /** A screenshot went with this question. */
   screen?: boolean;
+  /** Why the local model suggests continuing in Claude Code. */
+  handoff?: string | null;
+  /** The app tool the local model is using right now. */
+  tool?: string | null;
 }
 
 export interface AskContext {
@@ -254,6 +259,7 @@ export const DEFAULT_SETTINGS: Settings = {
   semanticSearch: { enabled: true, model: "nomic-embed-text" },
   onboarded: false,
   checkUpdates: true,
+  composio: { enabled: false, url: "", headers: {} },
   denyApps: ["1password.exe", "bitwarden.exe", "keepass.exe", "keepassxc.exe"],
   denySites: [],
   voice: { enabled: false, wakeWord: true, speakAnswers: true, voice: "af_bella", speed: 1 },
@@ -352,4 +358,16 @@ export interface SetupItem {
 export interface SetupStatus {
   items: SetupItem[];
   installAll: string | null;
+}
+
+export interface ComposioSettings {
+  enabled: boolean;
+  url: string;
+  headers: Record<string, string>;
+}
+
+export interface ComposioCheck {
+  tools: number;
+  reads: number;
+  sample: string[];
 }

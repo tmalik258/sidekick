@@ -22,6 +22,7 @@ Sidekick works on its own after install. Each item below turns on more of it. Th
 | Code folders | Settings > General | Project status, the project launcher, the end-of-day check |
 | Calendar | Settings > Today: your private iCal link (Google: Settings > your calendar > Secret address in iCal format; Outlook: Settings > Calendar > Shared calendars > Publish) | Meeting reminders with Join and Prep |
 | Folders to search | Settings > Search | Search inside your documents and notes |
+| Composio (optional) | Settings > AI > Composio: press **Use Claude Code's** if Claude Code already has Composio, or paste the MCP link from Composio (and an API key if it needs one, or set `COMPOSIO_API_KEY`). **Test** shows how many tools it found | Jira, Trello, Slack, Gmail, Notion and more in Ask mode |
 | Voice (optional) | Settings > Voice, about 180 MB once | "Hey Sidekick" and spoken answers, all on this PC |
 | Fathom (optional) | `setx FATHOM_API_KEY "your-key"`, then restart Sidekick | Follow-ups drafted from meeting notes |
 
@@ -54,3 +55,14 @@ gh auth login
 | Bitwarden CLI (optional) | `Bitwarden.CLI` (or 1Password's `op`) | Fill logins from your password manager |
 
 Install any of them with `winget install -e --id <package>`. Sidekick picks up new tools without a restart.
+
+## Composio and the local model
+
+With Composio on, the local model can read your connected apps in Ask mode, for example "what Jira issues are assigned to me?" or "any unread Slack messages from the client?". It can only read. When a request needs a change (sending, creating, moving, deleting), takes too many steps, or the model gives up, the answer shows **Continue in Claude Code**. That opens Claude Code in a terminal with the whole conversation, and Claude Code asks before it changes anything (or you allow it from the island).
+
+Small models work best with one clear request at a time. If answers cut off or ignore the tools, give Ollama a bigger context window, then restart Ollama:
+
+```powershell
+setx OLLAMA_CONTEXT_LENGTH 16384
+```
+

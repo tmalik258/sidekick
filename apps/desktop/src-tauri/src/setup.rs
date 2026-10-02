@@ -418,6 +418,21 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
 
     items.push(
         SetupItem::new(
+            "composio",
+            Group::Connect,
+            "Composio",
+            "Jira, Trello, Slack, Gmail, Notion and more in Ask mode. Reads use the local model; changes go to Claude Code.",
+        )
+        .done(
+            crate::composio::configured(&settings.composio).is_some(),
+            "Connected",
+            "Not set up",
+        )
+        .tab("ai"),
+    );
+
+    items.push(
+        SetupItem::new(
             "search_folders",
             Group::Connect,
             "Folders to search",

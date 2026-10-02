@@ -242,6 +242,12 @@ export function SettingsPanel() {
             >
               <AiSection ai={settings.ai} onError={setError} />
             </Section>
+            <Section
+              title="Composio"
+              hint="Your apps connected on Composio (Jira, Trello, Slack, Gmail, Notion and more) become tools in Ask mode. The local model can only read them; anything that changes something goes to Claude Code, which asks before it acts."
+            >
+              <ComposioSection onError={setError} />
+            </Section>
           </>
         )}
         {tab === "voice" && (
@@ -1251,6 +1257,92 @@ function Backup({ onError }: { onError: (e: string) => void }) {
         />
       </div>
       {note && <p className="text-[12px] text-(--muted) break-all">{note}</p>}
+    </div>
+  );
+}
+
+function ComposioSection({ onError }: { onError: (e: string) => void }) {
+  const composio = useSidekick((s) => s.settings.composio);
+  const [check, setCheck] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const save = (patch: Partial<typeof composio>) => updateSettings({ composio: { ...composio, ...patch } });
+  const hasKey = Boolean(composio.headers["x-api-key"]);
+  const test = () => {
+    setTesting(true);
+    setCheck(null);
+    api
+      .composioTest()
+      .then((c) =>
+        setCheck(
+          c.tools === 0
+            ? "Connected, but no tools yet. Connect apps on composio.dev."
+            : `Connected: ${c.tools} tools, ${c.reads} of them read-only (for example ${c.sample.slice(0, 3).join(", ")}).`,
+        ),
+      )
+      .catch((e) => setCheck(String(e)))
+      .finally(() => setTesting(false));
+  };
+  return (
+    <div className="flex flex-col gap-3">
+      <Toggle
+        label="Use Composio in Ask mode"
+        hint="Off for questions marked local only."
+        checked={composio.enabled}
+        onChange={(enabled) => void save({ enabled }).catch((e) => onError(String(e)))}
+      />
+      <Field label="MCP link" hint="From Composio, or press Use Claude Code's to copy it from Claude Code.">
+        <TextField
+          label="Composio MCP link"
+          value={composio.url}
+          placeholder="https://..."
+          className="w-56"
+          mono
+          onCommit={(url) => void save({ url }).catch((e) => onError(String(e)))}
+        />
+      </Field>
+      <Field label="API key" hint="Only if your link needs one. Or set COMPOSIO_API_KEY.">
+        <input
+          type="password"
+          aria-label="Composio API key"
+          placeholder={hasKey ? "Saved" : "Optional"}
+          spellCheck={false}
+          className="w-56 rounded-lg border border-(--border) bg-transparent px-2 py-1 font-mono text-[12px]"
+          onBlur={(e) => {
+            const key = e.target.value.trim();
+            if (!key) return;
+            e.target.value = "";
+            void save({ headers: { ...composio.headers, "x-api-key": key } }).catch((err) => onError(String(err)));
+          }}
+        />
+      </Field>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          small
+          onClick={() =>
+            void api
+              .composioImport()
+              .then(() => setCheck("Copied from Claude Code."))
+              .catch((e) => setCheck(String(e)))
+          }
+        >
+          Use Claude Code&apos;s
+        </Button>
+        <Button small onClick={test} disabled={testing || !composio.url}>
+          {testing ? "Testing..." : "Test"}
+        </Button>
+        {hasKey && (
+          <Button
+            small
+            onClick={() => {
+              const { "x-api-key": _, ...rest } = composio.headers;
+              void save({ headers: rest });
+            }}
+          >
+            Forget key
+          </Button>
+        )}
+      </div>
+      {check && <p className="text-[12px] text-(--muted)">{check}</p>}
     </div>
   );
 }
