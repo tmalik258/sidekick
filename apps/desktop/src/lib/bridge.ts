@@ -172,6 +172,7 @@ export const api = {
   composioConnect: (slug: string) => invoke<void>("composio_connect", { slug }),
   composioUseKey: (key: string) => invoke<string>("composio_use_key", { key }),
   agentsStatus: () => invoke<Agents>("agents_status"),
+  aiOpenLink: (target: string) => invoke<string>("ai_open_link", { target }),
   codexAddNotify: () => invoke<string | null>("codex_add_notify"),
   codexAddMcp: () => invoke<string | null>("codex_add_mcp"),
   setupDetect: () => invoke<Found>("setup_detect"),

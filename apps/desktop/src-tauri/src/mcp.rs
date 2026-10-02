@@ -133,7 +133,36 @@ fn tool_error(t: impl Into<String>) -> Value {
     json!({ "content": [{ "type": "text", "text": t.into() }], "isError": true })
 }
 
+/// Ask mode's tools, offered to every model the same way: the local model
+/// calls them directly, Claude Code and Codex through this server with a
+/// `sidekick_` prefix. Search and today keep their own versions below.
+const SHARED: &[&str] = &[
+    "find_files",
+    "open",
+    "show_in_folder",
+    "recent",
+    "screen_text",
+    "propose",
+];
+
 pub fn tools() -> Value {
+    let mut list = own_tools();
+    if let Some(arr) = list.as_array_mut() {
+        for d in crate::ask_tools::defs()
+            .into_iter()
+            .filter(|d| SHARED.contains(&d.name.as_str()))
+        {
+            arr.push(json!({
+                "name": format!("sidekick_{}", d.name),
+                "description": d.description,
+                "inputSchema": d.parameters,
+            }));
+        }
+    }
+    list
+}
+
+fn own_tools() -> Value {
     json!([
         {
             "name": "sidekick_search",
@@ -199,7 +228,7 @@ async fn handle(app: &AppHandle, msg: &Value) -> Option<Value> {
                     "protocolVersion": version,
                     "capabilities": { "tools": {} },
                     "serverInfo": { "name": "sidekick", "version": app.package_info().version.to_string() },
-                    "instructions": "Sidekick is the user's desktop assistant. Use sidekick_search for the user's own files and history, and sidekick_notify to tell them when something finishes."
+                    "instructions": "Sidekick is the user's desktop assistant on their Windows PC. Use these tools instead of a shell: sidekick_find_files to find files and folders by name, sidekick_search for their history and file contents, sidekick_open and sidekick_show_in_folder to open things, sidekick_screen_text for what is on screen, sidekick_propose to offer a change as a button, sidekick_notify to tell them something finished."
                 }),
             )
         }
@@ -225,6 +254,18 @@ pub async fn call_text(app: &AppHandle, name: &str, args: &Value) -> String {
 }
 
 async fn call(app: &AppHandle, name: &str, args: &Value) -> Value {
+    if let Some(shared) = name
+        .strip_prefix("sidekick_")
+        .filter(|n| SHARED.contains(n))
+    {
+        let chat = crate::ask_tools::current_chat();
+        // Boxed: Ask's own tools call back into this server for today's time.
+        return match Box::pin(crate::ask_tools::run(app, &chat, shared, args)).await {
+            Some(out) if out.starts_with("Error") => tool_error(out),
+            Some(out) => text(out),
+            None => tool_error(format!("unknown tool {name}")),
+        };
+    }
     match name {
         "sidekick_search" => {
             let query = args["query"].as_str().unwrap_or_default();
@@ -350,7 +391,13 @@ mod tests {
                 "sidekick_search",
                 "sidekick_notify",
                 "sidekick_open_url",
-                "sidekick_time_today"
+                "sidekick_time_today",
+                "sidekick_find_files",
+                "sidekick_show_in_folder",
+                "sidekick_recent",
+                "sidekick_screen_text",
+                "sidekick_propose",
+                "sidekick_open",
             ]
         );
         assert!(
