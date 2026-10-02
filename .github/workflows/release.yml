@@ -37,6 +37,19 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The installer bundles the speech DLLs from target/release. A cached
+      # target/ can come back without them (their build script only copies
+      # them when it runs), so build the voice crate, then copy any that are
+      # missing from the download folder.
+      - run: cargo build --release -p sidekick-voice
+      - name: Make sure the speech DLLs are in target/release
+        shell: pwsh
+        run: |
+          $dlls = Get-ChildItem "$env:LOCALAPPDATA\sherpa-rs" -Recurse -Filter *.dll -ErrorAction SilentlyContinue
+          foreach ($dll in $dlls) {
+            $dst = Join-Path target/release $dll.Name
+            if (-not (Test-Path $dst)) { Copy-Item $dll.FullName $dst; Write-Host "Copied $($dll.Name)" }
+          }
       # Builds the speech DLLs first, then the app with them bundled.
       - run: pnpm build
       # Sidekick checks an update against these before running it.

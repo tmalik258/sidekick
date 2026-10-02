@@ -56,4 +56,14 @@ jobs:
       - run: pnpm --filter desktop build
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      # sherpa-rs-sys copies its DLLs next to the test binaries only when its
+      # build script runs; a cached target/ can come back without them
+      # (STATUS_DLL_NOT_FOUND). The downloaded copies are always here, so
+      # put their folders on PATH for the tests.
+      - name: Let tests find the speech DLLs
+        shell: pwsh
+        run: |
+          Get-ChildItem "$env:LOCALAPPDATA\sherpa-rs" -Recurse -Filter *.dll -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty DirectoryName -Unique |
+            ForEach-Object { Write-Host "Adding $_"; Add-Content $env:GITHUB_PATH $_ }
       - run: cargo test --workspace
