@@ -29,6 +29,24 @@ impl Pause {
     }
 }
 
+/// Shortcuts besides Ask, with their defaults.
+pub const SHORTCUTS: &[(&str, &str)] = &[
+    ("talk", "Ctrl+Alt+Space"),
+    ("accept", "Ctrl+Alt+Enter"),
+    ("dismiss", "Ctrl+Alt+Backspace"),
+    ("screen", "Ctrl+Alt+S"),
+    ("clipboard", "Ctrl+Alt+V"),
+    ("pause", "Ctrl+Alt+P"),
+    ("settings", "Ctrl+Alt+Comma"),
+];
+
+pub fn default_shortcuts() -> BTreeMap<String, String> {
+    SHORTCUTS
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -51,6 +69,9 @@ pub struct Settings {
     pub skills: BTreeMap<String, SkillPref>,
     /// Global shortcut that turns the island into Ask mode (FR-UI-07).
     pub palette_hotkey: String,
+    /// More global shortcuts, by action (talk, accept, dismiss, screen,
+    /// clipboard, pause, settings). Empty turns one off.
+    pub shortcuts: BTreeMap<String, String>,
     /// Folders with git repos to check at the end of the day (FR-DEV-09).
     /// Empty means the usual places (code, projects, source/repos, ...).
     pub code_folders: Vec<String>,
@@ -340,6 +361,7 @@ impl Default for Settings {
             sound_kit: SOUND_KITS[0].to_string(),
             skills: BTreeMap::new(),
             palette_hotkey: DEFAULT_PALETTE_HOTKEY.into(),
+            shortcuts: default_shortcuts(),
             code_folders: Vec::new(),
             end_of_day_hour: 18,
             index_folders: Vec::new(),
@@ -427,6 +449,13 @@ impl Settings {
         }
         self.end_of_day_hour = self.end_of_day_hour.min(23);
         self.code_folders.retain(|f| !f.trim().is_empty());
+        for (action, default) in SHORTCUTS {
+            self.shortcuts
+                .entry((*action).to_owned())
+                .or_insert_with(|| (*default).to_owned());
+        }
+        self.shortcuts
+            .retain(|k, _| SHORTCUTS.iter().any(|(a, _)| a == k));
         self.deny_apps.retain(|a| !a.trim().is_empty());
         self.deny_sites.retain(|s| !s.trim().is_empty());
         self.index_folders.retain(|f| !f.trim().is_empty());

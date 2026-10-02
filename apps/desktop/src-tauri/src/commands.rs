@@ -258,15 +258,27 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
         result.map_err(|e| format!("could not change launch at login: {e}"))?;
     }
 
-    if previous.palette_hotkey != next.palette_hotkey
-        && let Err(err) = ask::register(app, &next.palette_hotkey)
+    if let Some(bad) = next
+        .shortcuts
+        .values()
+        .find(|k| !crate::shortcuts::valid(k))
     {
-        let _ = ask::register(app, &previous.palette_hotkey);
-        return Err(err);
+        return Err(format!("{bad} is not a valid shortcut"));
     }
+    let keys_changed =
+        previous.palette_hotkey != next.palette_hotkey || previous.shortcuts != next.shortcuts;
 
     next.save(&state.settings_path).map_err(|e| e.to_string())?;
     *lock(&state.settings) = next.clone();
+    if keys_changed && let Err(err) = ask::register(app, &next.palette_hotkey) {
+        // Put the old keys back so Ask keeps working.
+        previous
+            .save(&state.settings_path)
+            .map_err(|e| e.to_string())?;
+        *lock(&state.settings) = previous.clone();
+        let _ = ask::register(app, &previous.palette_hotkey);
+        return Err(err);
+    }
     state.gate.set(gate_state(&next, now));
     if previous.ai != next.ai {
         let app = app.clone();

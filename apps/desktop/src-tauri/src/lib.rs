@@ -24,6 +24,7 @@ mod screen;
 mod search;
 mod secrets;
 mod setup;
+mod shortcuts;
 mod state;
 mod suggestions;
 mod timetrack;

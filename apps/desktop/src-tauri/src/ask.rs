@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::Shortcut;
 
 use crate::ai;
 use crate::island::{self, LABEL};
@@ -50,6 +50,9 @@ pub struct Open {
     pub page: Option<String>,
     /// "settings" opens the Settings panel instead of Ask.
     pub view: Option<&'static str>,
+    /// A tool to start with: "screen" asks about the screen, "clipboard"
+    /// shows clipboard history.
+    pub tool: Option<&'static str>,
 }
 
 pub fn is_open(app: &AppHandle) -> bool {
@@ -85,22 +88,16 @@ pub fn setup(app: &AppHandle, hotkey: &str) {
     }
 }
 
-/// Swaps the Ask shortcut. Returns an error the settings UI can show.
+/// Checks the Ask shortcut, then registers every shortcut again. Returns an
+/// error the settings UI can show when the Ask one cannot be used.
 pub fn register(app: &AppHandle, hotkey: &str) -> Result<(), String> {
-    let shortcut: Shortcut = hotkey
-        .parse()
+    hotkey
+        .parse::<Shortcut>()
         .map_err(|e| format!("{hotkey} is not a valid shortcut: {e}"))?;
-    let gs = app.global_shortcut();
-    let _ = gs.unregister_all();
-    // unregister_all also dropped the Alt+N keys of a suggestion on screen.
-    suggestions::rebind_keys(app);
-    gs.on_shortcut(shortcut, |app, _shortcut, event| {
-        if event.state == ShortcutState::Pressed {
-            toggle(app);
-        }
-    })
-    .map_err(|e| format!("{hotkey} could not be registered (another app may use it): {e}"))?;
-    log::info!("Ask shortcut: {hotkey}");
+    let failed = crate::shortcuts::register_all(app);
+    if let Some(f) = failed.iter().find(|f| f.starts_with(hotkey)) {
+        return Err(format!("{f}; pick another"));
+    }
     Ok(())
 }
 
