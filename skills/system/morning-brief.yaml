@@ -1,6 +1,6 @@
 id: system.morning-brief
-name: Morning brief
-description: The first time you sit down each morning, show yesterday's time, today's meetings, repos with unsaved work and pull requests waiting on you (GitHub CLI, if signed in) (FR-COMM-01).
+name: Start my day
+description: The first time you sit down each morning, one card with today's meetings, reviews and unsaved work, and the apps and sites you usually open first, ready to open in one go (FR-COMM-01).
 priority: 55
 cooldown_secs: 43200
 trigger:
@@ -9,6 +9,12 @@ suggestion:
   title: "Good morning"
   detail: "{{headline}}"
   options:
+    - { label: Open all, action: routine_open_all, when: { routine_count: { regex: "^[1-9]" }, auto: { equals: "" } } }
+    - { label: "{{item1}}", action: routine_open, args: { index: "1" }, when: { item1: { regex: "." }, auto: { equals: "" } } }
+    - { label: "{{item2}}", action: routine_open, args: { index: "2" }, when: { item2: { regex: "." }, auto: { equals: "" } } }
+    - { label: "{{item3}}", action: routine_open, args: { index: "3" }, when: { item3: { regex: "." }, auto: { equals: "" } } }
+    - { label: Always open these, action: routine_auto, args: { on: "true" }, when: { offer_auto: { equals: "1" } } }
+    - { label: Stop opening these by itself, action: routine_auto, args: { on: "false" }, when: { auto: { equals: "1" } } }
     - label: Plan my day
       action: ask_ai
       args:
@@ -17,4 +23,5 @@ suggestion:
         clipboard: "false"
       requires: ["ai"]
     - { label: "Open {{first_title}}", action: open_url, args: { url: "{{first_url}}" }, when: { first_url: { regex: "^https://github.com/" } } }
-    - { label: Copy, action: copy_text, args: { text: "{{text}}" } }
+    - { label: Not today, action: routine_skip, when: { routine_count: { regex: "^[1-9]" }, auto: { equals: "" } } }
+    - { label: Copy, action: copy_text, args: { text: "{{text}}" }, when: { routine_count: { regex: "^0" } } }

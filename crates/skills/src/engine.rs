@@ -387,6 +387,59 @@ suggestion:
     }
 
     #[test]
+    fn start_my_day_card_shows_the_routine() {
+        let brief = crate::builtin()
+            .into_iter()
+            .find(|s| s.id == "system.morning-brief")
+            .unwrap();
+        let mut e = Engine::new(vec![brief]);
+        let event = |routine: u32, auto: &str, offer: &str| {
+            Event::new(
+                "day.morning_brief",
+                "time",
+                serde_json::json!({
+                    "headline": "Your usual: Code, github.com", "text": "",
+                    "first_url": "", "first_title": "",
+                    "routine_count": routine, "item1": if routine > 0 { "Code" } else { "" },
+                    "item2": if routine > 1 { "github.com" } else { "" }, "item3": "",
+                    "auto": auto, "offer_auto": offer,
+                }),
+            )
+        };
+        let labels = |p: crate::Proposal| -> Vec<String> {
+            p.options.into_iter().map(|o| o.label).collect()
+        };
+        let now = Instant::now();
+        let p = e.evaluate(&event(2, "", "1"), &env(), now).unwrap();
+        assert_eq!(
+            labels(p),
+            [
+                "Open all",
+                "Code",
+                "github.com",
+                "Always open these",
+                "Not today"
+            ]
+        );
+        let mut e2 = Engine::new(vec![
+            crate::builtin()
+                .into_iter()
+                .find(|s| s.id == "system.morning-brief")
+                .unwrap(),
+        ]);
+        let p = e2.evaluate(&event(2, "1", ""), &env(), now).unwrap();
+        assert_eq!(labels(p), ["Stop opening these by itself"]);
+        let mut e3 = Engine::new(vec![
+            crate::builtin()
+                .into_iter()
+                .find(|s| s.id == "system.morning-brief")
+                .unwrap(),
+        ]);
+        let p = e3.evaluate(&event(0, "", ""), &env(), now).unwrap();
+        assert_eq!(labels(p), ["Copy"]);
+    }
+
+    #[test]
     fn matches_filters_and_drops_missing_capabilities() {
         let mut e = Engine::new(vec![skill(DEV)]);
         let p = e

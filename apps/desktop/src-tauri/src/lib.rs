@@ -22,6 +22,7 @@ mod meetings;
 mod pipeline;
 mod privacy;
 mod projects;
+mod routines;
 mod screen;
 mod search;
 mod secrets;
@@ -138,6 +139,8 @@ pub fn run() {
             commands::skill_set,
             commands::capabilities_get,
             commands::choices_reset,
+            commands::routines_today,
+            commands::routines_forget,
             commands::actions_recent,
             commands::reveal_path,
             commands::ai_status,

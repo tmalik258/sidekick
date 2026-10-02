@@ -553,6 +553,21 @@ async fn execute(
                 path: None,
             });
         }
+        "routine_open_all" | "routine_open" | "routine_skip" | "routine_auto" => {
+            let message = match option.action.as_str() {
+                "routine_open_all" => crate::routines::open_all(app, true).await?,
+                "routine_open" => {
+                    let n = arg("index").and_then(|s| s.parse().ok()).unwrap_or(1);
+                    crate::routines::open_one(app, n).await?
+                }
+                "routine_skip" => crate::routines::skip_today(app),
+                _ => crate::routines::set_auto(app, arg("on") == Some("true"))?,
+            };
+            return Ok(sidekick_actions::Outcome {
+                message,
+                path: None,
+            });
+        }
         "browser_fill" | "browser_close_duplicates" | "browser_save_session" => {
             return crate::browser::run(app, &option.action, &option.args).await;
         }

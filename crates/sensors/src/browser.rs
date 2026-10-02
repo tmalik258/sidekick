@@ -37,6 +37,8 @@ const KINDS: &[(&str, &str)] = &[
     ("long_read", "browser.long_read"),
     ("upwork_job", "browser.upwork_job"),
     ("many_tabs", "browser.many_tabs"),
+    // The domain in the active tab (never the page), for routines and time.
+    ("site", "browser.site"),
 ];
 
 /// How long a pairing request waits for Allow on the island.
@@ -286,7 +288,9 @@ async fn serve(mut sock: TcpStream, ctx: &Ctx, publish: impl Fn(Event)) {
                 .then(|| serde_json::from_slice::<serde_json::Value>(&req.body).ok())
                 .flatten();
             match parsed.as_ref().and_then(page_event) {
-                Some(event) => {
+                Some(mut event) => {
+                    event.payload["browser"] =
+                        browser_name(req.header("x-sidekick-browser").unwrap_or("Browser")).into();
                     publish(event);
                     http::respond(&mut sock, "204 No Content", &cors, None).await;
                 }

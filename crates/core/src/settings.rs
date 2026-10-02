@@ -96,6 +96,10 @@ pub struct Settings {
     pub deny_apps: Vec<String>,
     /// Sites (and their subdomains) Sidekick ignores.
     pub deny_sites: Vec<String>,
+    /// Learn what you open first each day and offer it as one card.
+    pub routines: bool,
+    /// Open the usual setup without asking (offered after five Open alls).
+    pub routines_auto: bool,
 }
 
 /// Password managers are ignored from the start (FR-RAG-08).
@@ -399,6 +403,8 @@ impl Default for Settings {
             check_updates: true,
             deny_apps: DEFAULT_DENY_APPS.iter().map(|s| (*s).to_owned()).collect(),
             deny_sites: Vec::new(),
+            routines: true,
+            routines_auto: false,
         }
     }
 }
