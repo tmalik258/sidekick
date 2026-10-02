@@ -17,6 +17,7 @@ import { Icon } from "./Icon";
 import { IslandSettings } from "./IslandSettings";
 import { IslandWelcome } from "./IslandWelcome";
 import { Orb } from "./Orb";
+import { PreparingVoice } from "./PreparingVoice";
 
 const TITLE: Record<MascotState, string> = {
   idle: "Sidekick",
@@ -63,15 +64,18 @@ export function Island() {
   const asking = useSidekick((s) => s.ask !== null);
   const view = useSidekick((s) => s.ask?.view);
   const chatting = useSidekick((s) => s.chatId !== null);
+  const voiceStatus = useSidekick((s) => s.voiceStatus);
   const reduced = useReducedMotion() ?? false;
   const now = useNow(15_000);
   const paused = isPaused(settings.pause, now);
   const hovered = useIntent(rawHover);
-  const expanded = asking || hovered || OPEN_STATES.has(mascot) || !!suggestion;
+  const preparingVoice =
+    !settings.onboarded && !asking && !(voiceStatus?.models.some((m) => m.id === "kokoro" && m.installed) ?? false);
+  const expanded = asking || preparingVoice || hovered || OPEN_STATES.has(mascot) || !!suggestion;
   // At rest only the sphere shows. The shell keeps its size (so hover and the
   // orb position do not move) but loses its background.
   const bare = !expanded && !chatting && (mascot === "idle" || mascot === "sleeping");
-  const busy = chatting || mascot === "noticing" || mascot === "working" || mascot === "listening";
+  const busy = chatting || preparingVoice || mascot === "noticing" || mascot === "working" || mascot === "listening";
 
   const [contentHeight, setContentHeight] = useState(0);
   const bump = useMotionValue(1);
@@ -165,6 +169,19 @@ export function Island() {
               transition={{ duration: 0.28, delay: 0.06, ease: [0.23, 1, 0.32, 1] }}
             >
               {view === "settings" ? <IslandSettings /> : view === "welcome" ? <IslandWelcome /> : <AskPanel />}
+            </motion.div>
+          ) : preparingVoice ? (
+            <motion.div
+              key="preparing"
+              ref={contentRef}
+              className="absolute top-0 right-0"
+              style={{ left: EXPANDED.pad + ORB + 14, paddingTop: EXPANDED.pad, paddingRight: EXPANDED.pad }}
+              initial={reduced ? { opacity: 0 } : { opacity: 0, filter: "blur(6px)", y: 4 }}
+              animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
+              exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
+              transition={{ duration: 0.28, delay: 0.06, ease: [0.23, 1, 0.32, 1] }}
+            >
+              <PreparingVoice voiceStatus={voiceStatus} />
             </motion.div>
           ) : (
             expanded && (
@@ -289,9 +306,10 @@ function UndoButton({ id }: { id: number }) {
 }
 
 function QuickActions({ paused }: { paused: boolean }) {
+  const hotkey = useSidekick((s) => s.settings.paletteHotkey);
   return (
     <div className="flex shrink-0 gap-1.5">
-      <RoundButton label="Ask Sidekick (Alt+Space)" onClick={() => void api.askOpen()}>
+      <RoundButton label={`Ask Sidekick (${hotkey})`} onClick={() => void api.askOpen()}>
         <Icon name="ask" size={15} />
       </RoundButton>
       <RoundButton
@@ -314,7 +332,7 @@ function RoundButton({ label, onClick, children }: { label: string; onClick: () 
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="chip grid size-8 place-items-center rounded-full bg-white/[0.12] text-white/90 hover:bg-white/[0.2] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff]"
+      className="chip grid size-8 place-items-center rounded-full bg-white/12 text-white/90 hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff]"
     >
       {children}
     </button>
@@ -332,12 +350,18 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
           initial={{ opacity: 0, y: 6, filter: "blur(4px)" }}
           animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
           transition={{ duration: 0.26, delay: 0.12 + i * 0.04, ease: [0.23, 1, 0.32, 1] }}
-          className={`chip flex h-8 items-center gap-2 rounded-full pr-3.5 pl-3 text-[13px] font-medium tracking-[-0.01em] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff] ${
-            i === 0 ? "bg-white text-black hover:bg-white/90" : "bg-white/[0.12] text-white hover:bg-white/[0.2]"
+          className={`chip flex max-w-full min-h-8 items-center gap-2 rounded-full px-3 py-1.5 text-left text-[13px] font-medium tracking-[-0.01em] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff] ${
+            i === 0 ? "bg-white text-black hover:bg-white/90" : "bg-white/12 text-white hover:bg-white/20"
           }`}
         >
-          {option}
-          <kbd className={`font-sans text-[11px] ${i === 0 ? "text-black/40" : "text-white/35"}`}>Alt {i + 1}</kbd>
+          <span className="max-w-60 leading-snug text-balance">{option}</span>
+          <kbd
+            className={`shrink-0 self-center font-sans text-[11px] leading-none ${
+              i === 0 ? "text-black/40" : "text-white/35"
+            }`}
+          >
+            Alt {i + 1}
+          </kbd>
         </motion.button>
       ))}
       <motion.button
@@ -346,7 +370,7 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.2, delay: 0.12 + suggestion.options.length * 0.04 }}
-        className="chip ml-0.5 h-8 rounded-full px-2.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
+        className="chip rounded-full px-2.5 py-1.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
       >
         Not now
         <kbd className="ml-1.5 font-sans text-[11px] text-white/35">Alt 0</kbd>

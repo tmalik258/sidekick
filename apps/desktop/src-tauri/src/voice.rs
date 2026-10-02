@@ -1,7 +1,10 @@
 //! Voice in the app: "Hey Sidekick" opens Ask mode and shows what you say
 //! as you say it; when you stop, the question goes to the AI and the answer
-//! is read aloud with Kokoro. Off until turned on in Settings > Voice. The
-//! microphone stops whenever voice is off or Sidekick is paused.
+//! is read aloud with Kokoro. Speech models are prefetched at build/dev into
+//! resources, copied into app data on launch, and only downloaded from GitHub
+//! when still missing (Kokoro first). The assistant stays on "Preparing voice"
+//! until Kokoro can speak; then welcome opens and greets. The microphone stops
+//! whenever voice is off or Sidekick is paused.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -23,6 +26,8 @@ pub const STATE_EVENT: &str = "voice://state";
 pub const HEARD_EVENT: &str = "voice://heard";
 pub const DOWNLOAD_EVENT: &str = "voice://download";
 
+const WELCOME_LINE: &str = "Welcome to the future. I'm Sidekick, your AI on this PC. Let's get set up. Hide me anytime, and hover the island when you want me back.";
+
 /// What the runtime was built from; a change rebuilds it.
 #[derive(Debug, Clone, PartialEq)]
 struct Key {
@@ -40,6 +45,8 @@ struct Runtime {
 pub struct Voice {
     pub models: PathBuf,
     runtime: Mutex<Option<Runtime>>,
+    /// Speaker kept alive for welcome / say when full voice is not on yet.
+    greeter: Mutex<Option<Speaker>>,
     /// A rebuild is running (loading models takes a moment).
     starting: AtomicBool,
     downloading: AtomicBool,
@@ -47,6 +54,10 @@ pub struct Voice {
     /// Ask mode was opened by the wake word, so it closes again if nothing
     /// was said.
     opened_by_voice: AtomicBool,
+    /// Spoken the first-run welcome line once this process.
+    welcome_greeted: AtomicBool,
+    /// Welcome opened before Kokoro was ready; greet after download.
+    pending_welcome_greet: AtomicBool,
     /// The chat being read aloud and its utterance.
     speaking: Mutex<Option<(String, u64)>>,
     /// A suggestion read aloud, waiting for a spoken choice: its id and
@@ -60,10 +71,13 @@ impl Voice {
         Self {
             models,
             runtime: Mutex::default(),
+            greeter: Mutex::default(),
             starting: AtomicBool::new(false),
             downloading: AtomicBool::new(false),
             cancel_download: AtomicBool::new(false),
             opened_by_voice: AtomicBool::new(false),
+            welcome_greeted: AtomicBool::new(false),
+            pending_welcome_greet: AtomicBool::new(false),
             speaking: Mutex::default(),
             choosing: Mutex::default(),
             last_error: Mutex::default(),
@@ -187,6 +201,9 @@ pub fn refresh(app: &AppHandle) {
         // Stop the old one first so the microphone is free.
         let old = lock(&voice(&app).runtime).take();
         drop(old);
+        // Full runtime owns the speakers; drop the welcome greeter.
+        let greeter = lock(&voice(&app).greeter).take();
+        drop(greeter);
         let runtime = build(&app, key, &settings);
         let v = voice(&app);
         *lock(&v.runtime) = Some(runtime);
@@ -195,6 +212,157 @@ pub fn refresh(app: &AppHandle) {
         // Settings may have changed while loading.
         refresh(&app);
     });
+}
+
+/// True when Kokoro is on disk and can speak the welcome line.
+pub fn kokoro_ready(app: &AppHandle) -> bool {
+    models::KOKORO.installed(&voice(app).models)
+}
+
+/// Copies shipped voice models from the install/resources tree into app data
+/// when they are missing. Fast and offline; no network.
+pub fn seed_from_bundle(app: &AppHandle) {
+    let dest = &voice(app).models;
+    let Some(src) = bundled_models(app) else {
+        return;
+    };
+    for model in models::MODELS {
+        if model.installed(dest) {
+            continue;
+        }
+        let from = src.join(model.dir);
+        if !from.is_dir() {
+            continue;
+        }
+        let to = model.path(dest);
+        match copy_dir(&from, &to) {
+            Ok(()) => log::info!("voice: seeded {} from bundle", model.id),
+            Err(e) => log::warn!("voice: could not seed {}: {e}", model.id),
+        }
+    }
+}
+
+fn bundled_models(app: &AppHandle) -> Option<std::path::PathBuf> {
+    let bundled = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|d| d.join("voice-models"));
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/voice-models");
+    [bundled, Some(repo)]
+        .into_iter()
+        .flatten()
+        .find(|p| p.is_dir())
+}
+
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
+/// Downloads any missing speech models in the background (idempotent).
+/// Installs Kokoro first so the welcome greeting can speak ASAP.
+pub fn ensure_models(app: &AppHandle) {
+    let v = voice(app);
+    if models::all_installed(&v.models) {
+        return;
+    }
+    if let Err(err) = download(app) {
+        log::warn!("voice models: {err}");
+    }
+}
+
+/// Seeds from bundle, then downloads if Kokoro is still missing. Opens welcome
+/// once Kokoro can speak (used when onboarding is locked).
+pub fn prepare_then_welcome(app: &AppHandle) {
+    seed_from_bundle(app);
+    if kokoro_ready(app) {
+        refresh(app);
+        ask::ensure_welcome(app);
+        return;
+    }
+    // Mark greet pending so download completion opens welcome + speaks.
+    voice(app)
+        .pending_welcome_greet
+        .store(true, Ordering::SeqCst);
+    ensure_models(app);
+    emit_state(app);
+}
+
+/// Speaks `text` with the live runtime speaker, or a short-lived greeter.
+pub fn say(app: &AppHandle, text: &str) {
+    let text = text.trim();
+    if text.is_empty() {
+        return;
+    }
+    let v = voice(app);
+    {
+        let runtime = lock(&v.runtime);
+        if let Some(s) = runtime.as_ref().and_then(|r| r.speaker.as_ref()) {
+            s.say(text);
+            return;
+        }
+    }
+    if !models::KOKORO.installed(&v.models) {
+        return;
+    }
+    let settings = lock(&app.state::<AppState>().settings).voice.clone();
+    let mut greeter = lock(&v.greeter);
+    if greeter.is_none() {
+        match Speaker::start(&v.models, &settings.voice, settings.speed) {
+            Ok(s) => *greeter = Some(s),
+            Err(e) => {
+                log::warn!("voice greet: {e}");
+                return;
+            }
+        }
+    }
+    if let Some(s) = greeter.as_ref() {
+        s.say(text);
+    }
+}
+
+/// Speaks the first-run welcome once models are ready. Queues until Kokoro
+/// finishes downloading if needed.
+pub fn welcome_greet(app: &AppHandle) {
+    if lock(&app.state::<AppState>().settings).onboarded {
+        return;
+    }
+    let v = voice(app);
+    v.pending_welcome_greet.store(true, Ordering::SeqCst);
+    if !models::KOKORO.installed(&v.models) {
+        ensure_models(app);
+        return;
+    }
+    enable_voice_for_onboarding(app);
+    if v.welcome_greeted.swap(true, Ordering::SeqCst) {
+        v.pending_welcome_greet.store(false, Ordering::SeqCst);
+        return;
+    }
+    v.pending_welcome_greet.store(false, Ordering::SeqCst);
+    say(app, WELCOME_LINE);
+}
+
+/// Turns voice on during onboarding so wake word and speaking work after setup.
+fn enable_voice_for_onboarding(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let mut settings = lock(&state.settings).clone();
+    if settings.onboarded || settings.voice.enabled {
+        return;
+    }
+    settings.voice.enabled = true;
+    if let Err(err) = crate::commands::apply_settings(app, settings) {
+        log::warn!("could not enable voice for welcome: {err}");
+    }
 }
 
 fn build(app: &AppHandle, key: Key, settings: &VoiceSettings) -> Runtime {
@@ -324,6 +492,9 @@ fn stop_speaking(app: &AppHandle) {
     let v = voice(app);
     lock(&v.speaking).take();
     if let Some(s) = lock(&v.runtime).as_ref().and_then(|r| r.speaker.as_ref()) {
+        s.stop();
+    }
+    if let Some(s) = lock(&v.greeter).as_ref() {
         s.stop();
     }
 }
@@ -569,6 +740,7 @@ pub fn test(app: &AppHandle) -> Result<(), String> {
 }
 
 /// Downloads the missing models in the background, reporting progress.
+/// Kokoro is installed first so the welcome line can speak before wake/ASR.
 pub fn download(app: &AppHandle) -> Result<(), String> {
     let v = voice(app);
     if v.downloading.swap(true, Ordering::SeqCst) {
@@ -580,11 +752,13 @@ pub fn download(app: &AppHandle) -> Result<(), String> {
     std::thread::spawn(move || {
         let v = voice(&app);
         let mut failure = None;
-        for model in models::MODELS {
+        // Greeting needs Kokoro; wake/ASR can follow.
+        let order = [&models::KOKORO, &models::WAKE, &models::SPEECH];
+        for model in order {
             if model.installed(&v.models) {
                 continue;
             }
-            let result = models::install(&model, &v.models, &v.cancel_download, |done, total| {
+            let result = models::install(model, &v.models, &v.cancel_download, |done, total| {
                 let _ = app.emit(
                     DOWNLOAD_EVENT,
                     DownloadPayload {
@@ -600,6 +774,16 @@ pub fn download(app: &AppHandle) -> Result<(), String> {
                 failure = Some(e.to_string());
                 break;
             }
+            // Open welcome as soon as speech is usable; keep downloading the rest.
+            if model.id == models::KOKORO.id && failure.is_none() {
+                enable_voice_for_onboarding(&app);
+                emit_state(&app);
+                let pending = voice(&app).pending_welcome_greet.load(Ordering::SeqCst);
+                let onboarded = lock(&app.state::<AppState>().settings).onboarded;
+                if pending || !onboarded {
+                    ask::ensure_welcome(&app);
+                }
+            }
         }
         v.downloading.store(false, Ordering::SeqCst);
         let _ = app.emit(
@@ -612,11 +796,18 @@ pub fn download(app: &AppHandle) -> Result<(), String> {
                 error: failure.clone(),
             },
         );
-        if let Some(err) = failure {
+        if let Some(ref err) = failure {
             log::warn!("voice models: {err}");
+        } else {
+            enable_voice_for_onboarding(&app);
         }
         refresh(&app);
         emit_state(&app);
+        let pending = voice(&app).pending_welcome_greet.load(Ordering::SeqCst);
+        let onboarded = lock(&app.state::<AppState>().settings).onboarded;
+        if failure.is_none() && (pending || !onboarded) {
+            ask::ensure_welcome(&app);
+        }
     });
     Ok(())
 }

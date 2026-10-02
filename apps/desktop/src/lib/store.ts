@@ -156,91 +156,119 @@ export function updateSettings(patch: Partial<Settings>): Promise<Settings> {
   return api.settingsSet(next);
 }
 
+function kokoroReady(voice: VoiceStatus | null): boolean {
+  return voice?.models.some((m) => m.id === "kokoro" && m.installed) ?? false;
+}
+
 /**
  * Loads initial state and subscribes to core events. Only the island window
  * passes `sounds: true`, so cues never play twice.
+ *
+ * Listeners are registered before askEnsureWelcome so a cold-start emit is not
+ * dropped (welcome lock).
  */
 export function connect({ sounds }: { sounds: boolean }): () => void {
   let disposed = false;
-  const unlisteners: Array<Promise<() => void>> = [];
+  const unlisteners: Array<() => void> = [];
 
-  void Promise.all([api.settingsGet(), api.mascotGet(), api.suggestionCurrent()]).then(
-    ([settings, mascot, suggestion]) => {
-      if (disposed) return;
-      useSidekick.setState({ settings, mascot, suggestion, ready: true });
-      if (sounds) preloadSounds(settings.soundKit);
-    },
-  );
-  void api.voiceStatus().then((voiceStatus) => !disposed && useSidekick.setState({ voiceStatus }));
+  void (async () => {
+    const offs = await Promise.all([
+      listen(EVENTS.mascotState, (t) => {
+        useSidekick.setState({ mascot: t.state });
+        const { settings } = useSidekick.getState();
+        if (sounds && t.cue) playCue(t.cue, cueVolume(settings, t.cue), settings.soundKit);
+      }),
+      listen(EVENTS.settingsChanged, (settings) => {
+        useSidekick.setState({ settings });
+        if (sounds) preloadSounds(settings.soundKit);
+        if (!settings.onboarded && !useSidekick.getState().ask) void api.askEnsureWelcome();
+      }),
+      listen(EVENTS.suggestionNew, (suggestion) => useSidekick.setState({ suggestion, lastResult: null })),
+      listen(EVENTS.actionResult, (lastResult) => useSidekick.setState({ lastResult })),
+      listen(EVENTS.suggestionClear, (id) => {
+        if (useSidekick.getState().suggestion?.id === id) useSidekick.setState({ suggestion: null });
+      }),
+      listen(EVENTS.islandHover, setHovered),
+      listen(EVENTS.islandVisible, (visible) => useSidekick.setState({ visible })),
+      listen(EVENTS.askOpen, (open) => {
+        const seq = (useSidekick.getState().ask?.seq ?? 0) + 1;
+        const clip = open.clipboard && !open.context.clipboardSecret;
+        if (open.page) {
+          newChat();
+          useSidekick.setState({ chatPage: open.page });
+        }
+        useSidekick.setState({
+          ask: {
+            view: open.view ?? "ask",
+            context: open.context,
+            prompt: open.ask ? "" : (open.prompt ?? ""),
+            seq,
+            attachWindow: false,
+            attachClip: clip,
+            attachScreen: false,
+            localOnly: false,
+          },
+        });
+        if (open.ask && open.prompt) sendChat(open.prompt, { clipboard: clip });
+      }),
+      listen(EVENTS.askClose, (payload) => {
+        if (useSidekick.getState().hearing !== null) stopListening();
+        useSidekick.setState({ ask: null });
+        // Hide parks welcome; do not fight the park with ensure_welcome.
+        if (payload.reason === "defer") return;
+        if (!useSidekick.getState().settings.onboarded) {
+          void api.askEnsureWelcome();
+        }
+      }),
+      listen(EVENTS.voiceState, (voiceStatus) => {
+        useSidekick.setState({ voiceStatus });
+        const { settings, ask } = useSidekick.getState();
+        if (!settings.onboarded && !ask && kokoroReady(voiceStatus)) {
+          void api.askEnsureWelcome();
+        }
+      }),
+      listen(EVENTS.voiceHeard, ({ text, final, byVoice }) => {
+        if (!final) {
+          useSidekick.setState({ hearing: text });
+          return;
+        }
+        useSidekick.setState({ hearing: null });
+        const { settings, turns } = useSidekick.getState();
+        if (text.trim()) {
+          sendChat(text, { speak: settings.voice.speakAnswers });
+        } else if (byVoice && turns.length === 0) {
+          void api.askClose();
+        }
+      }),
+      listen(EVENTS.aiDelta, ({ id, text }) => updateLastTurn(id, (t) => ({ ...t, content: t.content + text }))),
+      listen(EVENTS.aiTool, ({ id, name }) => updateLastTurn(id, (t) => ({ ...t, tool: name }))),
+      listen(EVENTS.aiDone, ({ id, provider, error, handoff }) => {
+        updateLastTurn(id, (t) => ({ ...t, provider, error, handoff, tool: null, streaming: false }));
+        if (useSidekick.getState().chatId === id) useSidekick.setState({ chatId: null });
+      }),
+    ]);
+    if (disposed) {
+      for (const off of offs) off();
+      return;
+    }
+    unlisteners.push(...offs);
 
-  unlisteners.push(
-    listen(EVENTS.mascotState, (t) => {
-      useSidekick.setState({ mascot: t.state });
-      const { settings } = useSidekick.getState();
-      if (sounds && t.cue) playCue(t.cue, cueVolume(settings, t.cue), settings.soundKit);
-    }),
-    listen(EVENTS.settingsChanged, (settings) => {
-      useSidekick.setState({ settings });
-      if (sounds) preloadSounds(settings.soundKit);
-    }),
-    listen(EVENTS.suggestionNew, (suggestion) => useSidekick.setState({ suggestion, lastResult: null })),
-    listen(EVENTS.actionResult, (lastResult) => useSidekick.setState({ lastResult })),
-    listen(EVENTS.suggestionClear, (id) => {
-      if (useSidekick.getState().suggestion?.id === id) useSidekick.setState({ suggestion: null });
-    }),
-    listen(EVENTS.islandHover, setHovered),
-    listen(EVENTS.islandVisible, (visible) => useSidekick.setState({ visible })),
-    listen(EVENTS.askOpen, (open) => {
-      const seq = (useSidekick.getState().ask?.seq ?? 0) + 1;
-      const clip = open.clipboard && !open.context.clipboardSecret;
-      // A question about a web page starts a fresh conversation about it.
-      if (open.page) {
-        newChat();
-        useSidekick.setState({ chatPage: open.page });
-      }
-      useSidekick.setState({
-        ask: {
-          view: open.view ?? "ask",
-          context: open.context,
-          prompt: open.ask ? "" : (open.prompt ?? ""),
-          seq,
-          attachWindow: false,
-          attachClip: clip,
-          attachScreen: false,
-          localOnly: false,
-        },
-      });
-      if (open.ask && open.prompt) sendChat(open.prompt, { clipboard: clip });
-    }),
-    listen(EVENTS.askClose, () => {
-      if (useSidekick.getState().hearing !== null) stopListening();
-      useSidekick.setState({ ask: null });
-    }),
-    listen(EVENTS.voiceState, (voiceStatus) => useSidekick.setState({ voiceStatus })),
-    listen(EVENTS.voiceHeard, ({ text, final, byVoice }) => {
-      if (!final) {
-        useSidekick.setState({ hearing: text });
-        return;
-      }
-      useSidekick.setState({ hearing: null });
-      const { settings, turns } = useSidekick.getState();
-      if (text.trim()) {
-        sendChat(text, { speak: settings.voice.speakAnswers });
-      } else if (byVoice && turns.length === 0) {
-        void api.askClose();
-      }
-    }),
-    listen(EVENTS.aiDelta, ({ id, text }) => updateLastTurn(id, (t) => ({ ...t, content: t.content + text }))),
-    listen(EVENTS.aiTool, ({ id, name }) => updateLastTurn(id, (t) => ({ ...t, tool: name }))),
-    listen(EVENTS.aiDone, ({ id, provider, error, handoff }) => {
-      updateLastTurn(id, (t) => ({ ...t, provider, error, handoff, tool: null, streaming: false }));
-      if (useSidekick.getState().chatId === id) useSidekick.setState({ chatId: null });
-    }),
-  );
+    const [settings, mascot, suggestion, voiceStatus] = await Promise.all([
+      api.settingsGet(),
+      api.mascotGet(),
+      api.suggestionCurrent(),
+      api.voiceStatus(),
+    ]);
+    if (disposed) return;
+    useSidekick.setState({ settings, mascot, suggestion, voiceStatus, ready: true });
+    if (sounds) preloadSounds(settings.soundKit);
+    // Listeners are live; re-emit welcome if still locked (repairs missed emit).
+    if (!settings.onboarded) void api.askEnsureWelcome();
+  })();
 
   return () => {
     disposed = true;
-    for (const u of unlisteners) void u.then((fn) => fn());
+    for (const off of unlisteners) off();
   };
 }
 

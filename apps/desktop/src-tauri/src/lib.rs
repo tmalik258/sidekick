@@ -37,22 +37,18 @@ mod windows;
 
 use std::error::Error;
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
 
 use chrono::Utc;
 use sidekick_actions::{Capabilities, Executor};
 use sidekick_core::{EventBus, MascotEvent, Settings, Storage};
 use sidekick_sensors::{
-    BrowserBridge, BrowserSensor, ClaudeCodeSensor, ClipboardSensor, DownloadsSensor,
-    HeartbeatSensor, IdleSensor, PortsSensor, ReposSensor, Sensor, SensorGate, SystemSensor,
-    WindowSensor,
+    BrowserBridge, BrowserSensor, ClaudeCodeSensor, ClipboardSensor, DownloadsSensor, IdleSensor,
+    PortsSensor, ReposSensor, Sensor, SensorGate, SystemSensor, WindowSensor,
 };
 use sidekick_skills::Engine;
 use tauri::{AppHandle, Manager};
 
 use crate::state::AppState;
-
-const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 
 pub fn run() {
     tauri::Builder::default()
@@ -142,6 +138,8 @@ pub fn run() {
             commands::ai_chat,
             commands::ai_cancel,
             commands::ask_open,
+            commands::ask_ensure_welcome,
+            commands::ask_defer_welcome,
             commands::ask_close,
             commands::browser_info,
             commands::time_today,
@@ -234,20 +232,12 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
 
     pipeline::start(app);
     timetrack::start(app);
+    // Prefer bundled models; only then network. Welcome opens from the island
+    // once it listens (ask_ensure_welcome), or after models become ready.
+    voice::seed_from_bundle(app);
     voice::refresh(app);
-    if !settings_onboarded(app) {
-        // Give the island a moment to load before it grows into the welcome.
-        let app = app.clone();
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(1500)).await;
-            ask::open(
-                &app,
-                ask::Open {
-                    view: Some("welcome"),
-                    ..Default::default()
-                },
-            );
-        });
+    if !settings_onboarded(app) && !voice::kokoro_ready(app) {
+        voice::prepare_then_welcome(app);
     }
     brief::start(app, data_dir.join("last-brief"), repos.roots.clone());
     search::reindex_folders(app);
@@ -279,7 +269,6 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
             Box::new(sidekick_sensors::CalendarSensor { state: calendar }),
             Box::new(repos),
             Box::new(IdleSensor::default()),
-            Box::new(HeartbeatSensor::new(HEARTBEAT_INTERVAL)),
         ];
         sidekick_sensors::spawn_all(sensors, &bus, &gate);
     });

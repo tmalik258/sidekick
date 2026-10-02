@@ -141,6 +141,7 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
         {status.apps.map((a) => (
           <li key={a.slug} className="flex items-center gap-2.5 rounded-xl border border-(--border) px-2.5 py-2">
             {a.logo ? (
+              // biome-ignore lint/performance/noImgElement: remote app logos in a static export
               <img src={a.logo} alt="" className="size-5 shrink-0 rounded" />
             ) : (
               <span className="size-5 shrink-0 rounded bg-black/10 dark:bg-white/10" />

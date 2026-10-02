@@ -13,10 +13,10 @@ Spec: the SRS linked in README.md. Requirement IDs (FR-UI-01, NFR-SEC-05, ...) i
 - Never read browser password stores, cookies, or Claude credential files. Never pass event data to a shell as a string.
 - Destructive or outward-facing actions can never run at Auto trust level.
 - All AI goes through `crates/ai` (`AiProvider` for chat, `Decider` for T1). Prompts reach Claude Code on stdin, never as arguments. T1 decisions only use SemIf or a local model, never a cloud provider. A clipboard classified as a secret is never attached to a prompt.
-- The Claude Code hook endpoint binds to 127.0.0.1 only. Sidekick never edits `~/.claude/settings.json` and never reads transcripts or credentials.
+- The Claude Code hook endpoint binds to 127.0.0.1 only. Sidekick never reads Claude transcripts or credentials. User-initiated "Add for me" may merge Sidekick's hook URLs into `~/.claude/settings.json` after writing a dated backup; other keys are left alone. Browsers cannot silent-install unpacked extensions: Sidekick only stages the folder, copies the path, and opens the extensions page.
 - Localhost endpoints (hooks 47821, browser 47822, MCP 47823) bind to 127.0.0.1, refuse requests with a web page origin, and the browser and MCP ones need their token. Use `open_folder`, never `open_path`, for paths from outside Sidekick.
 - MCP search only returns shareable sources (`search::SHAREABLE`): never clipboard or page text.
-- Voice (`crates/voice`) runs fully on this PC (sherpa-onnx, Kokoro). The microphone is open only while voice is on and Sidekick is not paused; audio is never saved, logged or sent. Only the final transcript goes to the AI. Models download from pinned GitHub release URLs and are checked against SHA-256 before unpacking.
+- Voice (`crates/voice`) runs fully on this PC (sherpa-onnx, Kokoro). Voice is on by default. Models are prefetched at build/dev into `src-tauri/resources/voice-models` (SHA-256 checked), copied into app data on launch, and only downloaded from pinned GitHub release URLs when still missing (Kokoro first). First-run welcome waits until Kokoro can speak, then greets aloud. The microphone is open only while voice is on and Sidekick is not paused; audio is never saved, logged or sent. Only the final transcript goes to the AI.
 - Undo only touches paths an action itself produced (`undo::UNDOABLE`), sends them to the Recycle Bin, and only within 24 hours.
 
 ## Frontend rules

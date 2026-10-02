@@ -56,19 +56,19 @@ mod tests {
     #[test]
     fn respects_pause_and_disabled_sensors() {
         let (handle, gate) = SensorGate::new(GateState::default());
-        assert!(gate.allows("heartbeat"));
+        assert!(gate.allows("clipboard"));
 
         handle.set(GateState {
             paused: true,
             ..GateState::default()
         });
-        assert!(!gate.allows("heartbeat"));
+        assert!(!gate.allows("clipboard"));
 
         handle.set(GateState {
             paused: false,
-            disabled: BTreeSet::from(["heartbeat".to_string()]),
+            disabled: BTreeSet::from(["clipboard".to_string()]),
         });
-        assert!(!gate.allows("heartbeat"));
+        assert!(!gate.allows("clipboard"));
         assert!(gate.allows("files"));
     }
 }

@@ -66,7 +66,7 @@ export function PrivacyTab({ onError }: { onError: (e: string) => void }) {
         <SearchSettings onError={onError} />
       </Section>
       <Section title="What Sidekick notices" hint="Each one can be switched off on its own." keywords="sensors">
-        {SENSOR_IDS.filter((s) => s.id !== "heartbeat").map(({ id, label, hint }) => (
+        {SENSOR_IDS.map(({ id, label, hint }) => (
           <Toggle
             key={id}
             label={label}

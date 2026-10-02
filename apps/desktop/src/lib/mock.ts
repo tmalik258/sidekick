@@ -178,8 +178,16 @@ function mockChat(a: Record<string, unknown>) {
 
 commands.ai_chat = (a) => mockChat(a);
 commands.ai_cancel = () => undefined;
-commands.ask_close = () => emit("ask://close", null);
-commands.ask_open = (a) =>
+let welcomeDeferred = false;
+commands.ask_close = () => {
+  if (!settings.onboarded && !welcomeDeferred) {
+    commands.ask_open?.({ view: "welcome" });
+    return;
+  }
+  emit("ask://close", { reason: "close" });
+};
+commands.ask_open = (a) => {
+  welcomeDeferred = false;
   emit("ask://open", {
     context: {
       app: "Visual Studio Code",
@@ -192,9 +200,22 @@ commands.ask_open = (a) =>
     ask: Boolean(a.ask),
     clipboard: false,
     page: null,
-    view: (a.view as string | undefined) ?? "ask",
+    view: settings.onboarded ? ((a.view as string | undefined) ?? "ask") : "welcome",
     tool: (a.tool as string | undefined) ?? null,
   });
+};
+commands.ask_ensure_welcome = () => {
+  if (settings.onboarded || welcomeDeferred) return;
+  commands.ask_open?.({ view: "welcome" });
+};
+commands.ask_defer_welcome = () => {
+  if (settings.onboarded) {
+    emit("ask://close", { reason: "close" });
+    return;
+  }
+  welcomeDeferred = true;
+  emit("ask://close", { reason: "defer" });
+};
 commands.skill_install = () => "Screenshots";
 const voiceStatus = () => ({
   models: [

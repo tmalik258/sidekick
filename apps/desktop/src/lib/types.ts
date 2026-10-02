@@ -47,6 +47,8 @@ export interface Settings {
   calendar: { remindMinutes: number };
   semanticSearch: { enabled: boolean; model: string };
   onboarded: boolean;
+  /** 0-based welcome step; resumed until onboarded is true. */
+  welcomeStep: number;
   checkUpdates: boolean;
   composio: ComposioSettings;
   denyApps: string[];
@@ -242,12 +244,12 @@ export const DEFAULT_SETTINGS: Settings = {
   masterVolume: 0.6,
   cueVolumes: {},
   collapseAfterSecs: 8,
-  launchAtLogin: false,
+  launchAtLogin: true,
   sensors: {},
   pause: { kind: "none" },
   theme: "pearl",
   soundKit: "01",
-  paletteHotkey: "Alt+Space",
+  paletteHotkey: "Ctrl+Space",
   shortcuts: {
     talk: "Ctrl+Alt+Space",
     accept: "Ctrl+Alt+Enter",
@@ -266,7 +268,7 @@ export const DEFAULT_SETTINGS: Settings = {
     local: { enabled: true, baseUrl: "http://localhost:11434/v1", model: "" },
     anthropic: { enabled: true, model: "" },
     semif: {
-      enabled: false,
+      enabled: true,
       command: ["semif-score"],
       mode: "direct",
       backend: "llamacpp",
@@ -279,12 +281,13 @@ export const DEFAULT_SETTINGS: Settings = {
   calendar: { remindMinutes: 5 },
   semanticSearch: { enabled: true, model: "nomic-embed-text" },
   onboarded: false,
+  welcomeStep: 0,
   checkUpdates: true,
   composio: { enabled: false, account: "", userId: "", url: "", headers: {} },
   denyApps: ["1password.exe", "bitwarden.exe", "keepass.exe", "keepassxc.exe"],
   denySites: [],
   voice: {
-    enabled: false,
+    enabled: true,
     wakeWord: true,
     speakAnswers: true,
     conversation: true,
@@ -317,7 +320,6 @@ export const SENSOR_IDS = [
     label: "Away detection",
     hint: "Holds suggestions while you are away and shows them when you are back.",
   },
-  { id: "heartbeat", label: "Heartbeat (debug)", hint: "A test event every 30 seconds." },
 ] as const;
 
 export interface ActionResult {
@@ -446,6 +448,10 @@ export interface Found {
   browsers: string[];
   installable: SetupItem[];
 }
+
+/** Older names used by the welcome and setup guides. */
+export type DetectedFolder = Folder;
+export type SetupFound = Found;
 
 export interface SetupPlan {
   codeFolders: string[];
