@@ -107,10 +107,13 @@ pub fn setup(app: &AppHandle, hotkey: &str) {
             if let WindowEvent::Focused(false) = event
                 && is_open(&app)
             {
-                if just_opened() || keep_on_blur() || (needs_welcome(&app) && !is_deferred()) {
-                    // Take focus back instead of closing. Welcome locks the
-                    // island until Skip/Start or Hide; the open grace covers
-                    // the shortcut.
+                if keep_on_blur() || (needs_welcome(&app) && !is_deferred()) {
+                    // The welcome stays on screen until Skip, Start or Hide,
+                    // but never takes focus back: Connect opens the browser,
+                    // and the user must be able to use it (and any other
+                    // app). Clicking the welcome again carries on.
+                } else if just_opened() {
+                    // The shortcut that opened Ask can blur it for a moment.
                     let _ = w.set_focus();
                 } else {
                     let app = app.clone();
@@ -121,8 +124,6 @@ pub fn setup(app: &AppHandle, hotkey: &str) {
                             return;
                         }
                         if keep_on_blur() || needs_welcome(&app) {
-                            let _ = w.set_focus();
-                            ensure_welcome(&app);
                             return;
                         }
                         if !w.is_focused().unwrap_or(false) {
@@ -180,10 +181,6 @@ pub fn defer_welcome(app: &AppHandle) {
         let _ = window.emit(CLOSE_EVENT, CLOSE_DEFER);
         if *lock(&state.island_hidden) {
             let _ = window.emit(island::VISIBLE_EVENT, false);
-        }
-        let through = !state.hovered.load(Ordering::Relaxed);
-        if let Err(err) = window.set_ignore_cursor_events(through) {
-            log::warn!("could not restore click-through: {err}");
         }
     }
     suggestions::resume(app);
@@ -248,8 +245,7 @@ pub fn open(app: &AppHandle, mut open: Open) {
     KEEP_ON_BLUR.store(sticky_welcome(open.view), Ordering::SeqCst);
     let state = app.state::<AppState>();
     state.ask_open.store(true, Ordering::SeqCst);
-    // Typing goes to the island, so it must take clicks and focus now.
-    let _ = window.set_ignore_cursor_events(false);
+    // Click-through is the hover tracker's job: only the panel takes clicks.
     if *lock(&state.island_hidden) {
         let _ = window.emit(island::VISIBLE_EVENT, true);
     }
@@ -278,13 +274,6 @@ pub fn close(app: &AppHandle) {
         let _ = window.emit(CLOSE_EVENT, CLOSE_REAL);
         if *lock(&state.island_hidden) {
             let _ = window.emit(island::VISIBLE_EVENT, false);
-        }
-        // Hover tracker skips click-through while Ask is open; restore it
-        // from the last known cursor position so the island does not eat
-        // clicks after welcome or chat folds away.
-        let through = !state.hovered.load(Ordering::Relaxed);
-        if let Err(err) = window.set_ignore_cursor_events(through) {
-            log::warn!("could not restore click-through: {err}");
         }
     }
     // Suggestions that waited while the user was typing can show now.

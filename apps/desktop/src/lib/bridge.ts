@@ -194,4 +194,5 @@ export const api = {
   askOpen: (prompt: string | null = null, ask = false) => invoke<void>("ask_open", { prompt, ask }),
   askEnsureWelcome: () => invoke<void>("ask_ensure_welcome"),
   askDeferWelcome: () => invoke<void>("ask_defer_welcome"),
+  askResumeWelcome: () => invoke<void>("ask_resume_welcome"),
 };

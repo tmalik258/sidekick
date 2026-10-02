@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
+import { startWaiting } from "@/lib/store";
 import type { BrowserStatus, ExtensionGuide } from "@/lib/types";
 
 /** Shared by welcome and Settings > Browser. */
@@ -28,6 +29,8 @@ export function BrowserInstallPanel({ onDone }: { onDone?: () => void }) {
       .then((g) => {
         setGuide(g);
         onDone?.();
+        // The steps stay on screen; the welcome ticks itself once paired.
+        if (onDone) startWaiting("browser", "the browser extension", { shrink: false });
       })
       .catch((e) => setError(String(e)))
       .finally(() => setBusy(null));

@@ -41,6 +41,18 @@ interface SidekickState {
   voiceStatus: VoiceStatus | null;
   /** Suggestions held while you were busy or in a meeting. */
   later: number;
+  /** A setup step finishing outside Sidekick (browser, PowerShell). */
+  waiting: Waiting | null;
+  /** The step that just finished while waited for, shown highlighted. */
+  justDone: string | null;
+}
+
+export interface Waiting {
+  /** The setup item, e.g. "composio". */
+  id: string;
+  /** What the island says, e.g. "Composio". */
+  label: string;
+  since: number;
 }
 
 export interface AskState {
@@ -79,7 +91,62 @@ export const useSidekick = create<SidekickState>(() => ({
   hearing: null,
   voiceStatus: null,
   later: 0,
+  waiting: null,
+  justDone: null,
 }));
+
+/** Give up waiting after this long. */
+const WAIT_LIMIT_MS = 10 * 60_000;
+const WAIT_POLL_MS = 3000;
+
+/**
+ * Shrinks the welcome to a "Waiting for …" pill while a step is finished
+ * elsewhere (sign in, install), and brings it back once that step is done.
+ */
+export function startWaiting(id: string, label: string, { shrink = true } = {}) {
+  useSidekick.setState({ waiting: { id, label, since: Date.now() } });
+  // Some steps need the welcome's instructions on screen; those keep it open
+  // (it never takes focus from other apps) and still get watched.
+  if (shrink) void api.askDeferWelcome();
+}
+
+export function stopWaiting() {
+  useSidekick.setState({ waiting: null });
+}
+
+/** Checks the step being waited for; done or too long brings the welcome back. */
+export function watchWaiting(): () => void {
+  let busy = false;
+  const id = setInterval(() => {
+    const waiting = useSidekick.getState().waiting;
+    if (!waiting || busy) return;
+    if (Date.now() - waiting.since > WAIT_LIMIT_MS) {
+      stopWaiting();
+      return;
+    }
+    busy = true;
+    api
+      .setupStatus()
+      .then((status) => {
+        if (useSidekick.getState().waiting?.id !== waiting.id) return;
+        if (status.items.find((i) => i.id === waiting.id)?.done) {
+          stopWaiting();
+          useSidekick.setState({ justDone: waiting.id });
+          setTimeout(() => {
+            if (useSidekick.getState().justDone === waiting.id) useSidekick.setState({ justDone: null });
+          }, 6000);
+          const { settings } = useSidekick.getState();
+          playCue("ding", cueVolume(settings, "ding"), settings.soundKit);
+          if (!settings.onboarded) void api.askResumeWelcome();
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        busy = false;
+      });
+  }, WAIT_POLL_MS);
+  return () => clearInterval(id);
+}
 
 export const setAsk = (patch: Partial<AskState>) => {
   const ask = useSidekick.getState().ask;

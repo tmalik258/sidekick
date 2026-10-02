@@ -372,6 +372,12 @@ pub fn ask_defer_welcome(app: AppHandle) {
     ask::defer_welcome(&app);
 }
 
+/// Brings a parked welcome back, e.g. once what it was waiting for is done.
+#[tauri::command]
+pub fn ask_resume_welcome(app: AppHandle) {
+    ask::resume_welcome(&app);
+}
+
 #[tauri::command]
 pub fn ask_close(app: AppHandle) {
     ask::close(&app);

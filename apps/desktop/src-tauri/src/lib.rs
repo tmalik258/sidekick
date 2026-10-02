@@ -141,6 +141,7 @@ pub fn run() {
             commands::ask_open,
             commands::ask_ensure_welcome,
             commands::ask_defer_welcome,
+            commands::ask_resume_welcome,
             commands::ask_close,
             commands::browser_info,
             commands::time_today,

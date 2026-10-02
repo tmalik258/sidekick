@@ -10,7 +10,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
 import { playSound } from "@/lib/sound";
-import { connect, setHovered, uiVolume, useSidekick } from "@/lib/store";
+import { connect, setHovered, uiVolume, useSidekick, watchWaiting } from "@/lib/store";
 import { isPaused, type LaterItem, type MascotState, type Suggestion } from "@/lib/types";
 import { ASK_ORB, AskPanel } from "./AskPanel";
 import { Icon } from "./Icon";
@@ -45,7 +45,7 @@ const DETAIL: Record<MascotState, string> = {
 const OPEN_STATES: ReadonlySet<MascotState> = new Set(["suggesting", "listening", "working", "success", "error"]);
 
 const ORB = 44;
-const COMPACT = { width: 39, busyWidth: 109, height: 36, radius: 18, orb: 26 };
+const COMPACT = { width: 39, busyWidth: 109, waitWidth: 248, height: 36, radius: 18, orb: 26 };
 const EXPANDED = { width: 388, minHeight: 78, radius: 30, pad: 16 };
 /** Ask mode: wider, so commands and answers have room. */
 const ASK_WIDTH = 560;
@@ -65,22 +65,35 @@ export function Island() {
   const view = useSidekick((s) => s.ask?.view);
   const chatting = useSidekick((s) => s.chatId !== null);
   const voiceStatus = useSidekick((s) => s.voiceStatus);
+  const waiting = useSidekick((s) => (s.ask ? null : s.waiting));
   const reduced = useReducedMotion() ?? false;
   const now = useNow(15_000);
   const paused = isPaused(settings.pause, now);
-  const hovered = useIntent(rawHover);
+  // Closing a panel (Hide, Esc, a click elsewhere) goes straight to the
+  // small orb: the hovered card stays off until the cursor has left the
+  // island once. Adjusted during render, so no in-between frame is drawn.
+  const [prevAsking, setPrevAsking] = useState(asking);
+  const [quiet, setQuiet] = useState(false);
+  if (prevAsking !== asking) {
+    setPrevAsking(asking);
+    if (!asking && rawHover) setQuiet(true);
+  }
+  if (quiet && !rawHover) setQuiet(false);
+  const intent = useIntent(rawHover);
+  const hovered = intent && !quiet;
   const preparingVoice =
     !settings.onboarded && !asking && !(voiceStatus?.models.some((m) => m.id === "voice" && m.installed) ?? false);
   const expanded = asking || preparingVoice || hovered || OPEN_STATES.has(mascot) || !!suggestion;
   // At rest only the sphere shows. The shell keeps its size (so hover and the
   // orb position do not move) but loses its background.
-  const bare = !expanded && !chatting && (mascot === "idle" || mascot === "sleeping");
+  const bare = !expanded && !chatting && !waiting && (mascot === "idle" || mascot === "sleeping");
   const busy = chatting || preparingVoice || mascot === "noticing" || mascot === "working" || mascot === "listening";
 
   const [contentHeight, setContentHeight] = useState(0);
   const bump = useMotionValue(1);
 
   useEffect(() => connect({ sounds: true }), []);
+  useEffect(() => watchWaiting(), []);
 
   // Measure expanded content so the capsule grows exactly to fit it. A
   // callback ref, because the content node mounts and unmounts with expansion.
@@ -94,7 +107,15 @@ export function Island() {
     observer.current.observe(el);
   }, []);
 
-  const width = asking ? ASK_WIDTH : expanded ? EXPANDED.width : busy ? COMPACT.busyWidth : COMPACT.width;
+  const width = asking
+    ? ASK_WIDTH
+    : expanded
+      ? EXPANDED.width
+      : waiting
+        ? COMPACT.waitWidth
+        : busy
+          ? COMPACT.busyWidth
+          : COMPACT.width;
   // The measured content box already includes the top padding.
   const height = expanded ? Math.max(EXPANDED.minHeight, contentHeight + EXPANDED.pad) : COMPACT.height;
   const radius = expanded ? EXPANDED.radius : COMPACT.radius;
@@ -153,7 +174,9 @@ export function Island() {
         </motion.div>
 
         <AnimatePresence initial={false}>
-          {!expanded && !bare && <CompactTrailing key="compact" busy={busy} paused={paused} />}
+          {!expanded && !bare && (
+            <CompactTrailing key="compact" busy={busy} paused={paused} waiting={waiting?.label ?? null} />
+          )}
         </AnimatePresence>
 
         <AnimatePresence initial={false} mode="popLayout">
@@ -205,8 +228,22 @@ export function Island() {
   );
 }
 
-function CompactTrailing({ paused, busy }: { paused: boolean; busy: boolean }) {
+function CompactTrailing({ paused, busy, waiting }: { paused: boolean; busy: boolean; waiting: string | null }) {
   const later = useSidekick((s) => s.later);
+  if (waiting) {
+    return (
+      <motion.div
+        className="absolute top-0 right-0 flex h-9 items-center gap-2.5 pr-3.5"
+        style={{ left: COMPACT.height + 4 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1, transition: { delay: 0.12, duration: 0.2 } }}
+        exit={{ opacity: 0, transition: { duration: 0.08 } }}
+      >
+        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-white/85">Waiting for {waiting}</span>
+        <Activity />
+      </motion.div>
+    );
+  }
   return (
     <motion.div
       className="absolute top-0 right-0 flex h-9 items-center pr-3.5"
