@@ -68,6 +68,8 @@ export interface Waiting {
   again?: () => void;
   /** Shrunk to the pill; hovering brings the guide back. */
   minimized?: boolean;
+  /** Browser id when waiting on a specific extension (chrome, edge, zen, …). */
+  target?: string;
 }
 
 export interface WaitOptions {
@@ -76,6 +78,8 @@ export interface WaitOptions {
   steps?: string[];
   copies?: { label: string; text: string }[];
   again?: () => void;
+  /** Browser id for per-browser extension waiting. */
+  target?: string;
 }
 
 export interface AskState {
@@ -133,9 +137,9 @@ let resumeSettingsTab: string | null = null;
 export function startWaiting(
   id: string,
   label: string,
-  { shrink = true, resumeTab, steps, copies, again }: WaitOptions = {},
+  { shrink = true, resumeTab, steps, copies, again, target }: WaitOptions = {},
 ) {
-  useSidekick.setState({ waiting: { id, label, since: Date.now(), resumeTab, steps, copies, again } });
+  useSidekick.setState({ waiting: { id, label, since: Date.now(), resumeTab, steps, copies, again, target } });
   // ask_defer_welcome parks welcome, or closes Settings/Ask when already onboarded.
   if (shrink) void api.askDeferWelcome();
 }
@@ -154,6 +158,7 @@ export async function installExtension(id: string, name: string, { shrink = true
   startWaiting("browser", `the ${name} extension`, {
     shrink,
     resumeTab: "connections",
+    target: id,
     steps: guide.steps,
     copies: [
       { label: "Copy extensions address", text: guide.page },
@@ -202,13 +207,30 @@ export function watchWaiting(): () => void {
     // Composio apps finish via composio://changed, not setup status.
     if (waiting.id.startsWith("app:")) return;
     busy = true;
+    const name = waiting.label.charAt(0).toUpperCase() + waiting.label.slice(1);
+    // Extension install: finish only when this browser connects, not any paired one.
+    if (waiting.id === "browser" && waiting.target) {
+      const target = waiting.target;
+      api
+        .browsersStatus()
+        .then((browsers) => {
+          if (useSidekick.getState().waiting?.id !== waiting.id) return;
+          if (browsers.some((b) => b.id === target && b.connected)) {
+            finishWaiting(waiting, `Done. ${name} is connected.`);
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          busy = false;
+        });
+      return;
+    }
     api
       .setupStatus()
       .then((status) => {
         if (useSidekick.getState().waiting?.id !== waiting.id) return;
         const item = status.items.find((i) => i.id === waiting.id);
         if (item?.done) {
-          const name = waiting.label.charAt(0).toUpperCase() + waiting.label.slice(1);
           finishWaiting(
             waiting,
             item.group === "connect" ? `Done. ${name} is connected.` : `All set. ${name} is installed.`,
