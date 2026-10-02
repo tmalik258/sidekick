@@ -126,6 +126,8 @@ pub fn run() {
             commands::voice_stop,
             commands::voice_test,
             commands::voice_welcome,
+            commands::voice_welcome_step,
+            commands::voice_say,
             commands::debug_set_state,
             commands::debug_emit_event,
             commands::debug_demo_flow,

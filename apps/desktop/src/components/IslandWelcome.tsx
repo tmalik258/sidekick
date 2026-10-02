@@ -15,7 +15,7 @@ import { updateSettings, useSidekick } from "@/lib/store";
 import type { SetupFound } from "@/lib/types";
 import { ASK_ORB } from "./AskPanel";
 import { SetupChecklist } from "./SetupChecklist";
-import { SpokenIntro } from "./SpokenIntro";
+import { SpokenLine, wasHeard } from "./SpokenLine";
 
 const STEPS = ["Welcome", "Your AI", "Connect", "Tools", "Extras"] as const;
 
@@ -36,8 +36,15 @@ export function IslandWelcome() {
     const n = clampStep(next);
     setStep(n);
     void updateSettings({ welcomeStep: n });
+    // Sidekick talks each step through once; a step already heard is shown
+    // whole and quiet. Either way the line being said is cut off.
+    if (wasHeard(n)) void api.voiceStop();
+    else void api.voiceWelcomeStep(n);
   };
-  const finish = () => {
+  const finish = (completed: boolean) => {
+    void api.voiceStop().then(() => {
+      if (completed) void api.voiceSay("That's everything. Welcome aboard.");
+    });
     // Onboarded must stick before close; otherwise Rust keeps welcome locked.
     void updateSettings({ onboarded: true, welcomeStep: step }).then(() => api.askClose());
   };
@@ -64,23 +71,18 @@ export function IslandWelcome() {
           transition={{ duration: 0.26, ease: [0.23, 1, 0.32, 1] }}
           className="settings-scroll -mr-3 max-h-95 overflow-y-auto pr-3"
         >
-          {step === 0 && <FirstStep onFound={() => go(1)} />}
-          {step === 1 && (
-            <Step text="Chat, summaries and drafts use one of these. I try them in order, and still work without any.">
-              <SetupChecklist groups={["ai"]} compact inlineGuides />
-            </Step>
-          )}
-          {step === 2 && (
-            <Step text="Connect the things you use. Each one turns on more suggestions. Set them up here; you can finish any leftovers in Settings later.">
-              <SetupChecklist groups={["connect"]} compact inlineGuides />
-            </Step>
-          )}
-          {step === 3 && (
-            <Step text="Small free programs I use for conversions, screenshots and your repos. Run opens PowerShell so you can watch it install.">
-              <SetupChecklist groups={["tools"]} compact inlineGuides />
-            </Step>
-          )}
-          {step === 4 && <Extras />}
+          <Spoken step={step}>
+            {step === 0 && (
+              <>
+                <Intro />
+                <FoundCard onDone={() => go(1)} />
+              </>
+            )}
+            {step === 1 && <SetupChecklist groups={["ai"]} compact inlineGuides />}
+            {step === 2 && <SetupChecklist groups={["connect"]} compact inlineGuides />}
+            {step === 3 && <SetupChecklist groups={["tools"]} compact inlineGuides />}
+            {step === 4 && <Extras />}
+          </Spoken>
         </motion.div>
       </AnimatePresence>
 
@@ -88,7 +90,7 @@ export function IslandWelcome() {
         <div className="flex gap-1.5">
           <button
             type="button"
-            onClick={finish}
+            onClick={() => finish(false)}
             className="chip rounded-full px-2.5 py-1 text-[12.5px] text-[rgb(235_235_245/0.6)] hover:text-white"
           >
             Skip
@@ -113,7 +115,7 @@ export function IslandWelcome() {
           )}
           <button
             type="button"
-            onClick={() => (step < STEPS.length - 1 ? go(step + 1) : finish())}
+            onClick={() => (step < STEPS.length - 1 ? go(step + 1) : finish(true))}
             className="chip rounded-full bg-white px-3.5 py-1.5 text-[13px] font-medium text-black hover:bg-white/90"
           >
             {step < STEPS.length - 1 ? "Next" : "Start"}
@@ -124,22 +126,22 @@ export function IslandWelcome() {
   );
 }
 
-/** Sidekick says hello (each word shown as it is heard), then the rest of
- * the step appears. */
-function FirstStep({ onFound }: { onFound: () => void }) {
+/** Sidekick talks the step through (each word shown as it is heard), then
+ * the step's content appears. */
+function Spoken({ step, children }: { step: number; children: ReactNode }) {
   const [spoken, setSpoken] = useState(false);
   return (
     <div className="flex flex-col gap-3">
-      <SpokenIntro onDone={() => setSpoken(true)} />
+      <SpokenLine step={step} onDone={() => setSpoken(true)} />
       <AnimatePresence initial={false}>
         {spoken && (
           <motion.div
             initial={{ opacity: 0, y: 8, filter: "blur(4px)" }}
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
             transition={{ duration: 0.35, ease: [0.23, 1, 0.32, 1] }}
+            className="flex flex-col gap-2.5 text-[13px]"
           >
-            <Intro />
-            <FoundCard onDone={onFound} />
+            {children}
           </motion.div>
         )}
       </AnimatePresence>
@@ -282,15 +284,6 @@ function FoundCard({ onDone }: { onDone: () => void }) {
       <p className="text-[11.5px] text-[rgb(235_235_245/0.5)]">
         Claude Code&apos;s settings are backed up before anything is added.
       </p>
-    </div>
-  );
-}
-
-function Step({ text, children }: { text: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-2.5 text-[13px]">
-      <p className="text-[rgb(235_235_245/0.7)]">{text}</p>
-      {children}
     </div>
   );
 }

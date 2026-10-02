@@ -28,17 +28,26 @@ pub const DOWNLOAD_EVENT: &str = "voice://download";
 
 pub const WELCOME_EVENT: &str = "voice://welcome";
 
-/// The first thing Sidekick says, and the first thing the welcome shows,
-/// word by word as it is heard. Punctuation is the direction here: the voice
-/// lifts on "!" and "?" and breathes at commas.
-pub const WELCOME_LINE: &str =
-    "Online. I'm Sidekick, your AI on this machine. I notice, I suggest, you decide. Let's begin.";
+/// What Sidekick says on each welcome step (Welcome, Your AI, Connect,
+/// Tools, Extras), and what the step shows, word by word as it is heard.
+/// Punctuation is the direction: the voice lifts on "!" and "?" and
+/// breathes at commas.
+pub const WELCOME_LINES: [&str; 5] = [
+    "Hey there! Welcome to the future! I'm Sidekick, your personal AI assistant. I had a quick look around, and here's what I found. Let's get you set up.",
+    "First, my brain. I can think with Claude, or with a model that runs right here on your PC. Pick what you have, and I'll handle the rest.",
+    "Now, your world. Connect your calendar, your mail and the tools you use, and I'll start noticing what matters.",
+    "A few small helpers make me sharper. Install the ones you want, and I'll wait while they finish.",
+    "Almost there. Talk to me anytime, just say Hey Sidekick. And I can start with Windows, so I'm here when you are.",
+];
 
 /// When each sentence of the welcome line sounds, in Unix milliseconds, so
 /// the UI can show the words as they are heard.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WelcomeSpeech {
+    /// The step being spoken, and every step's line.
+    pub step: u32,
+    pub lines: [&'static str; 5],
     pub script: &'static str,
     pub pieces: Vec<SpokenPiece>,
     /// When the last word stops sounding; known once everything is queued.
@@ -121,7 +130,8 @@ impl Voice {
             pending_welcome_greet: AtomicBool::new(false),
             speaking: Mutex::default(),
             welcome: Mutex::new(WelcomeSpeech {
-                script: WELCOME_LINE,
+                lines: WELCOME_LINES,
+                script: WELCOME_LINES[0],
                 ..Default::default()
             }),
             choosing: Mutex::default(),
@@ -436,12 +446,17 @@ pub fn welcome_speech(app: &AppHandle) -> WelcomeSpeech {
     lock(&voice(app).welcome).clone()
 }
 
-fn start_welcome_speech(app: &AppHandle) {
+/// Speaks welcome step `step`, cutting off whatever was being said.
+pub fn speak_welcome_step(app: &AppHandle, step: u32) {
+    let step = step.min(WELCOME_LINES.len() as u32 - 1);
+    let script = WELCOME_LINES[step as usize];
     let v = voice(app);
-    let heard = say_with(app, WELCOME_LINE, |speaker, utterance| {
+    let heard = say_with(app, script, |speaker, utterance| {
         let mut w = lock(&v.welcome);
         *w = WelcomeSpeech {
-            script: WELCOME_LINE,
+            step,
+            lines: WELCOME_LINES,
+            script,
             key: Some((speaker, utterance)),
             pending: true,
             ..Default::default()
@@ -450,10 +465,20 @@ fn start_welcome_speech(app: &AppHandle) {
     });
     if !heard {
         let mut w = lock(&v.welcome);
-        w.silent = true;
-        w.pending = false;
+        *w = WelcomeSpeech {
+            step,
+            lines: WELCOME_LINES,
+            script,
+            silent: true,
+            ..Default::default()
+        };
         let _ = app.emit(WELCOME_EVENT, w.clone());
     }
+}
+
+/// Says a short line (e.g. "Done. Composio is connected.") right away.
+pub fn say_now(app: &AppHandle, text: &str) {
+    say_with(app, text, |_, _| {});
 }
 
 /// Speaks the first-run welcome once models are ready. Queues until the voice
@@ -474,7 +499,8 @@ pub fn welcome_greet(app: &AppHandle) {
         return;
     }
     v.pending_welcome_greet.store(false, Ordering::SeqCst);
-    start_welcome_speech(app);
+    let step = lock(&app.state::<AppState>().settings).welcome_step;
+    speak_welcome_step(app, step);
 }
 
 /// Turns voice on during onboarding so wake word and speaking work after setup.

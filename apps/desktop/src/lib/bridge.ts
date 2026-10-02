@@ -191,6 +191,8 @@ export const api = {
   voiceStop: () => invoke<void>("voice_stop"),
   voiceTest: () => invoke<void>("voice_test"),
   voiceWelcome: () => invoke<WelcomeSpeech>("voice_welcome"),
+  voiceWelcomeStep: (step: number) => invoke<void>("voice_welcome_step", { step }),
+  voiceSay: (text: string) => invoke<void>("voice_say", { text }),
   askOpen: (prompt: string | null = null, ask = false) => invoke<void>("ask_open", { prompt, ask }),
   askEnsureWelcome: () => invoke<void>("ask_ensure_welcome"),
   askDeferWelcome: () => invoke<void>("ask_defer_welcome"),

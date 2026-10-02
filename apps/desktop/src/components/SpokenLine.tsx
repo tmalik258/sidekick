@@ -1,12 +1,12 @@
 "use client";
 
-// The first thing Sidekick says, shown word by word as it is heard. Rust
+// What Sidekick says on a welcome step, shown word by word as it is heard. Rust
 // reports when each sentence starts sounding and how long it lasts (Unix ms,
 // so a late-mounting panel still lines up); words inside a sentence are
-// spread by length, with a beat after punctuation. Every word is in the
-// layout from the start, so revealing one never moves the others. With no
-// audio (no speakers, or voice failed) the words keep a natural speaking pace
-// on their own.
+// spread by length, with a beat after punctuation. Only words heard so far
+// are in the layout, so the island grows with the line. With no audio (no
+// speakers, or voice failed) the words keep a natural speaking pace on their
+// own. Each step speaks once per run; coming back shows it whole.
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
@@ -19,8 +19,12 @@ const AUDIO_WAIT_MS = 6000;
 /** Audio is on its way (the model may be loading): wait this long at most. */
 const PENDING_WAIT_MS = 20_000;
 
-/** Revealed once per run; going Back to this step shows it whole. */
-let finishedThisRun = false;
+/** Steps already spoken this run; going back to one shows it whole. */
+const heard = new Set<number>();
+
+export function wasHeard(step: number): boolean {
+  return heard.has(step);
+}
 
 function words(text: string): string[] {
   return text.split(/\s+/).filter(Boolean);
@@ -71,11 +75,15 @@ function endTime(times: number[], speech: WelcomeSpeech | null, paced: boolean):
   return null;
 }
 
-export function SpokenIntro({ onDone }: { onDone: () => void }) {
-  const [speech, setSpeech] = useState<WelcomeSpeech | null>(null);
+export function SpokenLine({ step, onDone }: { step: number; onDone: () => void }) {
+  const [latest, setSpeech] = useState<WelcomeSpeech | null>(null);
   const [pacedFrom, setPacedFrom] = useState<number | null>(null);
-  const [shown, setShown] = useState(finishedThisRun ? Number.POSITIVE_INFINITY : 0);
-  const done = useRef(finishedThisRun);
+  const already = heard.has(step);
+  const [shown, setShown] = useState(already ? Number.POSITIVE_INFINITY : 0);
+  const done = useRef(already);
+  // Only this step's timeline counts; another step's speech may still be
+  // the latest one reported.
+  const speech = latest?.step === step ? latest : null;
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
 
@@ -95,7 +103,7 @@ export function SpokenIntro({ onDone }: { onDone: () => void }) {
 
   // No audio coming: pace the words ourselves.
   useEffect(() => {
-    if (finishedThisRun || pacedFrom !== null) return;
+    if (done.current || pacedFrom !== null) return;
     if (speech?.silent) {
       setPacedFrom(Date.now());
       return;
@@ -106,7 +114,7 @@ export function SpokenIntro({ onDone }: { onDone: () => void }) {
     return () => clearTimeout(id);
   }, [speech, pacedFrom]);
 
-  const script = speech?.script ?? "";
+  const script = latest?.lines[step] ?? "";
   const list = useMemo(() => words(script), [script]);
   const usePaced = pacedFrom !== null && !(speech && speech.pieces.length > 0);
   const times = useMemo(
@@ -128,7 +136,7 @@ export function SpokenIntro({ onDone }: { onDone: () => void }) {
       setShown((n) => Math.max(n, count));
       if (ends !== null && now >= ends) {
         done.current = true;
-        finishedThisRun = true;
+        heard.add(step);
         onDoneRef.current();
         return;
       }
@@ -136,11 +144,11 @@ export function SpokenIntro({ onDone }: { onDone: () => void }) {
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [times, ends, list.length]);
+  }, [times, ends, list.length, step]);
 
-  // Already finished earlier in this run: tell the step at once.
+  // Already heard earlier in this run: tell the step at once.
   useEffect(() => {
-    if (finishedThisRun) onDoneRef.current();
+    if (done.current) onDoneRef.current();
   }, []);
 
   // Only the words heard so far are in the layout, so the island grows

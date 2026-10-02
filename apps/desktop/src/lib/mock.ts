@@ -213,7 +213,7 @@ commands.ask_open = (a) => {
   });
   if (!settings.onboarded && !welcomeSpoken) {
     welcomeSpoken = true;
-    speakWelcome();
+    speakWelcome(settings.welcomeStep);
   }
 };
 let welcomeSpoken = false;
@@ -529,41 +529,59 @@ commands.voice_listen = () => {
   }
   later(2200, () => emit("voice://heard", { text: words[3], final: true, byVoice: false }));
 };
-commands.voice_stop = () => undefined;
+commands.voice_stop = () => {
+  for (const t of speechTimers) clearTimeout(t);
+  speechTimers = [];
+};
 // The welcome line as Rust would report it while it is spoken.
-const WELCOME_LINE = "Online. I'm Sidekick, your AI on this machine. I notice, I suggest, you decide. Let's begin.";
+const WELCOME_LINES = [
+  "Hey there! Welcome to the future! I'm Sidekick, your personal AI assistant. I had a quick look around, and here's what I found. Let's get you set up.",
+  "First, my brain. I can think with Claude, or with a model that runs right here on your PC. Pick what you have, and I'll handle the rest.",
+  "Now, your world. Connect your calendar, your mail and the tools you use, and I'll start noticing what matters.",
+  "A few small helpers make me sharper. Install the ones you want, and I'll wait while they finish.",
+  "Almost there. Talk to me anytime, just say Hey Sidekick. And I can start with Windows, so I'm here when you are.",
+];
 let welcome: WelcomeSpeech = {
-  script: WELCOME_LINE,
+  step: 0,
+  lines: WELCOME_LINES,
+  script: WELCOME_LINES[0],
   pieces: [],
   endsAt: null,
   silent: false,
   pending: false,
 };
-function speakWelcome() {
-  const sentences = WELCOME_LINE.match(/[^.!?]+[.!?]/g) ?? [WELCOME_LINE];
-  let at = Date.now() + 400;
-  // Like the real app: speech is pending while the model loads (here 7 s,
-  // longer than the old 4 s fallback, to check words never restart).
-  welcome = { ...welcome, pieces: [], endsAt: null, pending: true };
+let speechTimers: ReturnType<typeof setTimeout>[] = [];
+/** Like Rust: each step's line as sentences with when they sound. The first
+ * one waits 3 s, like the model loading. */
+function speakWelcome(step = 0) {
+  for (const t of speechTimers) clearTimeout(t);
+  speechTimers = [];
+  const line = WELCOME_LINES[step] ?? WELCOME_LINES[0];
+  const sentences = line.match(/[^.!?]+[.!?]/g) ?? [line];
+  let at = Date.now() + (step === 0 ? 3000 : 400);
+  welcome = { ...welcome, step, script: line, pieces: [], endsAt: null, pending: true };
   emit("voice://welcome", welcome);
-  at += 7000;
   sentences.forEach((raw, i) => {
     const text = raw.trim();
     const ms = text.split(/\s+/).length * 330;
     const startsAt = at;
     at += ms + 280;
     // Pieces arrive a little ahead of when they sound, like synthesis.
-    setTimeout(
-      () => {
-        welcome = { ...welcome, pieces: [...welcome.pieces, { text, startsAt, ms }] };
-        if (i === sentences.length - 1) welcome = { ...welcome, endsAt: startsAt + ms };
-        emit("voice://welcome", welcome);
-      },
-      Math.max(0, startsAt - Date.now() - 300),
+    speechTimers.push(
+      setTimeout(
+        () => {
+          welcome = { ...welcome, pieces: [...welcome.pieces, { text, startsAt, ms }] };
+          if (i === sentences.length - 1) welcome = { ...welcome, endsAt: startsAt + ms, pending: false };
+          emit("voice://welcome", welcome);
+        },
+        Math.max(0, startsAt - Date.now() - 300),
+      ),
     );
   });
 }
 commands.voice_welcome = () => welcome;
+commands.voice_welcome_step = (a) => speakWelcome(Number(a.step) || 0);
+commands.voice_say = () => undefined;
 commands.voice_test = () => undefined;
 commands.search = (a) => [
   {

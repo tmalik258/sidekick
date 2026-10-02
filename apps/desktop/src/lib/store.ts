@@ -129,15 +129,24 @@ export function watchWaiting(): () => void {
       .setupStatus()
       .then((status) => {
         if (useSidekick.getState().waiting?.id !== waiting.id) return;
-        if (status.items.find((i) => i.id === waiting.id)?.done) {
+        const item = status.items.find((i) => i.id === waiting.id);
+        if (item?.done) {
           stopWaiting();
           useSidekick.setState({ justDone: waiting.id });
           setTimeout(() => {
             if (useSidekick.getState().justDone === waiting.id) useSidekick.setState({ justDone: null });
           }, 6000);
           const { settings } = useSidekick.getState();
-          playCue("ding", cueVolume(settings, "ding"), settings.soundKit);
-          if (!settings.onboarded) void api.askResumeWelcome();
+          if (settings.onboarded) {
+            playCue("ding", cueVolume(settings, "ding"), settings.soundKit);
+          } else {
+            // During the welcome Sidekick says it, then picks up where it was.
+            const name = waiting.label.charAt(0).toUpperCase() + waiting.label.slice(1);
+            void api.voiceSay(
+              item.group === "connect" ? `Done. ${name} is connected.` : `All set. ${name} is installed.`,
+            );
+            void api.askResumeWelcome();
+          }
         }
       })
       .catch(() => undefined)
