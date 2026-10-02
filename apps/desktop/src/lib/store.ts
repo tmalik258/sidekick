@@ -34,9 +34,13 @@ interface SidekickState {
   chatPage: string | null;
   /** The conversation is about writing a new skill. */
   chatSkill: boolean;
+  /** Where the conversation is saved, so it can be picked up later. */
+  conversation: string;
   /** Voice: what is being heard right now, while listening. */
   hearing: string | null;
   voiceStatus: VoiceStatus | null;
+  /** Suggestions held while you were busy or in a meeting. */
+  later: number;
 }
 
 export interface AskState {
@@ -54,6 +58,8 @@ export interface AskState {
   localOnly: boolean;
   /** Settings tab to show, when something asked for a particular one. */
   settingsTab?: string;
+  /** A tool a shortcut asked to start with. */
+  tool?: "screen" | "clipboard" | null;
 }
 
 export const useSidekick = create<SidekickState>(() => ({
@@ -69,8 +75,10 @@ export const useSidekick = create<SidekickState>(() => ({
   chatId: null,
   chatPage: null,
   chatSkill: false,
+  conversation: crypto.randomUUID(),
   hearing: null,
   voiceStatus: null,
+  later: 0,
 }));
 
 export const setAsk = (patch: Partial<AskState>) => {
@@ -89,6 +97,7 @@ export function sendChat(prompt: string, attach?: { clipboard?: boolean; screen?
     { role: "user", content: q },
   ];
   const screen = attach?.screen ?? ask?.attachScreen ?? false;
+  const auto = autoContext(q, ask);
   useSidekick.setState({
     chatId: id,
     turns: [...turns, { role: "user", content: q, screen }, { role: "assistant", content: "", streaming: true }],
@@ -98,8 +107,8 @@ export function sendChat(prompt: string, attach?: { clipboard?: boolean; screen?
     id,
     history,
     {
-      window: ask?.attachWindow ?? false,
-      clipboard: attach?.clipboard ?? ask?.attachClip ?? false,
+      window: (ask?.attachWindow ?? false) || auto.window,
+      clipboard: attach?.clipboard ?? ((ask?.attachClip ?? false) || auto.clipboard),
       page: chatPage,
       skill: chatSkill,
       screen,
@@ -107,6 +116,38 @@ export function sendChat(prompt: string, attach?: { clipboard?: boolean; screen?
     },
     ask?.localOnly ?? false,
   );
+}
+
+/**
+ * Context a question plainly points at, so you rarely tick the chips: "this
+ * error" or "here" means the window in front, "what I copied" the clipboard.
+ * Secrets on the clipboard are never added this way.
+ */
+export function autoContext(q: string, ask: AskState | null): { window: boolean; clipboard: boolean } {
+  const text = q.toLowerCase();
+  const win = Boolean(ask?.context.app) && /\b(this|here|current(ly)?|in front)\b/.test(text);
+  const clipboard =
+    Boolean(ask?.context.clipboardKind) &&
+    !ask?.context.clipboardSecret &&
+    /\b(copied|clipboard|pasted|i just copied|this (error|trace|stack ?trace|snippet|link|url))\b/.test(text);
+  return { window: win, clipboard };
+}
+
+/** Saves the conversation so Ask mode can list it later. */
+function saveChat() {
+  const { turns, conversation } = useSidekick.getState();
+  const first = turns.find((t) => t.role === "user");
+  if (!first) return;
+  const title = first.content.length > 60 ? `${first.content.slice(0, 57)}...` : first.content;
+  const clean = turns.filter((t) => !t.streaming).map(({ streaming: _, tool: __, ...t }) => t);
+  void api.chatSave(conversation, title, clean).catch(() => undefined);
+}
+
+/** Picks up a saved conversation. */
+export async function openChat(id: string) {
+  cancelChat();
+  const turns = await api.chatGet(id);
+  useSidekick.setState({ turns, chatId: null, chatPage: null, chatSkill: false, conversation: id });
 }
 
 /** Starts a conversation in which AI drafts a new skill (FR-SKL-08). */
@@ -138,7 +179,13 @@ export function stopListening() {
 
 export function newChat() {
   cancelChat();
-  useSidekick.setState({ turns: [], chatId: null, chatPage: null, chatSkill: false });
+  useSidekick.setState({
+    turns: [],
+    chatId: null,
+    chatPage: null,
+    chatSkill: false,
+    conversation: crypto.randomUUID(),
+  });
 }
 
 function updateLastTurn(id: string, fn: (t: Turn) => Turn) {
@@ -188,6 +235,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       listen(EVENTS.suggestionClear, (id) => {
         if (useSidekick.getState().suggestion?.id === id) useSidekick.setState({ suggestion: null });
       }),
+      listen(EVENTS.suggestionLater, (later) => useSidekick.setState({ later })),
       listen(EVENTS.islandHover, setHovered),
       listen(EVENTS.islandVisible, (visible) => useSidekick.setState({ visible })),
       listen(EVENTS.askOpen, (open) => {
@@ -207,6 +255,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
             attachClip: clip,
             attachScreen: false,
             localOnly: false,
+            tool: open.tool ?? null,
           },
         });
         if (open.ask && open.prompt) sendChat(open.prompt, { clipboard: clip });
@@ -244,7 +293,10 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       listen(EVENTS.aiTool, ({ id, name }) => updateLastTurn(id, (t) => ({ ...t, tool: name }))),
       listen(EVENTS.aiDone, ({ id, provider, error, handoff }) => {
         updateLastTurn(id, (t) => ({ ...t, provider, error, handoff, tool: null, streaming: false }));
-        if (useSidekick.getState().chatId === id) useSidekick.setState({ chatId: null });
+        if (useSidekick.getState().chatId === id) {
+          useSidekick.setState({ chatId: null });
+          if (sounds && !useSidekick.getState().chatSkill) saveChat();
+        }
       }),
     ]);
     if (disposed) {
@@ -253,14 +305,15 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
     }
     unlisteners.push(...offs);
 
-    const [settings, mascot, suggestion, voiceStatus] = await Promise.all([
+    const [settings, mascot, suggestion, voiceStatus, later] = await Promise.all([
       api.settingsGet(),
       api.mascotGet(),
       api.suggestionCurrent(),
       api.voiceStatus(),
+      api.laterList().catch(() => []),
     ]);
     if (disposed) return;
-    useSidekick.setState({ settings, mascot, suggestion, voiceStatus, ready: true });
+    useSidekick.setState({ settings, mascot, suggestion, voiceStatus, later: later.length, ready: true });
     if (sounds) preloadSounds(settings.soundKit);
     // Listeners are live; re-emit welcome if still locked (repairs missed emit).
     if (!settings.onboarded) void api.askEnsureWelcome();

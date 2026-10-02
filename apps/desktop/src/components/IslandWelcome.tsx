@@ -11,6 +11,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { type ReactNode, useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
 import { updateSettings, useSidekick } from "@/lib/store";
+import type { SetupFound } from "@/lib/types";
 import { ASK_ORB } from "./AskPanel";
 import { SetupChecklist } from "./SetupChecklist";
 
@@ -61,7 +62,12 @@ export function IslandWelcome() {
           transition={{ duration: 0.26, ease: [0.23, 1, 0.32, 1] }}
           className="settings-scroll -mr-3 max-h-95 min-h-55 overflow-y-auto pr-3"
         >
-          {step === 0 && <Intro />}
+          {step === 0 && (
+            <>
+              <Intro />
+              <FoundCard onDone={() => go(1)} />
+            </>
+          )}
           {step === 1 && (
             <Step text="Chat, summaries and drafts use one of these. I try them in order, and still work without any.">
               <SetupChecklist groups={["ai"]} compact inlineGuides />
@@ -148,6 +154,117 @@ function Intro() {
           Deleting, installing or stopping things always asks first, and files I create can be undone.
         </Point>
       </ul>
+    </div>
+  );
+}
+
+interface Pick {
+  id: string;
+  label: string;
+  on: boolean;
+}
+
+/** Everything found on this PC, ticked, with one button to set it all up. */
+function FoundCard({ onDone }: { onDone: () => void }) {
+  const [found, setFound] = useState<SetupFound | null>(null);
+  const [picks, setPicks] = useState<Pick[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<string[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api
+      .setupDetect()
+      .then((f) => {
+        setFound(f);
+        const list: Pick[] = [];
+        const repos = f.codeFolders.reduce((n, c) => n + c.repos, 0);
+        if (f.codeFolders.length) {
+          list.push({
+            id: "code",
+            label: `Your code: ${f.codeFolders.map((c) => c.label).join(", ")} (${repos} repos)`,
+            on: true,
+          });
+        }
+        if (f.searchFolders.length) {
+          list.push({ id: "search", label: `Search ${f.searchFolders.map((c) => c.label).join(", ")}`, on: true });
+        }
+        if (f.chatModels.length) list.push({ id: "model", label: `Local AI: ${f.chatModels[0]}`, on: true });
+        if (f.claudeInstalled && !f.claudeHooks) {
+          list.push({ id: "hooks", label: "Claude Code: hear when it finishes or asks", on: true });
+        }
+        if (f.claudeInstalled && !f.claudeMcp) {
+          list.push({ id: "mcp", label: "Claude Code: let it use Sidekick's tools", on: true });
+        }
+        for (const item of f.installable.filter((i) => i.recommended && !i.done && i.runnable)) {
+          list.push({ id: `install:${item.id}`, label: `Install ${item.title}`, on: true });
+        }
+        setPicks(list);
+      })
+      .catch(() => setFound(null));
+  }, []);
+
+  if (!found || picks.length === 0) return null;
+
+  const on = (id: string) => picks.some((p) => p.id === id && p.on);
+  const apply = () => {
+    setBusy(true);
+    setError(null);
+    void api
+      .setupApply({
+        codeFolders: on("code") ? found.codeFolders.map((f) => f.path) : [],
+        searchFolders: on("search") ? found.searchFolders.map((f) => f.path) : [],
+        chatModel: on("model") ? (found.chatModels[0] ?? null) : null,
+        claudeHooks: on("hooks"),
+        claudeMcp: on("mcp"),
+        install: picks.filter((p) => p.on && p.id.startsWith("install:")).map((p) => p.id.slice(8)),
+        voice: false,
+        launchAtLogin: useSidekick.getState().settings.launchAtLogin,
+      })
+      .then((d) => {
+        setDone(d);
+        setTimeout(onDone, 1200);
+      })
+      .catch((e) => setError(String(e)))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="mt-3 flex flex-col gap-2 rounded-2xl bg-white/[0.06] p-3.5 text-[13px]">
+      <p className="font-medium text-white">Here is what I found</p>
+      <ul className="flex flex-col gap-1.5">
+        {picks.map((p) => (
+          <li key={p.id}>
+            <label className="flex cursor-pointer items-start gap-2.5 text-[12.5px] text-[rgb(235_235_245/0.8)]">
+              <input
+                type="checkbox"
+                checked={p.on}
+                onChange={(e) =>
+                  setPicks((list) => list.map((x) => (x.id === p.id ? { ...x, on: e.target.checked } : x)))
+                }
+                className="mt-0.5 size-3.5 shrink-0 accent-[#0a84ff]"
+              />
+              <span className="min-w-0">{p.label}</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+      {done ? (
+        <p className="text-[12px] text-[#30d158]">{done.length ? done.join(". ") : "All set"}.</p>
+      ) : (
+        <button
+          type="button"
+          disabled={busy || !picks.some((p) => p.on)}
+          onClick={apply}
+          className="chip self-start rounded-full bg-[#0a84ff] px-3.5 py-1.5 text-[13px] font-medium text-white hover:bg-[#0a84ff]/90 disabled:opacity-50"
+        >
+          {busy ? "Setting up..." : "Set it all up"}
+        </button>
+      )}
+      {error && <p className="text-[12px] text-[#ff453a]">{error}</p>}
+      <p className="text-[11.5px] text-[rgb(235_235_245/0.5)]">
+        Claude Code&apos;s settings are backed up before anything is added.
+      </p>
     </div>
   );
 }

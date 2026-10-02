@@ -11,7 +11,7 @@ import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
 import { playSound } from "@/lib/sound";
 import { connect, setHovered, uiVolume, useSidekick } from "@/lib/store";
-import { isPaused, type MascotState, type Suggestion } from "@/lib/types";
+import { isPaused, type LaterItem, type MascotState, type Suggestion } from "@/lib/types";
 import { ASK_ORB, AskPanel } from "./AskPanel";
 import { Icon } from "./Icon";
 import { IslandSettings } from "./IslandSettings";
@@ -206,6 +206,7 @@ export function Island() {
 }
 
 function CompactTrailing({ paused, busy }: { paused: boolean; busy: boolean }) {
+  const later = useSidekick((s) => s.later);
   return (
     <motion.div
       className="absolute top-0 right-0 flex h-9 items-center pr-3.5"
@@ -215,13 +216,16 @@ function CompactTrailing({ paused, busy }: { paused: boolean; busy: boolean }) {
     >
       {busy ? (
         <Activity />
+      ) : paused ? (
+        <span className="size-1.5 rounded-full bg-[#ffd60a]" style={{ boxShadow: "0 0 8px #ffd60a" }} title="Paused" />
       ) : (
-        paused && (
+        later > 0 && (
           <span
-            className={`size-1.5 rounded-full ${paused ? "bg-[#ffd60a]" : "bg-[#30d158]"}`}
-            style={{ boxShadow: `0 0 8px ${paused ? "#ffd60a" : "#30d158"}` }}
-            title={paused ? "Paused" : "Watching"}
-          />
+            className="grid h-4 min-w-4 place-items-center rounded-full bg-[#0a84ff] px-1 text-[10px] leading-none font-semibold text-white"
+            title={`${later} waiting for you`}
+          >
+            {later}
+          </span>
         )
       )}
     </motion.div>
@@ -284,6 +288,7 @@ function ExpandedContent({
       </div>
 
       {suggestion && <Options suggestion={suggestion} />}
+      {!suggestion && !reporting && <LaterList />}
     </div>
   );
 }
@@ -340,6 +345,7 @@ function RoundButton({ label, onClick, children }: { label: string; onClick: () 
 }
 
 function Options({ suggestion }: { suggestion: Suggestion }) {
+  const alwaysAt = suggestion.always?.findIndex(Boolean) ?? -1;
   return (
     <div className="mt-3 flex flex-wrap items-center gap-1.5">
       {suggestion.options.map((option, i) => (
@@ -364,6 +370,19 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
           </kbd>
         </motion.button>
       ))}
+      {alwaysAt >= 0 && (
+        <motion.button
+          type="button"
+          onClick={() => always(suggestion, alwaysAt)}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.2, delay: 0.12 + suggestion.options.length * 0.04 }}
+          title={`From now on, "${suggestion.options[alwaysAt]}" without asking. Undo in Settings > Skills.`}
+          className="chip rounded-full px-2.5 py-1.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
+        >
+          Always do this
+        </motion.button>
+      )}
       <motion.button
         type="button"
         onClick={() => dismiss(suggestion)}
@@ -382,6 +401,46 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
 function choose(suggestion: Suggestion, index: number) {
   playSound("select", uiVolume(), useSidekick.getState().settings.soundKit);
   void api.suggestionChoose(suggestion.id, index);
+}
+
+function always(suggestion: Suggestion, index: number) {
+  playSound("select", uiVolume(), useSidekick.getState().settings.soundKit);
+  void api.suggestionAlways(suggestion.id, index);
+}
+
+/** Suggestions held while you were busy, opened one at a time. */
+function LaterList() {
+  const count = useSidekick((s) => s.later);
+  const [items, setItems] = useState<LaterItem[]>([]);
+  useEffect(() => {
+    if (count > 0) void api.laterList().then(setItems);
+    else setItems([]);
+  }, [count]);
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-3 flex flex-col gap-1.5">
+      <div className="flex items-center justify-between text-[12px] text-[rgb(235_235_245/0.6)]">
+        <span>Saved for later</span>
+        <button type="button" onClick={() => void api.laterClear()} className="chip hover:text-white">
+          Clear
+        </button>
+      </div>
+      {items.slice(0, 4).map((l) => (
+        <button
+          key={l.id}
+          type="button"
+          onClick={() => void api.laterOpen(l.id)}
+          className="chip flex items-center justify-between gap-3 rounded-xl bg-white/[0.07] px-3 py-1.5 text-left hover:bg-white/[0.12]"
+        >
+          <span className="min-w-0">
+            <span className="block truncate text-[13px] font-medium text-white">{l.title}</span>
+            <span className="block truncate text-[12px] text-[rgb(235_235_245/0.55)]">{l.detail}</span>
+          </span>
+          <span className="shrink-0 text-[11px] text-white/40">{l.minutesAgo < 1 ? "now" : `${l.minutesAgo} min`}</span>
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function dismiss(suggestion: Suggestion) {

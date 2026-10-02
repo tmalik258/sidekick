@@ -74,21 +74,22 @@ In the browser preview, `window.sidekickMock.go("success")` switches mascot stat
 - **Undo**: files Sidekick creates (conversions, extracted folders) can be sent to the Recycle Bin from the island or Settings > History for 24 hours.
 - **Low disk or memory**: the island warns once and offers Storage settings or Task Manager.
 - **Step away** for 5 minutes and suggestions wait for you instead of expiring unseen.
-- **Browser**: load `apps/extension` unpacked in Chrome, Edge or Zen and paste the pairing code from Settings > Browser. Sign-in pages offer a fill from 1Password or Bitwarden, too many tabs offer cleanup, Upwork jobs offer a proposal draft.
+- **Browser**: press Install next to your browser in Settings > Connections; Sidekick opens the extensions page with the folder path copied, and the extension pairs on its own. Sign-in pages offer a fill from 1Password or Bitwarden, too many tabs offer cleanup, Upwork jobs offer a proposal draft.
 - **Screenshots** (Win+PrtScn): Copy, Copy text (with Tesseract), Show in folder.
-- **Search my stuff**: type in Ask mode and pick Search. Add folders under Settings > Search. With Ollama running, `ollama pull nomic-embed-text` adds search by meaning (embeddings stay on this PC).
-- **Claude Code can use Sidekick** through MCP: copy the command from Settings > AI and run it once.
+- **Search my stuff**: type in Ask mode and pick Search. Pick folders under Settings > Privacy and data. With Ollama running, `ollama pull nomic-embed-text` adds search by meaning (embeddings stay on this PC).
+- **Claude Code can use Sidekick** through MCP: press Add for me in Settings > Connections.
 - **What's on my screen?**: pick it in Ask mode, or turn on the Screenshot chip to send one with your next question. Sidekick only captures when you ask.
-- **Voice**: turn it on in Settings > Voice (downloads about 180 MB of speech models once). Say "Hey Sidekick" and your question; the island shows your words as you speak and the answer is read aloud with Kokoro. Talking over an answer stops it. There is a mic button in Ask mode for push to talk.
+- **Voice**: on by default (Settings > AI > Voice; about 180 MB of speech models download once). Say "Hey Sidekick" and your question; the island shows your words as you speak and the answer is read aloud with Kokoro. Talking over an answer stops it, and after an answer you can reply without the wake word. Suggestions are read out too, and you can answer them by voice ("the first one", "not now"). There is a mic button in Ask mode for push to talk.
 - **Settings** open inside the island (tray, the island's Settings button, or "Open settings" in Ask mode).
-- **Meetings**: paste your calendar's private iCal link in Settings > Today. A few minutes before a meeting the island offers Join call and Prep with AI; afterwards it offers to draft the follow-up, from your Fathom notes when `FATHOM_API_KEY` is set.
+- **Meetings**: connect Composio in Settings > Connections, then Google Calendar or Outlook. A few minutes before a meeting the island offers Join call and Prep with AI; afterwards it offers to draft the follow-up from your Fathom notes (connect Fathom too). Suggestions wait quietly while you are in a meeting.
 - **Morning brief**: the first time you sit down each day, one card with yesterday's time, repos with unsaved work and PRs waiting on you (if the GitHub CLI `gh` is signed in). Plan my day hands it to your AI.
 - **End of day**: a time summary to paste into your standup, and repos with unsaved work.
-- **Learns**: three Not nows in a row quiet a skill for a day; five identical picks offer to make it automatic.
+- **Learns**: three Not nows in a row quiet a skill for a while; **Always do this** on a suggestion makes it automatic (see Settings > Skills > Automations). Low-priority suggestions are saved for later instead of popping up; a small number on the island shows how many.
+- **Shortcuts** for Talk, Accept, Not now, Ask about the screen, Clipboard history, Pause and Settings. Record your own in Settings > Home > Shortcuts.
 
 ## AI setup
 
-Everything works without AI. The full checklist (AI, connections and tools, with every command) is in [docs/setup.md](docs/setup.md) and in the app under Settings > Setup. In short:
+Everything works without AI. The full checklist (AI, connections and tools, with every command) is in [docs/setup.md](docs/setup.md) and in the app under Settings > Home > Setup. In short:
 
 ```powershell
 # Claude Code: answers come from your own Claude subscription
