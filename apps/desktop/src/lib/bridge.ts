@@ -142,6 +142,8 @@ export const api = {
       skill?: boolean;
       screen?: boolean;
       speak?: boolean;
+      /** Provider picked in Ask mode; null lets Sidekick choose. */
+      prefer?: string | null;
     },
     localOnly: boolean,
   ) => invoke<void>("ai_chat", { id, messages, attach, localOnly }),

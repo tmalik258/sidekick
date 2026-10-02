@@ -47,7 +47,7 @@ const DETAIL: Record<MascotState, string> = {
 const OPEN_STATES: ReadonlySet<MascotState> = new Set(["suggesting", "listening", "working", "success", "error"]);
 
 const ORB = 44;
-const COMPACT = { width: 39, busyWidth: 109, waitWidth: 248, height: 36, radius: 18, orb: 26 };
+const COMPACT = { width: 39, busyWidth: 109, waitWidth: 248, voiceWidth: 320, height: 36, radius: 18, orb: 26 };
 const EXPANDED = { width: 388, minHeight: 78, radius: 30, pad: 16 };
 /** Ask mode: wider, so commands and answers have room. */
 const ASK_WIDTH = 560;
@@ -70,6 +70,10 @@ export function Island() {
   const chatting = useSidekick((s) => s.chatId !== null);
   const voiceStatus = useSidekick((s) => s.voiceStatus);
   const waiting = useSidekick((s) => (s.ask ? null : s.waiting));
+  // Voice with Ask closed: a compact pill while listening and thinking; the
+  // island opens only when the answer starts.
+  const hearing = useSidekick((s) => (s.ask ? null : s.hearing));
+  const voiceQuestion = useSidekick((s) => (s.ask ? null : s.voiceQuestion));
   const reduced = useReducedMotion() ?? false;
   const now = useNow(15_000);
   const paused = isPaused(settings.pause, now);
@@ -92,7 +96,20 @@ export function Island() {
     !settings.onboarded && !asking && !(voiceStatus?.models.some((m) => m.id === "voice" && m.installed) ?? false);
   // A guide stays open while Sidekick waits on something you finish elsewhere.
   const guiding = !!waiting && !waiting.minimized && (waiting.steps?.length ?? 0) > 0;
-  const expanded = asking || preparingVoice || hovered || guiding || OPEN_STATES.has(mascot) || !!suggestion;
+  const voicePill: { text: string; thinking: boolean } | null = asking
+    ? null
+    : voiceQuestion !== null
+      ? { text: voiceQuestion, thinking: true }
+      : hearing !== null || mascot === "listening"
+        ? { text: hearing ?? "", thinking: false }
+        : null;
+  const expanded =
+    asking ||
+    preparingVoice ||
+    (hovered && !voicePill) ||
+    guiding ||
+    (OPEN_STATES.has(mascot) && !voicePill) ||
+    (!!suggestion && !voicePill);
   // At rest only the sphere shows. The shell keeps its size (so hover and the
   // orb position do not move) but loses its background.
   const bare = !expanded && !chatting && !waiting && (mascot === "idle" || mascot === "sleeping");
@@ -157,11 +174,13 @@ export function Island() {
       ? showGuide
         ? GUIDE_WIDTH
         : EXPANDED.width
-      : waiting
-        ? COMPACT.waitWidth
-        : busy
-          ? COMPACT.busyWidth
-          : COMPACT.width;
+      : voicePill
+        ? COMPACT.voiceWidth
+        : waiting
+          ? COMPACT.waitWidth
+          : busy
+            ? COMPACT.busyWidth
+            : COMPACT.width;
   // The island window is already fixed (~560 tall); do not re-cap against
   // innerHeight or Settings/Welcome get clipped by the shell spring.
   const height = expanded ? Math.max(EXPANDED.minHeight, contentHeight + EXPANDED.pad) : COMPACT.height;
@@ -223,7 +242,8 @@ export function Island() {
         </motion.div>
 
         <AnimatePresence initial={false}>
-          {!expanded && !bare && (
+          {!expanded && voicePill && <VoicePill key="voice" {...voicePill} />}
+          {!expanded && !bare && !voicePill && (
             <CompactTrailing key="compact" busy={busy} paused={paused} waiting={waiting?.label ?? null} />
           )}
         </AnimatePresence>
@@ -277,6 +297,44 @@ export function Island() {
           )}
         </AnimatePresence>
       </motion.div>
+    </motion.div>
+  );
+}
+
+/** The newest words of a long sentence, which matter most while talking. */
+function tail(text: string): string {
+  return text.length > 38 ? `...${text.slice(-38).replace(/^\S*\s/, "")}` : text;
+}
+
+/** Voice in the compact island: green bars and the words as they come
+ * while listening, then "Thinking" with the question until the answer. */
+function VoicePill({ text, thinking }: { text: string; thinking: boolean }) {
+  return (
+    <motion.div
+      className="absolute top-0 right-0 flex h-9 items-center gap-2.5 pr-3.5"
+      style={{ left: COMPACT.height + 4 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1, transition: { delay: 0.1, duration: 0.2 } }}
+      exit={{ opacity: 0, transition: { duration: 0.08 } }}
+      aria-live="polite"
+    >
+      <span className={`min-w-0 flex-1 truncate text-[12.5px] font-medium ${text ? "text-white/90" : "text-white/50"}`}>
+        {thinking ? `Thinking: ${text}` : text ? tail(text) : "Listening..."}
+      </span>
+      {thinking ? (
+        <Activity />
+      ) : (
+        <span className="flex h-3.5 items-center gap-[3px]" role="img" aria-label="Listening">
+          {[0, 1, 2, 3].map((i) => (
+            <motion.span
+              key={i}
+              className="w-[3px] rounded-full bg-[#30d158]"
+              animate={{ height: [3, 12, 3] }}
+              transition={{ duration: 0.8, repeat: Number.POSITIVE_INFINITY, delay: i * 0.12, ease: "easeInOut" }}
+            />
+          ))}
+        </span>
+      )}
     </motion.div>
   );
 }
