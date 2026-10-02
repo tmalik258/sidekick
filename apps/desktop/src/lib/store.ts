@@ -452,6 +452,10 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         if (useSidekick.getState().chatId === id) {
           useSidekick.setState({ chatId: null });
           if (sounds && !useSidekick.getState().chatSkill) saveChat();
+          // Ask was closed while the answer came in: bring it back with the answer.
+          if (sounds && !useSidekick.getState().ask && useSidekick.getState().turns.length > 0) {
+            void api.askOpen();
+          }
         }
       }),
     ]);
