@@ -39,6 +39,11 @@ interface SidekickState {
   chatPage: string | null;
   /** The conversation is about writing a new skill. */
   chatSkill: boolean;
+  /** The model picked in Ask mode; null lets Sidekick choose. */
+  askModel: string | null;
+  /** A spoken question asked with Ask closed: the island stays compact
+   * ("Thinking...") until the answer starts, then opens to show it. */
+  voiceQuestion: string | null;
   /** Where the conversation is saved, so it can be picked up later. */
   conversation: string;
   /** Voice: what is being heard right now, while listening. */
@@ -101,6 +106,27 @@ export interface AskState {
   tool?: "screen" | "clipboard" | null;
 }
 
+const MODEL_KEY = "sidekick.askModel";
+
+function savedModel(): string | null {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage.getItem(MODEL_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Picks the model for Ask mode (null: Sidekick chooses), kept for next time. */
+export function setAskModel(id: string | null) {
+  useSidekick.setState({ askModel: id });
+  try {
+    if (id) localStorage.setItem(MODEL_KEY, id);
+    else localStorage.removeItem(MODEL_KEY);
+  } catch {
+    // Storage off: the pick lasts until restart.
+  }
+}
+
 export const useSidekick = create<SidekickState>(() => ({
   mascot: "idle",
   settings: DEFAULT_SETTINGS,
@@ -115,6 +141,8 @@ export const useSidekick = create<SidekickState>(() => ({
   chatId: null,
   chatPage: null,
   chatSkill: false,
+  askModel: savedModel(),
+  voiceQuestion: null,
   conversation: crypto.randomUUID(),
   hearing: null,
   voiceStatus: null,
@@ -296,6 +324,7 @@ export function sendChat(prompt: string, attach?: { clipboard?: boolean; screen?
       skill: chatSkill,
       screen,
       speak: attach?.speak ?? false,
+      prefer: useSidekick.getState().askModel,
     },
     ask?.localOnly ?? false,
   );
@@ -485,17 +514,27 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         // During the welcome, speech moves between steps instead of chatting.
         if (ask?.view === "welcome" && welcomeHeard(text)) return;
         if (text.trim()) {
+          // Asked with Ask closed: stay compact until the answer comes.
+          if (!ask) useSidekick.setState({ voiceQuestion: text.trim() });
           sendChat(text, { speak: settings.voice.speakAnswers });
-        } else if (byVoice && turns.length === 0) {
+        } else if (byVoice && turns.length === 0 && ask) {
           void api.askClose();
         }
       }),
-      listen(EVENTS.aiDelta, ({ id, text }) => updateLastTurn(id, (t) => ({ ...t, content: t.content + text }))),
+      listen(EVENTS.aiDelta, ({ id, text }) => {
+        updateLastTurn(id, (t) => ({ ...t, content: t.content + text }));
+        // The first words of a spoken question's answer: open to show it.
+        if (sounds && useSidekick.getState().voiceQuestion !== null) {
+          useSidekick.setState({ voiceQuestion: null });
+          if (!useSidekick.getState().ask) void api.askOpen();
+        }
+      }),
       listen(EVENTS.aiTool, ({ id, name }) => updateLastTurn(id, (t) => ({ ...t, tool: name }))),
       listen(EVENTS.aiProposal, ({ chatId, id, label }) =>
         updateLastTurn(chatId, (t) => ({ ...t, proposals: [...(t.proposals ?? []), { id, label }] })),
       ),
       listen(EVENTS.aiDone, ({ id, provider, error, handoff }) => {
+        if (useSidekick.getState().voiceQuestion !== null) useSidekick.setState({ voiceQuestion: null });
         updateLastTurn(id, (t) => ({ ...t, provider, error, handoff, tool: null, streaming: false }));
         if (useSidekick.getState().chatId === id) {
           useSidekick.setState({ chatId: null });

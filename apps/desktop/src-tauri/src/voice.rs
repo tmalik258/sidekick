@@ -577,9 +577,10 @@ fn on_heard(app: &AppHandle, heard: Heard) {
                 mascot::dispatch(app, MascotEvent::ListenStart);
                 return;
             }
+            // The island listens in its compact shape; Ask opens only when
+            // the answer starts coming in.
             if !ask::is_open(app) {
                 v.opened_by_voice.store(true, Ordering::SeqCst);
-                ask::open(app, ask::Open::default());
             }
             mascot::dispatch(app, MascotEvent::ListenStart);
             emit_heard(app, String::new(), false);
