@@ -269,7 +269,7 @@ export function Select({
   };
 
   return (
-    <div ref={root} className={`relative min-w-36 ${className}`}>
+    <div ref={root} className={`relative max-w-52 ${className}`}>
       <button
         type="button"
         aria-label={label}
@@ -296,7 +296,7 @@ export function Select({
           id={listId}
           role="listbox"
           aria-label={label}
-          className="absolute top-[calc(100%+4px)] right-0 z-30 max-h-56 min-w-full w-max max-w-72 overflow-y-auto rounded-xl bg-[#1c1c24] py-1 shadow-[0_12px_40px_rgb(0_0_0/0.55)] ring-1 ring-inset ring-white/15"
+          className="absolute top-[calc(100%+4px)] right-0 z-30 max-h-56 w-max min-w-full max-w-64 overflow-y-auto rounded-xl bg-[#1c1c24] py-1 shadow-[0_12px_40px_rgb(0_0_0/0.55)] ring-1 ring-inset ring-white/15"
         >
           {list.map(([v, l], i) => {
             const selected = v === value;
@@ -306,11 +306,11 @@ export function Select({
                   type="button"
                   onMouseEnter={() => setActive(i)}
                   onClick={() => pick(v)}
-                  className={`flex w-full items-center whitespace-nowrap px-3 py-1.5 text-left text-[13px] ${
+                  className={`flex w-full items-center px-3 py-1.5 text-left text-[13px] ${
                     i === active || selected ? "bg-white/12 text-white" : "text-white/80"
                   } ${selected ? "font-medium" : ""}`}
                 >
-                  {l}
+                  <span className="truncate">{l}</span>
                 </button>
               </li>
             );
