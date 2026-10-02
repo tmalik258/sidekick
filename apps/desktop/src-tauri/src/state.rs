@@ -55,6 +55,8 @@ pub struct AppState {
     pub last_window: Mutex<Option<serde_json::Value>>,
     /// Chats in flight, so they can be cancelled.
     pub chats: Mutex<HashMap<String, sidekick_ai::CancellationToken>>,
+    /// Actions Ask offered as buttons, waiting for a tap.
+    pub ask_proposals: Mutex<HashMap<String, crate::ask_tools::Proposed>>,
     /// Empty folder Claude Code runs in, so it has no project to touch.
     pub ai_workdir: PathBuf,
     /// Temporary files (SemIf input and output).

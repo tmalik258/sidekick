@@ -28,6 +28,7 @@ mod secrets;
 mod setup;
 mod shortcuts;
 mod state;
+mod stuck;
 mod suggestions;
 mod timetrack;
 mod tray;
@@ -107,6 +108,7 @@ pub fn run() {
             commands::claude_add_hooks,
             commands::claude_add_mcp,
             commands::ai_handoff,
+            commands::ai_run_proposal,
             commands::composio_import,
             commands::composio_sign_in,
             commands::composio_sign_out,
@@ -218,6 +220,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         hovered: Default::default(),
         last_window: Mutex::default(),
         chats: Mutex::default(),
+        ask_proposals: Mutex::default(),
         ai_workdir: data_dir.join("claude-workspace"),
         voice: voice::Voice::new(data_dir.join("voice-models")),
         calendar: calendar.clone(),

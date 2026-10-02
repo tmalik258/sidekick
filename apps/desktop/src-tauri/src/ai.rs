@@ -193,7 +193,8 @@ time.day_summary: total_human, top, text
 day.morning_brief: headline, text, reviews, first_url, first_title
 calendar.meeting_soon: title, minutes, start, join_url, location, attendees, details
 calendar.meeting_ended: title, start, start_utc, attendees
-dev.repo_opened: name, path, branch, behind, ahead, changed, env_missing, docker_needed, docker_running
+dev.repo_opened: name, path, branch, behind, ahead, changed, env_missing, docker_needed, docker_running, deps_needed
+dev.stuck: preview, minutes (the same error copied again)
 files.downloads_old: count, mb, dir
 system.monitor_connected: monitors
 system.battery_low: percent
@@ -395,7 +396,7 @@ pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach,
 }
 
 /// Captures the window the user was in before Sidekick took focus.
-async fn screenshot(app: &AppHandle) -> Result<Vec<u8>, String> {
+pub(crate) async fn screenshot(app: &AppHandle) -> Result<Vec<u8>, String> {
     let pid = lock(&app.state::<AppState>().last_window)
         .as_ref()
         .and_then(|w| w["pid"].as_u64())

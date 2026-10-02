@@ -139,6 +139,9 @@ pub fn mcp_added(claude_json: &str, url: &str) -> bool {
     })
 }
 
+/// The vision model suggested when none is set: small enough for a 4 GB GPU.
+const VISION_MODEL: &str = "moondream";
+
 /// Ollama names models `name:tag`; `nomic-embed-text` matches
 /// `nomic-embed-text:latest`.
 pub fn has_model(models: &[String], wanted: &str) -> bool {
@@ -327,6 +330,35 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         embed = embed.run(format!("ollama pull {embed_model}"));
     }
     items.push(embed);
+
+    // Optional: a small model that sees pictures, for screen questions
+    // without text. Off by default; OCR covers text on screen.
+    let vision = settings.ai.local.vision_model.trim();
+    let vision_model = if vision.is_empty() {
+        VISION_MODEL
+    } else {
+        vision
+    };
+    let has_vision = models.as_ref().is_some_and(|m| has_model(m, vision_model));
+    let mut vision_item = SetupItem::new(
+        "ollama_vision",
+        Group::Ai,
+        "Vision model",
+        "Sees pictures on your screen that have no text. About 1.7 GB, loaded only when needed.",
+    )
+    .done(
+        has_vision,
+        "Downloaded",
+        if models.is_some() {
+            "Not downloaded"
+        } else {
+            "Needs Ollama running"
+        },
+    );
+    if models.is_some() {
+        vision_item = vision_item.run(format!("ollama pull {vision_model}"));
+    }
+    items.push(vision_item);
 
     let api_key = std::env::var("ANTHROPIC_API_KEY").is_ok_and(|k| !k.trim().is_empty());
     items.push(

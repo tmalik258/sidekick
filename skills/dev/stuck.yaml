@@ -1,0 +1,15 @@
+id: dev.stuck
+name: Stuck on an error
+description: When you copy the same error again within ten minutes, offer the two most likely fixes in Ask. The error is only sent when you click.
+priority: 62
+cooldown_secs: 600
+trigger:
+  event: dev.stuck
+suggestion:
+  title: "Still on this error?"
+  detail: "{{preview}}"
+  options:
+    - label: Show me two fixes
+      action: ask_ai
+      args: { prompt: "I keep hitting this error. Give me the two most likely fixes, shortest first, each in one or two lines.", clipboard: "true" }
+      requires: ["ai"]

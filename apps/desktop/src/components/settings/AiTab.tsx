@@ -190,6 +190,20 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
                         onChange={(model) => void save({ local: { ...ai.local, model } })}
                       />
                     </Field>
+                    <Field
+                      label="Vision model"
+                      hint="For pictures without text, e.g. moondream (about 1.7 GB). Off reads the screen as text, which is faster."
+                    >
+                      <Select
+                        label="Vision model"
+                        value={ai.local.visionModel}
+                        options={[
+                          ["", "Off (read text)"],
+                          ...(models?.chat ?? []).map((m) => [m, m] as [string, string]),
+                        ]}
+                        onChange={(visionModel) => void save({ local: { ...ai.local, visionModel } })}
+                      />
+                    </Field>
                     <details className="text-[12.5px]">
                       <summary className="cursor-pointer text-(--muted)">Server</summary>
                       <div className="mt-2">
