@@ -156,6 +156,9 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
           return (
             <li
               key={a.slug}
+              ref={(el) => {
+                if (el && justDone === `app:${a.slug}`) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+              }}
               className={`flex items-center gap-2.5 rounded-xl border px-2.5 py-2 transition-shadow duration-700 ${
                 justDone === `app:${a.slug}`
                   ? "border-[#30d158]/70 ring-1 ring-inset ring-[#30d158]/70"
@@ -196,7 +199,7 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
                     });
                   }}
                 >
-                  {connecting === a.slug ? "Waiting..." : "Connect"}
+                  {connecting === a.slug ? "Waiting..." : `Connect ${a.name}`}
                 </Button>
               )}
             </li>

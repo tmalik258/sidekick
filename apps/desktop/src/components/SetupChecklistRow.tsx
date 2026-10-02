@@ -2,8 +2,9 @@
 
 // One setup checklist row: status, Run / Add for me / Set up, and inline guides.
 
-import { memo, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
+import { friendlyError } from "@/lib/friendly";
 import { startWaiting, stopWaiting, useSidekick } from "@/lib/store";
 import type { SetupItem } from "@/lib/types";
 import { ItemGuide } from "./SetupGuides";
@@ -60,6 +61,11 @@ export const SetupRow = memo(function SetupRow({
   const [busy, setBusy] = useState(false);
   const waiting = useSidekick((s) => s.waiting);
   const justDone = useSidekick((s) => s.justDone === item.id);
+  // When Settings reopens after a step finished, show that step.
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (justDone) rowRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [justDone]);
   const [actionError, setActionError] = useState<string | null>(null);
   // The command is there for those who want it, not the first thing you see.
   const [showCommand, setShowCommand] = useState(false);
@@ -99,7 +105,7 @@ export const SetupRow = memo(function SetupRow({
             again: runDirect,
           });
       })
-      .catch((e) => setActionError(String(e)))
+      .catch((e) => setActionError(friendlyError(e)))
       .finally(() => setBusy(false));
   };
   const run = () => {
@@ -127,6 +133,7 @@ export const SetupRow = memo(function SetupRow({
 
   return (
     <div
+      ref={rowRef}
       className={`flex flex-col gap-1.5 rounded-2xl bg-white/[0.06] px-3.5 py-2.5 ring-1 ring-inset transition-shadow duration-700 ${
         justDone ? "ring-[#30d158]/70" : "ring-transparent"
       }`}
