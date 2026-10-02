@@ -8,6 +8,7 @@ mod capabilities;
 pub mod cleanup;
 mod convert;
 pub mod dev;
+mod files;
 pub mod passwords;
 mod system;
 
@@ -63,6 +64,7 @@ const SAFE: &[&str] = &[
     "open_in_editor",
     "open_folder",
     "extract_text",
+    "zip",
     "open_system_page",
     "create_env",
     "launch_project",
@@ -130,6 +132,35 @@ impl Executor {
                 let path = existing_path(args)?;
                 let to = arg(args, "to")?;
                 convert::convert(&self.caps, &path, to).await
+            }
+            "zip" => {
+                let paths: Vec<PathBuf> = match args.get("paths").and_then(Value::as_array) {
+                    Some(list) => list
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(PathBuf::from)
+                        .collect(),
+                    None => vec![PathBuf::from(arg(args, "path")?)],
+                };
+                if let Some(gone) = paths.iter().find(|p| !p.exists()) {
+                    return Err(ActionError::Failed(format!(
+                        "{} no longer exists",
+                        file_name(gone)
+                    )));
+                }
+                let name = args.get("name").and_then(Value::as_str).unwrap_or_default();
+                convert::zip(&self.caps, &paths, name).await
+            }
+            "move_file" => {
+                let path = existing_path(args)?;
+                let to = PathBuf::from(arg(args, "to")?);
+                if !to.is_dir() {
+                    return Err(ActionError::Failed(format!(
+                        "{} is not a folder",
+                        to.display()
+                    )));
+                }
+                files::move_into(&path, &to)
             }
             "extract_archive" => {
                 let path = existing_path(args)?;

@@ -771,6 +771,12 @@ pub async fn setup_run(app: AppHandle, id: String) -> CmdResult<()> {
     crate::setup::run(&app, &id).await
 }
 
+/// Runs an action Ask offered as a button, after the user tapped it.
+#[tauri::command]
+pub async fn ai_run_proposal(app: AppHandle, id: String) -> CmdResult<crate::ask_tools::Ran> {
+    crate::ask_tools::run_proposal(&app, &id).await
+}
+
 /// Opens Claude Code in a terminal with this conversation, to finish what
 /// the local model could not.
 #[tauri::command]

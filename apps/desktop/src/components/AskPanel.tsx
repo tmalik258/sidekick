@@ -15,6 +15,7 @@ import {
   cancelChat,
   newChat,
   openChat,
+  runProposal,
   sendChat,
   setAsk,
   startListening,
@@ -29,6 +30,7 @@ import {
   type ChatSummary,
   isPaused,
   PROVIDER_LABELS,
+  type Proposal,
   type ProviderStatus,
   type SearchHit,
   type Turn,
@@ -745,6 +747,7 @@ function Chat({ turns }: { turns: Turn[] }) {
                   {PROVIDER_LABELS[t.provider] ?? t.provider}
                 </p>
               )}
+              {t.proposals && t.proposals.length > 0 && <Proposals items={t.proposals} />}
               {i === turns.length - 1 && options.length > 0 && <AnswerOptions options={options} />}
               {/* Offered when the local model gives up; Ctrl Enter works any time. */}
               {!t.streaming && i === turns.length - 1 && (t.handoff || t.error) && (
@@ -837,6 +840,60 @@ function contextStarters({
     },
   );
   return out.slice(0, 3);
+}
+
+/** Actions the answer offers: nothing runs until a tap, and Undo follows. */
+function Proposals({ items }: { items: Proposal[] }) {
+  return (
+    <div className="mt-2 flex flex-col gap-1.5">
+      {items.map((p) =>
+        p.ran ? (
+          <div key={p.id} className="flex items-center gap-2 text-[12.5px]">
+            <span className={`size-1.5 shrink-0 rounded-full ${p.ran.ok ? "bg-[#30d158]" : "bg-[#ff453a]"}`} />
+            <span className="min-w-0 flex-1 truncate text-[rgb(235_235_245/0.75)]">{p.ran.message}</span>
+            {p.ran.ok && p.ran.undoId != null && !p.ran.undone && <UndoProposal proposal={p} />}
+            {p.ran.ok && p.ran.path && (
+              <button
+                type="button"
+                onClick={() => void api.revealPath(p.ran?.path ?? "")}
+                className="chip shrink-0 rounded-full bg-white/[0.12] px-2.5 py-1 text-[12px] text-white/90 hover:bg-white/[0.2]"
+              >
+                Show
+              </button>
+            )}
+          </div>
+        ) : (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => void runProposal(p.id)}
+            className="chip flex min-h-8 items-center gap-2 self-start rounded-full bg-white px-3.5 py-1.5 text-[13px] font-medium text-black hover:bg-white/90"
+          >
+            {p.label}
+          </button>
+        ),
+      )}
+    </div>
+  );
+}
+
+function UndoProposal({ proposal }: { proposal: Proposal }) {
+  const [state, setState] = useState<string | null>(null);
+  if (state) return <span className="shrink-0 text-[12px] text-[rgb(235_235_245/0.55)]">{state}</span>;
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        void api
+          .actionUndo(proposal.ran?.undoId ?? 0)
+          .then((m) => setState(m))
+          .catch((e) => setState(String(e)))
+      }
+      className="chip shrink-0 rounded-full bg-white/[0.12] px-2.5 py-1 text-[12px] text-white/90 hover:bg-white/[0.2]"
+    >
+      Undo
+    </button>
+  );
 }
 
 /** Next steps the answer offers: click one or press Alt 1-3 to ask it. */
