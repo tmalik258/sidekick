@@ -65,7 +65,7 @@ impl OpenAiCompat {
         }
         self.models()
             .await
-            .and_then(|m| m.into_iter().next())
+            .and_then(|m| first_chat_model(&m).map(str::to_owned))
             .ok_or_else(|| {
                 AiError::Failed(format!(
                     "no model found at {} (try: ollama pull qwen3:4b)",
@@ -109,6 +109,22 @@ impl OpenAiCompat {
             .unwrap_or_default()
             .to_owned())
     }
+}
+
+/// The model to chat with when none is chosen: the first one listed (Ollama
+/// lists the newest first) that is not an embedding model, which cannot
+/// chat.
+pub fn first_chat_model(models: &[String]) -> Option<&str> {
+    models
+        .iter()
+        .map(String::as_str)
+        .find(|m| !is_embedding_model(m))
+}
+
+/// Embedding models (for search) cannot hold a conversation.
+pub fn is_embedding_model(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    n.contains("embed") || n.starts_with("bge") || n.contains("minilm") || n.contains("e5-")
 }
 
 /// Most tool rounds before the model must answer with what it has.
@@ -384,6 +400,19 @@ mod tests {
         assert!(is_local_url("http://[::1]:8080/v1"));
         assert!(!is_local_url("https://api.openai.com/v1"));
         assert!(!is_local_url("http://192.168.1.5:11434/v1"));
+    }
+
+    #[test]
+    fn never_picks_an_embedding_model_to_chat() {
+        let models = vec![
+            "nomic-embed-text:latest".to_owned(),
+            "qwen3:1.7b".to_owned(),
+            "llama3.2:3b".to_owned(),
+        ];
+        assert_eq!(first_chat_model(&models), Some("qwen3:1.7b"));
+        assert_eq!(first_chat_model(&["bge-m3:latest".to_owned()]), None);
+        assert!(is_embedding_model("mxbai-embed-large"));
+        assert!(!is_embedding_model("qwen3:4b"));
     }
 
     #[test]

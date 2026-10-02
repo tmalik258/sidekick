@@ -153,11 +153,6 @@ pub fn has_model(models: &[String], wanted: &str) -> bool {
     })
 }
 
-fn is_embedding(model: &str) -> bool {
-    let m = model.to_ascii_lowercase();
-    m.contains("embed") || m.starts_with("bge") || m.contains("minilm")
-}
-
 fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_default()
 }
@@ -268,7 +263,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     };
     let has_chat = models.as_ref().is_some_and(|m| {
         if settings.ai.local.model.trim().is_empty() {
-            m.iter().any(|x| !is_embedding(x))
+            m.iter().any(|x| !sidekick_ai::is_embedding_model(x))
         } else {
             has_model(m, &chat_model)
         }
@@ -730,8 +725,8 @@ mod tests {
         assert!(has_model(&models, "qwen3:4b"));
         assert!(!has_model(&models, "qwen3:8b"));
         assert!(!has_model(&models, "llama3.2"));
-        assert!(is_embedding("nomic-embed-text:latest"));
-        assert!(!is_embedding("qwen3:4b"));
+        assert!(sidekick_ai::is_embedding_model("nomic-embed-text:latest"));
+        assert!(!sidekick_ai::is_embedding_model("qwen3:4b"));
     }
 
     #[test]
