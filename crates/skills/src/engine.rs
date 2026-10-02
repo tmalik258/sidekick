@@ -210,9 +210,10 @@ fn pin_named_default(options: &mut Vec<ProposedOption>, id: &str) {
         .position(|o| o.action == "open_url" && browser_arg(o).is_none());
 
     let Some(mut marker) = marker else {
-        if let Some(i) = options.iter().position(|o| {
-            o.action == "open_url" && browser_arg(o) == Some(id) && !is_private(o)
-        }) {
+        if let Some(i) = options
+            .iter()
+            .position(|o| o.action == "open_url" && browser_arg(o) == Some(id) && !is_private(o))
+        {
             let opt = options.remove(i);
             options.insert(0, opt);
         }
@@ -472,7 +473,12 @@ suggestion:
         let labels: Vec<_> = p.options.iter().map(|o| o.label.as_str()).collect();
         assert_eq!(labels, ["Chrome", "Incognito", "Zen"]);
         assert_eq!(p.options[0].args["browser"], "chrome");
-        assert!(!p.options[0].args.get("private").is_some_and(|v| v == "true"));
+        assert!(
+            !p.options[0]
+                .args
+                .get("private")
+                .is_some_and(|v| v == "true")
+        );
     }
 
     #[test]
