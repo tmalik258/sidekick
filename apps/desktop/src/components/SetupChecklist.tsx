@@ -6,11 +6,13 @@
 // couple of minutes after a Run so a finished install turns green.
 // In welcome, items expand their one-click how-to here so onboarding never
 // dumps the user into Settings mid-flow.
-// Rows paint immediately as skeletons (pulse glyphs); never a blank text line.
+// Rows paint at once: the last known status (cached), or the catalog's
+// placeholders on the very first run. Refreshing keeps every row on screen.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
-import type { SetupGroup, SetupStatus } from "@/lib/types";
+import { useCached } from "@/lib/cache";
+import type { SetupGroup, SetupItem } from "@/lib/types";
 import { SETUP_CATALOG, skeletonItem } from "./SetupCatalog";
 import { SetupRow, SmallButton } from "./SetupChecklistRow";
 
@@ -24,18 +26,10 @@ const WATCH_EVERY_MS = 6000;
 const WATCH_TIMES = 20;
 
 export function useSetupStatus() {
-  const [status, setStatus] = useState<SetupStatus | null>(null);
-  const [checking, setChecking] = useState(false);
+  const { data: status, refreshing: checking, refresh, set } = useCached("setup-status", api.setupStatus);
   const watch = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const check = useCallback(async () => {
-    setChecking(true);
-    try {
-      setStatus(await api.setupStatus());
-    } finally {
-      setChecking(false);
-    }
-  }, []);
+  const check = useCallback(() => refresh().catch(() => undefined), [refresh]);
 
   /** Checks again every few seconds for a while, after starting an install. */
   const watchForChanges = useCallback(() => {
@@ -44,18 +38,39 @@ export function useSetupStatus() {
     watch.current = setInterval(() => {
       left -= 1;
       if (left <= 0 && watch.current) clearInterval(watch.current);
-      void api.setupStatus().then(setStatus);
+      void api
+        .setupStatus()
+        .then(set)
+        .catch(() => undefined);
     }, WATCH_EVERY_MS);
-  }, []);
+  }, [set]);
 
-  useEffect(() => {
-    void check();
-    return () => {
+  useEffect(
+    () => () => {
       if (watch.current) clearInterval(watch.current);
-    };
-  }, [check]);
+    },
+    [],
+  );
 
   return { status, checking, check, watchForChanges };
+}
+
+/**
+ * Rows in one fixed order: the catalog's, with live data in place of each
+ * placeholder once it is known, then anything new from Rust at the end. So
+ * rows never move or pop in when the data arrives.
+ */
+function mergeRows(groups: SetupGroup[], live: SetupItem[] | undefined): SetupItem[] {
+  const catalog = SETUP_CATALOG.filter((c) => groups.includes(c.group));
+  if (!live) return catalog.map(skeletonItem);
+  const byId = new Map(live.filter((i) => groups.includes(i.group)).map((i) => [i.id, i]));
+  const rows: SetupItem[] = [];
+  for (const c of catalog) {
+    const item = byId.get(c.id);
+    if (item) rows.push(item);
+    byId.delete(c.id);
+  }
+  return [...rows, ...byId.values()];
 }
 
 export function SetupChecklist({
@@ -76,19 +91,24 @@ export function SetupChecklist({
   const [showOptional, setShowOptional] = useState(!compact);
   const [openGuide, setOpenGuide] = useState<string | null>(null);
 
-  const run = (id: string) => {
-    setError(null);
-    api
-      .setupRun(id)
-      .then(watchForChanges)
-      .catch((e) => setError(String(e)));
-  };
+  // Stable callbacks, so a row only re-renders when its own data changes.
+  const run = useCallback(
+    (id: string) => {
+      setError(null);
+      api
+        .setupRun(id)
+        .then(watchForChanges)
+        .catch((e) => setError(String(e)));
+    },
+    [watchForChanges],
+  );
+  const toggleGuide = useCallback((id: string) => setOpenGuide((open) => (open === id ? null : id)), []);
+  const done = useCallback(() => {
+    void check();
+    watchForChanges();
+  }, [check, watchForChanges]);
 
-  const skeletons = SETUP_CATALOG.filter((c) => groups.includes(c.group)).map(skeletonItem);
-  const live = status?.items.filter((i) => groups.includes(i.group)) ?? [];
-  // Keep previous rows while refreshing; otherwise show catalog skeletons.
-  const items = live.length > 0 ? live : skeletons;
-  const pending = status === null || checking;
+  const items = mergeRows(groups, status?.items);
   const recommended = items.filter((i) => i.recommended);
   const doneCount = recommended.filter((i) => i.done).length;
   const optional = items.filter((i) => !i.recommended);
@@ -145,8 +165,8 @@ export function SetupChecklist({
       )}
 
       {groups.map((g) => {
-        const rows = items.filter((i) => i.group === g && (i.recommended || showOptional));
-        if (rows.length === 0) return null;
+        const shown = items.filter((i) => i.group === g && (i.recommended || showOptional));
+        if (shown.length === 0) return null;
         return (
           <section key={g} className="flex flex-col gap-1.5">
             {groups.length > 1 && (
@@ -154,20 +174,17 @@ export function SetupChecklist({
                 {GROUP_TITLES[g]}
               </h3>
             )}
-            {rows.map((item) => (
+            {shown.map((item) => (
               <SetupRow
                 key={item.id}
                 item={item}
-                checking={pending}
+                checking={status === null}
                 onRun={run}
                 guideOpen={openGuide === item.id}
-                onToggleGuide={() => setOpenGuide(openGuide === item.id ? null : item.id)}
+                onToggleGuide={toggleGuide}
                 onOpenTab={onOpenTab}
                 inlineGuides={inlineGuides}
-                onDone={() => {
-                  void check();
-                  watchForChanges();
-                }}
+                onDone={done}
               />
             ))}
           </section>

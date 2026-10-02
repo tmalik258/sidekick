@@ -8,8 +8,9 @@
 // resumes where the user left off.
 
 import { AnimatePresence, motion } from "motion/react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/bridge";
+import { useCached } from "@/lib/cache";
 import { updateSettings, useSidekick } from "@/lib/store";
 import type { SetupFound } from "@/lib/types";
 import { ASK_ORB } from "./AskPanel";
@@ -164,45 +165,38 @@ interface Pick {
   on: boolean;
 }
 
+function picksFrom(f: SetupFound, off: Set<string>): Pick[] {
+  const list: Omit<Pick, "on">[] = [];
+  const repos = f.codeFolders.reduce((n, c) => n + c.repos, 0);
+  if (f.codeFolders.length) {
+    list.push({ id: "code", label: `Your code: ${f.codeFolders.map((c) => c.label).join(", ")} (${repos} repos)` });
+  }
+  if (f.searchFolders.length) {
+    list.push({ id: "search", label: `Search ${f.searchFolders.map((c) => c.label).join(", ")}` });
+  }
+  if (f.chatModels.length) list.push({ id: "model", label: `Local AI: ${f.chatModels[0]}` });
+  if (f.claudeInstalled && !f.claudeHooks) {
+    list.push({ id: "hooks", label: "Claude Code: hear when it finishes or asks" });
+  }
+  if (f.claudeInstalled && !f.claudeMcp) {
+    list.push({ id: "mcp", label: "Claude Code: let it use Sidekick's tools" });
+  }
+  for (const item of f.installable.filter((i) => i.recommended && !i.done && i.runnable)) {
+    list.push({ id: `install:${item.id}`, label: `Install ${item.title}` });
+  }
+  return list.map((p) => ({ ...p, on: !off.has(p.id) }));
+}
+
 /** Everything found on this PC, ticked, with one button to set it all up. */
 function FoundCard({ onDone }: { onDone: () => void }) {
-  const [found, setFound] = useState<SetupFound | null>(null);
-  const [picks, setPicks] = useState<Pick[]>([]);
+  const { data: found } = useCached<SetupFound>("setup-detect", api.setupDetect);
+  // Unticked rows; everything else found is ticked. Kept apart from the data
+  // so a refresh in the background never resets your choices.
+  const [off, setOff] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void api
-      .setupDetect()
-      .then((f) => {
-        setFound(f);
-        const list: Pick[] = [];
-        const repos = f.codeFolders.reduce((n, c) => n + c.repos, 0);
-        if (f.codeFolders.length) {
-          list.push({
-            id: "code",
-            label: `Your code: ${f.codeFolders.map((c) => c.label).join(", ")} (${repos} repos)`,
-            on: true,
-          });
-        }
-        if (f.searchFolders.length) {
-          list.push({ id: "search", label: `Search ${f.searchFolders.map((c) => c.label).join(", ")}`, on: true });
-        }
-        if (f.chatModels.length) list.push({ id: "model", label: `Local AI: ${f.chatModels[0]}`, on: true });
-        if (f.claudeInstalled && !f.claudeHooks) {
-          list.push({ id: "hooks", label: "Claude Code: hear when it finishes or asks", on: true });
-        }
-        if (f.claudeInstalled && !f.claudeMcp) {
-          list.push({ id: "mcp", label: "Claude Code: let it use Sidekick's tools", on: true });
-        }
-        for (const item of f.installable.filter((i) => i.recommended && !i.done && i.runnable)) {
-          list.push({ id: `install:${item.id}`, label: `Install ${item.title}`, on: true });
-        }
-        setPicks(list);
-      })
-      .catch(() => setFound(null));
-  }, []);
+  const picks = useMemo(() => (found ? picksFrom(found, off) : []), [found, off]);
 
   if (!found || picks.length === 0) return null;
 
@@ -240,7 +234,12 @@ function FoundCard({ onDone }: { onDone: () => void }) {
                 type="checkbox"
                 checked={p.on}
                 onChange={(e) =>
-                  setPicks((list) => list.map((x) => (x.id === p.id ? { ...x, on: e.target.checked } : x)))
+                  setOff((prev) => {
+                    const next = new Set(prev);
+                    if (e.target.checked) next.delete(p.id);
+                    else next.add(p.id);
+                    return next;
+                  })
                 }
                 className="mt-0.5 size-3.5 shrink-0 accent-[#0a84ff]"
               />

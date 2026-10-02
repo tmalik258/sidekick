@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
+import { useCached } from "@/lib/cache";
 import { checkKit, cueVolume, playCue } from "@/lib/sound";
 import { updateSettings, useSidekick } from "@/lib/store";
 import {
@@ -14,6 +15,7 @@ import {
   CUES,
   canUndo,
   type Folder,
+  type Found,
   formatDuration,
   MASCOT_STATES,
   SHORTCUT_ACTIONS,
@@ -219,14 +221,8 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
 }
 
 function CodeFolders({ chosen, onChange }: { chosen: string[]; onChange: (next: string[]) => void }) {
-  const [found, setFound] = useState<Folder[] | null>(null);
-  useEffect(() => {
-    void api
-      .setupDetect()
-      .then((f) => setFound(f.codeFolders))
-      .catch(() => setFound([]));
-  }, []);
-  if (!found) return <p className="text-[12px] text-(--muted)">Looking for your code...</p>;
+  const { data } = useCached<Found>("setup-detect", api.setupDetect);
+  const found: Folder[] = data?.codeFolders ?? [];
   return (
     <>
       {chosen.length === 0 && found.length > 0 && (
@@ -236,7 +232,7 @@ function CodeFolders({ chosen, onChange }: { chosen: string[]; onChange: (next: 
         found={found}
         chosen={chosen}
         onChange={onChange}
-        empty="No git repos found in the usual places. Add the folder that holds your projects."
+        empty={data ? "No git repos found in the usual places. Add the folder that holds your projects." : ""}
       />
     </>
   );

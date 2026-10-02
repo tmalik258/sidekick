@@ -352,7 +352,7 @@ export function FolderPicker({
   const [draft, setDraft] = useState("");
   return (
     <div className="flex flex-col gap-1.5 text-[13px]">
-      {rows.length === 0 && <p className="text-[12px] text-(--muted)">{empty}</p>}
+      {rows.length === 0 && empty && <p className="text-[12px] text-(--muted)">{empty}</p>}
       {rows.map((f) => (
         <label key={f.path} className="flex cursor-pointer items-center gap-2.5">
           <input

@@ -4,17 +4,17 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
+import { useCached } from "@/lib/cache";
 import type { BrowserStatus, ExtensionGuide } from "@/lib/types";
 
 /** Shared by welcome and Settings > Browser. */
 export function BrowserInstallPanel({ onDone }: { onDone?: () => void }) {
-  const [browsers, setBrowsers] = useState<BrowserStatus[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [guide, setGuide] = useState<ExtensionGuide | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const { data: browsers } = useCached<BrowserStatus[]>("browsers", api.browsersStatus);
   useEffect(() => {
-    void api.browsersStatus().then(setBrowsers);
     if (!onDone) return;
     const id = setInterval(() => void onDone(), 6000);
     return () => clearInterval(id);
@@ -33,7 +33,7 @@ export function BrowserInstallPanel({ onDone }: { onDone?: () => void }) {
       .finally(() => setBusy(null));
   };
 
-  const list = browsers.length > 0 ? browsers : [{ id: "chrome", name: "Chrome", connected: false }];
+  const list = browsers && browsers.length > 0 ? browsers : [{ id: "chrome", name: "Chrome", connected: false }];
 
   return (
     <div className="flex flex-col gap-2 text-[12px] leading-relaxed text-(--muted)">

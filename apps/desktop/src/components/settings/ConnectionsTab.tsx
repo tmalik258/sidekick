@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
+import { useCached } from "@/lib/cache";
 import { updateSettings, useSidekick } from "@/lib/store";
 import type {
   BrowserInfo,
@@ -13,7 +14,7 @@ import type {
   ComposioStatus,
   ExtensionGuide,
   McpInfo,
-  SetupItem,
+  SetupStatus,
 } from "@/lib/types";
 import { Button, CopyButton, Field, Section, Select, TextField, Toggle } from "./ui";
 
@@ -54,13 +55,12 @@ export function ConnectionsTab({ onError }: { onError: (e: string) => void }) {
 
 function ComposioCard({ onError }: { onError: (e: string) => void }) {
   const composio = useSidekick((s) => s.settings.composio);
-  const [status, setStatus] = useState<ComposioStatus | null>(null);
+  const { data: status, refresh: reload } = useCached<ComposioStatus>("composio-status", api.composioStatus);
   const [waiting, setWaiting] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<string | null>(null);
-  const refresh = useCallback(() => void api.composioStatus().then(setStatus), []);
+  const refresh = useCallback(() => void reload().catch(() => undefined), [reload]);
   useEffect(() => {
-    refresh();
     const off = listen(EVENTS.composioChanged, ({ ok, message }) => {
       setWaiting(null);
       setConnecting(null);
@@ -81,7 +81,8 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
       .catch((e) => onError(String(e)));
   };
 
-  if (!status) return <p className="text-[13px] text-(--muted)">Checking...</p>;
+  // Only on the very first run; afterwards the last known state paints at once.
+  if (!status) return <div className="h-9" aria-busy="true" />;
 
   if (!status.signedIn) {
     return (
@@ -225,25 +226,23 @@ function ManualLink({ onError }: { onError: (e: string) => void }) {
 
 function CalendarCard({ onError }: { onError: (e: string) => void }) {
   const calendar = useSidekick((s) => s.settings.calendar);
-  const [today, setToday] = useState<CalendarToday | null>(null);
+  const { data: today, refresh } = useCached<CalendarToday>("calendar-today", api.calendarToday, 30_000);
   useEffect(() => {
-    const load = () => void api.calendarToday().then(setToday);
-    load();
-    const id = setInterval(load, 30_000);
-    const off = listen(EVENTS.composioChanged, () => setTimeout(load, 3000));
+    const off = listen(EVENTS.composioChanged, () => setTimeout(() => void refresh().catch(() => undefined), 3000));
     return () => {
-      clearInterval(id);
       void off.then((f) => f());
     };
-  }, []);
+  }, [refresh]);
   const sources = today?.sources ?? [];
   return (
     <div className="flex flex-col gap-3 text-[13px]">
-      <p className="text-(--muted)">
-        {sources.length > 0
-          ? `Reading ${sources.join(" and ")}.`
-          : "No calendar connected. Connect Google Calendar or Outlook in Composio above."}
-      </p>
+      {today && (
+        <p className="text-(--muted)">
+          {sources.length > 0
+            ? `Reading ${sources.join(" and ")}.`
+            : "No calendar connected. Connect Google Calendar or Outlook in Composio above."}
+        </p>
+      )}
       <Field label="Remind me before">
         <Select
           label="Remind me before"
@@ -284,22 +283,15 @@ function CalendarCard({ onError }: { onError: (e: string) => void }) {
 }
 
 function BrowserCard() {
-  const [browsers, setBrowsers] = useState<BrowserStatus[] | null>(null);
   const [guide, setGuide] = useState<{ id: string; guide: ExtensionGuide } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const refresh = useCallback(() => void api.browsersStatus().then(setBrowsers), []);
-  useEffect(() => {
-    refresh();
-    // While a browser is being set up, watch for the extension to connect.
-    if (!guide) return;
-    const id = setInterval(refresh, 3000);
-    return () => clearInterval(id);
-  }, [refresh, guide]);
+  // While a browser is being set up, watch for the extension to connect.
+  const { data: browsers } = useCached<BrowserStatus[]>("browsers", api.browsersStatus, guide ? 3000 : undefined);
   useEffect(() => {
     if (guide && browsers?.some((b) => b.id === guide.id && b.connected)) setGuide(null);
   }, [browsers, guide]);
 
-  if (!browsers) return <p className="text-[13px] text-(--muted)">Checking...</p>;
+  if (!browsers) return <div className="h-12" aria-busy="true" />;
   return (
     <div className="flex flex-col gap-2.5 text-[13px]">
       {browsers.length === 0 && <p className="text-(--muted)">No supported browser found.</p>}
@@ -367,14 +359,16 @@ function PairingCode() {
 }
 
 function ClaudeCard({ onError }: { onError: (e: string) => void }) {
-  const [items, setItems] = useState<SetupItem[] | null>(null);
+  // Shares the setup checklist's cache, so both show the same state at once.
+  const { data: status, refresh: reload } = useCached<SetupStatus>("setup-status", api.setupStatus);
+  const items = status?.items ?? null;
+  // Holds a token, so it is fetched each time and never cached on disk.
   const [mcp, setMcp] = useState<McpInfo | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const refresh = useCallback(() => void api.setupStatus().then((s) => setItems(s.items)), []);
   useEffect(() => {
-    refresh();
     void api.mcpInfo().then(setMcp);
-  }, [refresh]);
+  }, []);
+  const [note, setNote] = useState<string | null>(null);
+  const refresh = () => void reload().catch(() => undefined);
   const item = (id: string) => items?.find((i) => i.id === id);
   const installed = item("claude_code")?.done ?? false;
   const run = (what: "hooks" | "mcp") => {
