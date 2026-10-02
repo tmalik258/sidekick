@@ -6,14 +6,15 @@
 // and interruptible; content cross-fades through a short blur.
 
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "motion/react";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
 import { playSound } from "@/lib/sound";
 import { connect, setHovered, uiVolume, useSidekick, watchWaiting } from "@/lib/store";
-import { isPaused, type LaterItem, type MascotState, type Suggestion } from "@/lib/types";
+import { isPaused, type MascotState, type Suggestion } from "@/lib/types";
 import { ASK_ORB, AskPanel } from "./AskPanel";
 import { Icon } from "./Icon";
+import { Glance, RoundButton } from "./IslandGlance";
 import { IslandGuide } from "./IslandGuide";
 import { IslandSettings } from "./IslandSettings";
 import { IslandWelcome } from "./IslandWelcome";
@@ -32,7 +33,7 @@ const TITLE: Record<MascotState, string> = {
 };
 
 const DETAIL: Record<MascotState, string> = {
-  idle: "Watching for moments to help.",
+  idle: "Nothing needs you right now.",
   sleeping: "Sensors are paused.",
   noticing: "Taking a look.",
   suggesting: "Here is an idea.",
@@ -338,6 +339,7 @@ function ExpandedContent({
 }) {
   const result = useSidekick((s) => s.lastResult);
   const reporting = (mascot === "success" || mascot === "error" || mascot === "working") && !suggestion;
+  if (!suggestion && (mascot === "idle" || mascot === "sleeping")) return <Glance paused={paused} />;
   const detail =
     suggestion?.detail ??
     (reporting && result ? result.message : paused && mascot !== "sleeping" ? "Sensors are paused." : DETAIL[mascot]);
@@ -361,13 +363,10 @@ function ExpandedContent({
               </RoundButton>
             )}
           </div>
-        ) : (
-          !suggestion && <QuickActions paused={paused} />
-        )}
+        ) : null}
       </div>
 
       {suggestion && <Options suggestion={suggestion} />}
-      {!suggestion && !reporting && <LaterList />}
     </div>
   );
 }
@@ -386,40 +385,6 @@ function UndoButton({ id }: { id: number }) {
     <RoundButton label="Undo" onClick={() => void undo()}>
       <Icon name="undo" size={15} />
     </RoundButton>
-  );
-}
-
-function QuickActions({ paused }: { paused: boolean }) {
-  const hotkey = useSidekick((s) => s.settings.paletteHotkey);
-  return (
-    <div className="flex shrink-0 gap-1.5">
-      <RoundButton label={`Ask Sidekick (${hotkey})`} onClick={() => void api.askOpen()}>
-        <Icon name="ask" size={15} />
-      </RoundButton>
-      <RoundButton
-        label={paused ? "Resume" : "Pause 15 minutes"}
-        onClick={() => void (paused ? api.sensorsResume() : api.sensorsPause(15))}
-      >
-        <Icon name={paused ? "play" : "pause"} size={14} />
-      </RoundButton>
-      <RoundButton label="Settings" onClick={() => void api.openSettings()}>
-        <Icon name="settings" size={15} />
-      </RoundButton>
-    </div>
-  );
-}
-
-function RoundButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className="chip grid size-8 place-items-center rounded-full bg-white/12 text-white/90 hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff]"
-    >
-      {children}
-    </button>
   );
 }
 
@@ -485,41 +450,6 @@ function choose(suggestion: Suggestion, index: number) {
 function always(suggestion: Suggestion, index: number) {
   playSound("select", uiVolume(), useSidekick.getState().settings.soundKit);
   void api.suggestionAlways(suggestion.id, index);
-}
-
-/** Suggestions held while you were busy, opened one at a time. */
-function LaterList() {
-  const count = useSidekick((s) => s.later);
-  const [items, setItems] = useState<LaterItem[]>([]);
-  useEffect(() => {
-    if (count > 0) void api.laterList().then(setItems);
-    else setItems([]);
-  }, [count]);
-  if (items.length === 0) return null;
-  return (
-    <div className="mt-3 flex flex-col gap-1.5">
-      <div className="flex items-center justify-between text-[12px] text-[rgb(235_235_245/0.6)]">
-        <span>Saved for later</span>
-        <button type="button" onClick={() => void api.laterClear()} className="chip hover:text-white">
-          Clear
-        </button>
-      </div>
-      {items.slice(0, 4).map((l) => (
-        <button
-          key={l.id}
-          type="button"
-          onClick={() => void api.laterOpen(l.id)}
-          className="chip flex items-center justify-between gap-3 rounded-xl bg-white/[0.07] px-3 py-1.5 text-left hover:bg-white/[0.12]"
-        >
-          <span className="min-w-0">
-            <span className="block truncate text-[13px] font-medium text-white">{l.title}</span>
-            <span className="block truncate text-[12px] text-[rgb(235_235_245/0.55)]">{l.detail}</span>
-          </span>
-          <span className="shrink-0 text-[11px] text-white/40">{l.minutesAgo < 1 ? "now" : `${l.minutesAgo} min`}</span>
-        </button>
-      ))}
-    </div>
-  );
 }
 
 function dismiss(suggestion: Suggestion) {

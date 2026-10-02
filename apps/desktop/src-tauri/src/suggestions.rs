@@ -134,7 +134,7 @@ pub fn should_wait(skill_id: &str, priority: i32, meeting: bool) -> bool {
     !just_did && (priority < QUIET_BELOW || (meeting && priority < MEETING_FROM))
 }
 
-fn keep_for_later(app: &AppHandle, proposal: Proposal) {
+fn keep_for_later(app: &AppHandle, proposal: Proposal, missed: bool) {
     let state = app.state::<AppState>();
     let now = chrono::Utc::now();
     let mut later = lock(&state.later);
@@ -149,6 +149,7 @@ fn keep_for_later(app: &AppHandle, proposal: Proposal) {
         id: ulid::Ulid::new().to_string(),
         proposal,
         at: now,
+        missed,
     });
     let count = later.len();
     drop(later);
@@ -162,6 +163,7 @@ pub struct LaterItem {
     pub title: String,
     pub detail: String,
     pub minutes_ago: i64,
+    pub missed: bool,
 }
 
 pub fn later_list(app: &AppHandle) -> Vec<LaterItem> {
@@ -177,6 +179,7 @@ pub fn later_list(app: &AppHandle) -> Vec<LaterItem> {
             title: l.proposal.title.clone(),
             detail: l.proposal.detail.clone(),
             minutes_ago: (now - l.at).num_minutes(),
+            missed: l.missed,
         })
         .collect()
 }
@@ -209,7 +212,7 @@ pub fn offer(app: &AppHandle, proposal: Proposal) {
     if proposal.trust != Trust::Auto
         && should_wait(&proposal.skill_id, proposal.priority, in_meeting(app))
     {
-        keep_for_later(app, proposal);
+        keep_for_later(app, proposal, false);
         return;
     }
     show_or_queue(app, proposal);
@@ -616,6 +619,11 @@ pub fn dismiss(app: &AppHandle, id: &str, reason: &str) -> Result<(), String> {
         active.proposal.skill_id
     );
     crate::learn::on_dismiss(app, &active.proposal.skill_id, reason);
+    // Shown while nobody was looking: keep it, so hovering the island
+    // later still finds it.
+    if reason == "timeout" {
+        keep_for_later(app, active.proposal, true);
+    }
     mascot::dispatch(app, MascotEvent::Dismissed);
     schedule_next(app, NEXT_AFTER_DISMISS);
     Ok(())

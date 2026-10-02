@@ -495,6 +495,8 @@ export interface LaterItem {
   title: string;
   detail: string;
   minutesAgo: number;
+  /** Shown and timed out while you were away, not held back. */
+  missed: boolean;
 }
 
 export interface ChatSummary {

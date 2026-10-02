@@ -134,12 +134,14 @@ pub struct Queued {
     pub at: Instant,
 }
 
-/// A suggestion kept for later instead of interrupting: a minor one, or one
-/// that came in during a meeting.
+/// A suggestion kept for later instead of interrupting: a minor one, one
+/// that came in during a meeting, or one shown that nobody acted on.
 pub struct Later {
     pub id: String,
     pub proposal: Proposal,
     pub at: chrono::DateTime<chrono::Utc>,
+    /// It was shown and timed out, rather than held back.
+    pub missed: bool,
 }
 
 pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
