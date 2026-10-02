@@ -6,7 +6,7 @@
 // apps: outside its own shape the island is click-through.
 
 import { useState } from "react";
-import { minimizeWaiting, stopWaiting, type Waiting } from "@/lib/store";
+import { backgroundWaiting, minimizeWaiting, stopWaiting, type Waiting } from "@/lib/store";
 
 export function IslandGuide({ waiting }: { waiting: Waiting }) {
   return (
@@ -34,7 +34,7 @@ export function IslandGuide({ waiting }: { waiting: Waiting }) {
           ))}
         </div>
       )}
-      <div className="mt-3 flex items-center gap-1.5">
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
         {waiting.again && (
           <button
             type="button"
@@ -47,9 +47,16 @@ export function IslandGuide({ waiting }: { waiting: Waiting }) {
         <button
           type="button"
           onClick={() => minimizeWaiting(!waiting.minimized)}
-          className="chip rounded-full bg-white/[0.12] px-3 py-1.5 text-[12.5px] font-medium text-white/90 hover:bg-white/[0.2]"
+          className="chip rounded-full bg-white/12 px-3 py-1.5 text-[12.5px] font-medium text-white/90 hover:bg-white/20"
         >
           {waiting.minimized ? "Keep open" : "Minimize"}
+        </button>
+        <button
+          type="button"
+          onClick={backgroundWaiting}
+          className="chip rounded-full bg-white/12 px-3 py-1.5 text-[12.5px] font-medium text-white/90 hover:bg-white/20"
+        >
+          Run in background
         </button>
         <button
           type="button"
