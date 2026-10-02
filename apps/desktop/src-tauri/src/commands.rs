@@ -1,5 +1,5 @@
 use chrono::Utc;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sidekick_core::{
     ActionRecord, Event, MascotEvent, MascotState, Pause, Settings, SkillPref, StoredEvent,
 };
@@ -136,6 +136,8 @@ pub struct SkillInfo {
     event: String,
     enabled: bool,
     auto: bool,
+    /// Quiet after "Not now" three times in a row, until this time.
+    muted_until: Option<String>,
     /// The skill runs on its own by default.
     auto_by_default: bool,
 }
@@ -144,6 +146,14 @@ pub struct SkillInfo {
 #[tauri::command]
 pub fn skills_list(state: State<'_, AppState>) -> Vec<SkillInfo> {
     let settings = lock(&state.settings).clone();
+    let now = chrono::Utc::now();
+    let muted = |id: &str| {
+        lock(&state.storage)
+            .habit(id)
+            .ok()
+            .and_then(|h| h.muted_until)
+            .filter(|t| chrono::DateTime::parse_from_rfc3339(t).is_ok_and(|t| t > now))
+    };
     lock(&state.engine)
         .skills()
         .iter()
@@ -156,6 +166,7 @@ pub fn skills_list(state: State<'_, AppState>) -> Vec<SkillInfo> {
                 event: s.trigger.event.clone(),
                 enabled: pref.enabled.unwrap_or(s.enabled_by_default),
                 auto: pref.auto.unwrap_or(s.trust == Trust::Auto),
+                muted_until: muted(&s.id),
                 auto_by_default: s.trust == Trust::Auto,
             }
         })
@@ -258,15 +269,30 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
         result.map_err(|e| format!("could not change launch at login: {e}"))?;
     }
 
-    if previous.palette_hotkey != next.palette_hotkey
-        && let Err(err) = ask::register(app, &next.palette_hotkey)
+    if let Some(bad) = next
+        .shortcuts
+        .values()
+        .find(|k| !crate::shortcuts::valid(k))
     {
-        let _ = ask::register(app, &previous.palette_hotkey);
-        return Err(err);
+        return Err(format!("{bad} is not a valid shortcut"));
     }
+    let keys_changed =
+        previous.palette_hotkey != next.palette_hotkey || previous.shortcuts != next.shortcuts;
 
     next.save(&state.settings_path).map_err(|e| e.to_string())?;
     *lock(&state.settings) = next.clone();
+    if next.onboarded && !previous.onboarded {
+        ask::release_sticky();
+    }
+    if keys_changed && let Err(err) = ask::register(app, &next.palette_hotkey) {
+        // Put the old keys back so Ask keeps working.
+        previous
+            .save(&state.settings_path)
+            .map_err(|e| e.to_string())?;
+        *lock(&state.settings) = previous.clone();
+        let _ = ask::register(app, &previous.palette_hotkey);
+        return Err(err);
+    }
     state.gate.set(gate_state(&next, now));
     if previous.ai != next.ai {
         let app = app.clone();
@@ -332,6 +358,24 @@ pub fn ask_open(app: AppHandle, prompt: Option<String>, ask: bool) {
             ..Default::default()
         },
     );
+}
+
+/// Shows welcome when the island is ready and onboarding is not done yet.
+#[tauri::command]
+pub fn ask_ensure_welcome(app: AppHandle) {
+    ask::ensure_welcome(&app);
+}
+
+/// Parks welcome until the user hovers the island again (does not finish onboarding).
+#[tauri::command]
+pub fn ask_defer_welcome(app: AppHandle) {
+    ask::defer_welcome(&app);
+}
+
+/// Brings a parked welcome back, e.g. once what it was waiting for is done.
+#[tauri::command]
+pub fn ask_resume_welcome(app: AppHandle) {
+    ask::resume_welcome(&app);
 }
 
 #[tauri::command]
@@ -475,17 +519,37 @@ pub fn voice_stop(app: AppHandle) {
     crate::voice::stop(&app);
 }
 
+/// The welcome line and when each part of it is heard.
+#[tauri::command]
+pub fn voice_welcome(app: AppHandle) -> crate::voice::WelcomeSpeech {
+    crate::voice::welcome_speech(&app)
+}
+
+/// Speaks welcome step `step` (Next and Back in the welcome).
+#[tauri::command]
+pub fn voice_welcome_step(app: AppHandle, step: u32) {
+    if !lock(&app.state::<AppState>().settings).onboarded {
+        crate::voice::speak_welcome_step(&app, step);
+    }
+}
+
+/// Says a short line, such as "Done. Composio is connected."
+#[tauri::command]
+pub fn voice_say(app: AppHandle, text: String) {
+    let text: String = text.chars().take(200).collect();
+    crate::voice::say_now(&app, &text);
+}
+
 #[tauri::command]
 pub fn voice_test(app: AppHandle) -> CmdResult<()> {
     crate::voice::test(&app)
 }
 
-/// Hands the calendar links and reminder lead time to the calendar sensor.
+/// Hands the reminder lead time to the calendar sensor.
 pub fn sync_calendar(calendar: &sidekick_sensors::Calendar, settings: &Settings) {
     let mut c = calendar
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    c.feeds = settings.calendar.feeds.clone();
     c.remind_minutes = i64::from(settings.calendar.remind_minutes);
 }
 
@@ -509,7 +573,7 @@ pub fn calendar_today(app: AppHandle) -> serde_json::Value {
             })
         })
         .collect();
-    serde_json::json!({ "meetings": meetings, "error": c.error })
+    serde_json::json!({ "meetings": meetings, "error": c.error, "sources": c.sources })
 }
 
 #[derive(Serialize)]
@@ -584,7 +648,7 @@ pub fn search_clear(state: State<'_, AppState>) -> CmdResult<usize> {
 const BACKUP_VERSION: u32 = 1;
 
 /// Saves settings, your own skills and the action history to one file in
-/// Documents and shows it (FR-SET-04). Calendar links are secrets, so they
+/// Documents and shows it (FR-SET-04). Composio headers are secrets, so they
 /// are left out.
 #[tauri::command]
 pub async fn backup_export(app: AppHandle) -> CmdResult<String> {
@@ -598,7 +662,7 @@ pub async fn backup_export(app: AppHandle) -> CmdResult<String> {
 fn write_backup(app: &AppHandle) -> CmdResult<String> {
     let state = app.state::<AppState>();
     let mut settings = lock(&state.settings).clone();
-    settings.calendar.feeds.clear();
+    settings.composio.headers.clear();
     let mut skills = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&state.skills_dir) {
         for e in entries.flatten() {
@@ -671,9 +735,9 @@ pub fn backup_import(app: AppHandle, text: String) -> CmdResult<String> {
     }
     let mut restored = false;
     if let Ok(mut settings) = serde_json::from_value::<Settings>(bundle["settings"].clone()) {
-        // Keep this PC's calendar links and onboarding state.
+        // Keep this PC's onboarding state.
         let current = lock(&state.settings).clone();
-        settings.calendar.feeds = current.calendar.feeds;
+        settings.composio.headers = current.composio.headers;
         settings.onboarded = true;
         apply_settings(&app, settings)?;
         restored = true;
@@ -706,3 +770,418 @@ pub async fn setup_status(app: AppHandle) -> SetupStatus {
 pub async fn setup_run(app: AppHandle, id: String) -> CmdResult<()> {
     crate::setup::run(&app, &id).await
 }
+
+/// Opens Claude Code in a terminal with this conversation, to finish what
+/// the local model could not.
+#[tauri::command]
+pub async fn ai_handoff(
+    app: AppHandle,
+    messages: Vec<sidekick_ai::Message>,
+    reason: Option<String>,
+) -> CmdResult<String> {
+    crate::composio::open_in_claude_code(&app, &messages, reason.as_deref())
+        .await
+        .map(|dir| dir.display().to_string())
+}
+
+/// Opens Composio in the browser to sign in; returns the code it shows.
+#[tauri::command]
+pub async fn composio_sign_in(app: AppHandle) -> CmdResult<String> {
+    crate::composio::sign_in(&app).await
+}
+
+#[tauri::command]
+pub fn composio_sign_out(app: AppHandle) -> CmdResult<()> {
+    crate::composio::sign_out(&app)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComposioStatus {
+    signed_in: bool,
+    account: String,
+    apps: Vec<crate::composio_api::App>,
+    error: Option<String>,
+}
+
+/// Whether Composio is connected, and which of Sidekick's apps are.
+#[tauri::command]
+pub async fn composio_status(app: AppHandle) -> ComposioStatus {
+    let c = lock(&app.state::<AppState>().settings).composio.clone();
+    if !crate::composio::signed_in() {
+        return ComposioStatus {
+            signed_in: false,
+            account: String::new(),
+            apps: Vec::new(),
+            error: None,
+        };
+    }
+    let (apps, error) = match crate::composio::apps(&c).await {
+        Ok(a) => (a, None),
+        Err(e) => (Vec::new(), Some(e)),
+    };
+    ComposioStatus {
+        signed_in: true,
+        account: c.account,
+        apps,
+        error,
+    }
+}
+
+/// Opens the browser to connect one app on Composio.
+#[tauri::command]
+pub async fn composio_connect(app: AppHandle, slug: String) -> CmdResult<()> {
+    crate::composio::connect_app(&app, &slug).await
+}
+
+/// Copies the Composio server from Claude Code's config into Settings.
+#[tauri::command]
+pub fn composio_import(app: AppHandle) -> CmdResult<Settings> {
+    let home = dirs::home_dir().ok_or("no home folder")?;
+    let text = std::fs::read_to_string(home.join(".claude.json")).unwrap_or_default();
+    let (url, headers) = crate::composio::from_claude_config(&text)
+        .ok_or("No Composio server in Claude Code's settings (~/.claude.json)")?;
+    let mut settings = lock(&app.state::<AppState>().settings).clone();
+    settings.composio.url = url;
+    settings.composio.headers = headers;
+    settings.composio.enabled = true;
+    apply_settings(&app, settings)
+}
+
+/// Connects to Composio and counts its tools.
+#[tauri::command]
+pub async fn composio_test(app: AppHandle) -> CmdResult<crate::composio::Check> {
+    let settings = lock(&app.state::<AppState>().settings).composio.clone();
+    crate::composio::test(&settings).await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Found {
+    code_folders: Vec<crate::detect::Folder>,
+    search_folders: Vec<crate::detect::Folder>,
+    chat_models: Vec<String>,
+    embed_models: Vec<String>,
+    claude_installed: bool,
+    claude_hooks: bool,
+    claude_mcp: bool,
+    composio_signed_in: bool,
+    composio_in_claude: bool,
+    browsers: Vec<String>,
+    /// Setup steps that can run in one go, missing now.
+    installable: Vec<crate::setup::SetupItem>,
+}
+
+/// Everything Sidekick can set up on its own, found on this PC.
+#[tauri::command]
+pub async fn setup_detect(app: AppHandle) -> Found {
+    let state = app.state::<AppState>();
+    let settings = lock(&state.settings).clone();
+    let items = crate::setup::status(&app).await;
+    let done = |id: &str| items.iter().any(|i| i.id == id && i.done);
+    let models = crate::setup::ollama_models(&settings.ai.local.base_url)
+        .await
+        .unwrap_or_default();
+    let (embed, chat): (Vec<String>, Vec<String>) = models
+        .into_iter()
+        .partition(|m| sidekick_ai::is_embedding_model(m));
+    let home = dirs::home_dir().unwrap_or_default();
+    let claude_json = std::fs::read_to_string(home.join(".claude.json")).unwrap_or_default();
+    let (code_folders, search_folders) = tauri::async_runtime::spawn_blocking(|| {
+        (crate::detect::code_roots(), crate::detect::search_folders())
+    })
+    .await
+    .unwrap_or_default();
+    Found {
+        code_folders,
+        search_folders,
+        chat_models: chat,
+        embed_models: embed,
+        claude_installed: done("claude_code"),
+        claude_hooks: done("claude_hooks"),
+        claude_mcp: done("claude_mcp"),
+        composio_signed_in: crate::composio::signed_in(),
+        composio_in_claude: crate::composio::from_claude_config(&claude_json).is_some(),
+        browsers: executor(&state)
+            .capabilities()
+            .browsers
+            .iter()
+            .map(|b| b.id.clone())
+            .collect(),
+        installable: items
+            .into_iter()
+            .filter(|i| i.runnable && !i.done && i.recommended)
+            .collect(),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Plan {
+    code_folders: Vec<String>,
+    search_folders: Vec<String>,
+    chat_model: Option<String>,
+    claude_hooks: bool,
+    claude_mcp: bool,
+    /// Setup step ids to run in one PowerShell window.
+    install: Vec<String>,
+    voice: bool,
+    launch_at_login: bool,
+}
+
+/// Applies the choices from the welcome screen. Returns what was done.
+#[tauri::command]
+pub async fn setup_apply(app: AppHandle, plan: Plan) -> CmdResult<Vec<String>> {
+    let mut done = Vec::new();
+    let mut settings = lock(&app.state::<AppState>().settings).clone();
+    if !plan.code_folders.is_empty() {
+        settings.code_folders = plan.code_folders;
+        done.push("Code folders set".to_owned());
+    }
+    if !plan.search_folders.is_empty() {
+        settings.index_folders = plan.search_folders;
+        done.push("Search folders set".to_owned());
+    }
+    if let Some(m) = plan.chat_model.filter(|m| !m.trim().is_empty()) {
+        settings.ai.local.model = m;
+        settings.ai.local.enabled = true;
+    }
+    settings.voice.enabled |= plan.voice;
+    settings.launch_at_login = plan.launch_at_login;
+    apply_settings(&app, settings)?;
+    if plan.voice {
+        let _ = crate::voice::download(&app);
+    }
+    if plan.claude_hooks {
+        crate::claude_config::add_hooks()?;
+        done.push("Claude Code hooks added".to_owned());
+    }
+    if plan.claude_mcp {
+        claude_add_mcp(app.clone()).await?;
+        done.push("Sidekick tools added to Claude Code".to_owned());
+    }
+    if !plan.install.is_empty() {
+        crate::setup::run_many(&app, &plan.install).await?;
+        done.push("Installing in PowerShell".to_owned());
+    }
+    crate::search::reindex_folders(&app);
+    Ok(done)
+}
+
+/// Adds Sidekick's hooks to Claude Code's settings (backed up first).
+#[tauri::command]
+pub fn claude_add_hooks() -> CmdResult<Option<String>> {
+    crate::claude_config::add_hooks().map(|b| b.map(|p| p.display().to_string()))
+}
+
+/// Adds Sidekick's MCP server to Claude Code with `claude mcp add`.
+#[tauri::command]
+pub async fn claude_add_mcp(app: AppHandle) -> CmdResult<()> {
+    let state = app.state::<AppState>();
+    let path = lock(&state.settings).ai.claude_code.path.trim().to_owned();
+    let claude = if path.is_empty() {
+        which::which("claude").map_err(|_| "Install Claude Code first".to_string())?
+    } else {
+        std::path::PathBuf::from(path)
+    };
+    let url = format!("http://127.0.0.1:{}/mcp", crate::mcp::PORT);
+    crate::claude_config::add_mcp(&claude, &url, &state.mcp_token).await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserStatus {
+    id: String,
+    name: String,
+    /// The extension checked in from this kind of browser recently.
+    connected: bool,
+}
+
+/// Installed browsers and whether the extension is connected in each.
+#[tauri::command]
+pub fn browsers_status(app: AppHandle) -> Vec<BrowserStatus> {
+    let state = app.state::<AppState>();
+    let seen = state.browser.seen();
+    let now = chrono::Utc::now().timestamp();
+    let recent = |name: &str| {
+        seen.iter()
+            .any(|(n, t)| n.eq_ignore_ascii_case(name) && now - t < 7 * 24 * 3600)
+    };
+    executor(&state)
+        .capabilities()
+        .browsers
+        .iter()
+        .map(|b| {
+            let name = b.label().to_owned();
+            // Firefox and Zen report as Firefox.
+            let reported = if b.id == "zen" {
+                "Firefox"
+            } else {
+                name.as_str()
+            };
+            BrowserStatus {
+                connected: recent(reported),
+                id: b.id.clone(),
+                name,
+            }
+        })
+        .collect()
+}
+
+/// Opens a browser's extensions page with the extension's path copied.
+#[tauri::command]
+pub async fn extension_install(
+    app: AppHandle,
+    browser: String,
+) -> CmdResult<crate::extension::Guide> {
+    crate::extension::install(&app, &browser).await
+}
+
+/// Runs an option and makes its skill automatic ("Always do this").
+#[tauri::command]
+pub fn suggestion_always(app: AppHandle, id: String, index: usize) -> CmdResult<()> {
+    suggestions::always(&app, &id, index)
+}
+
+#[tauri::command]
+pub fn later_list(app: AppHandle) -> Vec<suggestions::LaterItem> {
+    suggestions::later_list(&app)
+}
+
+#[tauri::command]
+pub fn later_open(app: AppHandle, id: String) -> CmdResult<()> {
+    suggestions::later_open(&app, &id)
+}
+
+#[tauri::command]
+pub fn later_clear(app: AppHandle) {
+    suggestions::later_clear(&app);
+}
+
+/// Lets a skill quieted by "Not now" speak again.
+#[tauri::command]
+pub fn skill_unmute(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    let storage = lock(&state.storage);
+    let Ok(mut h) = storage.habit(&id) else {
+        return Ok(());
+    };
+    h.muted_until = None;
+    h.dismiss_streak = 0;
+    storage.save_habit(&h).map_err(|e| e.to_string())
+}
+
+/// Recent Ask conversations, newest first.
+#[tauri::command]
+pub fn chats_list(state: State<'_, AppState>) -> CmdResult<Vec<sidekick_core::ChatSummary>> {
+    lock(&state.storage)
+        .recent_chats(30)
+        .map_err(|e| e.to_string())
+}
+
+/// A saved conversation's turns, as the UI saved them.
+#[tauri::command]
+pub fn chat_get(state: State<'_, AppState>, id: String) -> CmdResult<serde_json::Value> {
+    let text = lock(&state.storage)
+        .chat_turns(&id)
+        .map_err(|e| e.to_string())?
+        .ok_or("That conversation is gone")?;
+    serde_json::from_str(&text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn chat_save(
+    state: State<'_, AppState>,
+    id: String,
+    title: String,
+    turns: serde_json::Value,
+) -> CmdResult<()> {
+    let title: String = title.trim().chars().take(80).collect();
+    lock(&state.storage)
+        .save_chat(&id, &title, &turns.to_string())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn chat_delete(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    lock(&state.storage)
+        .delete_chat(&id)
+        .map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalModels {
+    reachable: bool,
+    chat: Vec<String>,
+    embed: Vec<String>,
+}
+
+/// Models on the local AI server, split into chat and search models.
+#[tauri::command]
+pub async fn local_models(app: AppHandle) -> LocalModels {
+    let base = lock(&app.state::<AppState>().settings)
+        .ai
+        .local
+        .base_url
+        .clone();
+    let Some(models) = crate::setup::ollama_models(&base).await else {
+        return LocalModels {
+            reachable: false,
+            chat: Vec::new(),
+            embed: Vec::new(),
+        };
+    };
+    let (embed, chat) = models
+        .into_iter()
+        .partition(|m| sidekick_ai::is_embedding_model(m));
+    LocalModels {
+        reachable: true,
+        chat,
+        embed,
+    }
+}
+
+/// Programs running now with a window, for the ignore list picker.
+#[tauri::command]
+pub async fn running_apps() -> Vec<String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let mut sys = sysinfo::System::new();
+        sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        let mut names: Vec<String> = sys
+            .processes()
+            .values()
+            .filter_map(|p| p.name().to_str().map(str::to_ascii_lowercase))
+            .filter(|n| n.ends_with(".exe") && !SYSTEM_EXES.contains(&n.as_str()))
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// Windows' own processes; never worth ignoring.
+const SYSTEM_EXES: &[&str] = &[
+    "svchost.exe",
+    "csrss.exe",
+    "wininit.exe",
+    "winlogon.exe",
+    "services.exe",
+    "lsass.exe",
+    "smss.exe",
+    "dwm.exe",
+    "fontdrvhost.exe",
+    "conhost.exe",
+    "runtimebroker.exe",
+    "sihost.exe",
+    "taskhostw.exe",
+    "ctfmon.exe",
+    "searchindexer.exe",
+    "spoolsv.exe",
+    "audiodg.exe",
+    "dllhost.exe",
+    "registry",
+    "system",
+    "memory compression",
+];

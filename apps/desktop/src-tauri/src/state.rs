@@ -12,7 +12,7 @@ use sidekick_sensors::{GateState, SensorGateHandle};
 use sidekick_skills::{Engine, Env, Proposal, Skill, Trust};
 
 /// Every sensor the app can run, in the order shown in settings.
-pub const SENSOR_IDS: [&str; 12] = [
+pub const SENSOR_IDS: [&str; 11] = [
     "calendar",
     "downloads",
     "screenshots",
@@ -24,7 +24,6 @@ pub const SENSOR_IDS: [&str; 12] = [
     "system",
     "repos",
     "idle",
-    "heartbeat",
 ];
 
 pub struct AppState {
@@ -47,6 +46,8 @@ pub struct AppState {
     pub active: Mutex<Option<Active>>,
     /// Suggestions waiting for the island to be free.
     pub queue: Mutex<VecDeque<Queued>>,
+    /// Suggestions waiting quietly; the island shows how many.
+    pub later: Mutex<Vec<Later>>,
     pub island_hidden: Mutex<bool>,
     /// The cursor is over the island (kept by the hover tracker).
     pub hovered: AtomicBool,
@@ -98,7 +99,15 @@ pub struct HitRect {
 
 impl HitRect {
     pub fn contains(&self, x: f64, y: f64) -> bool {
-        x >= self.x && x <= self.x + self.width && y >= self.y && y <= self.y + self.height
+        self.contains_within(x, y, 0.0)
+    }
+
+    /// Like [`HitRect::contains`], with `pad` pixels to spare on every side.
+    pub fn contains_within(&self, x: f64, y: f64, pad: f64) -> bool {
+        x >= self.x - pad
+            && x <= self.x + self.width + pad
+            && y >= self.y - pad
+            && y <= self.y + self.height + pad
     }
 }
 
@@ -111,6 +120,8 @@ pub struct Suggestion {
     pub title: String,
     pub detail: String,
     pub options: Vec<String>,
+    /// Which options can become "Always do this": safe to run on their own.
+    pub always: Vec<bool>,
 }
 
 pub struct Active {
@@ -121,6 +132,14 @@ pub struct Active {
 pub struct Queued {
     pub proposal: Proposal,
     pub at: Instant,
+}
+
+/// A suggestion kept for later instead of interrupting: a minor one, or one
+/// that came in during a meeting.
+pub struct Later {
+    pub id: String,
+    pub proposal: Proposal,
+    pub at: chrono::DateTime<chrono::Utc>,
 }
 
 pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -158,6 +177,7 @@ impl Env for AppEnv<'_> {
     fn has(&self, requirement: &str) -> bool {
         match requirement {
             "ai" => self.ai_ready,
+            r if r.starts_with("app:") => crate::composio::app_connected(&r[4..]),
             _ => self.caps.has(requirement),
         }
     }
@@ -211,10 +231,7 @@ mod tests {
         s.pause = Pause::for_minutes(5, now);
         let g = gate_state(&s, now);
         assert!(g.paused);
-        // heartbeat is off by default, clipboard was switched off.
-        assert_eq!(
-            g.disabled.into_iter().collect::<Vec<_>>(),
-            ["clipboard", "heartbeat"]
-        );
+        // clipboard was switched off; everything else defaults on.
+        assert_eq!(g.disabled.into_iter().collect::<Vec<_>>(), ["clipboard"]);
     }
 }

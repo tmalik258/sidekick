@@ -164,6 +164,7 @@ mod tests {
                 .collect(),
             trust: Trust::Suggest,
             remember: None,
+            priority: 50,
         }
     }
 

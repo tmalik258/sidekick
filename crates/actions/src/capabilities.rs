@@ -39,8 +39,11 @@ pub struct Capabilities {
     pub soffice: Option<PathBuf>,
     pub pandoc: Option<PathBuf>,
     pub tar: Option<PathBuf>,
-    /// VS Code, for opening projects.
+    /// The code editor for opening projects: VS Code or a fork of it
+    /// (Cursor, Windsurf), whichever was used last.
     pub code: Option<PathBuf>,
+    /// Its name, e.g. "Cursor".
+    pub code_name: Option<String>,
     /// 1Password CLI.
     pub op: Option<PathBuf>,
     /// Bitwarden CLI.
@@ -49,8 +52,6 @@ pub struct Capabilities {
     pub tesseract: Option<PathBuf>,
     /// Poppler's pdftotext, for summarizing PDFs.
     pub pdftotext: Option<PathBuf>,
-    /// FATHOM_API_KEY is set, so meeting notes can be fetched.
-    pub fathom: bool,
 }
 
 impl Capabilities {
@@ -66,6 +67,7 @@ impl Capabilities {
                 })
             })
             .collect();
+        let editor = find_editor();
         Self {
             browsers,
             ffmpeg: which::which("ffmpeg").ok(),
@@ -75,12 +77,12 @@ impl Capabilities {
                 .or_else(|| first_existing(&office_paths())),
             pandoc: which::which("pandoc").ok(),
             tar: which::which("tar").ok(),
-            code: find_vscode(),
+            code: editor.as_ref().map(|e| e.1.clone()),
+            code_name: editor.map(|e| e.0.to_owned()),
             op: which::which("op").ok(),
             bw: which::which("bw").ok(),
             tesseract: which::which("tesseract").ok().or_else(find_tesseract),
             pdftotext: which::which("pdftotext").ok(),
-            fathom: std::env::var("FATHOM_API_KEY").is_ok_and(|k| !k.trim().is_empty()),
         }
     }
 
@@ -102,7 +104,6 @@ impl Capabilities {
             Some(("tool", "op")) => self.op.is_some(),
             Some(("tool", "bw")) => self.bw.is_some(),
             Some(("tool", "tesseract")) => self.tesseract.is_some(),
-            Some(("tool", "fathom")) => self.fathom,
             _ => false,
         }
     }
@@ -120,7 +121,10 @@ impl Capabilities {
             ("LibreOffice", self.soffice.is_some()),
             ("pandoc", self.pandoc.is_some()),
             ("tar", self.tar.is_some()),
-            ("VS Code", self.code.is_some()),
+            (
+                self.code_name.as_deref().unwrap_or("Code editor"),
+                self.code.is_some(),
+            ),
             ("1Password CLI", self.op.is_some()),
             ("Bitwarden CLI", self.bw.is_some()),
             ("Tesseract OCR", self.tesseract.is_some()),
@@ -144,19 +148,89 @@ fn find_tesseract() -> Option<PathBuf> {
     None
 }
 
-/// Prefers `Code.exe` itself over the `code.cmd` wrapper on PATH.
-fn find_vscode() -> Option<PathBuf> {
-    #[cfg(windows)]
-    {
-        let installs = [
-            env_path("LOCALAPPDATA", r"Programs\Microsoft VS Code\Code.exe"),
-            env_path("ProgramFiles", r"Microsoft VS Code\Code.exe"),
-        ];
-        if let Some(p) = installs.into_iter().flatten().find(|p| p.is_file()) {
-            return Some(p);
+/// VS Code and its forks: name, install paths under LOCALAPPDATA or
+/// ProgramFiles, command on PATH, and settings folder (for when it was last
+/// used). They all open a folder or file passed as the argument.
+const EDITORS: &[(&str, &[&str], &str, &str)] = &[
+    (
+        "Cursor",
+        &[r"Programs\cursor\Cursor.exe"],
+        "cursor",
+        "Cursor",
+    ),
+    (
+        "VS Code",
+        &[
+            r"Programs\Microsoft VS Code\Code.exe",
+            r"Microsoft VS Code\Code.exe",
+        ],
+        "code",
+        "Code",
+    ),
+    (
+        "Windsurf",
+        &[r"Programs\Windsurf\Windsurf.exe"],
+        "windsurf",
+        "Windsurf",
+    ),
+    (
+        "VS Code Insiders",
+        &[r"Programs\Microsoft VS Code Insiders\Code - Insiders.exe"],
+        "code-insiders",
+        "Code - Insiders",
+    ),
+];
+
+/// The installed editor used most recently (its state file changes as it
+/// is used); with no history, the first one in [`EDITORS`].
+fn find_editor() -> Option<(&'static str, PathBuf)> {
+    let installed = EDITORS.iter().filter_map(|(name, installs, cli, config)| {
+        let exe = editor_exe(installs).or_else(|| which::which(cli).ok())?;
+        let used = dirs::config_dir()
+            .map(|c| {
+                c.join(config)
+                    .join("User")
+                    .join("globalStorage")
+                    .join("storage.json")
+            })
+            .and_then(|p| std::fs::metadata(p).ok())
+            .and_then(|m| m.modified().ok());
+        Some((*name, exe, used))
+    });
+    pick_editor(installed.collect())
+}
+
+/// Most recently used first; ties keep the list order.
+fn pick_editor(
+    found: Vec<(&'static str, PathBuf, Option<std::time::SystemTime>)>,
+) -> Option<(&'static str, PathBuf)> {
+    let mut best: Option<(&'static str, PathBuf, Option<std::time::SystemTime>)> = None;
+    for f in found {
+        if best.as_ref().is_none_or(|b| f.2 > b.2) {
+            best = Some(f);
         }
     }
-    which::which("code").ok()
+    best.map(|(name, exe, _)| (name, exe))
+}
+
+/// Prefers the editor's own .exe over the .cmd wrapper on PATH.
+#[cfg(windows)]
+fn editor_exe(installs: &[&str]) -> Option<PathBuf> {
+    installs
+        .iter()
+        .flat_map(|rest| {
+            [
+                env_path("LOCALAPPDATA", rest),
+                env_path("ProgramFiles", rest),
+            ]
+        })
+        .flatten()
+        .find(|p| p.is_file())
+}
+
+#[cfg(not(windows))]
+fn editor_exe(_installs: &[&str]) -> Option<PathBuf> {
+    None
 }
 
 fn first_existing(paths: &[PathBuf]) -> Option<PathBuf> {
@@ -268,6 +342,23 @@ fn office_paths() -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn picks_the_editor_used_last() {
+        use std::time::{Duration, SystemTime};
+        let t = |s| Some(SystemTime::UNIX_EPOCH + Duration::from_secs(s));
+        let found = vec![
+            ("Cursor", PathBuf::from("cursor"), t(100)),
+            ("VS Code", PathBuf::from("code"), t(200)),
+        ];
+        assert_eq!(pick_editor(found).unwrap().0, "VS Code");
+        let unused = vec![
+            ("Cursor", PathBuf::from("cursor"), None),
+            ("VS Code", PathBuf::from("code"), None),
+        ];
+        assert_eq!(pick_editor(unused).unwrap().0, "Cursor");
+        assert!(pick_editor(Vec::new()).is_none());
+    }
 
     #[test]
     fn answers_requirements() {

@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
@@ -200,12 +201,28 @@ impl Output {
         })
     }
 
-    /// Queues mono samples recorded at `rate`.
-    pub fn play(&self, samples: &[f32], rate: u32) {
+    /// Queues mono samples recorded at `rate`. Returns how long until they
+    /// start sounding and how long they last.
+    pub fn play(&self, samples: &[f32], rate: u32) -> (Duration, Duration) {
         let resampled = Resampler::new(rate, self.rate).process(samples);
-        if let Ok(mut q) = self.queue.lock() {
-            q.extend(resampled);
+        let length = self.duration(resampled.len());
+        match self.queue.lock() {
+            Ok(mut q) => {
+                let starts_in = self.duration(q.len());
+                q.extend(resampled);
+                (starts_in, length)
+            }
+            Err(_) => (Duration::ZERO, length),
         }
+    }
+
+    /// How long the audio still queued will take to play.
+    pub fn queued(&self) -> Duration {
+        self.duration(self.queue.lock().map(|q| q.len()).unwrap_or(0))
+    }
+
+    fn duration(&self, samples: usize) -> Duration {
+        Duration::from_secs_f64(samples as f64 / f64::from(self.rate.max(1)))
     }
 
     /// Stops at once and forgets what was queued.

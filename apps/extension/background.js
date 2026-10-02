@@ -10,14 +10,69 @@ async function token() {
   return token || "";
 }
 
+/** "Chrome", "Edge", "Brave", "Opera", "Firefox": shown on Sidekick's prompt. */
+function browserName() {
+  const ua = navigator.userAgent;
+  if (/Firefox\//.test(ua)) return "Firefox";
+  if (/Edg\//.test(ua)) return "Edge";
+  if (/OPR\//.test(ua)) return "Opera";
+  if (navigator.brave) return "Brave";
+  return "Chrome";
+}
+
 async function call(path, init = {}) {
   const t = await token();
   if (!t) return null;
-  return fetch(`${BRIDGE}${path}`, {
+  const res = await fetch(`${BRIDGE}${path}`, {
     ...init,
-    headers: { "content-type": "application/json", "x-sidekick-token": t, ...(init.headers || {}) },
+    headers: {
+      "content-type": "application/json",
+      "x-sidekick-token": t,
+      "x-sidekick-browser": browserName(),
+      ...(init.headers || {}),
+    },
   });
+  // Sidekick was reinstalled or reset: pair again.
+  if (res.status === 401) {
+    await chrome.storage.local.remove("token");
+    pair();
+  }
+  return res;
 }
+
+/**
+ * Asks Sidekick to connect. Sidekick shows Allow or Deny on its island; on
+ * Allow it answers with the token. Waits up to 90 seconds for the answer.
+ */
+let pairing = null;
+function pair() {
+  if (pairing) return pairing;
+  pairing = (async () => {
+    try {
+      const res = await fetch(`${BRIDGE}/browser/pair`, {
+        method: "POST",
+        headers: { "x-sidekick-browser": browserName() },
+      });
+      if (res.status !== 200) return res.status === 403 ? "denied" : "busy";
+      const { token } = await res.json();
+      if (!token) return "denied";
+      await chrome.storage.local.set({ token });
+      return "connected";
+    } catch {
+      return "offline";
+    } finally {
+      pairing = null;
+    }
+  })();
+  return pairing;
+}
+
+chrome.runtime.onInstalled.addListener(async () => {
+  if (!(await token())) pair();
+});
+chrome.runtime.onStartup.addListener(async () => {
+  if (!(await token())) pair();
+});
 
 async function report(event) {
   try {
@@ -118,7 +173,11 @@ chrome.tabs.onCreated.addListener(checkTabs);
 chrome.tabs.onRemoved.addListener(checkTabs);
 
 // Page events from the content script, with the tab they came from.
-chrome.runtime.onMessage.addListener((msg, sender) => {
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (msg?.type === "sidekick-pair") {
+    pair().then(reply);
+    return true;
+  }
   if (msg?.type === "sidekick-event" && sender.tab) report({ ...msg.event, tab: sender.tab.id });
 });
 

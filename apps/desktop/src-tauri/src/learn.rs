@@ -17,7 +17,7 @@ const ACCEPTS_TO_OFFER: i64 = 5;
 pub const OFFER_SKILL: &str = "learn.offer-auto";
 
 /// Skills that are Sidekick talking about itself, not habits to learn.
-fn tracked(skill_id: &str) -> bool {
+pub fn tracked(skill_id: &str) -> bool {
     !skill_id.starts_with("learn.")
         && !skill_id.starts_with("mcp.")
         && !skill_id.starts_with("debug.")
@@ -121,6 +121,7 @@ fn offer_auto(skill_id: &str, label: &str) -> Proposal {
         ],
         trust: Trust::Suggest,
         remember: None,
+        priority: 60,
     }
 }
 

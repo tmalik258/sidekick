@@ -109,6 +109,9 @@ body {
   filter: blur(calc(var(--size) * 0.2));
   opacity: var(--halo);
   will-change: transform;
+  /* Round alpha so WebView2's blurred AABB cannot flash square corners. */
+  -webkit-mask-image: radial-gradient(closest-side, #000 70%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 70%, transparent 100%);
 }
 
 .orb-body {
@@ -134,6 +137,8 @@ body {
   mix-blend-mode: soft-light;
   opacity: 0.55;
   will-change: transform;
+  -webkit-mask-image: radial-gradient(closest-side, #000 70%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 70%, transparent 100%);
 }
 
 .orb-spec {
@@ -221,6 +226,8 @@ body {
 .ask-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgb(255 255 255 / 0.18) transparent;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
 }
 
 /* ---------- Settings inside the island ---------- */
@@ -246,6 +253,7 @@ body {
   scrollbar-width: thin;
   scrollbar-color: rgb(255 255 255 / 0.2) transparent;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .no-scrollbar {
@@ -253,4 +261,88 @@ body {
 }
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* Welcome line: opacity only so enter does not inflate overflow by a pixel. */
+.spoken-word {
+  animation: spoken-in 280ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@keyframes spoken-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spoken-word {
+    animation: none;
+  }
+}
+
+/* Ask thinking dots: CSS so height springs do not stall Framer timelines. */
+.thinking-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.5);
+  animation: thinking-pulse 1.1s ease-in-out infinite;
+}
+
+.thinking-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.thinking-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes thinking-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Welcome "thinking" words: a light sweeping across the text. */
+.thinking-words {
+  background: linear-gradient(
+    90deg,
+    rgb(235 235 245 / 0.45) 0%,
+    rgb(255 255 255 / 0.95) 50%,
+    rgb(235 235 245 / 0.45) 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation:
+    spoken-in 280ms cubic-bezier(0.23, 1, 0.32, 1) both,
+    thinking-shimmer 1.6s linear infinite;
+}
+
+@keyframes thinking-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking-words {
+    animation: none;
+    color: rgb(235 235 245 / 0.6);
+  }
+  .thinking-dot {
+    animation: none;
+    opacity: 0.6;
+  }
 }

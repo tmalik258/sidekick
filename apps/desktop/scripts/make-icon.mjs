@@ -1,5 +1,7 @@
-// Draws the placeholder app icon (the mascot's face) as a 1024x1024 PNG with
-// no dependencies. Regenerate all icon sizes with:
+// Draws the app icon to match the live pearl orb: dark circular field,
+// white/silver face, two solid black vertical pill eyes (no pupils/mouth).
+// Proportions follow .orb-eye in globals.css (~11% × 26%, ~15% gap).
+// Regenerate all Tauri icon sizes with:
 //   node scripts/make-icon.mjs && pnpm tauri icon app-icon.png
 import { writeFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
@@ -7,21 +9,68 @@ import { deflateSync } from "node:zlib";
 const S = 1024;
 const px = Buffer.alloc(S * S * 4);
 
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const mix = (a, b, t) => a + (b - a) * t;
+const inCircle = (x, y, cx, cy, r) => (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
 const inEllipse = (x, y, cx, cy, rx, ry) => ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1;
+
+// Pearl body (THEME_STYLES.pearl) + dark field like the island behind the orb.
+const FIELD = [8, 8, 10];
+const BODY_DARK = [169, 173, 185];
+const BODY_LIGHT = [255, 255, 255];
+const EYE = [28, 28, 30];
+
+const CX = 512;
+const CY = 512;
+const FIELD_R = 508;
+const FACE_R = 390;
 
 for (let y = 0; y < S; y++) {
   for (let x = 0; x < S; x++) {
-    let c = null;
-    if (inEllipse(x, y, 512, 560, 400, 380)) c = [139, 124, 246];
-    if (inEllipse(x, y, 512, 120, 60, 60)) c = [139, 124, 246];
-    if (Math.abs(x - 512) < 18 && y > 120 && y < 200) c = [139, 124, 246];
-    for (const ex of [352, 672]) {
-      if (inEllipse(x, y, ex, 500, 84, 84)) c = [255, 255, 255];
-      if (inEllipse(x, y, ex + 16, 520, 42, 42)) c = [27, 24, 48];
+    if (!inCircle(x, y, CX, CY, FIELD_R)) continue;
+
+    let c = FIELD;
+    const a = 255;
+
+    const dx = x - CX;
+    const dy = y - CY;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist <= FACE_R) {
+      const nx = dx / FACE_R;
+      const ny = dy / FACE_R;
+      // Highlight upper-left, soft gray lower-right.
+      const lit = clamp(0.62 - 0.45 * nx - 0.7 * ny, 0, 1);
+      const shade = lit ** 0.9;
+      c = [
+        Math.round(mix(BODY_DARK[0], BODY_LIGHT[0], shade)),
+        Math.round(mix(BODY_DARK[1], BODY_LIGHT[1], shade)),
+        Math.round(mix(BODY_DARK[2], BODY_LIGHT[2], shade)),
+      ];
+
+      // Specular sheen.
+      const sx = (x - (CX - FACE_R * 0.28)) / (FACE_R * 0.5);
+      const sy = (y - (CY - FACE_R * 0.4)) / (FACE_R * 0.38);
+      const spec = Math.exp(-(sx * sx + sy * sy) * 2.4);
+      c = [
+        Math.round(mix(c[0], 255, spec * 0.45)),
+        Math.round(mix(c[1], 255, spec * 0.45)),
+        Math.round(mix(c[2], 255, spec * 0.5)),
+      ];
     }
-    const my = 680 + 0.0016 * (x - 512) ** 2 * -1 + 40;
-    if (x > 420 && x < 604 && Math.abs(y - my) < 14) c = [27, 24, 48];
-    if (c) px.set([...c, 255], (y * S + x) * 4);
+
+    // Solid black pill eyes (.orb-eye: ~11% wide, ~26% tall of face).
+    const eyeW = FACE_R * 2 * 0.11;
+    const eyeH = FACE_R * 2 * 0.26;
+    const gap = FACE_R * 2 * 0.15;
+    const eyeY = CY - FACE_R * 0.02;
+    for (const ex of [CX - gap / 2 - eyeW / 2, CX + gap / 2 + eyeW / 2]) {
+      if (inEllipse(x, y, ex, eyeY, eyeW / 2, eyeH / 2)) {
+        c = EYE;
+      }
+    }
+
+    px.set([c[0], c[1], c[2], a], (y * S + x) * 4);
   }
 }
 
@@ -56,7 +105,7 @@ writeFileSync(
   Buffer.concat([
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
     chunk("IHDR", ihdr),
-    chunk("IDAT", deflateSync(raw)),
+    chunk("IDAT", deflateSync(raw, { level: 9 })),
     chunk("IEND", Buffer.alloc(0)),
   ]),
 );

@@ -1,6 +1,8 @@
 //! Update check (P5): once a day, asks GitHub for the latest release and
-//! offers it when it is newer. Nothing is downloaded or installed on its
-//! own; the button opens the release page.
+//! offers it when it is newer. Install downloads the installer from this
+//! repository's release, checks it against the release's SHA256SUMS.txt,
+//! and runs it (the user clicks through it); Sidekick then quits so it can
+//! be replaced. Nothing installs on its own.
 
 use std::time::Duration;
 
@@ -28,6 +30,98 @@ fn parse(v: &str) -> Option<(u64, u64, u64)> {
 
 pub fn is_newer(latest: &str, current: &str) -> bool {
     matches!((parse(latest), parse(current)), (Some(l), Some(c)) if l > c)
+}
+
+const DOWNLOADS: &str = "https://github.com/tmalik258/sidekick/releases/download/";
+
+/// The installer and the checksum file among a release's assets.
+pub fn pick_assets(body: &serde_json::Value) -> Option<(String, String)> {
+    let assets = body["assets"].as_array()?;
+    let url = |pred: &dyn Fn(&str) -> bool| {
+        assets
+            .iter()
+            .filter(|a| a["name"].as_str().is_some_and(pred))
+            .filter_map(|a| a["browser_download_url"].as_str())
+            .find(|u| u.starts_with(DOWNLOADS))
+            .map(str::to_owned)
+    };
+    let installer = url(&|n| n.ends_with("-setup.exe"))?;
+    let sums = url(&|n| n == "SHA256SUMS.txt")?;
+    Some((installer, sums))
+}
+
+/// The expected hash of `file` in a `sha256sum`-style list.
+pub fn expected_hash(sums: &str, file: &str) -> Option<String> {
+    sums.lines().find_map(|l| {
+        let (hash, name) = l.trim().split_once(char::is_whitespace)?;
+        (name.trim().trim_start_matches('*') == file && hash.len() == 64)
+            .then(|| hash.to_ascii_lowercase())
+    })
+}
+
+/// Downloads, checks and runs the newest installer, then quits.
+pub async fn install(app: &AppHandle) -> Result<String, String> {
+    use sha2::Digest;
+    let client = reqwest::Client::builder()
+        .user_agent("Sidekick")
+        .timeout(Duration::from_secs(300))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let body: serde_json::Value = client
+        .get(LATEST)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
+    let (installer, sums_url) = pick_assets(&body)
+        .ok_or("This release has no installer with checksums; use the release page")?;
+    let name = installer
+        .rsplit('/')
+        .next()
+        .unwrap_or("Sidekick-setup.exe")
+        .to_owned();
+    let sums = client
+        .get(&sums_url)
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| e.to_string())?
+        .text()
+        .await
+        .map_err(|e| e.to_string())?;
+    let want =
+        expected_hash(&sums, &name).ok_or("The checksum list does not include the installer")?;
+    let bytes = client
+        .get(&installer)
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| e.to_string())?
+        .bytes()
+        .await
+        .map_err(|e| e.to_string())?;
+    let got = format!("{:x}", sha2::Sha256::digest(&bytes));
+    if got != want {
+        return Err("The download did not match its checksum; nothing was installed".into());
+    }
+    let dir = std::env::temp_dir().join("sidekick-update");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(&name);
+    std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+    std::process::Command::new(&path)
+        .spawn()
+        .map_err(|e| format!("could not start the installer: {e}"))?;
+    // Give the installer a moment to open, then quit so files can be replaced.
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        app.exit(0);
+    });
+    Ok(format!("Installing {name}"))
 }
 
 async fn latest() -> Result<(String, String), String> {
@@ -90,6 +184,33 @@ pub fn start(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finds_the_installer_and_its_hash() {
+        let body = serde_json::json!({ "assets": [
+            { "name": "Sidekick_0.2.0_x64_en-US.msi", "browser_download_url": "https://github.com/tmalik258/sidekick/releases/download/v0.2.0/Sidekick_0.2.0_x64_en-US.msi" },
+            { "name": "Sidekick_0.2.0_x64-setup.exe", "browser_download_url": "https://github.com/tmalik258/sidekick/releases/download/v0.2.0/Sidekick_0.2.0_x64-setup.exe" },
+            { "name": "SHA256SUMS.txt", "browser_download_url": "https://github.com/tmalik258/sidekick/releases/download/v0.2.0/SHA256SUMS.txt" }
+        ]});
+        let (exe, sums) = pick_assets(&body).unwrap();
+        assert!(exe.ends_with("-setup.exe"));
+        assert!(sums.ends_with("SHA256SUMS.txt"));
+        let elsewhere = serde_json::json!({ "assets": [
+            { "name": "x-setup.exe", "browser_download_url": "https://evil.example/x-setup.exe" },
+            { "name": "SHA256SUMS.txt", "browser_download_url": "https://evil.example/SHA256SUMS.txt" }
+        ]});
+        assert!(pick_assets(&elsewhere).is_none());
+        let h = "a".repeat(64);
+        let sums = format!(
+            "{h}  Sidekick_0.2.0_x64-setup.exe\n{}  other.msi\n",
+            "b".repeat(64)
+        );
+        assert_eq!(
+            expected_hash(&sums, "Sidekick_0.2.0_x64-setup.exe"),
+            Some(h)
+        );
+        assert_eq!(expected_hash(&sums, "missing.exe"), None);
+    }
 
     #[test]
     fn compares_versions() {

@@ -12,6 +12,7 @@ import { Markdown } from "@/lib/markdown";
 import {
   cancelChat,
   newChat,
+  openChat,
   sendChat,
   setAsk,
   startListening,
@@ -20,7 +21,14 @@ import {
   updateSettings,
   useSidekick,
 } from "@/lib/store";
-import { isPaused, PROVIDER_LABELS, type ProviderStatus, type SearchHit, type Turn } from "@/lib/types";
+import {
+  type ChatSummary,
+  isPaused,
+  PROVIDER_LABELS,
+  type ProviderStatus,
+  type SearchHit,
+  type Turn,
+} from "@/lib/types";
 import { Icon, type IconName } from "./Icon";
 
 interface Command {
@@ -38,6 +46,17 @@ const ease = [0.23, 1, 0.32, 1] as const;
 /** Space the island's orb takes at the top-left in Ask mode. */
 export const ASK_ORB = 30;
 
+/** Input + chips + footer + gaps; scroll area keeps the rest under the Ask cap. */
+const ASK_CHROME = 118;
+const ASK_SCROLL_CAP = 330;
+/** Island window is ~560 tall (tauri.conf); leave room for chrome + pad. */
+const ASK_SCROLL_FLOOR = 120;
+
+function askScrollMax(): number {
+  const available = window.innerHeight - ASK_CHROME - 40;
+  return Math.min(ASK_SCROLL_CAP, Math.max(ASK_SCROLL_FLOOR, available));
+}
+
 export function AskPanel() {
   const ask = useSidekick((s) => s.ask);
   const turns = useSidekick((s) => s.turns);
@@ -51,9 +70,19 @@ export function AskPanel() {
   const [hits, setHits] = useState<{ query: string; items: SearchHit[] } | null>(null);
   const [clips, setClips] = useState<{ text: string; ts: string }[] | null>(null);
   const [projects, setProjects] = useState<{ name: string; path: string }[]>([]);
+  const [chats, setChats] = useState<ChatSummary[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const nearBottom = useRef(true);
   const seq = ask?.seq;
+  const [scrollMax, setScrollMax] = useState(ASK_SCROLL_CAP);
+
+  useEffect(() => {
+    const sync = () => setScrollMax(askScrollMax());
+    sync();
+    window.addEventListener("resize", sync);
+    return () => window.removeEventListener("resize", sync);
+  }, []);
 
   // Every open: focus the input and refresh which AI is reachable.
   useEffect(() => {
@@ -63,14 +92,25 @@ export function AskPanel() {
     setClips(null);
     void api.aiStatus().then(setProviders);
     void api.projectsList().then(setProjects);
+    void api
+      .chatsList()
+      .then(setChats)
+      .catch(() => setChats([]));
+    // A shortcut can open Ask mode straight into a tool.
+    const tool = useSidekick.getState().ask?.tool;
+    if (tool) setAsk({ tool: null });
+    if (tool === "clipboard") void api.clipboardHistory().then(setClips);
+    if (tool === "screen") {
+      sendChat("What's on my screen? Explain it briefly and point out anything I should act on.", { screen: true });
+    }
     const id = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(id);
   }, [seq]);
 
-  // Keep the newest text in view while an answer streams in.
+  // Keep the newest text in view while an answer streams, only if already near the bottom.
   useEffect(() => {
     const el = scrollRef.current;
-    if (el && turns.length) el.scrollTop = el.scrollHeight;
+    if (el && turns.length && nearBottom.current) el.scrollTop = el.scrollHeight;
   }, [turns]);
 
   const paused = isPaused(settings.pause);
@@ -119,8 +159,17 @@ export function AskPanel() {
           ]
         : []),
     ];
+    // Recent conversations to pick up again.
+    const recent: Command[] = chats.slice(0, 20).map((c) => ({
+      id: `chat:${c.id}`,
+      label: c.title,
+      hint: `Continue · ${ago(c.updated)}`,
+      icon: "ask",
+      run: () => void openChat(c.id),
+      stay: true,
+    }));
     const q = text.trim().toLowerCase();
-    if (!q) return all;
+    if (!q) return turns.length ? all : [...all, ...recent.slice(0, 3)];
     // Typing a project's name offers to open it (FR-DEV-10).
     const launch: Command[] = projects
       .filter((p) => p.name.toLowerCase().includes(q.replace(/^open\s+/, "")))
@@ -132,8 +181,9 @@ export function AskPanel() {
         icon: "folder",
         run: () => void api.projectLaunch(p.path),
       }));
-    return [...all.filter((c) => c.label.toLowerCase().includes(q)), ...launch];
-  }, [paused, settings.muted, turns.length, text, projects]);
+    const pickUp = recent.filter((c) => c.label.toLowerCase().includes(q)).slice(0, 3);
+    return [...all.filter((c) => c.label.toLowerCase().includes(q)), ...launch, ...pickUp];
+  }, [paused, settings.muted, turns.length, text, projects, chats]);
 
   if (!ask) return null;
 
@@ -194,6 +244,12 @@ export function AskPanel() {
     }
   };
 
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+  };
+
   return (
     <div className="flex flex-col">
       <div className="flex h-[30px] items-center gap-2" style={{ paddingLeft: ASK_ORB + 10 }}>
@@ -239,14 +295,15 @@ export function AskPanel() {
 
       <ContextChips />
 
-      <AnimatePresence initial={false} mode="popLayout">
+      <AnimatePresence initial={false}>
         {showClips && clips ? (
           <motion.div
             key="clips"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, transition: { duration: 0.08 } }}
-            className="ask-scroll mt-2 max-h-[330px] overflow-y-auto pr-1"
+            className="ask-scroll mt-2 overflow-y-auto pr-1"
+            style={{ maxHeight: scrollMax }}
           >
             <Clips items={clips} />
           </motion.div>
@@ -256,7 +313,8 @@ export function AskPanel() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, transition: { duration: 0.08 } }}
-            className="ask-scroll mt-2 max-h-[330px] overflow-y-auto pr-1"
+            className="ask-scroll mt-2 overflow-y-auto pr-1"
+            style={{ maxHeight: scrollMax }}
           >
             <Results query={hits.query} items={hits.items} />
           </motion.div>
@@ -264,10 +322,12 @@ export function AskPanel() {
           <motion.div
             key="chat"
             ref={scrollRef}
+            onScroll={onScroll}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, transition: { duration: 0.08 } }}
-            className="ask-scroll mt-2 max-h-[330px] overflow-y-auto pr-1"
+            className="ask-scroll mt-2 overflow-y-auto pr-1"
+            style={{ maxHeight: scrollMax }}
           >
             <Chat turns={turns} />
           </motion.div>
@@ -426,7 +486,7 @@ function Chip({
 }
 
 /** Live transcript while listening, with a breathing level bar. */
-function Hearing({ text }: { text: string }) {
+export function Hearing({ text }: { text: string }) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2.5" aria-live="polite">
       <span className="flex h-4 items-center gap-[3px]" role="img" aria-label="Listening">
@@ -631,6 +691,9 @@ function Chat({ turns }: { turns: Turn[] }) {
           ) : (
             <div className="text-[13.5px] leading-relaxed text-white/90">
               {t.content ? <Markdown text={t.content} /> : t.streaming ? <Thinking /> : null}
+              {t.streaming && t.tool && (
+                <p className="mt-0.5 text-[11.5px] text-[rgb(235_235_245/0.5)]">Reading with {toolLabel(t.tool)}...</p>
+              )}
               {t.error && (
                 <p className="mt-1 rounded-xl bg-[#ff453a]/15 px-3 py-2 text-[12.5px] text-[#ffb4ae]">{t.error}</p>
               )}
@@ -640,6 +703,9 @@ function Chat({ turns }: { turns: Turn[] }) {
                   {PROVIDER_LABELS[t.provider] ?? t.provider}
                 </p>
               )}
+              {!t.streaming && i === turns.length - 1 && (t.provider === "local" || t.error) && (
+                <Handoff turns={turns} reason={t.handoff ?? null} />
+              )}
             </div>
           )}
         </motion.div>
@@ -648,19 +714,70 @@ function Chat({ turns }: { turns: Turn[] }) {
   );
 }
 
+/** `JIRA_SEARCH_ISSUES` reads as "Jira search issues". */
+function toolLabel(name: string) {
+  const words = name
+    .toLowerCase()
+    .split(/[_\-\s]+/)
+    .filter(Boolean);
+  if (words.length === 0) return "a tool";
+  const [first, ...rest] = words;
+  return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(" ");
+}
+
+/** Continue this conversation in Claude Code, which can make changes. */
+function Handoff({ turns, reason }: { turns: Turn[]; reason: string | null }) {
+  const [state, setState] = useState<string>("idle");
+  const go = () => {
+    setState("opening");
+    const messages = turns.filter((t) => !t.error && t.content.trim()).map(({ role, content }) => ({ role, content }));
+    api
+      .aiHandoff(messages, reason)
+      .then(() => setState("opened"))
+      .catch((e) => setState(String(e)));
+  };
+  if (state === "opened") {
+    return (
+      <p className="mt-1.5 text-[12px] text-[rgb(235_235_245/0.55)]">Opened in Claude Code with this conversation.</p>
+    );
+  }
+  return (
+    <div className="mt-1.5 flex flex-col gap-1">
+      {reason && <p className="text-[12px] text-[rgb(235_235_245/0.6)]">Too much for the local model: {reason}.</p>}
+      <button
+        type="button"
+        disabled={state === "opening"}
+        onClick={go}
+        className={`chip h-8 self-start rounded-full px-3.5 text-[13px] font-medium disabled:opacity-50 ${
+          reason ? "bg-white text-black hover:bg-white/90" : "bg-white/[0.12] text-white/90 hover:bg-white/[0.2]"
+        }`}
+      >
+        {state === "opening" ? "Opening..." : "Continue in Claude Code"}
+      </button>
+      {state !== "idle" && state !== "opening" && <p className="text-[12px] text-[#ffb4ae]">{state}</p>}
+    </div>
+  );
+}
+
 function Thinking() {
   return (
     <span className="inline-flex gap-1 py-2" role="status" aria-label="Thinking">
-      {[0, 1, 2].map((i) => (
-        <motion.span
-          key={i}
-          className="size-1.5 rounded-full bg-white/50"
-          animate={{ opacity: [0.25, 1, 0.25] }}
-          transition={{ duration: 1.1, repeat: Number.POSITIVE_INFINITY, delay: i * 0.15 }}
-        />
-      ))}
+      <span className="thinking-dot" />
+      <span className="thinking-dot" />
+      <span className="thinking-dot" />
     </span>
   );
+}
+
+/** "5 min ago", "yesterday", or a date. */
+function ago(iso: string): string {
+  const mins = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  if (!Number.isFinite(mins)) return "";
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  if (mins < 24 * 60) return `${Math.round(mins / 60)} h ago`;
+  if (mins < 48 * 60) return "yesterday";
+  return new Date(iso).toLocaleDateString();
 }
 
 function Kbd({ children }: { children: ReactNode }) {

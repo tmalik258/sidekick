@@ -54,23 +54,45 @@ pub const SPEECH: Model = Model {
     skip: &["test_wavs/"],
 };
 
-pub const KOKORO: Model = Model {
-    id: "kokoro",
-    label: "Kokoro voice",
-    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-en-v0_19.tar.bz2",
-    sha256: "c9f0dd393615805b0bab050c340834d5e684e732aec91c0e860cd30e982c08bd",
-    size: 103_248_205,
-    dir: "kokoro-int8-en-v0_19",
+/// Supertonic 3: natural, and fast enough on a CPU (about 20 times real
+/// time) that answers start sounding at once. Ten built-in voices.
+pub const VOICE: Model = Model {
+    id: "voice",
+    label: "Supertonic voice",
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2",
+    sha256: "82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427",
+    size: 128_774_318,
+    dir: "sherpa-onnx-supertonic-3-tts-int8-2026-05-11",
     files: &[
-        "model.int8.onnx",
-        "voices.bin",
-        "tokens.txt",
-        "espeak-ng-data",
+        "duration_predictor.int8.onnx",
+        "text_encoder.int8.onnx",
+        "vector_estimator.int8.onnx",
+        "vocoder.int8.onnx",
+        "tts.json",
+        "unicode_indexer.bin",
+        "voice.bin",
     ],
     skip: &[],
 };
 
-pub const MODELS: [Model; 3] = [WAKE, SPEECH, KOKORO];
+pub const MODELS: [Model; 3] = [WAKE, SPEECH, VOICE];
+
+/// Folders of models that were replaced, removed once their successor is in.
+const RETIRED: &[(&str, Model)] = &[
+    ("kokoro-int8-en-v0_19", VOICE),
+    ("kokoro-multi-lang-v1_0", VOICE),
+];
+
+/// Deletes replaced models whose successor is installed. Returns how many.
+pub fn remove_retired(root: &Path) -> usize {
+    RETIRED
+        .iter()
+        .filter(|(dir, successor)| {
+            let old = root.join(dir);
+            old.is_dir() && successor.installed(root) && fs::remove_dir_all(&old).is_ok()
+        })
+        .count()
+}
 
 impl Model {
     pub fn path(&self, root: &Path) -> PathBuf {
@@ -107,6 +129,9 @@ pub fn install(
     let result =
         download(model, &part, cancel, &mut progress).and_then(|()| unpack(model, &part, root));
     let _ = fs::remove_file(&part);
+    if result.is_ok() {
+        remove_retired(root);
+    }
     result
 }
 
@@ -243,6 +268,26 @@ mod tests {
         assert!(!dir.join("m/test_wavs").exists());
         assert!(!dir.join(".unpack-t").exists());
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn removes_a_replaced_model_only_once_its_successor_is_in() {
+        let dir = std::env::temp_dir().join(format!("sidekick-retired-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("kokoro-int8-en-v0_19")).unwrap();
+        assert_eq!(
+            remove_retired(&dir),
+            0,
+            "kept while the new voice is missing"
+        );
+        for f in VOICE.files {
+            let p = VOICE.path(&dir).join(f);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(p, "x").unwrap();
+        }
+        assert_eq!(remove_retired(&dir), 1);
+        assert!(!dir.join("kokoro-int8-en-v0_19").exists());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

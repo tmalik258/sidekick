@@ -10,23 +10,34 @@ import type {
   AppTime,
   AskOpen,
   BrowserInfo,
+  BrowserStatus,
   CalendarToday,
   CapabilityInfo,
   ChatMessage,
+  ChatSummary,
+  ComposioCheck,
+  ComposioStatus,
+  ExtensionGuide,
+  Found,
   HitRect,
+  LaterItem,
+  LocalModels,
   MascotState,
   McpInfo,
   ProviderStatus,
   SearchHit,
   Settings,
+  SetupPlan,
   SetupStatus,
   SkillInfo,
   StoredEvent,
   Suggestion,
   Transition,
+  Turn,
   VoiceDownload,
   VoiceHeard,
   VoiceStatus,
+  WelcomeSpeech,
 } from "./types";
 
 export const EVENTS = {
@@ -38,6 +49,7 @@ export const EVENTS = {
   islandVisible: "island://visible",
   aiDelta: "ai://delta",
   aiDone: "ai://done",
+  aiTool: "ai://tool",
   askOpen: "ask://open",
   askClose: "ask://close",
   actionResult: "action://result",
@@ -45,6 +57,9 @@ export const EVENTS = {
   voiceState: "voice://state",
   voiceHeard: "voice://heard",
   voiceDownload: "voice://download",
+  suggestionLater: "suggestion://later",
+  composioChanged: "composio://changed",
+  voiceWelcome: "voice://welcome",
 } as const;
 
 export interface EventPayloads {
@@ -55,14 +70,18 @@ export interface EventPayloads {
   [EVENTS.islandCursor]: { x: number; y: number };
   [EVENTS.islandVisible]: boolean;
   [EVENTS.aiDelta]: { id: string; text: string };
-  [EVENTS.aiDone]: { id: string; provider: string | null; error: string | null };
+  [EVENTS.aiDone]: { id: string; provider: string | null; error: string | null; handoff: string | null };
+  [EVENTS.aiTool]: { id: string; name: string };
   [EVENTS.askOpen]: AskOpen;
-  [EVENTS.askClose]: null;
+  [EVENTS.askClose]: { reason: "close" | "defer" };
   [EVENTS.actionResult]: ActionResult;
   [EVENTS.settingsChanged]: Settings;
   [EVENTS.voiceState]: VoiceStatus;
   [EVENTS.voiceHeard]: VoiceHeard;
   [EVENTS.voiceDownload]: VoiceDownload;
+  [EVENTS.suggestionLater]: number;
+  [EVENTS.composioChanged]: { ok: boolean; message: string };
+  [EVENTS.voiceWelcome]: WelcomeSpeech;
 }
 
 export function isTauri(): boolean {
@@ -135,6 +154,30 @@ export const api = {
   clipboardCopy: (text: string) => invoke<void>("clipboard_copy", { text }),
   projectsList: () => invoke<{ name: string; path: string }[]>("projects_list"),
   projectLaunch: (path: string) => invoke<string>("project_launch", { path }),
+  aiHandoff: (messages: ChatMessage[], reason: string | null) => invoke<string>("ai_handoff", { messages, reason }),
+  composioImport: () => invoke<Settings>("composio_import"),
+  composioSignIn: () => invoke<string>("composio_sign_in"),
+  composioSignOut: () => invoke<void>("composio_sign_out"),
+  composioStatus: () => invoke<ComposioStatus>("composio_status"),
+  composioConnect: (slug: string) => invoke<void>("composio_connect", { slug }),
+  setupDetect: () => invoke<Found>("setup_detect"),
+  setupApply: (plan: SetupPlan) => invoke<string[]>("setup_apply", { plan }),
+  claudeAddHooks: () => invoke<string | null>("claude_add_hooks"),
+  claudeAddMcp: () => invoke<void>("claude_add_mcp"),
+  browsersStatus: () => invoke<BrowserStatus[]>("browsers_status"),
+  extensionInstall: (browser: string) => invoke<ExtensionGuide>("extension_install", { browser }),
+  localModels: () => invoke<LocalModels>("local_models"),
+  runningApps: () => invoke<string[]>("running_apps"),
+  suggestionAlways: (id: string, index: number) => invoke<void>("suggestion_always", { id, index }),
+  laterList: () => invoke<LaterItem[]>("later_list"),
+  laterOpen: (id: string) => invoke<void>("later_open", { id }),
+  laterClear: () => invoke<void>("later_clear"),
+  skillUnmute: (id: string) => invoke<void>("skill_unmute", { id }),
+  chatsList: () => invoke<ChatSummary[]>("chats_list"),
+  chatGet: (id: string) => invoke<Turn[]>("chat_get", { id }),
+  chatSave: (id: string, title: string, turns: Turn[]) => invoke<void>("chat_save", { id, title, turns }),
+  chatDelete: (id: string) => invoke<void>("chat_delete", { id }),
+  composioTest: () => invoke<ComposioCheck>("composio_test"),
   setupStatus: () => invoke<SetupStatus>("setup_status"),
   setupRun: (id: string) => invoke<void>("setup_run", { id }),
   searchClear: () => invoke<number>("search_clear"),
@@ -147,5 +190,11 @@ export const api = {
   voiceListen: () => invoke<void>("voice_listen"),
   voiceStop: () => invoke<void>("voice_stop"),
   voiceTest: () => invoke<void>("voice_test"),
+  voiceWelcome: () => invoke<WelcomeSpeech>("voice_welcome"),
+  voiceWelcomeStep: (step: number) => invoke<void>("voice_welcome_step", { step }),
+  voiceSay: (text: string) => invoke<void>("voice_say", { text }),
   askOpen: (prompt: string | null = null, ask = false) => invoke<void>("ask_open", { prompt, ask }),
+  askEnsureWelcome: () => invoke<void>("ask_ensure_welcome"),
+  askDeferWelcome: () => invoke<void>("ask_defer_welcome"),
+  askResumeWelcome: () => invoke<void>("ask_resume_welcome"),
 };
