@@ -31,7 +31,8 @@ pub const WELCOME_EVENT: &str = "voice://welcome";
 /// The first thing Sidekick says, and the first thing the welcome shows,
 /// word by word as it is heard. Punctuation is the direction here: the voice
 /// lifts on "!" and "?" and breathes at commas.
-pub const WELCOME_LINE: &str = "Online. I'm Sidekick, your AI on this machine. I notice, I suggest, you decide. Let's begin.";
+pub const WELCOME_LINE: &str =
+    "Online. I'm Sidekick, your AI on this machine. I notice, I suggest, you decide. Let's begin.";
 
 /// When each sentence of the welcome line sounds, in Unix milliseconds, so
 /// the UI can show the words as they are heard.
