@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
-import { updateSettings, useSidekick } from "@/lib/store";
+import { startWaiting, updateSettings, useSidekick } from "@/lib/store";
 import type {
   BrowserInfo,
   BrowserStatus,
@@ -55,6 +55,7 @@ export function ConnectionsTab({ onError }: { onError: (e: string) => void }) {
 
 function ComposioCard({ onError }: { onError: (e: string) => void }) {
   const composio = useSidekick((s) => s.settings.composio);
+  const justDone = useSidekick((s) => s.justDone);
   const { data: status, refresh: reload } = useCached<ComposioStatus>("composio-status", api.composioStatus);
   const [waiting, setWaiting] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -77,7 +78,10 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
     setNote(null);
     api
       .composioSignIn()
-      .then((code) => setWaiting(code))
+      .then((code) => {
+        setWaiting(code);
+        startWaiting("composio", "Composio", { resumeTab: "connections" });
+      })
       .catch((e) => onError(String(e)));
   };
 
@@ -139,38 +143,49 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
       </div>
       {status.error && <p className="text-[12px] text-red-400">{status.error}</p>}
       <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-        {status.apps.map((a) => (
-          <li key={a.slug} className="flex items-center gap-2.5 rounded-xl border border-(--border) px-2.5 py-2">
-            {a.logo ? (
-              // biome-ignore lint/performance/noImgElement: remote app logos in a static export
-              <img src={a.logo} alt="" className="size-5 shrink-0 rounded" />
-            ) : (
-              <span className="size-5 shrink-0 rounded bg-black/10 dark:bg-white/10" />
-            )}
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-medium">{a.name}</span>
-              <span className="block truncate text-[11px] text-(--muted)">{a.why}</span>
-            </span>
-            {a.connected ? (
-              <span className="shrink-0 text-[12px] text-[#30d158]">Connected</span>
-            ) : (
-              <Button
-                small
-                disabled={connecting === a.slug}
-                onClick={() => {
-                  setConnecting(a.slug);
-                  setNote(`Finish connecting ${a.name} in the browser.`);
-                  api.composioConnect(a.slug).catch((e) => {
-                    setConnecting(null);
-                    onError(String(e));
-                  });
-                }}
-              >
-                {connecting === a.slug ? "Waiting..." : "Connect"}
-              </Button>
-            )}
-          </li>
-        ))}
+        {status.apps.map((a) => {
+          const done = a.connected || justDone === `app:${a.slug}`;
+          return (
+            <li
+              key={a.slug}
+              className={`flex items-center gap-2.5 rounded-xl border px-2.5 py-2 transition-shadow duration-700 ${
+                justDone === `app:${a.slug}`
+                  ? "border-[#30d158]/70 ring-1 ring-inset ring-[#30d158]/70"
+                  : "border-(--border)"
+              }`}
+            >
+              {a.logo ? (
+                // biome-ignore lint/performance/noImgElement: remote app logos in a static export
+                <img src={a.logo} alt="" className="size-5 shrink-0 rounded" />
+              ) : (
+                <span className="size-5 shrink-0 rounded bg-black/10 dark:bg-white/10" />
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{a.name}</span>
+                <span className="block truncate text-[11px] text-(--muted)">{a.why}</span>
+              </span>
+              {done ? (
+                <span className="shrink-0 text-[12px] text-[#30d158]">Connected</span>
+              ) : (
+                <Button
+                  small
+                  disabled={connecting === a.slug}
+                  onClick={() => {
+                    setConnecting(a.slug);
+                    setNote(`Finish connecting ${a.name} in the browser.`);
+                    startWaiting(`app:${a.slug}`, a.name, { resumeTab: "connections" });
+                    api.composioConnect(a.slug).catch((e) => {
+                      setConnecting(null);
+                      onError(String(e));
+                    });
+                  }}
+                >
+                  {connecting === a.slug ? "Waiting..." : "Connect"}
+                </Button>
+              )}
+            </li>
+          );
+        })}
       </ul>
       {note && <p className="text-[12px] text-(--muted)">{note}</p>}
       <Toggle
@@ -319,7 +334,9 @@ function BrowserCard() {
           </div>
           {guide?.id === b.id && (
             <div className="flex flex-col gap-1.5 rounded-lg bg-[#0a84ff]/10 p-2.5 text-[12.5px]">
-              <p>{b.name} opened its extensions page. The folder path is copied:</p>
+              <p>
+                {b.name} opened its extensions page in your last-used profile. The folder path is copied:
+              </p>
               <code className="truncate rounded bg-black/5 px-2 py-1 font-mono text-[11px] select-all dark:bg-white/5">
                 {guide.guide.copied}
               </code>
