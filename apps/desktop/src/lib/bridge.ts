@@ -37,6 +37,7 @@ import type {
   VoiceDownload,
   VoiceHeard,
   VoiceStatus,
+  WelcomeSpeech,
 } from "./types";
 
 export const EVENTS = {
@@ -58,6 +59,7 @@ export const EVENTS = {
   voiceDownload: "voice://download",
   suggestionLater: "suggestion://later",
   composioChanged: "composio://changed",
+  voiceWelcome: "voice://welcome",
 } as const;
 
 export interface EventPayloads {
@@ -79,6 +81,7 @@ export interface EventPayloads {
   [EVENTS.voiceDownload]: VoiceDownload;
   [EVENTS.suggestionLater]: number;
   [EVENTS.composioChanged]: { ok: boolean; message: string };
+  [EVENTS.voiceWelcome]: WelcomeSpeech;
 }
 
 export function isTauri(): boolean {
@@ -187,6 +190,7 @@ export const api = {
   voiceListen: () => invoke<void>("voice_listen"),
   voiceStop: () => invoke<void>("voice_stop"),
   voiceTest: () => invoke<void>("voice_test"),
+  voiceWelcome: () => invoke<WelcomeSpeech>("voice_welcome"),
   askOpen: (prompt: string | null = null, ask = false) => invoke<void>("ask_open", { prompt, ask }),
   askEnsureWelcome: () => invoke<void>("ask_ensure_welcome"),
   askDeferWelcome: () => invoke<void>("ask_defer_welcome"),

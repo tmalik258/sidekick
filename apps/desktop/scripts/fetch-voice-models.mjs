@@ -37,10 +37,20 @@ const MODELS = [
   {
     id: "kokoro",
     label: "Kokoro voice",
-    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-en-v0_19.tar.bz2",
-    sha256: "c9f0dd393615805b0bab050c340834d5e684e732aec91c0e860cd30e982c08bd",
-    dir: "kokoro-int8-en-v0_19",
-    files: ["model.int8.onnx", "voices.bin", "tokens.txt", "espeak-ng-data"],
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2",
+    sha256: "c5f7e2d2caf082bc1d20fb70334a61d99d20b484500aad32e7cf84c128ea3298",
+    dir: "kokoro-multi-lang-v1_0",
+    files: [
+      "model.onnx",
+      "voices.bin",
+      "tokens.txt",
+      "lexicon-us-en.txt",
+      "lexicon-gb-en.txt",
+      "espeak-ng-data",
+      "dict",
+    ],
+    // Chinese only; models.rs skips the same.
+    exclude: ["*lexicon-zh.txt", "*-zh.fst"],
   },
 ];
 
@@ -81,12 +91,16 @@ async function download(url, dest) {
   if (total) process.stdout.write("\n");
 }
 
-function unpackBz2(archive, destRoot, dirName) {
+// Replaced models, removed so they are not bundled (models.rs RETIRED).
+const RETIRED = ["kokoro-int8-en-v0_19"];
+
+function unpackBz2(archive, destRoot, dirName, exclude = []) {
   const staging = join(destRoot, `.unpack-${dirName}`);
   rmSync(staging, { recursive: true, force: true });
   mkdirSync(staging, { recursive: true });
   // Windows 10+ ships bsdtar as tar.exe; it reads .tar.bz2.
-  execFileSync("tar", ["-xjf", archive, "-C", staging], { stdio: "inherit" });
+  const skip = exclude.flatMap((p) => ["--exclude", p]);
+  execFileSync("tar", ["-xjf", archive, "-C", staging, ...skip], { stdio: "inherit" });
   const unpacked = join(staging, dirName);
   if (!existsSync(unpacked)) {
     throw new Error(`archive did not contain ${dirName}`);
@@ -111,7 +125,7 @@ async function ensure(model) {
     rmSync(part, { force: true });
     throw new Error(`${model.label} checksum mismatch (got ${hash})`);
   }
-  unpackBz2(part, OUT, model.dir);
+  unpackBz2(part, OUT, model.dir, model.exclude);
   rmSync(part, { force: true });
   if (!installed(model)) {
     throw new Error(`${model.label} unpack incomplete`);
@@ -125,6 +139,7 @@ async function main() {
   for (const id of ["kokoro", "wake", "speech"]) {
     await ensure(MODELS.find((m) => m.id === id));
   }
+  for (const dir of RETIRED) rmSync(join(OUT, dir), { recursive: true, force: true });
   console.log("voice models ready");
 }
 

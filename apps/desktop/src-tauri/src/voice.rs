@@ -15,7 +15,7 @@ use serde::Serialize;
 use sidekick_core::MascotEvent;
 use sidekick_core::settings::VoiceSettings;
 use sidekick_voice::text::strip_wake;
-use sidekick_voice::{Control, Heard, Listener, ListenerConfig, Speaker, models};
+use sidekick_voice::{Control, Heard, Listener, ListenerConfig, Speaker, SpeechEvent, models};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::ask;
@@ -26,7 +26,42 @@ pub const STATE_EVENT: &str = "voice://state";
 pub const HEARD_EVENT: &str = "voice://heard";
 pub const DOWNLOAD_EVENT: &str = "voice://download";
 
-const WELCOME_LINE: &str = "Welcome to the future. I'm Sidekick, your AI on this PC. Let's get set up. Hide me anytime, and hover the island when you want me back.";
+pub const WELCOME_EVENT: &str = "voice://welcome";
+
+/// The first thing Sidekick says, and the first thing the welcome shows,
+/// word by word as it is heard. Punctuation is the direction here: Kokoro
+/// lifts on "!" and "?" and breathes at commas.
+pub const WELCOME_LINE: &str = "Hi there! I'm Sidekick. I live up here, and I'll keep an eye out for little moments where I can help. Don't worry, I always ask before I do anything. Ready? Let's get you set up. It only takes a minute.";
+
+/// When each sentence of the welcome line sounds, in Unix milliseconds, so
+/// the UI can show the words as they are heard.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WelcomeSpeech {
+    pub script: &'static str,
+    pub pieces: Vec<SpokenPiece>,
+    /// When the last word stops sounding; known once everything is queued.
+    pub ends_at: Option<u64>,
+    /// Nothing will be heard (no speakers, or the voice failed): the UI
+    /// paces the words itself.
+    pub silent: bool,
+    #[serde(skip)]
+    key: Option<(u64, u64)>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpokenPiece {
+    pub text: String,
+    pub starts_at: u64,
+    pub ms: u64,
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
+}
 
 /// What the runtime was built from; a change rebuilds it.
 #[derive(Debug, Clone, PartialEq)]
@@ -60,6 +95,8 @@ pub struct Voice {
     pending_welcome_greet: AtomicBool,
     /// The chat being read aloud and its utterance.
     speaking: Mutex<Option<(String, u64)>>,
+    /// The first-run welcome line as it is being heard.
+    welcome: Mutex<WelcomeSpeech>,
     /// A suggestion read aloud, waiting for a spoken choice: its id and
     /// option labels.
     choosing: Mutex<Option<(String, Vec<String>)>>,
@@ -79,6 +116,10 @@ impl Voice {
             welcome_greeted: AtomicBool::new(false),
             pending_welcome_greet: AtomicBool::new(false),
             speaking: Mutex::default(),
+            welcome: Mutex::new(WelcomeSpeech {
+                script: WELCOME_LINE,
+                ..Default::default()
+            }),
             choosing: Mutex::default(),
             last_error: Mutex::default(),
         }
@@ -223,6 +264,10 @@ pub fn kokoro_ready(app: &AppHandle) -> bool {
 /// when they are missing. Fast and offline; no network.
 pub fn seed_from_bundle(app: &AppHandle) {
     let dest = &voice(app).models;
+    let removed = models::remove_retired(dest);
+    if removed > 0 {
+        log::info!("voice: removed {removed} replaced model(s)");
+    }
     let Some(src) = bundled_models(app) else {
         return;
     };
@@ -299,35 +344,107 @@ pub fn prepare_then_welcome(app: &AppHandle) {
 }
 
 /// Speaks `text` with the live runtime speaker, or a short-lived greeter.
-pub fn say(app: &AppHandle, text: &str) {
+/// `started` gets the speaker and utterance ids before any
+/// audio is made, so its events can be told apart. False if nothing will be
+/// heard.
+fn say_with(app: &AppHandle, text: &str, started: impl FnOnce(u64, u64)) -> bool {
     let text = text.trim();
     if text.is_empty() {
-        return;
+        return false;
     }
+    let speak = |s: &Speaker| {
+        let id = s.begin();
+        started(s.id(), id);
+        s.push(id, text);
+        s.finish(id);
+    };
     let v = voice(app);
     {
         let runtime = lock(&v.runtime);
         if let Some(s) = runtime.as_ref().and_then(|r| r.speaker.as_ref()) {
-            s.say(text);
-            return;
+            speak(s);
+            return true;
         }
     }
     if !models::KOKORO.installed(&v.models) {
-        return;
+        return false;
     }
     let settings = lock(&app.state::<AppState>().settings).voice.clone();
     let mut greeter = lock(&v.greeter);
     if greeter.is_none() {
-        match Speaker::start(&v.models, &settings.voice, settings.speed) {
+        match Speaker::start_with_events(
+            &v.models,
+            &settings.voice,
+            settings.speed,
+            Some(speech_events(app)),
+        ) {
             Ok(s) => *greeter = Some(s),
             Err(e) => {
                 log::warn!("voice greet: {e}");
-                return;
+                return false;
             }
         }
     }
-    if let Some(s) = greeter.as_ref() {
-        s.say(text);
+    match greeter.as_ref() {
+        Some(s) => {
+            speak(s);
+            true
+        }
+        None => false,
+    }
+}
+
+/// Forwards what a speaker is saying to the welcome timeline, when it is
+/// the welcome line.
+fn speech_events(app: &AppHandle) -> sidekick_voice::SpeechEvents {
+    let app = app.clone();
+    std::sync::Arc::new(move |event| {
+        let v = voice(&app);
+        let mut w = lock(&v.welcome);
+        match event {
+            SpeechEvent::Piece {
+                speaker,
+                utterance,
+                text,
+                starts_in,
+                length,
+            } if w.key == Some((speaker, utterance)) => w.pieces.push(SpokenPiece {
+                text,
+                starts_at: now_ms() + starts_in.as_millis() as u64,
+                ms: length.as_millis() as u64,
+            }),
+            SpeechEvent::End {
+                speaker,
+                utterance,
+                ends_in,
+            } if w.key == Some((speaker, utterance)) => {
+                w.ends_at = Some(now_ms() + ends_in.as_millis() as u64);
+            }
+            _ => return,
+        }
+        let _ = app.emit(WELCOME_EVENT, w.clone());
+    })
+}
+
+/// The welcome line and when its words are heard.
+pub fn welcome_speech(app: &AppHandle) -> WelcomeSpeech {
+    lock(&voice(app).welcome).clone()
+}
+
+fn start_welcome_speech(app: &AppHandle) {
+    let v = voice(app);
+    let heard = say_with(app, WELCOME_LINE, |speaker, utterance| {
+        let mut w = lock(&v.welcome);
+        *w = WelcomeSpeech {
+            script: WELCOME_LINE,
+            key: Some((speaker, utterance)),
+            ..Default::default()
+        };
+    });
+    if !heard {
+        let mut w = lock(&v.welcome);
+        w.silent = true;
+        let _ = app.emit(WELCOME_EVENT, w.clone());
     }
 }
 
@@ -349,7 +466,7 @@ pub fn welcome_greet(app: &AppHandle) {
         return;
     }
     v.pending_welcome_greet.store(false, Ordering::SeqCst);
-    say(app, WELCOME_LINE);
+    start_welcome_speech(app);
 }
 
 /// Turns voice on during onboarding so wake word and speaking work after setup.
@@ -368,7 +485,12 @@ fn enable_voice_for_onboarding(app: &AppHandle) {
 fn build(app: &AppHandle, key: Key, settings: &VoiceSettings) -> Runtime {
     let v = voice(app);
     let mut errors = Vec::new();
-    let speaker = match Speaker::start(&v.models, &settings.voice, settings.speed) {
+    let speaker = match Speaker::start_with_events(
+        &v.models,
+        &settings.voice,
+        settings.speed,
+        Some(speech_events(app)),
+    ) {
         Ok(s) => Some(s),
         Err(e) => {
             errors.push(format!("Speech: {e}"));

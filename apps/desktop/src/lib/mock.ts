@@ -203,7 +203,12 @@ commands.ask_open = (a) => {
     view: settings.onboarded ? ((a.view as string | undefined) ?? "ask") : "welcome",
     tool: (a.tool as string | undefined) ?? null,
   });
+  if (!settings.onboarded && !welcomeSpoken) {
+    welcomeSpoken = true;
+    speakWelcome();
+  }
 };
+let welcomeSpoken = false;
 commands.ask_ensure_welcome = () => {
   if (settings.onboarded || welcomeDeferred) return;
   commands.ask_open?.({ view: "welcome" });
@@ -221,14 +226,15 @@ const voiceStatus = () => ({
   models: [
     { id: "wake", label: "Wake word", size: 17_626_723, installed: settings.voice.enabled },
     { id: "speech", label: "Speech to text", size: 57_267_600, installed: settings.voice.enabled },
-    { id: "kokoro", label: "Kokoro voice", size: 103_248_205, installed: settings.voice.enabled },
+    { id: "kokoro", label: "Kokoro voice", size: 349_906_910, installed: settings.voice.enabled },
   ],
-  missingBytes: settings.voice.enabled ? 0 : 178_142_528,
+  missingBytes: settings.voice.enabled ? 0 : 424_801_233,
   downloading: false,
   listening: settings.voice.enabled,
   error: null,
   voices: [
-    { id: "af_bella", label: "Bella (American)" },
+    { id: "af_heart", label: "Heart (American, warm)" },
+    { id: "af_bella", label: "Bella (American, bright)" },
     { id: "bm_george", label: "George (British)" },
   ],
 });
@@ -488,7 +494,7 @@ commands.calendar_today = () => ({
 });
 commands.voice_download = () => {
   let done = 0;
-  const total = 178_142_528;
+  const total = 424_801_233;
   const tick = () => {
     done = Math.min(total, done + 30_000_000);
     emit("voice://download", { label: "Kokoro voice", done, total, finished: done >= total, error: null });
@@ -505,6 +511,36 @@ commands.voice_listen = () => {
   later(2200, () => emit("voice://heard", { text: words[3], final: true, byVoice: false }));
 };
 commands.voice_stop = () => undefined;
+// The welcome line as Rust would report it while it is spoken.
+const WELCOME_LINE =
+  "Hi there! I'm Sidekick. I live up here, and I'll keep an eye out for little moments where I can help. Don't worry, I always ask before I do anything. Ready? Let's get you set up. It only takes a minute.";
+let welcome = {
+  script: WELCOME_LINE,
+  pieces: [] as { text: string; startsAt: number; ms: number }[],
+  endsAt: null as number | null,
+  silent: false,
+};
+function speakWelcome() {
+  const sentences = WELCOME_LINE.match(/[^.!?]+[.!?]/g) ?? [WELCOME_LINE];
+  let at = Date.now() + 400;
+  welcome = { ...welcome, pieces: [], endsAt: null };
+  sentences.forEach((raw, i) => {
+    const text = raw.trim();
+    const ms = text.split(/\s+/).length * 330;
+    const startsAt = at;
+    at += ms + 280;
+    // Pieces arrive a little ahead of when they sound, like synthesis.
+    setTimeout(
+      () => {
+        welcome = { ...welcome, pieces: [...welcome.pieces, { text, startsAt, ms }] };
+        if (i === sentences.length - 1) welcome = { ...welcome, endsAt: startsAt + ms };
+        emit("voice://welcome", welcome);
+      },
+      Math.max(0, startsAt - Date.now() - 300),
+    );
+  });
+}
+commands.voice_welcome = () => welcome;
 commands.voice_test = () => undefined;
 commands.search = (a) => [
   {

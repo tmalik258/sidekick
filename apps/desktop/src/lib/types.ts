@@ -72,6 +72,8 @@ export interface VoiceSettings {
   speakSuggestions: boolean;
   voice: string;
   speed: number;
+  /** Which Kokoro model the voice was picked for (2 = v1.0). */
+  model?: number;
 }
 
 export interface VoiceStatus {
@@ -81,6 +83,17 @@ export interface VoiceStatus {
   listening: boolean;
   error: string | null;
   voices: { id: string; label: string }[];
+}
+
+/** The first-run welcome line and when each part of it is heard. */
+export interface WelcomeSpeech {
+  script: string;
+  /** Sentences as queued: start (Unix ms) and length (ms). */
+  pieces: { text: string; startsAt: number; ms: number }[];
+  /** When the last word stops sounding, once known. */
+  endsAt: number | null;
+  /** Nothing will be heard; the welcome paces the words itself. */
+  silent: boolean;
 }
 
 export interface VoiceHeard {
@@ -292,7 +305,7 @@ export const DEFAULT_SETTINGS: Settings = {
     speakAnswers: true,
     conversation: true,
     speakSuggestions: true,
-    voice: "af_bella",
+    voice: "af_heart",
     speed: 1,
   },
 };

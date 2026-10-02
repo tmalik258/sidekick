@@ -54,23 +54,44 @@ pub const SPEECH: Model = Model {
     skip: &["test_wavs/"],
 };
 
+/// Kokoro v1.0 at full precision: far more natural than the int8 v0.19
+/// build (af_heart is its warmest voice). Only the English parts are
+/// needed; the Chinese lexicon is skipped (the engine still requires
+/// `dict/`).
 pub const KOKORO: Model = Model {
     id: "kokoro",
     label: "Kokoro voice",
-    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-en-v0_19.tar.bz2",
-    sha256: "c9f0dd393615805b0bab050c340834d5e684e732aec91c0e860cd30e982c08bd",
-    size: 103_248_205,
-    dir: "kokoro-int8-en-v0_19",
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2",
+    sha256: "c5f7e2d2caf082bc1d20fb70334a61d99d20b484500aad32e7cf84c128ea3298",
+    size: 349_906_910,
+    dir: "kokoro-multi-lang-v1_0",
     files: &[
-        "model.int8.onnx",
+        "model.onnx",
         "voices.bin",
         "tokens.txt",
+        "lexicon-us-en.txt",
+        "lexicon-gb-en.txt",
         "espeak-ng-data",
+        "dict",
     ],
-    skip: &[],
+    skip: &["lexicon-zh.txt", "-zh.fst"],
 };
 
 pub const MODELS: [Model; 3] = [WAKE, SPEECH, KOKORO];
+
+/// Folders of models that were replaced, removed once their successor is in.
+const RETIRED: &[(&str, Model)] = &[("kokoro-int8-en-v0_19", KOKORO)];
+
+/// Deletes replaced models whose successor is installed. Returns how many.
+pub fn remove_retired(root: &Path) -> usize {
+    RETIRED
+        .iter()
+        .filter(|(dir, successor)| {
+            let old = root.join(dir);
+            old.is_dir() && successor.installed(root) && fs::remove_dir_all(&old).is_ok()
+        })
+        .count()
+}
 
 impl Model {
     pub fn path(&self, root: &Path) -> PathBuf {
@@ -107,6 +128,9 @@ pub fn install(
     let result =
         download(model, &part, cancel, &mut progress).and_then(|()| unpack(model, &part, root));
     let _ = fs::remove_file(&part);
+    if result.is_ok() {
+        remove_retired(root);
+    }
     result
 }
 
@@ -243,6 +267,22 @@ mod tests {
         assert!(!dir.join("m/test_wavs").exists());
         assert!(!dir.join(".unpack-t").exists());
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn removes_a_replaced_model_only_once_its_successor_is_in() {
+        let dir = std::env::temp_dir().join(format!("sidekick-retired-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("kokoro-int8-en-v0_19")).unwrap();
+        assert_eq!(remove_retired(&dir), 0, "kept while v1.0 is missing");
+        for f in KOKORO.files {
+            let p = KOKORO.path(&dir).join(f);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(p, "x").unwrap();
+        }
+        assert_eq!(remove_retired(&dir), 1);
+        assert!(!dir.join("kokoro-int8-en-v0_19").exists());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

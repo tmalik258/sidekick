@@ -513,6 +513,12 @@ pub fn voice_stop(app: AppHandle) {
     crate::voice::stop(&app);
 }
 
+/// The welcome line and when each part of it is heard.
+#[tauri::command]
+pub fn voice_welcome(app: AppHandle) -> crate::voice::WelcomeSpeech {
+    crate::voice::welcome_speech(&app)
+}
+
 #[tauri::command]
 pub fn voice_test(app: AppHandle) -> CmdResult<()> {
     crate::voice::test(&app)

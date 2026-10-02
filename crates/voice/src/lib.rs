@@ -11,7 +11,7 @@ pub mod text;
 
 pub use listen::{Control, Heard, Listener, ListenerConfig};
 pub use models::{MODELS, Model};
-pub use speak::{Speaker, VOICES};
+pub use speak::{DEFAULT_VOICE, Speaker, SpeechEvent, SpeechEvents, VOICES, tts_config};
 
 #[derive(Debug, thiserror::Error)]
 pub enum VoiceError {
