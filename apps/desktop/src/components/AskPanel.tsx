@@ -25,6 +25,7 @@ import {
   useSidekick,
 } from "@/lib/store";
 import {
+  type Agents,
   type AskContext,
   type CalendarToday,
   type ChatSummary,
@@ -122,6 +123,7 @@ export function AskPanel() {
   const paused = isPaused(settings.pause);
   const chatPage = useSidekick((s) => s.chatPage);
   const { data: calendar } = useCached<CalendarToday>("calendar-today", api.calendarToday);
+  const agent = useAgentName();
   const starters = useMemo(
     () =>
       contextStarters({
@@ -254,7 +256,7 @@ export function AskPanel() {
       e.preventDefault();
       setSelected((s) => (s - 1 + rows) % rows);
     } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-      // Ctrl Enter: this conversation (and what is typed) goes to Claude Code.
+      // Ctrl Enter: this conversation (and what is typed) goes to the coding agent.
       e.preventDefault();
       const messages = turns
         .filter((t) => !t.error && t.content.trim())
@@ -441,7 +443,7 @@ export function AskPanel() {
           </span>
           {(asking || turns.length > 0) && (
             <span>
-              <Kbd>Ctrl Enter</Kbd> Claude Code
+              <Kbd>Ctrl Enter</Kbd> {agent}
             </span>
           )}
           <span>
@@ -954,9 +956,16 @@ function toolLabel(name: string) {
   return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(" ");
 }
 
-/** Continue this conversation in Claude Code, which can make changes. */
+/** The coding agent that gets handoffs: Claude Code or Codex. */
+function useAgentName(): string {
+  const { data } = useCached<Agents>("agents", api.agentsStatus);
+  return data?.handoff ?? "Claude Code";
+}
+
+/** Continue this conversation in the coding agent, which can make changes. */
 function Handoff({ turns, reason }: { turns: Turn[]; reason: string | null }) {
   const [state, setState] = useState<string>("idle");
+  const agent = useAgentName();
   const go = () => {
     setState("opening");
     const messages = turns.filter((t) => !t.error && t.content.trim()).map(({ role, content }) => ({ role, content }));
@@ -966,9 +975,7 @@ function Handoff({ turns, reason }: { turns: Turn[]; reason: string | null }) {
       .catch((e) => setState(String(e)));
   };
   if (state === "opened") {
-    return (
-      <p className="mt-1.5 text-[12px] text-[rgb(235_235_245/0.55)]">Opened in Claude Code with this conversation.</p>
-    );
+    return <p className="mt-1.5 text-[12px] text-[rgb(235_235_245/0.55)]">Opened in {agent} with this conversation.</p>;
   }
   return (
     <div className="mt-1.5 flex flex-col gap-1">
@@ -981,7 +988,7 @@ function Handoff({ turns, reason }: { turns: Turn[]; reason: string | null }) {
           reason ? "bg-white text-black hover:bg-white/90" : "bg-white/[0.12] text-white/90 hover:bg-white/[0.2]"
         }`}
       >
-        {state === "opening" ? "Opening..." : "Continue in Claude Code"}
+        {state === "opening" ? "Opening..." : `Continue in ${agent}`}
       </button>
       {state !== "idle" && state !== "opening" && <p className="text-[12px] text-[#ffb4ae]">{state}</p>}
     </div>

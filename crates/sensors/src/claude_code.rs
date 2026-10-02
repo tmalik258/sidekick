@@ -62,6 +62,9 @@ impl ClaudeCodeSensor {
     pub const NOTIFICATION: &'static str = "claude.notification";
     pub const SESSION_START: &'static str = "claude.session_start";
     pub const PERMISSION: &'static str = "claude.permission";
+    /// Codex's notify script posts here after each turn.
+    pub const CODEX_PATH: &'static str = "/codex";
+    pub const CODEX_STOP: &'static str = "codex.stop";
 }
 
 const READ_TIMEOUT: Duration = http::READ_TIMEOUT;
@@ -139,8 +142,13 @@ async fn serve(mut sock: TcpStream, bus: &EventBus, gate: &SensorGate, approvals
     }
     let (status, event) = match request {
         Some(r) if r.origin().is_some() => ("403 Forbidden", None),
-        Some(r) if r.method == "POST" && r.path == ClaudeCodeSensor::PATH => {
+        Some(r)
+            if r.method == "POST"
+                && (r.path == ClaudeCodeSensor::PATH || r.path == ClaudeCodeSensor::CODEX_PATH) =>
+        {
+            let codex = r.path == ClaudeCodeSensor::CODEX_PATH;
             match serde_json::from_slice::<serde_json::Value>(&r.body) {
+                Ok(input) if r.is_json() && codex => ("200 OK", codex_event(&input)),
                 Ok(input) if r.is_json() => ("200 OK", hook_event(&input)),
                 Ok(_) => ("415 Unsupported Media Type", None),
                 Err(_) => ("400 Bad Request", None),
@@ -233,6 +241,42 @@ pub fn permission_event(input: &serde_json::Value) -> Option<Event> {
     )
 }
 
+/// Codex's notify JSON (`agent-turn-complete`) as a `codex.stop` event,
+/// shaped like Claude Code's so the same kind of card can show it.
+pub fn codex_event(input: &serde_json::Value) -> Option<Event> {
+    if input["type"].as_str()? != "agent-turn-complete" {
+        return None;
+    }
+    let cwd = input["cwd"].as_str().unwrap_or_default();
+    let project = Path::new(cwd)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Codex");
+    let message: String = input["last-assistant-message"]
+        .as_str()
+        .unwrap_or_default()
+        .chars()
+        .take(200)
+        .collect();
+    let session = input["thread-id"]
+        .as_str()
+        .or(input["turn-id"].as_str())
+        .unwrap_or_default();
+    Some(
+        Event::new(
+            ClaudeCodeSensor::CODEX_STOP,
+            ClaudeCodeSensor::ID,
+            serde_json::json!({
+                "project": project,
+                "cwd": cwd,
+                "session": session,
+                "message": message,
+            }),
+        )
+        .with_sensitivity(Sensitivity::Personal),
+    )
+}
+
 /// Turns hook input into an event. Only the fields Sidekick needs are kept;
 /// the transcript path is dropped on purpose.
 pub fn hook_event(input: &serde_json::Value) -> Option<Event> {
@@ -305,6 +349,21 @@ mod tests {
     use super::*;
     use crate::GateState;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn maps_codex_turns() {
+        let e = codex_event(&serde_json::json!({
+            "type": "agent-turn-complete", "thread-id": "t1", "turn-id": "u1",
+            "cwd": "C:/code/api", "input-messages": ["fix it"],
+            "last-assistant-message": "Fixed the login bug.",
+        }))
+        .unwrap();
+        assert_eq!(e.kind, "codex.stop");
+        assert_eq!(e.payload["project"], "api");
+        assert_eq!(e.payload["message"], "Fixed the login bug.");
+        assert!(e.payload.get("input-messages").is_none());
+        assert!(codex_event(&serde_json::json!({ "type": "other" })).is_none());
+    }
 
     #[test]
     fn maps_hook_input() {

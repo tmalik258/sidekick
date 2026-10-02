@@ -6,6 +6,7 @@ import { mock } from "./mock";
 import type {
   ActionRecord,
   ActionResult,
+  Agents,
   AppInfo,
   AppTime,
   AskOpen,
@@ -168,6 +169,9 @@ export const api = {
   composioStatus: () => invoke<ComposioStatus>("composio_status"),
   composioConnect: (slug: string) => invoke<void>("composio_connect", { slug }),
   composioUseKey: (key: string) => invoke<string>("composio_use_key", { key }),
+  agentsStatus: () => invoke<Agents>("agents_status"),
+  codexAddNotify: () => invoke<string | null>("codex_add_notify"),
+  codexAddMcp: () => invoke<string | null>("codex_add_mcp"),
   setupDetect: () => invoke<Found>("setup_detect"),
   setupApply: (plan: SetupPlan) => invoke<string[]>("setup_apply", { plan }),
   claudeAddHooks: () => invoke<string | null>("claude_add_hooks"),
