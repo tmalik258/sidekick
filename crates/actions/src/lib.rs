@@ -15,7 +15,7 @@ mod system;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-pub use capabilities::{Browser, Capabilities};
+pub use capabilities::{Browser, Capabilities, default_browser};
 use serde::Serialize;
 use serde_json::Value;
 

@@ -26,10 +26,7 @@ export function BrowserInstallPanel({ onDone }: { onDone?: () => void }) {
     setError(null);
     // In the welcome the steps stay inline; elsewhere the island keeps them.
     void installExtension(id, name, { shrink: !onDone })
-      .then((g) => {
-        setGuide(g);
-        onDone?.();
-      })
+      .then((g) => setGuide(g))
       .catch((e) => setError(String(e)))
       .finally(() => setBusy(null));
   };

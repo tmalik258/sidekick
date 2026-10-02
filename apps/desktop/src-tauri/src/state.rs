@@ -205,6 +205,12 @@ impl Env for AppEnv<'_> {
     fn choice_counts(&self, key: &str) -> HashMap<String, u32> {
         lock(self.storage).choice_counts(key).unwrap_or_default()
     }
+
+    fn default_browser_id(&self) -> Option<String> {
+        sidekick_actions::default_browser()
+            .filter(|id| self.caps.browser(id).is_some())
+            .map(|id| id.to_string())
+    }
 }
 
 #[cfg(test)]
