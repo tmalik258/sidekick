@@ -381,7 +381,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             "Page summaries, form help, duplicate tabs and saving sessions.",
         )
         .done(browser_seen, "Paired", "Not paired")
-        .tab("browser")
+        .tab("connections")
         .recommended(),
     );
 
@@ -393,7 +393,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             "Project status, the project launcher and the end-of-day check.",
         )
         .done(!settings.code_folders.is_empty(), "Set", "Not set")
-        .tab("general")
+        .tab("home")
         .recommended(),
     );
 
@@ -443,7 +443,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             "Search inside your documents and notes from Ask mode.",
         )
         .done(!settings.index_folders.is_empty(), "Set", "None yet")
-        .tab("search"),
+        .tab("privacy"),
     );
 
     let voice = crate::voice::status(app);
@@ -466,7 +466,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
                 "Not downloaded"
             },
         )
-        .tab("voice"),
+        .tab("ai"),
     );
 
     items.push(

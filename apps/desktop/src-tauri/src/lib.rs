@@ -93,6 +93,8 @@ pub fn run() {
             commands::search_clear,
             commands::setup_status,
             commands::setup_detect,
+            commands::local_models,
+            commands::running_apps,
             commands::chats_list,
             commands::chat_get,
             commands::chat_save,

@@ -100,6 +100,27 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
       enabled: true,
       auto: false,
       autoByDefault: false,
+      mutedUntil: null,
+    },
+    {
+      id: "files.screenshot",
+      name: "Screenshots",
+      description: "Copy text out of a new screenshot.",
+      event: "file.created",
+      enabled: true,
+      auto: true,
+      autoByDefault: false,
+      mutedUntil: null,
+    },
+    {
+      id: "files.download",
+      name: "Finished downloads",
+      description: "Open or move a file when it lands.",
+      event: "file.created",
+      enabled: true,
+      auto: false,
+      autoByDefault: false,
+      mutedUntil: new Date(Date.now() + 3 * 86_400_000).toISOString(),
     },
   ],
   skill_set: () => settings,
@@ -172,6 +193,7 @@ commands.ask_open = (a) =>
     clipboard: false,
     page: null,
     view: (a.view as string | undefined) ?? "ask",
+    tool: (a.tool as string | undefined) ?? null,
   });
 commands.skill_install = () => "Screenshots";
 const voiceStatus = () => ({
@@ -281,9 +303,150 @@ commands.composio_test = () => ({
   sample: ["JIRA_SEARCH_ISSUES", "SLACK_LIST_CHANNELS", "GMAIL_FETCH_EMAILS"],
 });
 commands.composio_import = () => {
-  settings = { ...settings, composio: { enabled: true, url: "https://mcp.composio.dev/example", headers: {} } };
+  settings = {
+    ...settings,
+    composio: { ...settings.composio, enabled: true, url: "https://mcp.composio.dev/example" },
+  };
   emit("settings://changed", settings);
   return settings;
+};
+const COMPOSIO_APPS = [
+  ["googlecalendar", "Google Calendar", "Meeting reminders and Join"],
+  ["outlook", "Outlook", "Meetings and mail"],
+  ["gmail", "Gmail", "Unread mail in the morning brief"],
+  ["slack", "Slack", "Mentions in the morning brief"],
+  ["jira", "Jira", "Your issues in the morning brief"],
+  ["fathom", "Fathom", "Meeting notes and follow-ups"],
+  ["github", "GitHub", "Reading issues and PRs"],
+  ["notion", "Notion", "Reading your pages"],
+];
+const connected = new Set(["googlecalendar", "jira"]);
+commands.composio_status = () => {
+  const signedIn = Boolean(settings.composio.account);
+  return {
+    signedIn,
+    account: settings.composio.account,
+    apps: COMPOSIO_APPS.map(([slug, name, why]) => ({
+      slug,
+      name,
+      why,
+      logo: "",
+      connected: signedIn && connected.has(slug),
+    })),
+    error: null,
+  };
+};
+commands.composio_sign_in = () => {
+  later(2500, () => {
+    settings = {
+      ...settings,
+      composio: { ...settings.composio, enabled: true, account: "you@example.com", userId: "you@example.com" },
+    };
+    emit("settings://changed", settings);
+    emit("composio://changed", { ok: true, message: "Signed in as you@example.com" });
+  });
+  return "K7Q2";
+};
+commands.composio_sign_out = () => {
+  settings = { ...settings, composio: { ...settings.composio, enabled: false, account: "", userId: "" } };
+  emit("settings://changed", settings);
+  emit("composio://changed", { ok: true, message: "Signed out" });
+};
+commands.composio_connect = (a) => {
+  later(2000, () => {
+    connected.add(a.slug as string);
+    emit("composio://changed", { ok: true, message: "Connected" });
+  });
+};
+const folder = (path: string, label: string, repos = 0) => ({ path, label, repos });
+commands.setup_detect = () => ({
+  codeFolders: [
+    folder("C:\\Users\\you\\code", "code", 12),
+    folder("\\\\wsl.localhost\\Ubuntu-22.04\\home\\you\\projects", "projects (WSL Ubuntu-22.04)", 5),
+  ],
+  searchFolders: [
+    folder("C:\\Users\\you\\Documents", "Documents"),
+    folder("C:\\Users\\you\\Desktop", "Desktop"),
+    folder("C:\\Users\\you\\Downloads", "Downloads"),
+  ],
+  chatModels: ["qwen3:1.7b"],
+  embedModels: [],
+  claudeInstalled: true,
+  claudeHooks: false,
+  claudeMcp: false,
+  composioSignedIn: Boolean(settings.composio.account),
+  composioInClaude: true,
+  browsers: ["Chrome", "Edge", "Zen"],
+  installable: [],
+});
+commands.setup_apply = () => {
+  settings = { ...settings, onboarded: true };
+  emit("settings://changed", settings);
+  return ["Picked 2 code folders", "Added Claude Code hooks", "Installing the search model"];
+};
+commands.claude_add_hooks = () => "C:/Users/you/.claude/settings.json.sidekick-backup-20261002-101500";
+commands.claude_add_mcp = () => undefined;
+const browsersSeen = new Set<string>(["chrome"]);
+commands.browsers_status = () => [
+  { id: "chrome", name: "Chrome", connected: browsersSeen.has("chrome") },
+  { id: "edge", name: "Edge", connected: browsersSeen.has("edge") },
+  { id: "zen", name: "Zen", connected: browsersSeen.has("zen") },
+];
+commands.extension_install = (a) => {
+  later(4000, () => browsersSeen.add(a.browser as string));
+  return {
+    copied: "C:\\Users\\you\\AppData\\Local\\Sidekick\\extension",
+    steps: [
+      "Turn on Developer mode (top right).",
+      "Click Load unpacked and paste the folder path (it is on your clipboard).",
+      "Sidekick asks you to allow it. Click Allow.",
+    ],
+  };
+};
+commands.local_models = () => ({ reachable: true, chat: ["qwen3:1.7b", "llama3.2:3b"], embed: ["nomic-embed-text"] });
+commands.running_apps = () => ["code.exe", "chrome.exe", "slack.exe", "windowsterminal.exe", "keepassxc.exe"];
+commands.suggestion_always = (a) => commands.suggestion_choose?.(a);
+let laterItems = [
+  { id: "l1", title: "3 new screenshots", detail: "Copy text or move them to a folder", minutesAgo: 12 },
+  { id: "l2", title: "Download finished", detail: "invoice-sept.pdf", minutesAgo: 25 },
+];
+commands.later_list = () => laterItems;
+commands.later_open = (a) => {
+  laterItems = laterItems.filter((l) => l.id !== a.id);
+  emit("suggestion://later", laterItems.length);
+};
+commands.later_clear = () => {
+  laterItems = [];
+  emit("suggestion://later", 0);
+};
+commands.skill_unmute = () => undefined;
+const chats = new Map<string, { title: string; updated: string; turns: unknown[] }>([
+  [
+    "c1",
+    {
+      title: "How do I free port 3000",
+      updated: new Date(Date.now() - 3_600_000).toISOString(),
+      turns: [
+        { role: "user", content: "How do I free port 3000" },
+        { role: "assistant", content: "Run `netstat -ano | findstr :3000`, then `taskkill /PID <pid> /F`." },
+      ],
+    },
+  ],
+]);
+commands.chats_list = () =>
+  [...chats.entries()]
+    .map(([id, c]) => ({ id, title: c.title, updated: c.updated }))
+    .sort((a, b) => b.updated.localeCompare(a.updated));
+commands.chat_get = (a) => chats.get(a.id as string)?.turns ?? [];
+commands.chat_save = (a) => {
+  chats.set(a.id as string, {
+    title: a.title as string,
+    updated: new Date().toISOString(),
+    turns: a.turns as unknown[],
+  });
+};
+commands.chat_delete = (a) => {
+  chats.delete(a.id as string);
 };
 commands.ai_handoff = () => "C:/Users/you/AppData/Local/Sidekick/ai/handoff";
 commands.backup_export = () => "C:/Users/you/Documents/Sidekick backup.json";
@@ -295,13 +458,14 @@ commands.projects_list = () => [
 commands.project_launch = () => "Opened sidekick in VS Code and a terminal";
 commands.search_status = () => ({ items: 1240, embedded: 1240, embedError: null });
 commands.calendar_today = () => ({
-  meetings: settings.calendar.feeds.length
+  meetings: connected.has("googlecalendar")
     ? [
         { title: "Standup", start: "10:00", end: "10:15", joinUrl: "https://meet.google.com/abc-defg-hij" },
         { title: "Design review", start: "15:00", end: "15:45", joinUrl: null },
       ]
     : [],
   error: null,
+  sources: connected.has("googlecalendar") ? ["Google Calendar"] : [],
 });
 commands.voice_download = () => {
   let done = 0;
@@ -339,7 +503,6 @@ commands.search = (a) => [
     ts: "2026-10-01T10:00:00Z",
   },
 ];
-commands.search_status = () => ({ items: 1284 });
 commands.search_reindex = () => undefined;
 commands.open_reference = () => undefined;
 commands.mcp_info = () => ({ url: "http://127.0.0.1:47823/mcp", token: "browser-preview-mcp-token" });
