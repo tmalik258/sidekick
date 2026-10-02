@@ -307,7 +307,7 @@ function FoundCard({ onDone }: { onDone: () => void }) {
                     return next;
                   })
                 }
-                className="mt-0.5 size-3.5 shrink-0 accent-[#0a84ff]"
+                className="check mt-0.5 shrink-0"
               />
               <span className="min-w-0">
                 {p.label}
@@ -324,7 +324,7 @@ function FoundCard({ onDone }: { onDone: () => void }) {
           type="button"
           disabled={busy || !picks.some((p) => p.on)}
           onClick={apply}
-          className="chip self-start rounded-full bg-[#0a84ff] px-3.5 py-1.5 text-[13px] font-medium text-white hover:bg-[#0a84ff]/90 disabled:opacity-50"
+          className="chip self-start rounded-full bg-white px-3.5 py-1.5 text-[13px] font-medium text-black hover:bg-white/90 disabled:opacity-50"
         >
           {busy ? "Setting up..." : "Set it all up"}
         </button>

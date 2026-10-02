@@ -94,6 +94,7 @@ export function SetupChecklist({
   const justDone = useSidekick((s) => s.justDone);
   const showAll = showOptional || Boolean(justDone);
   const [openGuide, setOpenGuide] = useState<string | null>(null);
+  const [showDone, setShowDone] = useState(false);
 
   // Stable callbacks, so a row only re-renders when its own data changes.
   const run = useCallback(
@@ -147,38 +148,33 @@ export function SetupChecklist({
       {groups.includes("tools") && status?.installAll && (
         <div className="flex flex-col gap-1.5 rounded-2xl bg-[#0a84ff]/15 px-3.5 py-2.5 ring-1 ring-inset ring-[#0a84ff]/40">
           <div className="flex items-center gap-2">
-            <p className="flex-1 font-medium text-white">Install all recommended tools</p>
+            <p className="flex-1 font-medium text-white">Install everything recommended</p>
             <SmallButton
               onClick={() => {
                 void navigator.clipboard.writeText(status.installAll ?? "").catch(() => undefined);
               }}
             >
-              Copy
+              Copy command
             </SmallButton>
             <SmallButton primary onClick={() => run("all")}>
-              Run
+              Install all
             </SmallButton>
           </div>
-          <code
-            title={status.installAll}
-            className="block truncate rounded-lg bg-black/30 px-2.5 py-1.5 font-mono text-[11px] text-white/80 select-all"
-          >
-            {status.installAll}
-          </code>
         </div>
       )}
 
       {groups.map((g) => {
         const shown = items.filter((i) => i.group === g && (i.recommended || showAll));
         if (shown.length === 0) return null;
+        // Finished steps fold into one line, so the list is what is left to do.
+        const ready = shown.filter((i) => i.done && i.id !== justDone);
+        const rows = showDone ? shown : shown.filter((i) => !ready.includes(i));
         return (
           <section key={g} className="flex flex-col gap-1.5">
             {groups.length > 1 && (
-              <h3 className="px-1 pt-1 text-[11px] font-semibold tracking-wide text-[rgb(235_235_245/0.45)] uppercase">
-                {GROUP_TITLES[g]}
-              </h3>
+              <h3 className="px-1 pt-1 text-[12px] font-semibold text-[rgb(235_235_245/0.55)]">{GROUP_TITLES[g]}</h3>
             )}
-            {shown.map((item) => (
+            {rows.map((item) => (
               <SetupRow
                 key={item.id}
                 item={item}
@@ -191,6 +187,20 @@ export function SetupChecklist({
                 onDone={done}
               />
             ))}
+            {!showDone && ready.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowDone(true)}
+                className="chip flex items-center gap-2 rounded-2xl px-3.5 py-2 text-left text-[12px] text-[rgb(235_235_245/0.6)] hover:bg-white/[0.04] hover:text-white"
+              >
+                <span className="grid size-[18px] shrink-0 place-items-center rounded-full bg-[#30d158] text-[10px] font-bold text-black">
+                  ✓
+                </span>
+                <span className="min-w-0 flex-1 truncate">
+                  {ready.map((i) => i.title).join(", ")} {ready.length === 1 ? "is" : "are"} ready
+                </span>
+              </button>
+            )}
           </section>
         );
       })}
