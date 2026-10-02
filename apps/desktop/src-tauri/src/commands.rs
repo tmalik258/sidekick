@@ -136,6 +136,8 @@ pub struct SkillInfo {
     event: String,
     enabled: bool,
     auto: bool,
+    /// Quiet after "Not now" three times in a row, until this time.
+    muted_until: Option<String>,
     /// The skill runs on its own by default.
     auto_by_default: bool,
 }
@@ -144,6 +146,14 @@ pub struct SkillInfo {
 #[tauri::command]
 pub fn skills_list(state: State<'_, AppState>) -> Vec<SkillInfo> {
     let settings = lock(&state.settings).clone();
+    let now = chrono::Utc::now();
+    let muted = |id: &str| {
+        lock(&state.storage)
+            .habit(id)
+            .ok()
+            .and_then(|h| h.muted_until)
+            .filter(|t| chrono::DateTime::parse_from_rfc3339(t).is_ok_and(|t| t > now))
+    };
     lock(&state.engine)
         .skills()
         .iter()
@@ -156,6 +166,7 @@ pub fn skills_list(state: State<'_, AppState>) -> Vec<SkillInfo> {
                 event: s.trigger.event.clone(),
                 enabled: pref.enabled.unwrap_or(s.enabled_by_default),
                 auto: pref.auto.unwrap_or(s.trust == Trust::Auto),
+                muted_until: muted(&s.id),
                 auto_by_default: s.trust == Trust::Auto,
             }
         })
@@ -983,4 +994,37 @@ pub async fn extension_install(
     browser: String,
 ) -> CmdResult<crate::extension::Guide> {
     crate::extension::install(&app, &browser).await
+}
+
+/// Runs an option and makes its skill automatic ("Always do this").
+#[tauri::command]
+pub fn suggestion_always(app: AppHandle, id: String, index: usize) -> CmdResult<()> {
+    suggestions::always(&app, &id, index)
+}
+
+#[tauri::command]
+pub fn later_list(app: AppHandle) -> Vec<suggestions::LaterItem> {
+    suggestions::later_list(&app)
+}
+
+#[tauri::command]
+pub fn later_open(app: AppHandle, id: String) -> CmdResult<()> {
+    suggestions::later_open(&app, &id)
+}
+
+#[tauri::command]
+pub fn later_clear(app: AppHandle) {
+    suggestions::later_clear(&app);
+}
+
+/// Lets a skill quieted by "Not now" speak again.
+#[tauri::command]
+pub fn skill_unmute(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    let storage = lock(&state.storage);
+    let Ok(mut h) = storage.habit(&id) else {
+        return Ok(());
+    };
+    h.muted_until = None;
+    h.dismiss_streak = 0;
+    storage.save_habit(&h).map_err(|e| e.to_string())
 }
