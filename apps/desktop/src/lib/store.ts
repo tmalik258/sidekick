@@ -231,8 +231,9 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       }
     }),
     listen(EVENTS.aiDelta, ({ id, text }) => updateLastTurn(id, (t) => ({ ...t, content: t.content + text }))),
-    listen(EVENTS.aiDone, ({ id, provider, error }) => {
-      updateLastTurn(id, (t) => ({ ...t, provider, error, streaming: false }));
+    listen(EVENTS.aiTool, ({ id, name }) => updateLastTurn(id, (t) => ({ ...t, tool: name }))),
+    listen(EVENTS.aiDone, ({ id, provider, error, handoff }) => {
+      updateLastTurn(id, (t) => ({ ...t, provider, error, handoff, tool: null, streaming: false }));
       if (useSidekick.getState().chatId === id) useSidekick.setState({ chatId: null });
     }),
   );

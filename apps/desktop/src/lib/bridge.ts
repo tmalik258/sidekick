@@ -13,6 +13,7 @@ import type {
   CalendarToday,
   CapabilityInfo,
   ChatMessage,
+  ComposioCheck,
   HitRect,
   MascotState,
   McpInfo,
@@ -38,6 +39,7 @@ export const EVENTS = {
   islandVisible: "island://visible",
   aiDelta: "ai://delta",
   aiDone: "ai://done",
+  aiTool: "ai://tool",
   askOpen: "ask://open",
   askClose: "ask://close",
   actionResult: "action://result",
@@ -55,7 +57,8 @@ export interface EventPayloads {
   [EVENTS.islandCursor]: { x: number; y: number };
   [EVENTS.islandVisible]: boolean;
   [EVENTS.aiDelta]: { id: string; text: string };
-  [EVENTS.aiDone]: { id: string; provider: string | null; error: string | null };
+  [EVENTS.aiDone]: { id: string; provider: string | null; error: string | null; handoff: string | null };
+  [EVENTS.aiTool]: { id: string; name: string };
   [EVENTS.askOpen]: AskOpen;
   [EVENTS.askClose]: null;
   [EVENTS.actionResult]: ActionResult;
@@ -135,6 +138,9 @@ export const api = {
   clipboardCopy: (text: string) => invoke<void>("clipboard_copy", { text }),
   projectsList: () => invoke<{ name: string; path: string }[]>("projects_list"),
   projectLaunch: (path: string) => invoke<string>("project_launch", { path }),
+  aiHandoff: (messages: ChatMessage[], reason: string | null) => invoke<string>("ai_handoff", { messages, reason }),
+  composioImport: () => invoke<Settings>("composio_import"),
+  composioTest: () => invoke<ComposioCheck>("composio_test"),
   setupStatus: () => invoke<SetupStatus>("setup_status"),
   setupRun: (id: string) => invoke<void>("setup_run", { id }),
   searchClear: () => invoke<number>("search_clear"),

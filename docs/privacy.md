@@ -13,3 +13,5 @@ Sidekick runs on your PC and keeps what it sees there.
 - **Localhost endpoints** (Claude Code hooks, browser extension, MCP) listen on 127.0.0.1 only, refuse web pages, and the browser and MCP ones require a token.
 - **Updates**: once a day Sidekick asks GitHub for the latest release number. You can turn this off.
 - **Backups** (Settings > About > Export) hold your settings, own skills and action history; calendar links are left out.
+- **Composio** (off until you set it up): questions stay on the PC, but when the local model uses a tool, its request (for example a Jira search) goes to Composio and on to that app. The local model can only read; changes go through Claude Code, which asks first. Every tool call is in History. The Composio link and API key are stored in Sidekick's settings on this PC and left out of backups. Questions marked "This PC only" never use Composio.
+- **Continue in Claude Code** writes the conversation to a file in Sidekick's AI folder and opens Claude Code with it, only when you press the button.

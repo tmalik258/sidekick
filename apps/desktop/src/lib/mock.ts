@@ -142,10 +142,17 @@ function mockChat(a: Record<string, unknown>) {
       emit("ai://delta", { id, text: words[i++] });
       setTimeout(tick, 28);
     } else {
-      emit("ai://done", { id, provider: "local", error: null });
+      const change = /\b(move|send|create|update|delete)\b/i.test(last);
+      emit("ai://done", {
+        id,
+        provider: "local",
+        error: null,
+        handoff: change ? "needs a change (JIRA_TRANSITION_ISSUE)" : null,
+      });
     }
   };
-  setTimeout(tick, 300);
+  emit("ai://tool", { id, name: "JIRA_SEARCH_ISSUES" });
+  setTimeout(tick, 900);
 }
 
 commands.ai_chat = (a) => mockChat(a);
@@ -268,6 +275,17 @@ commands.setup_status = () => {
   };
 };
 commands.setup_run = () => undefined;
+commands.composio_test = () => ({
+  tools: 42,
+  reads: 30,
+  sample: ["JIRA_SEARCH_ISSUES", "SLACK_LIST_CHANNELS", "GMAIL_FETCH_EMAILS"],
+});
+commands.composio_import = () => {
+  settings = { ...settings, composio: { enabled: true, url: "https://mcp.composio.dev/example", headers: {} } };
+  emit("settings://changed", settings);
+  return settings;
+};
+commands.ai_handoff = () => "C:/Users/you/AppData/Local/Sidekick/ai/handoff";
 commands.backup_export = () => "C:/Users/you/Documents/Sidekick backup.json";
 commands.backup_import = () => "Restored settings and 2 skills";
 commands.projects_list = () => [

@@ -584,8 +584,8 @@ pub fn search_clear(state: State<'_, AppState>) -> CmdResult<usize> {
 const BACKUP_VERSION: u32 = 1;
 
 /// Saves settings, your own skills and the action history to one file in
-/// Documents and shows it (FR-SET-04). Calendar links are secrets, so they
-/// are left out.
+/// Documents and shows it (FR-SET-04). Calendar links and Composio headers
+/// are secrets, so they are left out.
 #[tauri::command]
 pub async fn backup_export(app: AppHandle) -> CmdResult<String> {
     let path = write_backup(&app)?;
@@ -599,6 +599,7 @@ fn write_backup(app: &AppHandle) -> CmdResult<String> {
     let state = app.state::<AppState>();
     let mut settings = lock(&state.settings).clone();
     settings.calendar.feeds.clear();
+    settings.composio.headers.clear();
     let mut skills = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&state.skills_dir) {
         for e in entries.flatten() {
@@ -674,6 +675,7 @@ pub fn backup_import(app: AppHandle, text: String) -> CmdResult<String> {
         // Keep this PC's calendar links and onboarding state.
         let current = lock(&state.settings).clone();
         settings.calendar.feeds = current.calendar.feeds;
+        settings.composio.headers = current.composio.headers;
         settings.onboarded = true;
         apply_settings(&app, settings)?;
         restored = true;
@@ -705,4 +707,37 @@ pub async fn setup_status(app: AppHandle) -> SetupStatus {
 #[tauri::command]
 pub async fn setup_run(app: AppHandle, id: String) -> CmdResult<()> {
     crate::setup::run(&app, &id).await
+}
+
+/// Opens Claude Code in a terminal with this conversation, to finish what
+/// the local model could not.
+#[tauri::command]
+pub fn ai_handoff(
+    app: AppHandle,
+    messages: Vec<sidekick_ai::Message>,
+    reason: Option<String>,
+) -> CmdResult<String> {
+    crate::composio::open_in_claude_code(&app, &messages, reason.as_deref())
+        .map(|dir| dir.display().to_string())
+}
+
+/// Copies the Composio server from Claude Code's config into Settings.
+#[tauri::command]
+pub fn composio_import(app: AppHandle) -> CmdResult<Settings> {
+    let home = dirs::home_dir().ok_or("no home folder")?;
+    let text = std::fs::read_to_string(home.join(".claude.json")).unwrap_or_default();
+    let (url, headers) = crate::composio::from_claude_config(&text)
+        .ok_or("No Composio server in Claude Code's settings (~/.claude.json)")?;
+    let mut settings = lock(&app.state::<AppState>().settings).clone();
+    settings.composio.url = url;
+    settings.composio.headers = headers;
+    settings.composio.enabled = true;
+    apply_settings(&app, settings)
+}
+
+/// Connects to Composio and counts its tools.
+#[tauri::command]
+pub async fn composio_test(app: AppHandle) -> CmdResult<crate::composio::Check> {
+    let settings = lock(&app.state::<AppState>().settings).composio.clone();
+    crate::composio::test(&settings).await
 }

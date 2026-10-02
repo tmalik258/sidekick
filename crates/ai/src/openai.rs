@@ -3,7 +3,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde_json::{Value, json};
 
-use crate::{AiError, AiProvider, CancellationToken, ChatRequest, Sink, sse};
+use crate::{AiError, AiProvider, CancellationToken, ChatRequest, Sink, ToolDef, ToolRunner, sse};
 
 pub const OLLAMA_URL: &str = "http://localhost:11434/v1";
 
@@ -109,6 +109,126 @@ impl OpenAiCompat {
             .unwrap_or_default()
             .to_owned())
     }
+}
+
+/// Most tool rounds before the model must answer with what it has.
+pub const MAX_TOOL_STEPS: usize = 6;
+/// Longest tool result passed back to the model; small models have small
+/// contexts.
+const MAX_TOOL_RESULT: usize = 6_000;
+
+/// How a chat with tools ended.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolChatEnd {
+    pub text: String,
+    /// The model was still calling tools when the step limit was reached.
+    pub out_of_steps: bool,
+    /// Tools that ran, in order.
+    pub calls: Vec<String>,
+}
+
+impl OpenAiCompat {
+    /// A chat where the model may call `tools` through `runner`. Each round
+    /// is one non-streamed completion; the final answer goes to `sink` in
+    /// one piece.
+    pub async fn chat_with_tools(
+        &self,
+        req: &ChatRequest,
+        tools: &[ToolDef],
+        runner: &dyn ToolRunner,
+        sink: &Sink,
+        cancel: &CancellationToken,
+    ) -> Result<ToolChatEnd, AiError> {
+        let model = self.pick_model().await?;
+        let mut messages = Self::body(&model, req, false)["messages"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let tool_json: Vec<Value> = tools
+            .iter()
+            .map(|t| {
+                json!({ "type": "function", "function": {
+                    "name": t.name, "description": t.description, "parameters": t.parameters,
+                }})
+            })
+            .collect();
+        let mut calls = Vec::new();
+        for step in 0..=MAX_TOOL_STEPS {
+            let last = step == MAX_TOOL_STEPS;
+            let mut body = json!({ "model": model, "stream": false, "messages": messages });
+            // On the last round the model has to answer, not call more tools.
+            if !last && !tool_json.is_empty() {
+                body["tools"] = Value::Array(tool_json.clone());
+            }
+            let send = self
+                .client
+                .post(format!("{}/chat/completions", self.base_url))
+                .json(&body)
+                .send();
+            let resp = tokio::select! {
+                _ = cancel.cancelled() => return Err(AiError::Cancelled),
+                resp = send => resp?,
+            };
+            let v: Value = sse::check(resp).await?.json().await?;
+            let msg = &v["choices"][0]["message"];
+            let wanted = msg["tool_calls"].as_array().filter(|c| !c.is_empty());
+            if let (Some(wanted), false) = (wanted, last) {
+                messages.push(json!({
+                    "role": "assistant",
+                    "content": msg["content"].as_str().unwrap_or_default(),
+                    "tool_calls": wanted,
+                }));
+                for (i, call) in wanted.iter().enumerate() {
+                    let name = call["function"]["name"].as_str().unwrap_or_default();
+                    let args = parse_arguments(&call["function"]["arguments"]);
+                    let id = call["id"]
+                        .as_str()
+                        .map_or_else(|| format!("call_{step}_{i}"), str::to_owned);
+                    runner.started(name);
+                    calls.push(name.to_owned());
+                    let result = tokio::select! {
+                        _ = cancel.cancelled() => return Err(AiError::Cancelled),
+                        r = runner.run(name, &args) => r,
+                    };
+                    let result: String = result.chars().take(MAX_TOOL_RESULT).collect();
+                    messages.push(json!({
+                        "role": "tool", "tool_call_id": id, "name": name, "content": result,
+                    }));
+                }
+                continue;
+            }
+            let text = strip_thinking(msg["content"].as_str().unwrap_or_default());
+            sink.send(&text);
+            return Ok(ToolChatEnd {
+                text,
+                out_of_steps: last,
+                calls,
+            });
+        }
+        unreachable!("the last round always returns")
+    }
+}
+
+/// Tool arguments arrive as a JSON string (OpenAI) or an object (some
+/// servers).
+fn parse_arguments(raw: &Value) -> Value {
+    match raw {
+        Value::String(s) => serde_json::from_str(s).unwrap_or_else(|_| json!({})),
+        Value::Object(_) => raw.clone(),
+        _ => json!({}),
+    }
+}
+
+/// Removes a `<think>...</think>` block some models (Qwen3) put first.
+pub fn strip_thinking(text: &str) -> String {
+    let t = text.trim_start();
+    if let Some(rest) = t.strip_prefix("<think>") {
+        return match rest.find("</think>") {
+            Some(end) => rest[end + "</think>".len()..].trim().to_owned(),
+            None => String::new(),
+        };
+    }
+    text.trim().to_owned()
 }
 
 fn delta(data: &str) -> Option<String> {
@@ -228,6 +348,7 @@ impl AiProvider for OpenAiCompat {
 mod tests {
     use super::*;
     use crate::Message;
+    use async_trait::async_trait;
 
     #[test]
     fn reads_stream_deltas() {
@@ -263,6 +384,174 @@ mod tests {
         assert!(is_local_url("http://[::1]:8080/v1"));
         assert!(!is_local_url("https://api.openai.com/v1"));
         assert!(!is_local_url("http://192.168.1.5:11434/v1"));
+    }
+
+    #[test]
+    fn strips_thinking() {
+        assert_eq!(strip_thinking("<think>hmm</think>\n\nHello"), "Hello");
+        assert_eq!(strip_thinking("<think>never closed"), "");
+        assert_eq!(strip_thinking("  plain  "), "plain");
+    }
+
+    #[test]
+    fn reads_tool_arguments() {
+        assert_eq!(parse_arguments(&json!(r#"{"q":"x"}"#))["q"], "x");
+        assert_eq!(parse_arguments(&json!({ "q": "y" }))["q"], "y");
+        assert_eq!(parse_arguments(&json!("not json")), json!({}));
+    }
+
+    /// A fake OpenAI server. With tools offered, it asks for `LIST` until a
+    /// tool result is in the conversation (or forever when `stubborn`).
+    async fn fake_model(stubborn: bool) -> (String, std::sync::Arc<std::sync::Mutex<Vec<Value>>>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let log = seen.clone();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    break;
+                };
+                let log = log.clone();
+                tokio::spawn(async move {
+                    let mut got = Vec::new();
+                    let mut buf = vec![0u8; 65536];
+                    loop {
+                        let n = sock.read(&mut buf).await.unwrap_or(0);
+                        if n == 0 {
+                            break;
+                        }
+                        got.extend_from_slice(&buf[..n]);
+                        let t = String::from_utf8_lossy(&got).to_string();
+                        if let Some(end) = t.find("\r\n\r\n") {
+                            let len = t[..end]
+                                .lines()
+                                .find_map(|l| {
+                                    l.to_ascii_lowercase()
+                                        .strip_prefix("content-length:")
+                                        .map(|v| v.trim().parse::<usize>().unwrap_or(0))
+                                })
+                                .unwrap_or(0);
+                            if got.len() >= end + 4 + len {
+                                break;
+                            }
+                        }
+                    }
+                    let t = String::from_utf8_lossy(&got).to_string();
+                    let body: Value =
+                        serde_json::from_str(t.split_once("\r\n\r\n").map_or("", |x| x.1))
+                            .unwrap_or(Value::Null);
+                    log.lock().unwrap().push(body.clone());
+                    let has_result = body["messages"]
+                        .as_array()
+                        .is_some_and(|m| m.iter().any(|m| m["role"] == "tool"));
+                    let message = if body.get("tools").is_some() && (stubborn || !has_result) {
+                        json!({ "role": "assistant", "content": "", "tool_calls": [
+                            { "id": "c1", "type": "function", "function": { "name": "LIST", "arguments": "{\"state\":\"open\"}" } }
+                        ]})
+                    } else {
+                        json!({ "role": "assistant", "content": "<think>ok</think>You have 3 open issues." })
+                    };
+                    let payload = json!({ "choices": [{ "message": message }] }).to_string();
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+                        payload.len()
+                    );
+                    let _ = sock.write_all(resp.as_bytes()).await;
+                });
+            }
+        });
+        (format!("http://{addr}/v1"), seen)
+    }
+
+    struct Recorder(std::sync::Mutex<Vec<(String, Value)>>);
+
+    #[async_trait]
+    impl ToolRunner for Recorder {
+        async fn run(&self, name: &str, arguments: &Value) -> String {
+            self.0
+                .lock()
+                .unwrap()
+                .push((name.to_owned(), arguments.clone()));
+            "3 issues".into()
+        }
+    }
+
+    fn list_tool() -> Vec<ToolDef> {
+        vec![ToolDef {
+            name: "LIST".into(),
+            description: "List issues".into(),
+            parameters: json!({ "type": "object" }),
+        }]
+    }
+
+    #[tokio::test]
+    async fn calls_tools_then_answers() {
+        let (url, seen) = fake_model(false).await;
+        let model = OpenAiCompat::new(Some(url), Some("qwen3:1.7b".into()));
+        let runner = Recorder(Default::default());
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let end = model
+            .chat_with_tools(
+                &ChatRequest {
+                    system: "s".into(),
+                    messages: vec![Message::user("my issues?")],
+                    image: None,
+                },
+                &list_tool(),
+                &runner,
+                &Sink::new(tx),
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(end.text, "You have 3 open issues.");
+        assert!(!end.out_of_steps);
+        assert_eq!(end.calls, vec!["LIST"]);
+        assert_eq!(rx.recv().await.as_deref(), Some("You have 3 open issues."));
+        let ran = runner.0.lock().unwrap().clone();
+        assert_eq!(ran, vec![("LIST".to_owned(), json!({ "state": "open" }))]);
+        let seen = seen.lock().unwrap();
+        let second = &seen[1]["messages"];
+        let tool_msg = second
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["role"] == "tool")
+            .unwrap();
+        assert_eq!(tool_msg["tool_call_id"], "c1");
+        assert_eq!(tool_msg["content"], "3 issues");
+    }
+
+    #[tokio::test]
+    async fn stops_after_the_step_limit() {
+        let (url, seen) = fake_model(true).await;
+        let model = OpenAiCompat::new(Some(url), Some("m".into()));
+        let runner = Recorder(Default::default());
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let end = model
+            .chat_with_tools(
+                &ChatRequest {
+                    system: String::new(),
+                    messages: vec![Message::user("loop")],
+                    image: None,
+                },
+                &list_tool(),
+                &runner,
+                &Sink::new(tx),
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert!(end.out_of_steps);
+        assert_eq!(end.calls.len(), MAX_TOOL_STEPS);
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), MAX_TOOL_STEPS + 1);
+        assert!(
+            seen.last().unwrap().get("tools").is_none(),
+            "the last round offers no tools"
+        );
     }
 
     #[test]

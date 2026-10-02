@@ -631,6 +631,9 @@ function Chat({ turns }: { turns: Turn[] }) {
           ) : (
             <div className="text-[13.5px] leading-relaxed text-white/90">
               {t.content ? <Markdown text={t.content} /> : t.streaming ? <Thinking /> : null}
+              {t.streaming && t.tool && (
+                <p className="mt-0.5 text-[11.5px] text-[rgb(235_235_245/0.5)]">Reading with {toolLabel(t.tool)}...</p>
+              )}
               {t.error && (
                 <p className="mt-1 rounded-xl bg-[#ff453a]/15 px-3 py-2 text-[12.5px] text-[#ffb4ae]">{t.error}</p>
               )}
@@ -640,10 +643,58 @@ function Chat({ turns }: { turns: Turn[] }) {
                   {PROVIDER_LABELS[t.provider] ?? t.provider}
                 </p>
               )}
+              {!t.streaming && i === turns.length - 1 && (t.provider === "local" || t.error) && (
+                <Handoff turns={turns} reason={t.handoff ?? null} />
+              )}
             </div>
           )}
         </motion.div>
       ))}
+    </div>
+  );
+}
+
+/** `JIRA_SEARCH_ISSUES` reads as "Jira search issues". */
+function toolLabel(name: string) {
+  const words = name
+    .toLowerCase()
+    .split(/[_\-\s]+/)
+    .filter(Boolean);
+  if (words.length === 0) return "a tool";
+  const [first, ...rest] = words;
+  return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(" ");
+}
+
+/** Continue this conversation in Claude Code, which can make changes. */
+function Handoff({ turns, reason }: { turns: Turn[]; reason: string | null }) {
+  const [state, setState] = useState<string>("idle");
+  const go = () => {
+    setState("opening");
+    const messages = turns.filter((t) => !t.error && t.content.trim()).map(({ role, content }) => ({ role, content }));
+    api
+      .aiHandoff(messages, reason)
+      .then(() => setState("opened"))
+      .catch((e) => setState(String(e)));
+  };
+  if (state === "opened") {
+    return (
+      <p className="mt-1.5 text-[12px] text-[rgb(235_235_245/0.55)]">Opened in Claude Code with this conversation.</p>
+    );
+  }
+  return (
+    <div className="mt-1.5 flex flex-col gap-1">
+      {reason && <p className="text-[12px] text-[rgb(235_235_245/0.6)]">Too much for the local model: {reason}.</p>}
+      <button
+        type="button"
+        disabled={state === "opening"}
+        onClick={go}
+        className={`chip h-8 self-start rounded-full px-3.5 text-[13px] font-medium disabled:opacity-50 ${
+          reason ? "bg-white text-black hover:bg-white/90" : "bg-white/[0.12] text-white/90 hover:bg-white/[0.2]"
+        }`}
+      >
+        {state === "opening" ? "Opening..." : "Continue in Claude Code"}
+      </button>
+      {state !== "idle" && state !== "opening" && <p className="text-[12px] text-[#ffb4ae]">{state}</p>}
     </div>
   );
 }
