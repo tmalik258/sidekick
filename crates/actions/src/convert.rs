@@ -104,8 +104,8 @@ pub async fn extract(caps: &Capabilities, archive: &Path) -> Result<Outcome, Act
 
 /// `dir/stem.ext`, or `dir/stem (2).ext` and so on when taken. An empty ext
 /// makes a folder name.
-/// Reads the text in an image with Tesseract and puts it on the clipboard.
-pub async fn ocr(caps: &Capabilities, image: &Path) -> Result<Outcome, ActionError> {
+/// The text in an image, read with Tesseract. Empty when there is none.
+pub async fn ocr_text(caps: &Capabilities, image: &Path) -> Result<String, ActionError> {
     let tesseract = caps
         .tesseract
         .as_ref()
@@ -128,7 +128,12 @@ pub async fn ocr(caps: &Capabilities, image: &Path) -> Result<Outcome, ActionErr
             "Tesseract could not read the image".into(),
         ));
     }
-    let text = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+}
+
+/// Reads the text in an image with Tesseract and puts it on the clipboard.
+pub async fn ocr(caps: &Capabilities, image: &Path) -> Result<Outcome, ActionError> {
+    let text = ocr_text(caps, image).await?;
     if text.is_empty() {
         return Ok(Outcome {
             message: "No text found".into(),

@@ -121,7 +121,7 @@ export type AiProviderId = (typeof AI_PROVIDERS)[number];
 export interface AiSettings {
   order: AiProviderId[];
   claudeCode: { enabled: boolean; path: string; model: string };
-  local: { enabled: boolean; baseUrl: string; model: string };
+  local: { enabled: boolean; baseUrl: string; model: string; visionModel: string };
   anthropic: { enabled: boolean; model: string };
   semif: {
     enabled: boolean;
@@ -283,7 +283,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ai: {
     order: ["claude_code", "anthropic", "local"],
     claudeCode: { enabled: true, path: "", model: "" },
-    local: { enabled: true, baseUrl: "http://localhost:11434/v1", model: "" },
+    local: { enabled: true, baseUrl: "http://localhost:11434/v1", model: "", visionModel: "" },
     anthropic: { enabled: true, model: "" },
     semif: {
       enabled: true,

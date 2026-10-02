@@ -39,6 +39,13 @@ export const SETUP_CATALOG: Array<{
     recommended: true,
   },
   {
+    id: "ollama_vision",
+    group: "ai",
+    title: "Vision model",
+    why: "Sees pictures on your screen that have no text. About 1.7 GB, loaded only when needed.",
+    recommended: false,
+  },
+  {
     id: "anthropic",
     group: "ai",
     title: "Anthropic API key",

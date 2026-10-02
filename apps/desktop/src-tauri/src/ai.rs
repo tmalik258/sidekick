@@ -395,7 +395,7 @@ pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach,
 }
 
 /// Captures the window the user was in before Sidekick took focus.
-async fn screenshot(app: &AppHandle) -> Result<Vec<u8>, String> {
+pub(crate) async fn screenshot(app: &AppHandle) -> Result<Vec<u8>, String> {
     let pid = lock(&app.state::<AppState>().last_window)
         .as_ref()
         .and_then(|w| w["pid"].as_u64())

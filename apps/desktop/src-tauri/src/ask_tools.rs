@@ -12,6 +12,10 @@ const SEARCH: &str = "search";
 const TODAY: &str = "today";
 const RECENT: &str = "recent";
 const OPEN: &str = "open";
+const SCREEN: &str = "screen_text";
+
+/// Most screen text handed to the model.
+const MAX_SCREEN_TEXT: usize = 4000;
 
 /// How far back `recent` looks.
 const RECENT_EVENTS: u32 = 40;
@@ -39,6 +43,13 @@ pub fn defs() -> Vec<ToolDef> {
             name: RECENT.into(),
             description: "What just happened on the PC: downloads, copies, windows, \
                 errors, Claude Code sessions. Newest first."
+                .into(),
+            parameters: json!({ "type": "object", "properties": {} }),
+        },
+        ToolDef {
+            name: SCREEN.into(),
+            description: "Read the text in the window the user was just in (an error, a page, \
+                a document). Use when they say this, here, or ask about their screen."
                 .into(),
             parameters: json!({ "type": "object", "properties": {} }),
         },
@@ -71,8 +82,28 @@ pub async fn run(app: &AppHandle, name: &str, args: &Value) -> Option<String> {
         TODAY => today(app).await,
         RECENT => recent(app),
         OPEN => open(app, args["target"].as_str().unwrap_or_default()).await,
+        SCREEN => match crate::ai::screenshot(app).await {
+            Ok(png) => match screen_text(app, &png).await {
+                Ok(t) if t.is_empty() => "No readable text on screen.".into(),
+                Ok(t) => t,
+                Err(e) => format!("Error: {e}"),
+            },
+            Err(e) => format!("Error: could not capture the screen: {e}"),
+        },
         _ => return None,
     })
+}
+
+/// The text in a screenshot, read on this PC with Tesseract.
+pub async fn screen_text(app: &AppHandle, png: &[u8]) -> Result<String, String> {
+    let state = app.state::<AppState>();
+    std::fs::create_dir_all(&state.scratch_dir).map_err(|e| e.to_string())?;
+    let path = state.scratch_dir.join("screen-ocr.png");
+    std::fs::write(&path, png).map_err(|e| e.to_string())?;
+    let exec = executor(&state);
+    let text = exec.read_text(&path).await.map_err(|e| e.to_string());
+    let _ = std::fs::remove_file(&path);
+    Ok(clip(&text?, MAX_SCREEN_TEXT))
 }
 
 async fn today(app: &AppHandle) -> String {
@@ -221,6 +252,6 @@ mod tests {
     #[test]
     fn tools_have_short_names() {
         let names: Vec<_> = defs().into_iter().map(|d| d.name).collect();
-        assert_eq!(names, [SEARCH, TODAY, RECENT, OPEN]);
+        assert_eq!(names, [SEARCH, TODAY, RECENT, SCREEN, OPEN]);
     }
 }

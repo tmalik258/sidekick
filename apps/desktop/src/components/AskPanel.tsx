@@ -152,7 +152,7 @@ export function AskPanel() {
       {
         id: "screen",
         label: "What's on my screen?",
-        hint: "Sends a screenshot to your AI",
+        hint: "Reads the window you were in",
         icon: "screen",
         run: () =>
           sendChat("What's on my screen? Explain it briefly and point out anything I should act on.", { screen: true }),
