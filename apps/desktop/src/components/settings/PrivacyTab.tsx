@@ -15,6 +15,7 @@ import {
   isPaused,
   type LocalModels,
   type Pause,
+  type RoutineItem,
   SENSOR_IDS,
 } from "@/lib/types";
 import { appName, Button, ChipList, Field, FolderPicker, Section, Select, Toggle } from "./ui";
@@ -71,6 +72,13 @@ export function PrivacyTab({ onError }: { onError: (e: string) => void }) {
         />
       </Section>
       <Section
+        title="Routines"
+        hint="What you open in the first hour of most mornings, offered back as one Open all. Only app names and site domains are kept, on this PC."
+        keywords="routine morning start my day usual open all habits"
+      >
+        <Routines onError={onError} />
+      </Section>
+      <Section
         title="Search"
         hint="Text files in these folders become searchable in Ask mode and for Claude Code through MCP. Everything stays on this PC."
         keywords="index folders notes documents semantic meaning embedding"
@@ -96,6 +104,85 @@ export function PrivacyTab({ onError }: { onError: (e: string) => void }) {
         <Capabilities onError={onError} />
       </Section>
     </>
+  );
+}
+
+function Routines({ onError }: { onError: (e: string) => void }) {
+  const on = useSidekick((s) => s.settings.routines);
+  const auto = useSidekick((s) => s.settings.routinesAuto);
+  const [items, setItems] = useState<RoutineItem[] | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [sure, setSure] = useState(false);
+  useEffect(() => {
+    void api
+      .routinesToday()
+      .then(setItems)
+      .catch(() => setItems([]));
+  }, []);
+  useEffect(() => {
+    if (!sure) return;
+    const id = setTimeout(() => setSure(false), 4000);
+    return () => clearTimeout(id);
+  }, [sure]);
+  const save = (patch: Parameters<typeof updateSettings>[0]) =>
+    updateSettings(patch).catch((e: unknown) => onError(String(e)));
+  return (
+    <div className="flex flex-col gap-3 text-[13px]">
+      <Toggle
+        label="Learn my routines"
+        hint="Apps you focus and sites in your active tab (with the browser extension), first hour of the day only."
+        checked={on}
+        onChange={(routines) => void save({ routines })}
+      />
+      {on && (
+        <Toggle
+          label="Open them without asking"
+          hint="Each morning your usual setup opens by itself. The card offers this after five Open alls."
+          checked={auto}
+          onChange={(routinesAuto) => void save({ routinesAuto })}
+        />
+      )}
+      {on && items !== null && (
+        <div className="flex flex-col gap-1.5">
+          <p className="font-medium">Today&apos;s usual start</p>
+          {items.length === 0 ? (
+            <p className="text-(--muted)">Nothing yet. It takes three mornings to learn a routine.</p>
+          ) : (
+            <ol className="flex flex-col gap-1">
+              {items.map((item, i) => (
+                <li key={`${item.kind}:${item.key}`} className="flex items-center justify-between gap-2">
+                  <span className="truncate">
+                    <span className="mr-2 text-(--muted) tabular-nums">{i + 1}.</span>
+                    {item.kind === "app" ? appName(item.label) : item.label}
+                    {item.kind === "site" && item.browser && <span className="text-(--muted)"> in {item.browser}</span>}
+                  </span>
+                  <span className="shrink-0 text-[12px] text-(--muted)">{item.days} of 5 days</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <Button
+          small
+          onClick={() => {
+            if (!sure) return setSure(true);
+            setSure(false);
+            void api
+              .routinesForget()
+              .then((n) => {
+                setItems([]);
+                setNotice(n ? "Forgot everything routines had learned." : "Nothing learned yet.");
+              })
+              .catch((e: unknown) => onError(String(e)));
+          }}
+        >
+          {sure ? "Forget all routines?" : "Forget routines"}
+        </Button>
+        {notice && <span className="text-[12px] text-(--muted)">{notice}</span>}
+      </div>
+    </div>
   );
 }
 

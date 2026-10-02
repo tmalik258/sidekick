@@ -53,6 +53,8 @@ export interface Settings {
   composio: ComposioSettings;
   denyApps: string[];
   denySites: string[];
+  routines: boolean;
+  routinesAuto: boolean;
 }
 
 export interface CalendarToday {
@@ -313,6 +315,8 @@ export const DEFAULT_SETTINGS: Settings = {
   composio: { enabled: false, account: "", userId: "", url: "", headers: {} },
   denyApps: ["1password.exe", "bitwarden.exe", "keepass.exe", "keepassxc.exe"],
   denySites: [],
+  routines: true,
+  routinesAuto: false,
   voice: {
     enabled: true,
     wakeWord: true,
@@ -529,4 +533,15 @@ export interface ComposioCheck {
   tools: number;
   reads: number;
   sample: string[];
+}
+
+/** Something opened early on most mornings (see Settings > Privacy). */
+export interface RoutineItem {
+  kind: "app" | "site";
+  key: string;
+  label: string;
+  target: string;
+  browser: string;
+  /** Of the last five matching days. */
+  days: number;
 }

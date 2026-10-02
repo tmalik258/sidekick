@@ -47,7 +47,7 @@ fn spawn_consumer(app: AppHandle) {
     });
 }
 
-async fn handle(app: &AppHandle, event: Event) {
+async fn handle(app: &AppHandle, mut event: Event) {
     if crate::privacy::check(app, &event) {
         // Still remember which app is in front, so its copies are ignored
         // too, and keep the island out of fullscreen apps.
@@ -61,6 +61,7 @@ async fn handle(app: &AppHandle, event: Event) {
     store(app, event.clone()).await;
     search::index_event(app, &event);
     crate::stuck::observe(app, &event);
+    crate::routines::observe(app, &event);
 
     if event.kind == IdleSensor::IDLE || event.kind == IdleSensor::ACTIVE {
         let away = event.kind == IdleSensor::IDLE;
@@ -72,6 +73,7 @@ async fn handle(app: &AppHandle, event: Event) {
         } else {
             // Anything that came in while the user was away shows now.
             suggestions::welcome_back(app);
+            crate::moments::on_back(app, event.payload["away_secs"].as_u64().unwrap_or(0));
             if let Some(w) = lock(&app.state::<AppState>().last_window).clone() {
                 timetrack::on_window(app, &w);
             }
@@ -84,6 +86,7 @@ async fn handle(app: &AppHandle, event: Event) {
         *lock(&app.state::<AppState>().last_window) = Some(event.payload.clone());
         timetrack::on_window(app, &event.payload);
         crate::projects::on_window(app, &event.payload);
+        crate::moments::on_window(&event.payload);
     }
 
     if event.kind == DEBUG_MANUAL_KIND && mascot::dispatch(app, MascotEvent::SkillMatched).is_some()
@@ -99,6 +102,10 @@ async fn handle(app: &AppHandle, event: Event) {
             .is_some_and(|p| suggestions::is_own_file(app, p))
     {
         return;
+    }
+
+    if event.kind == sidekick_sensors::calendar::CalendarSensor::SOON {
+        crate::moments::enrich_meeting(app, &mut event);
     }
 
     if let Some(proposal) = evaluate(app, &event)

@@ -1,6 +1,6 @@
 id: system.day-summary
 name: End of day summary
-description: At the end of the day, show where your time went, ready to paste into a standup or timesheet (FR-COMM-04).
+description: At the end of the day, show where your time went by project, ready to paste into a standup or timesheet or keep in a work log (FR-COMM-04). Unpushed work has its own card.
 priority: 45
 cooldown_secs: 43200
 trigger:
@@ -10,3 +10,4 @@ suggestion:
   detail: "{{top}}"
   options:
     - { label: Copy for standup, action: copy_text, args: { text: "{{text}}" } }
+    - { label: Save to work log, action: save_log, args: { text: "{{text}}" } }

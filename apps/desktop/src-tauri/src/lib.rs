@@ -19,9 +19,11 @@ mod learn;
 mod mascot;
 mod mcp;
 mod meetings;
+mod moments;
 mod pipeline;
 mod privacy;
 mod projects;
+mod routines;
 mod screen;
 mod search;
 mod secrets;
@@ -138,6 +140,8 @@ pub fn run() {
             commands::skill_set,
             commands::capabilities_get,
             commands::choices_reset,
+            commands::routines_today,
+            commands::routines_forget,
             commands::actions_recent,
             commands::reveal_path,
             commands::ai_status,
@@ -240,6 +244,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
 
     pipeline::start(app);
     timetrack::start(app);
+    moments::start(app);
     // Prefer bundled models; only then network. Welcome opens from the island
     // once it listens (ask_ensure_welcome), or after models become ready.
     voice::seed_from_bundle(app);

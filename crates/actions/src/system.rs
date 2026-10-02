@@ -175,6 +175,7 @@ pub fn open_system_page(page: &str) -> Result<Outcome, ActionError> {
         "battery" => "ms-settings:batterysaver",
         // Focus and Do Not Disturb (Windows 11; Focus assist on Windows 10).
         "focus" => "ms-settings:quiethours",
+        "nightlight" => "ms-settings:nightlight",
         "taskmgr" => {
             if !cfg!(windows) {
                 return Err(ActionError::Failed("Task Manager is a Windows tool".into()));

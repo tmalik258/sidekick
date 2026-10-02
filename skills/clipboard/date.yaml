@@ -1,0 +1,15 @@
+id: clipboard.date
+name: Copied dates
+description: When you copy a date or a time, offer to add it to Google Calendar.
+priority: 35
+cooldown_secs: 20
+dedupe: "{{when}}"
+trigger:
+  event: clipboard.changed
+  where:
+    entity: { equals: date }
+suggestion:
+  title: "Add to calendar?"
+  detail: "{{when}}"
+  options:
+    - { label: Add to calendar, action: open_url, args: { url: "{{calendar_url}}" } }
