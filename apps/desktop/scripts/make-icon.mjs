@@ -30,7 +30,7 @@ for (let y = 0; y < S; y++) {
     if (!inCircle(x, y, CX, CY, FIELD_R)) continue;
 
     let c = FIELD;
-    let a = 255;
+    const a = 255;
 
     const dx = x - CX;
     const dy = y - CY;

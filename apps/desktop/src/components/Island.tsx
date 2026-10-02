@@ -118,6 +118,7 @@ export function Island() {
   // so a stale tall height does not stick after the chat clears.
   const turnsLen = useSidekick((s) => s.turns.length);
   const chatId = useSidekick((s) => s.chatId);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: view, turnsLen and chatId are triggers, not inputs
   useEffect(() => {
     if (!asking) return;
     let id2 = 0;

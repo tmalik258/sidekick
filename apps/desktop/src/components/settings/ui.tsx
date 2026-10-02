@@ -222,13 +222,24 @@ export function Select({
   })();
   const current = list.find(([v]) => v === value)?.[1] ?? (value || "Default");
   const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(() => Math.max(0, list.findIndex(([v]) => v === value)));
+  const [active, setActive] = useState(() =>
+    Math.max(
+      0,
+      list.findIndex(([v]) => v === value),
+    ),
+  );
   const root = useRef<HTMLDivElement>(null);
   const listId = useId();
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: list is rebuilt every render; reseat from value when opened
   useEffect(() => {
     if (!open) return;
-    setActive(Math.max(0, list.findIndex(([v]) => v === value)));
+    setActive(
+      Math.max(
+        0,
+        list.findIndex(([v]) => v === value),
+      ),
+    );
     const onDoc = (e: MouseEvent) => {
       if (root.current && !root.current.contains(e.target as Node)) setOpen(false);
     };
@@ -288,11 +299,14 @@ export function Select({
           viewBox="0 0 12 12"
           className={`size-3 shrink-0 text-(--muted) transition-transform ${open ? "rotate-180" : ""}`}
         >
-          <path fill="currentColor" d="M2.2 4.2a.75.75 0 0 1 1.06 0L6 6.94l2.74-2.74a.75.75 0 1 1 1.06 1.06l-3.27 3.27a.75.75 0 0 1-1.06 0L2.2 5.26a.75.75 0 0 1 0-1.06Z" />
+          <path
+            fill="currentColor"
+            d="M2.2 4.2a.75.75 0 0 1 1.06 0L6 6.94l2.74-2.74a.75.75 0 1 1 1.06 1.06l-3.27 3.27a.75.75 0 0 1-1.06 0L2.2 5.26a.75.75 0 0 1 0-1.06Z"
+          />
         </svg>
       </button>
       {open && (
-        <ul
+        <div
           id={listId}
           role="listbox"
           aria-label={label}
@@ -301,21 +315,25 @@ export function Select({
           {list.map(([v, l], i) => {
             const selected = v === value;
             return (
-              <li key={v || "__default"} role="option" aria-selected={selected}>
-                <button
-                  type="button"
-                  onMouseEnter={() => setActive(i)}
-                  onClick={() => pick(v)}
-                  className={`flex w-full items-center px-3 py-1.5 text-left text-[13px] ${
-                    i === active || selected ? "bg-white/12 text-white" : "text-white/80"
-                  } ${selected ? "font-medium" : ""}`}
-                >
-                  <span className="truncate">{l}</span>
-                </button>
-              </li>
+              <div
+                key={v || "__default"}
+                role="option"
+                tabIndex={-1}
+                aria-selected={selected}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => pick(v)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") pick(v);
+                }}
+                className={`flex w-full cursor-default items-center px-3 py-1.5 text-left text-[13px] ${
+                  i === active || selected ? "bg-white/12 text-white" : "text-white/80"
+                } ${selected ? "font-medium" : ""}`}
+              >
+                <span className="truncate">{l}</span>
+              </div>
             );
           })}
-        </ul>
+        </div>
       )}
     </div>
   );

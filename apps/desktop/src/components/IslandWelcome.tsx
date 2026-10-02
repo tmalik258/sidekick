@@ -13,7 +13,9 @@ import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { updateSettings, useSidekick } from "@/lib/store";
 import type { SetupFound } from "@/lib/types";
-import { ASK_ORB } from "./AskPanel";
+import { onWelcomeHeard, welcomeCommand } from "@/lib/welcomeVoice";
+import { ASK_ORB, Hearing } from "./AskPanel";
+import { Icon } from "./Icon";
 import { SetupChecklist } from "./SetupChecklist";
 import { SpokenLine, wasHeard } from "./SpokenLine";
 
@@ -47,6 +49,26 @@ export function IslandWelcome() {
     });
     // Onboarded must stick before close; otherwise Rust keeps welcome locked.
     void updateSettings({ onboarded: true, welcomeStep: step }).then(() => api.askClose());
+  };
+
+  // "Hey Sidekick, next": spoken replies move through the steps.
+  const hearing = useSidekick((s) => s.hearing);
+  const canTalk = useSidekick((s) => s.settings.voice.enabled && (s.voiceStatus?.listening ?? false));
+  const last = step === STEPS.length - 1;
+  useEffect(() =>
+    onWelcomeHeard((text) => {
+      if (!text.trim()) return;
+      const command = welcomeCommand(text);
+      if (command === "back") go(step - 1);
+      else if (command === "skip") finish(false);
+      else if (command === "hide") void api.askDeferWelcome();
+      else if (command === "next" || command === "finish") last ? finish(true) : go(step + 1);
+      else void api.voiceSay("Let's finish setting up first. Then ask me anything.");
+    }),
+  );
+  const talk = () => {
+    useSidekick.setState({ hearing: "" });
+    api.voiceListen().catch(() => useSidekick.setState({ hearing: null }));
   };
   return (
     <div className="flex flex-col">
@@ -86,8 +108,24 @@ export function IslandWelcome() {
         </motion.div>
       </AnimatePresence>
 
+      {hearing !== null && (
+        <div className="mt-3 flex items-center gap-2 rounded-xl bg-white/[0.06] px-3 py-2">
+          <Hearing text={hearing} />
+          <button
+            type="button"
+            onClick={() => {
+              useSidekick.setState({ hearing: null });
+              void api.voiceStop();
+            }}
+            className="chip shrink-0 rounded-full px-2.5 py-1 text-[12.5px] text-[rgb(235_235_245/0.6)] hover:text-white"
+          >
+            Stop
+          </button>
+        </div>
+      )}
+
       <div className="mt-4 flex items-center justify-between pb-1">
-        <div className="flex gap-1.5">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => finish(false)}
@@ -102,6 +140,17 @@ export function IslandWelcome() {
           >
             Hide
           </button>
+          {canTalk && hearing === null && (
+            <button
+              type="button"
+              aria-label="Talk (or say Hey Sidekick, next)"
+              title="Talk (or say Hey Sidekick, next)"
+              onClick={talk}
+              className="chip grid size-7 place-items-center rounded-full bg-white/[0.12] text-white/85 hover:bg-white/[0.2]"
+            >
+              <Icon name="mic" size={14} />
+            </button>
+          )}
         </div>
         <div className="flex gap-1.5">
           {step > 0 && (
@@ -115,10 +164,10 @@ export function IslandWelcome() {
           )}
           <button
             type="button"
-            onClick={() => (step < STEPS.length - 1 ? go(step + 1) : finish(true))}
+            onClick={() => (last ? finish(true) : go(step + 1))}
             className="chip rounded-full bg-white px-3.5 py-1.5 text-[13px] font-medium text-black hover:bg-white/90"
           >
-            {step < STEPS.length - 1 ? "Next" : "Start"}
+            {last ? "Start" : "Next"}
           </button>
         </div>
       </div>

@@ -154,6 +154,7 @@ export function SpokenLine({ step, onDone }: { step: number; onDone: () => void 
   // Only the words heard so far are in the layout, so the island grows
   // with the line instead of opening at its full height.
   const visible = list.slice(0, Math.min(shown, list.length));
+  if (visible.length === 0 && !done.current) return <Thinking />;
   return (
     <p className="font-display text-[17px] leading-snug tracking-[-0.01em] text-white">
       {/* Screen readers get the whole line at once. */}
@@ -167,6 +168,36 @@ export function SpokenLine({ step, onDone }: { step: number; onDone: () => void 
           </span>{" "}
         </Fragment>
       ))}
+    </p>
+  );
+}
+
+/** What shows while the voice for a step is being made, so the wait reads
+ * as Sidekick getting ready, not as an empty card. */
+const THINKING = [
+  "Gathering my thoughts",
+  "Warming up my voice",
+  "Looking around your PC",
+  "Getting this ready for you",
+  "Almost there",
+];
+
+function Thinking() {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setI((n) => (n + 1) % THINKING.length), 1800);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <p className="flex items-center gap-2.5 font-display text-[15px] leading-snug" role="status" aria-live="polite">
+      <span className="inline-flex gap-1">
+        <span className="thinking-dot" />
+        <span className="thinking-dot" />
+        <span className="thinking-dot" />
+      </span>
+      <span key={i} className="thinking-words">
+        {THINKING[i]}
+      </span>
     </p>
   );
 }

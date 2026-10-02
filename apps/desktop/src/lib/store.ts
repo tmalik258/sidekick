@@ -12,6 +12,7 @@ import {
   type Turn,
   type VoiceStatus,
 } from "./types";
+import { welcomeHeard } from "./welcomeVoice";
 
 interface SidekickState {
   mascot: MascotState;
@@ -108,7 +109,11 @@ let resumeSettingsTab: string | null = null;
  * Shrinks to a "Waiting for …" pill while a step is finished elsewhere
  * (browser sign-in, install), then brings Settings or welcome back when done.
  */
-export function startWaiting(id: string, label: string, { shrink = true, resumeTab }: { shrink?: boolean; resumeTab?: string } = {}) {
+export function startWaiting(
+  id: string,
+  label: string,
+  { shrink = true, resumeTab }: { shrink?: boolean; resumeTab?: string } = {},
+) {
   useSidekick.setState({ waiting: { id, label, since: Date.now(), resumeTab } });
   // ask_defer_welcome parks welcome, or closes Settings/Ask when already onboarded.
   if (shrink) void api.askDeferWelcome();
@@ -388,7 +393,9 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           return;
         }
         useSidekick.setState({ hearing: null });
-        const { settings, turns } = useSidekick.getState();
+        const { settings, turns, ask } = useSidekick.getState();
+        // During the welcome, speech moves between steps instead of chatting.
+        if (ask?.view === "welcome" && welcomeHeard(text)) return;
         if (text.trim()) {
           sendChat(text, { speak: settings.voice.speakAnswers });
         } else if (byVoice && turns.length === 0) {
