@@ -81,6 +81,18 @@ export function AskPanel() {
   const [pick, setPick] = useState(0);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new list starts at its top
   useEffect(() => setPick(0), [clips, hits]);
+  // Esc works wherever focus is in Ask (after clicking a button or chip);
+  // the input handles it itself.
+  const escRef = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || e.target === inputRef.current) return;
+      e.preventDefault();
+      escRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [projects, setProjects] = useState<{ name: string; path: string }[]>([]);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -223,14 +235,16 @@ export function AskPanel() {
   const clipFilter = clips !== null ? text.trim().toLowerCase() : "";
   const asking = text.trim().length > 0 && clips === null;
   const shownClips = clips?.filter((c) => !clipFilter || c.text.toLowerCase().includes(clipFilter)) ?? [];
-  // With a conversation going, the body shows it; commands show only while typing.
+  // With a conversation going, the body keeps showing it while you type
+  // the next question; commands show only before the first one.
+  const inChat = turns.length > 0;
   const showClips = clips !== null;
   const showHits = hits !== null && !asking && !showClips;
-  const showChat = turns.length > 0 && !asking && !showHits && !showClips;
+  const showChat = inChat && !showHits && !showClips;
   // While typing, the first rows are "Ask", "Search" and "Teach a skill".
   const lead = asking ? 3 : 0;
   const rows =
-    hearing !== null ? 0 : asking ? commands.length + lead : showChat || showHits || showClips ? 0 : commands.length;
+    hearing !== null || showChat || showHits || showClips ? 0 : asking ? commands.length + lead : commands.length;
   // Models that can answer now; the picked one (if still there) goes first.
   const choices = providers.filter((p) => p.available && (!ask.localOnly || p.local) && p.id !== "semif");
   const pickedModel = choices.find((p) => p.id === askModel) ?? null;
@@ -272,6 +286,13 @@ export function AskPanel() {
     }
   };
 
+  escRef.current = () => {
+    inputRef.current?.focus();
+    if (hearing !== null) stopListening();
+    else if (streaming) cancelChat();
+    else void api.askClose();
+  };
+
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.altKey && e.key.toLowerCase() === "m" && choices.length > 1) {
       // Alt M: next model (Auto, then each one that can answer).
@@ -305,7 +326,9 @@ export function AskPanel() {
       void api.aiHandoff(messages, null).then(() => api.askClose());
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (rows) runRow(selected);
+      // In a conversation Enter sends the follow-up.
+      if (asking && showChat) runRow(0);
+      else if (rows) runRow(selected);
     } else if (e.key === "Escape") {
       e.preventDefault();
       if (hearing !== null) stopListening();
@@ -361,7 +384,16 @@ export function AskPanel() {
             {streaming ? (
               <Pill onClick={cancelChat}>Stop</Pill>
             ) : (
-              turns.length > 0 && <Pill onClick={newChat}>New</Pill>
+              turns.length > 0 && (
+                <Pill
+                  onClick={() => {
+                    newChat();
+                    inputRef.current?.focus();
+                  }}
+                >
+                  New
+                </Pill>
+              )
             )}
           </>
         )}
@@ -369,7 +401,7 @@ export function AskPanel() {
 
       <ContextChips />
 
-      <AnimatePresence initial={false}>
+      <AnimatePresence initial={false} mode="popLayout">
         {showClips && clips ? (
           <motion.div
             key="clips"

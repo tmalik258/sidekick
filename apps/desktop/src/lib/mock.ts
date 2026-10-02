@@ -140,6 +140,7 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
     { kind: "app", key: "slack.exe", label: "Slack", target: "", browser: "", days: 3 },
   ],
   routines_forget: () => 12,
+  ai_open_link: (a) => `Opened ${String(a.target)}`,
   agents_status: () => ({ claudeCode: true, codex: true, handoff: "Claude Code" }),
   codex_add_notify: () => "C:\\Users\\you\\.codex\\config.toml.sidekick-backup-20261002",
   codex_add_mcp: () => null,
@@ -172,7 +173,9 @@ function mockChat(a: Record<string, unknown>) {
   const id = a.id as string;
   const messages = a.messages as { content: string }[];
   const last = messages[messages.length - 1]?.content ?? "";
-  const answer = `Found invoice-sept.pdf in Downloads, from Ali on Tuesday (preview, you asked "${last}").\nOPTION: Open invoice-sept.pdf\nOPTION: Show the folder\nOPTION: Find other invoices`;
+  const answer: string = /sidekick/i.test(last)
+    ? "Found it: [Sidekick's app folder](/C:/Users/you/AppData/Roaming/dev.sidekick.app), changed today. Its settings are in [settings.json](C:\\Users\\you\\AppData\\Roaming\\dev.sidekick.app\\settings.json).\nOPTION: Open the folder\nOPTION: Show settings.json"
+    : `Found invoice-sept.pdf in Downloads, from Ali on Tuesday (preview, you asked "${last}").\nOPTION: Open invoice-sept.pdf\nOPTION: Show the folder\nOPTION: Find other invoices`;
   const words = answer.split(/(?<=\s)/);
   let i = 0;
   const tick = () => {

@@ -1,8 +1,10 @@
 // A deliberately small Markdown renderer for chat answers: fenced code
-// blocks (with a copy button), inline code, bold, and paragraphs. No HTML is
-// ever injected; everything renders as React text.
+// blocks (with a copy button), inline code, bold, links and paragraphs. No
+// HTML is ever injected; everything renders as React text. Links to files,
+// folders and pages open through Sidekick, never in this window.
 
 import { type ReactNode, useState } from "react";
+import { api } from "./bridge";
 
 type Block = { kind: "code"; lang: string; text: string } | { kind: "text"; text: string };
 
@@ -34,16 +36,48 @@ export function splitBlocks(src: string): Block[] {
   return blocks;
 }
 
+/** A file, folder or web address a link may point at. */
+export function linkTarget(raw: string): string | null {
+  const t = raw.trim().replace(/^<|>$/g, "");
+  if (/^https?:\/\//i.test(t)) return t;
+  if (/^file:\/\//i.test(t) || /^\/?[a-z]:[\\/]/i.test(t) || t.startsWith("\\\\") || t.startsWith("~/")) return t;
+  return null;
+}
+
+function Link({ label, target }: { label: string; target: string }) {
+  const [error, setError] = useState<string | null>(null);
+  const web = /^https?:/i.test(target);
+  return (
+    <button
+      type="button"
+      title={error ?? (web ? target : `Open ${target}`)}
+      onClick={() => {
+        setError(null);
+        api.aiOpenLink(target).catch((e: unknown) => setError(String(e)));
+      }}
+      className={`inline rounded-sm text-left underline decoration-white/35 underline-offset-2 hover:decoration-white ${
+        error ? "text-[#ffb4ae]" : "text-[#64d2ff]"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
 function inline(text: string): ReactNode[] {
   const out: ReactNode[] = [];
-  const re = /(`[^`]+`|\*\*[^*]+\*\*)/g;
+  const re = /(\[[^\]\n]+\]\([^)\s]+(?: [^)]*)?\)|`[^`]+`|\*\*[^*]+\*\*)/g;
   let last = 0;
   let k = 0;
   for (const m of text.matchAll(re)) {
     const at = m.index ?? 0;
     if (at > last) out.push(text.slice(last, at));
     const tok = m[0];
-    if (tok.startsWith("`"))
+    const link = tok.startsWith("[") ? tok.match(/^\[([^\]]+)\]\(([^)\s]+)/) : null;
+    const target = link ? linkTarget(link[2]) : null;
+    if (link && target) out.push(<Link key={k++} label={link[1]} target={target} />);
+    else if (link) out.push(link[1]);
+    else if (tok.startsWith("`"))
       out.push(
         <code key={k++} className="rounded-[5px] bg-white/10 px-1 py-px font-mono text-[0.86em]">
           {tok.slice(1, -1)}

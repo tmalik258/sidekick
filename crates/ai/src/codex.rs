@@ -62,6 +62,10 @@ impl Codex {
             args.push(format!(
                 "mcp_servers.sidekick.bearer_token_env_var=\"{TOKEN_VAR}\""
             ));
+            // `codex exec` never asks, so a tool that needs approval is
+            // refused. Sidekick's tools are safe (changes wait for a tap).
+            args.push("-c".into());
+            args.push("mcp_servers.sidekick.default_tools_approval_mode=\"approve\"".into());
         }
         if image {
             args.push("--image".into());
@@ -311,6 +315,7 @@ mod tests {
         assert!(joined.contains("--sandbox read-only"));
         assert!(joined.contains("--model gpt-5-codex"));
         assert!(joined.contains("--image screen.png"));
+        assert!(joined.contains("default_tools_approval_mode=\"approve\""));
         assert!(
             !joined.contains("secret"),
             "the token stays off the command line"
