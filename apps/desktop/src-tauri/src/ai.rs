@@ -22,11 +22,16 @@ pub const DONE_EVENT: &str = "ai://done";
 const MAX_CLIP: usize = 8_000;
 const SEMIF_TIMEOUT: Duration = Duration::from_secs(90);
 
-const SYSTEM: &str = "You are Sidekick, a desktop assistant living on the user's \
-Windows laptop. The user is a full-stack developer (Python, FastAPI, Django, \
-Next.js, React, TypeScript, Tailwind) who uses PowerShell and WSL Ubuntu. Answer \
-briefly and practically. Put commands and code in fenced code blocks so they can \
-be copied. Never use em dashes.";
+const SYSTEM: &str = "You are Sidekick, the assistant on the user's Windows PC. You help \
+with their own files, apps, day and whatever is on screen right now, and you get small \
+things done. Rules:
+- Answer in one or two short sentences. Lists only when they ask for one.
+- Never introduce yourself or say what you are.
+- Look things up with tools instead of guessing. Never invent files, dates or facts.
+- When there is a clear next step, end with up to three lines, each \"OPTION: \" and a short \
+action in the user's words, like \"OPTION: Open invoice.pdf\".
+- Code or commands only when asked, in fenced code blocks.
+- Never use em dashes.";
 
 /// Chat providers in the user's order. `all` includes switched-off ones
 /// (for the status list in settings).
@@ -60,8 +65,9 @@ fn local_model(ai: &AiSettings) -> OpenAiCompat {
     )
 }
 
-/// The router for one Ask-mode chat: the local model gets Composio's tools
-/// when they are set up and the chat may leave the PC.
+/// The router for one Ask-mode chat: the local model always gets Sidekick's
+/// own tools, and Composio's when they are set up and the chat may leave
+/// the PC.
 async fn chat_router(
     app: &AppHandle,
     chat_id: &str,
@@ -76,8 +82,8 @@ async fn chat_router(
     };
     let list = providers(app, &settings.ai, false)
         .into_iter()
-        .map(|p| match (&server, p.id()) {
-            (Some(server), "local") => Arc::new(crate::composio::LocalWithTools {
+        .map(|p| match p.id() {
+            "local" => Arc::new(crate::composio::LocalWithTools {
                 inner: local_model(&settings.ai),
                 app: app.clone(),
                 chat_id: chat_id.to_owned(),
@@ -249,10 +255,13 @@ fn system_prompt(app: &AppHandle, attach: &Attach) -> String {
             sidekick_skills::FORMAT_GUIDE
         );
     }
-    let mut system = SYSTEM.to_owned();
+    let mut system = format!(
+        "{SYSTEM}\n\nNow: {}",
+        chrono::Local::now().format("%A %-d %B %Y, %H:%M")
+    );
     if attach.speak {
         system.push_str(
-            "\n\nThe user asked by voice and your answer is read aloud. Answer in one to three short spoken sentences. No markdown, lists, tables or links unless they ask for them; if code is needed, keep it to one short block.",
+            "\n\nThe user asked by voice and your answer is read aloud. Answer in one to three short spoken sentences. No markdown, lists, tables, links or OPTION lines unless they ask for them; if code is needed, keep it to one short block.",
         );
     }
     if let Some(page) = attach.page.as_deref().filter(|p| !p.trim().is_empty()) {
@@ -398,7 +407,7 @@ async fn screenshot(app: &AppHandle) -> Result<Vec<u8>, String> {
 
 fn no_provider_hint(local_only: bool) -> String {
     if local_only {
-        "No local model is running. Start Ollama (ollama serve) and pull a model, e.g. ollama pull qwen3:4b.".into()
+        "No local model is running. Start Ollama (ollama serve) and pull a model, e.g. ollama pull qwen3:1.7b.".into()
     } else {
         "No AI is set up yet. Install Claude Code and sign in, start Ollama, or set ANTHROPIC_API_KEY. See Settings > AI.".into()
     }
