@@ -5136,6 +5136,7 @@ dependencies = [
  "tokio",
  "trash",
  "ulid",
+ "which 8.0.6",
  "xcap",
 ]
 

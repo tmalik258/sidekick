@@ -661,6 +661,15 @@ impl Storage {
         Ok(self.conn.execute("DELETE FROM choices", [])?)
     }
 
+    /// When a sensor last reported anything, as stored (RFC 3339).
+    pub fn last_event_from(&self, source: &str) -> Result<Option<String>, StorageError> {
+        Ok(self.conn.query_row(
+            "SELECT MAX(ts) FROM events WHERE source = ?1",
+            [source],
+            |r| r.get(0),
+        )?)
+    }
+
     pub fn count_events(&self) -> Result<u64, StorageError> {
         let count: i64 = self
             .conn

@@ -333,3 +333,23 @@ export function isPaused(pause: Pause, now = Date.now()): boolean {
   if (pause.kind === "until") return Date.parse(pause.until) > now;
   return false;
 }
+
+export type SetupGroup = "ai" | "connect" | "tools";
+
+export interface SetupItem {
+  id: string;
+  group: SetupGroup;
+  title: string;
+  why: string;
+  done: boolean;
+  status: string;
+  command: string | null;
+  runnable: boolean;
+  tab: string | null;
+  recommended: boolean;
+}
+
+export interface SetupStatus {
+  items: SetupItem[];
+  installAll: string | null;
+}

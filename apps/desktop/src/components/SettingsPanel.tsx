@@ -33,9 +33,11 @@ import {
   type VoiceSettings,
 } from "@/lib/types";
 import { Orb, THEME_STYLES } from "./Orb";
+import { SetupChecklist } from "./SetupChecklist";
 
 export const SETTINGS_TABS = [
   { id: "general", label: "General" },
+  { id: "setup", label: "Setup" },
   { id: "ai", label: "AI" },
   { id: "voice", label: "Voice" },
   { id: "browser", label: "Browser" },
@@ -52,6 +54,10 @@ export type SettingsTab = (typeof SETTINGS_TABS)[number]["id"];
 export function SettingsPanel() {
   const { settings, mascot, ready } = useSidekick();
   const [tab, setTab] = useState<SettingsTab>("general");
+  const wantedTab = useSidekick((s) => s.ask?.settingsTab);
+  useEffect(() => {
+    if (wantedTab && SETTINGS_TABS.some((t) => t.id === wantedTab)) setTab(wantedTab as SettingsTab);
+  }, [wantedTab]);
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -219,6 +225,15 @@ export function SettingsPanel() {
             </Section>
           </>
         )}
+        {tab === "setup" && (
+          <SetupChecklist
+            groups={["ai", "connect", "tools"]}
+            onOpenTab={(t) => {
+              if (SETTINGS_TABS.some((x) => x.id === t)) setTab(t as SettingsTab);
+            }}
+          />
+        )}
+
         {tab === "ai" && (
           <>
             <Section

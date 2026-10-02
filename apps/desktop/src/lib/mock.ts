@@ -190,6 +190,84 @@ commands.clipboard_history = () => [
 ];
 commands.clipboard_copy = () => undefined;
 commands.search_clear = () => 0;
+commands.setup_status = () => {
+  const w = (id: string) => `winget install -e --id ${id} --accept-source-agreements`;
+  const item = (
+    id: string,
+    group: "ai" | "connect" | "tools",
+    title: string,
+    why: string,
+    done: boolean,
+    status: string,
+    extra: { command?: string; runnable?: boolean; tab?: string; recommended?: boolean } = {},
+  ) => ({
+    id,
+    group,
+    title,
+    why,
+    done,
+    status,
+    command: extra.command ?? null,
+    runnable: extra.runnable ?? false,
+    tab: extra.tab ?? null,
+    recommended: extra.recommended ?? false,
+  });
+  return {
+    items: [
+      item("claude_code", "ai", "Claude Code", "Chat, drafts and skills with your Claude plan.", true, "Installed", {
+        recommended: true,
+      }),
+      item("ollama", "ai", "Ollama", "Free local AI on this PC, and search by meaning.", true, "Running", {
+        recommended: true,
+      }),
+      item("ollama_embed", "ai", "Search model", "Finds things by meaning. About 270 MB.", false, "Not downloaded", {
+        command: "ollama pull nomic-embed-text",
+        runnable: true,
+        recommended: true,
+      }),
+      item("anthropic", "ai", "Anthropic API key", "Pay as you go instead of a Claude plan.", false, "Not set", {
+        command: 'setx ANTHROPIC_API_KEY "your-key"',
+      }),
+      item(
+        "claude_hooks",
+        "connect",
+        "Claude Code hooks",
+        "Allow or deny requests from the island.",
+        false,
+        "Not added",
+        {
+          command: '{\n  "hooks": {}\n}',
+          tab: "ai",
+          recommended: true,
+        },
+      ),
+      item("browser", "connect", "Browser extension", "Page summaries, form help and tabs.", false, "Not paired", {
+        tab: "browser",
+        recommended: true,
+      }),
+      item("calendar", "connect", "Calendar", "Meeting reminders with Join and Prep.", false, "Not connected", {
+        tab: "today",
+      }),
+      item("gh", "tools", "GitHub CLI", "Open PRs in the morning brief.", false, "Not installed", {
+        command: w("GitHub.cli"),
+        runnable: true,
+        recommended: true,
+      }),
+      item("git", "tools", "Git", "Repo status and unsaved work.", true, "Installed", { recommended: true }),
+      item("tesseract", "tools", "Tesseract", "Copy text out of screenshots.", false, "Not installed", {
+        command: w("UB-Mannheim.TesseractOCR"),
+        runnable: true,
+        recommended: true,
+      }),
+      item("ffmpeg", "tools", "FFmpeg", "Convert videos and audio.", false, "Not installed", {
+        command: w("Gyan.FFmpeg"),
+        runnable: true,
+      }),
+    ],
+    installAll: `${w("GitHub.cli")}; ${w("UB-Mannheim.TesseractOCR")}`,
+  };
+};
+commands.setup_run = () => undefined;
 commands.backup_export = () => "C:/Users/you/Documents/Sidekick backup.json";
 commands.backup_import = () => "Restored settings and 2 skills";
 commands.projects_list = () => [

@@ -1,35 +1,30 @@
 "use client";
 
-// First run (P5 onboarding): three short steps inside the island. What
-// Sidekick does and what stays private, which AI to use, and a few extras.
-// Finishing (or skipping) marks onboarding done; it never shows again.
+// First run (P5 onboarding): short steps inside the island. What Sidekick
+// does and what stays private, then a live checklist of the AI, connections
+// and tools to set up, each with the exact command to run, and a few extras.
+// Finishing (or skipping) marks onboarding done; the same checklist stays in
+// Settings > Setup.
 
 import { AnimatePresence, motion } from "motion/react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { api } from "@/lib/bridge";
-import { updateSettings, useSidekick } from "@/lib/store";
-import { PROVIDER_LABELS, type ProviderStatus } from "@/lib/types";
+import { setAsk, updateSettings, useSidekick } from "@/lib/store";
 import { ASK_ORB } from "./AskPanel";
+import { SetupChecklist } from "./SetupChecklist";
 
-const STEPS = ["Welcome", "Your AI", "Extras"] as const;
-
-const HOW_TO: Record<string, string> = {
-  claude_code: "npm install -g @anthropic-ai/claude-code, then run claude once to sign in",
-  anthropic: "Set ANTHROPIC_API_KEY in your environment, then restart Sidekick",
-  local: "winget install Ollama.Ollama, then ollama pull qwen3:4b",
-};
-
-const PROVIDER_HINT: Record<string, string> = {
-  claude_code: "Your Claude subscription",
-  anthropic: "Pay as you go API key",
-  local: "Free, runs on this PC",
-};
+const STEPS = ["Welcome", "Your AI", "Connect", "Tools", "Extras"] as const;
 
 export function IslandWelcome() {
   const [step, setStep] = useState(0);
   const finish = () => {
     void updateSettings({ onboarded: true });
     void api.askClose();
+  };
+  // Settings > that tab; the checklist is there too, so this counts as done.
+  const openTab = (tab: string) => {
+    void updateSettings({ onboarded: true });
+    setAsk({ view: "settings", settingsTab: tab });
   };
   return (
     <div className="flex flex-col">
@@ -52,11 +47,25 @@ export function IslandWelcome() {
           animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
           exit={{ opacity: 0, x: -12, filter: "blur(4px)", transition: { duration: 0.12 } }}
           transition={{ duration: 0.26, ease: [0.23, 1, 0.32, 1] }}
-          className="min-h-[220px]"
+          className="settings-scroll -mr-3 max-h-[380px] min-h-[220px] overflow-y-auto pr-3"
         >
           {step === 0 && <Intro />}
-          {step === 1 && <Providers />}
-          {step === 2 && <Extras />}
+          {step === 1 && (
+            <Step text="Chat, summaries and drafts use one of these. I try them in order, and still work without any.">
+              <SetupChecklist groups={["ai"]} onOpenTab={openTab} compact />
+            </Step>
+          )}
+          {step === 2 && (
+            <Step text="Connect the things you use. Each one turns on more suggestions.">
+              <SetupChecklist groups={["connect"]} onOpenTab={openTab} compact />
+            </Step>
+          )}
+          {step === 3 && (
+            <Step text="Small free programs I use for conversions, screenshots and your repos. Run opens PowerShell so you can watch it install.">
+              <SetupChecklist groups={["tools"]} onOpenTab={openTab} compact />
+            </Step>
+          )}
+          {step === 4 && <Extras />}
         </motion.div>
       </AnimatePresence>
 
@@ -112,56 +121,11 @@ function Intro() {
   );
 }
 
-function Providers() {
-  const ai = useSidekick((s) => s.settings.ai);
-  const [status, setStatus] = useState<ProviderStatus[] | null>(null);
-  useEffect(() => {
-    void api.aiStatus().then(setStatus);
-  }, []);
-  const toggle = (id: string, enabled: boolean) => {
-    const key = id === "claude_code" ? "claudeCode" : (id as "anthropic" | "local");
-    void updateSettings({ ai: { ...ai, [key]: { ...ai[key], enabled } } });
-  };
-  const enabled = (id: string) =>
-    id === "claude_code" ? ai.claudeCode.enabled : id === "anthropic" ? ai.anthropic.enabled : ai.local.enabled;
+function Step({ text, children }: { text: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-2.5 text-[13px]">
-      <p className="text-[rgb(235_235_245/0.7)]">
-        Chat, summaries and drafts use one of these. I try them in this order and work without any of them.
-      </p>
-      {(status ?? [])
-        .filter((p) => p.id !== "semif")
-        .map((p) => (
-          <div key={p.id} className="flex items-center gap-3 rounded-2xl bg-white/[0.06] px-3.5 py-2.5">
-            <span
-              className={`size-2 shrink-0 rounded-full ${p.available ? "bg-[#30d158]" : "bg-white/25"}`}
-              style={p.available ? { boxShadow: "0 0 8px #30d158" } : undefined}
-            />
-            <div className="min-w-0 flex-1">
-              <p className="font-medium text-white">
-                {PROVIDER_LABELS[p.id] ?? p.id}{" "}
-                <span className="font-normal text-[rgb(235_235_245/0.5)]">{PROVIDER_HINT[p.id]}</span>
-              </p>
-              <p className="truncate text-[11.5px] text-[rgb(235_235_245/0.55)]" title={HOW_TO[p.id]}>
-                {p.available ? "Ready" : HOW_TO[p.id]}
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={enabled(p.id)}
-              aria-label={PROVIDER_LABELS[p.id] ?? p.id}
-              onClick={() => toggle(p.id, !enabled(p.id))}
-              className={`relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors ${enabled(p.id) ? "bg-[#30d158]" : "bg-white/20"}`}
-            >
-              <span
-                className="absolute top-[2px] left-[2px] size-[18px] rounded-full bg-white transition-transform duration-200"
-                style={{ transform: enabled(p.id) ? "translateX(16px)" : "none" }}
-              />
-            </button>
-          </div>
-        ))}
-      {status === null && <p className="text-[rgb(235_235_245/0.5)]">Checking what is installed...</p>}
+      <p className="text-[rgb(235_235_245/0.7)]">{text}</p>
+      {children}
     </div>
   );
 }
@@ -186,8 +150,7 @@ function Extras() {
         onChange={(launchAtLogin) => void updateSettings({ launchAtLogin })}
       />
       <p className="px-1 pt-1 text-[12px] leading-relaxed text-[rgb(235_235_245/0.55)]">
-        Later, in Settings: pair the browser extension (Browser), add your calendar link for meeting reminders (Today),
-        and choose folders to search (Search).
+        Everything here, and the setup checklist, stays in Settings. Come back to Setup anytime to see what is left.
       </p>
     </div>
   );

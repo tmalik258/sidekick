@@ -16,6 +16,7 @@ mod privacy;
 mod projects;
 mod screen;
 mod search;
+mod setup;
 mod state;
 mod suggestions;
 mod timetrack;
@@ -81,6 +82,8 @@ pub fn run() {
             commands::open_settings,
             commands::calendar_today,
             commands::search_clear,
+            commands::setup_status,
+            commands::setup_run,
             commands::backup_export,
             commands::backup_import,
             commands::projects_list,
