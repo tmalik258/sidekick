@@ -239,6 +239,12 @@ impl Executor {
             "clean_downloads" => tokio::task::spawn_blocking(cleanup::clean_downloads)
                 .await
                 .map_err(fail)?,
+            "sort_downloads" => tokio::task::spawn_blocking(cleanup::sort_downloads)
+                .await
+                .map_err(fail)?,
+            "clean_installers" => tokio::task::spawn_blocking(cleanup::clean_installers)
+                .await
+                .map_err(fail)?,
             "launch_project" => dev::launch(
                 &existing_path(args)?,
                 self.caps

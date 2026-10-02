@@ -553,6 +553,13 @@ async fn execute(
                 path: None,
             });
         }
+        "save_log" => {
+            let (message, path) = crate::moments::save_log(arg("text").unwrap_or_default())?;
+            return Ok(sidekick_actions::Outcome {
+                message,
+                path: Some(path),
+            });
+        }
         "routine_open_all" | "routine_open" | "routine_skip" | "routine_auto" => {
             let message = match option.action.as_str() {
                 "routine_open_all" => crate::routines::open_all(app, true).await?,
