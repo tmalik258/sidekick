@@ -23,6 +23,15 @@ pub fn tracked(skill_id: &str) -> bool {
         && !skill_id.starts_with("debug.")
 }
 
+/// Skills never offered as automatic: each time needs its own choice.
+/// A screenshot is already on the clipboard, so "always copy" adds nothing.
+const NEVER_AUTO: &[&str] = &["files.screenshot"];
+
+/// Whether a skill may become automatic ("Always do this").
+pub fn can_automate(skill_id: &str) -> bool {
+    tracked(skill_id) && !NEVER_AUTO.contains(&skill_id)
+}
+
 fn load(app: &AppHandle, skill_id: &str) -> Option<Habit> {
     lock(&app.state::<AppState>().storage).habit(skill_id).ok()
 }
@@ -88,6 +97,7 @@ pub fn on_accept(
         && !h.offered
         && !already_auto
         && index == 0
+        && can_automate(&proposal.skill_id)
         && proposal.trust == Trust::Suggest
         && sidekick_actions::is_safe(&option.action);
     if offer {
@@ -143,6 +153,8 @@ mod tests {
     fn sidekick_itself_is_not_learned() {
         assert!(tracked("files.download"));
         assert!(!tracked(OFFER_SKILL));
+        assert!(!can_automate("files.screenshot"));
+        assert!(can_automate("files.download"));
         assert!(!tracked("mcp.notify"));
     }
 
