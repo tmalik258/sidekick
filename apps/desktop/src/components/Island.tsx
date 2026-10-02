@@ -406,17 +406,11 @@ function UndoButton({ id }: { id: number }) {
   );
 }
 
-/** Options shown before "More"; the rest stay one tap (or Alt key) away. */
-const VISIBLE_OPTIONS = 3;
-
 function Options({ suggestion }: { suggestion: Suggestion }) {
   const alwaysAt = suggestion.always?.findIndex(Boolean) ?? -1;
-  const [more, setMore] = useState(false);
-  const hidden = suggestion.options.length - VISIBLE_OPTIONS;
-  const shown = more || hidden <= 0 ? suggestion.options : suggestion.options.slice(0, VISIBLE_OPTIONS);
   return (
     <div className="mt-3 flex flex-wrap items-center gap-1.5">
-      {shown.map((option, i) => (
+      {suggestion.options.map((option, i) => (
         <motion.button
           key={option}
           type="button"
@@ -438,15 +432,6 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
           </kbd>
         </motion.button>
       ))}
-      {!more && hidden > 0 && (
-        <button
-          type="button"
-          onClick={() => setMore(true)}
-          className="chip rounded-full px-2.5 py-1.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
-        >
-          More
-        </button>
-      )}
       {alwaysAt >= 0 && (
         <motion.button
           type="button"

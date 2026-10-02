@@ -25,6 +25,8 @@ pub trait Env {
     fn trust_override(&self, skill_id: &str) -> Option<Trust>;
     /// How often each option label was chosen under a preference key.
     fn choice_counts(&self, key: &str) -> HashMap<String, u32>;
+    /// OS default browser id when that browser is installed (e.g. `"zen"`).
+    fn default_browser_id(&self) -> Option<String>;
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -171,9 +173,75 @@ impl Engine {
             p.options
                 .sort_by_key(|o| std::cmp::Reverse(counts.get(&o.label).copied().unwrap_or(0)));
         }
+        if let Some(id) = env.default_browser_id() {
+            pin_named_default(&mut p.options, &id);
+        }
         p.options.truncate(MAX_OPTIONS);
         Some(p)
     }
+}
+
+/// Display name for a browser id; mirrors `Browser::label` in actions.
+fn browser_label(id: &str) -> &str {
+    match id {
+        "chrome" => "Chrome",
+        "edge" => "Edge",
+        "firefox" => "Firefox",
+        "zen" => "Zen",
+        "brave" => "Brave",
+        other => other,
+    }
+}
+
+fn browser_arg(option: &ProposedOption) -> Option<&str> {
+    option.args.get("browser").and_then(|v| v.as_str())
+}
+
+fn is_private(option: &ProposedOption) -> bool {
+    option.args.get("private").and_then(|v| v.as_str()) == Some("true")
+}
+
+/// Rewrite the "Default browser" marker to the real OS default name, drop the
+/// duplicate named chip, and pin that option first.
+fn pin_named_default(options: &mut Vec<ProposedOption>, id: &str) {
+    let label = browser_label(id).to_string();
+    let marker = options
+        .iter()
+        .position(|o| o.action == "open_url" && browser_arg(o).is_none());
+
+    let Some(mut marker) = marker else {
+        if let Some(i) = options.iter().position(|o| {
+            o.action == "open_url" && browser_arg(o) == Some(id) && !is_private(o)
+        }) {
+            let opt = options.remove(i);
+            options.insert(0, opt);
+        }
+        return;
+    };
+
+    options[marker].label = label;
+    if let Value::Object(map) = &mut options[marker].args {
+        map.insert("browser".into(), Value::String(id.to_string()));
+    }
+
+    let mut i = 0;
+    while i < options.len() {
+        if i != marker
+            && options[i].action == "open_url"
+            && browser_arg(&options[i]) == Some(id)
+            && !is_private(&options[i])
+        {
+            options.remove(i);
+            if i < marker {
+                marker -= 1;
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    let opt = options.remove(marker);
+    options.insert(0, opt);
 }
 
 fn field<'a>(payload: &'a Value, path: &str) -> Option<&'a Value> {
@@ -257,6 +325,7 @@ mod tests {
     struct TestEnv {
         caps: Vec<&'static str>,
         counts: HashMap<String, u32>,
+        default_browser: Option<&'static str>,
     }
 
     impl Env for TestEnv {
@@ -272,12 +341,16 @@ mod tests {
         fn choice_counts(&self, _: &str) -> HashMap<String, u32> {
             self.counts.clone()
         }
+        fn default_browser_id(&self) -> Option<String> {
+            self.default_browser.map(|id| id.to_string())
+        }
     }
 
     fn env() -> TestEnv {
         TestEnv {
             caps: vec!["browser:chrome", "tool:magick"],
             counts: HashMap::new(),
+            default_browser: None,
         }
     }
 
@@ -354,6 +427,66 @@ suggestion:
             .evaluate(&port_event("node", 3000), &env, Instant::now())
             .unwrap();
         assert_eq!(p.options[0].label, "Default browser");
+    }
+
+    #[test]
+    fn names_and_pins_default_browser() {
+        let mut e = Engine::new(vec![skill(DEV)]);
+        let mut env = env();
+        env.caps = vec!["browser:chrome", "browser:zen"];
+        env.default_browser = Some("zen");
+        let p = e
+            .evaluate(&port_event("node", 3000), &env, Instant::now())
+            .unwrap();
+        let labels: Vec<_> = p.options.iter().map(|o| o.label.as_str()).collect();
+        assert_eq!(labels, ["Zen", "Chrome"]);
+        assert_eq!(p.options[0].args["browser"], "zen");
+        assert!(!labels.contains(&"Default browser"));
+    }
+
+    #[test]
+    fn default_chrome_keeps_incognito() {
+        let yaml = r#"
+id: clip.open
+name: Open
+remember: "url"
+trigger: { event: clipboard.changed, where: { kind: { equals: url } } }
+suggestion:
+  title: Link copied
+  options:
+    - { label: Chrome, action: open_url, args: { url: "{{text}}", browser: chrome }, requires: ["browser:chrome"] }
+    - { label: Incognito, action: open_url, args: { url: "{{text}}", browser: chrome, private: "true" }, requires: ["browser:chrome"] }
+    - { label: Zen, action: open_url, args: { url: "{{text}}", browser: zen }, requires: ["browser:zen"] }
+    - { label: Default browser, action: open_url, args: { url: "{{text}}" } }
+"#;
+        let mut e = Engine::new(vec![skill(yaml)]);
+        let mut env = env();
+        env.caps = vec!["browser:chrome", "browser:zen"];
+        env.default_browser = Some("chrome");
+        let ev = Event::new(
+            "clipboard.changed",
+            "clipboard",
+            serde_json::json!({"kind": "url", "text": "https://example.com"}),
+        );
+        let p = e.evaluate(&ev, &env, Instant::now()).unwrap();
+        let labels: Vec<_> = p.options.iter().map(|o| o.label.as_str()).collect();
+        assert_eq!(labels, ["Chrome", "Incognito", "Zen"]);
+        assert_eq!(p.options[0].args["browser"], "chrome");
+        assert!(!p.options[0].args.get("private").is_some_and(|v| v == "true"));
+    }
+
+    #[test]
+    fn default_stays_first_despite_ranking() {
+        let mut e = Engine::new(vec![skill(DEV)]);
+        let mut env = env();
+        env.caps = vec!["browser:chrome", "browser:zen"];
+        env.default_browser = Some("zen");
+        env.counts.insert("Chrome".into(), 9);
+        let p = e
+            .evaluate(&port_event("node", 3000), &env, Instant::now())
+            .unwrap();
+        assert_eq!(p.options[0].label, "Zen");
+        assert_eq!(p.options[1].label, "Chrome");
     }
 
     #[test]
