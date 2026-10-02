@@ -209,7 +209,8 @@ export async function installExtension(id: string, name: string, { shrink = true
 /** Shrinks the guide to the pill, or brings it back. */
 export function minimizeWaiting(minimized: boolean) {
   const waiting = useSidekick.getState().waiting;
-  if (waiting) useSidekick.setState({ waiting: { ...waiting, minimized, background: minimized ? waiting.background : false } });
+  if (waiting)
+    useSidekick.setState({ waiting: { ...waiting, minimized, background: minimized ? waiting.background : false } });
 }
 
 /** Wait as a pill only: hover no longer opens the guide; success still finishes normally. */

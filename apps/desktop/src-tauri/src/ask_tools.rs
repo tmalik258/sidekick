@@ -16,6 +16,22 @@ const RECENT: &str = "recent";
 const OPEN: &str = "open";
 const SCREEN: &str = "screen_text";
 const PROPOSE: &str = "propose";
+const FIND: &str = "find_files";
+const REVEAL: &str = "show_in_folder";
+
+/// The Ask chat answering right now, so tools called through Sidekick's
+/// MCP server (by Claude Code or Codex) put their buttons in it.
+static CURRENT_CHAT: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+pub fn set_current_chat(id: &str) {
+    if let Ok(mut c) = CURRENT_CHAT.lock() {
+        *c = id.to_owned();
+    }
+}
+
+pub fn current_chat() -> String {
+    CURRENT_CHAT.lock().map(|c| c.clone()).unwrap_or_default()
+}
 
 pub const PROPOSAL_EVENT: &str = "ai://proposal";
 const SKILL_ID: &str = "ask";
@@ -87,6 +103,31 @@ pub fn defs() -> Vec<ToolDef> {
             }),
         },
         ToolDef {
+            name: FIND.into(),
+            description: "Find files or folders on this PC by name (Desktop, Documents, \
+                Downloads, code folders, app data). Use for \"find\", \"where is\" or \"open my ...\" \
+                when you need a path. Returns full paths, newest info included."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Words in the name, e.g. sidekick or invoice sept" },
+                    "kind": { "type": "string", "enum": ["any", "file", "folder"] }
+                },
+                "required": ["name"],
+            }),
+        },
+        ToolDef {
+            name: REVEAL.into(),
+            description: "Show a file or folder in File Explorer, selected. Pass a full path."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": { "path": { "type": "string" } },
+                "required": ["path"],
+            }),
+        },
+        ToolDef {
             name: TODAY.into(),
             description: "Today's meetings and how the user's time went, by app and project."
                 .into(),
@@ -142,6 +183,8 @@ pub fn defs() -> Vec<ToolDef> {
 pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Option<String> {
     Some(match name {
         PROPOSE => propose(app, chat_id, args),
+        FIND => find(app, args).await,
+        REVEAL => reveal(app, args["path"].as_str().unwrap_or_default()).await,
         SEARCH => search(app, args["query"].as_str().unwrap_or_default()).await,
         TODAY => today(app).await,
         RECENT => recent(app),
@@ -359,8 +402,85 @@ fn clip(s: &str, n: usize) -> String {
     out
 }
 
+async fn find(app: &AppHandle, args: &Value) -> String {
+    let name = args["name"]
+        .as_str()
+        .or(args["query"].as_str())
+        .unwrap_or_default()
+        .to_owned();
+    let folders = match args["kind"].as_str() {
+        Some("file") => Some(false),
+        Some("folder") => Some(true),
+        _ => None,
+    };
+    let configured: Vec<std::path::PathBuf> = lock(&app.state::<AppState>().settings)
+        .code_folders
+        .iter()
+        .map(std::path::PathBuf::from)
+        .collect();
+    let code = if configured.is_empty() {
+        sidekick_sensors::repos::ReposSensor::default_roots()
+    } else {
+        configured
+    };
+    let Some(home) = dirs::home_dir() else {
+        return "Error: no home folder.".into();
+    };
+    let roots = crate::find::roots(&home, &code);
+    let query = name.clone();
+    let found = tokio::task::spawn_blocking(move || {
+        crate::find::find(&roots, &query, folders, crate::find::BUDGET)
+    })
+    .await
+    .unwrap_or_default();
+    crate::find::describe(&found, &name)
+}
+
+async fn reveal(app: &AppHandle, path: &str) -> String {
+    let path = path.trim();
+    if path.is_empty() {
+        return "Error: no path.".into();
+    }
+    let exec = executor(&app.state::<AppState>());
+    match exec.run("reveal_path", &json!({ "path": path })).await {
+        Ok(o) => o.message,
+        Err(e) => format!("Error: {e}"),
+    }
+}
+
+/// Opens a file, folder or link the user clicked in an answer.
+pub async fn open_target(app: &AppHandle, target: &str) -> Result<String, String> {
+    let out = open(app, target).await;
+    if out.starts_with("Error") || out.starts_with("Refused") {
+        Err(out)
+    } else {
+        Ok(out)
+    }
+}
+
+/// A path as models write it: "file:///C:/x", "/C:/x" or "C:\\x" all mean
+/// C:\x.
+pub fn normalize_target(target: &str) -> String {
+    let t = target.trim().trim_matches(['<', '>', '"', '\'']);
+    if t.starts_with("http://") || t.starts_with("https://") {
+        return t.to_owned();
+    }
+    let t = t
+        .strip_prefix("file:///")
+        .or_else(|| t.strip_prefix("file://"))
+        .unwrap_or(t);
+    let b = t.as_bytes();
+    let t = if b.len() > 2 && b[0] == b'/' && b[1].is_ascii_alphabetic() && b[2] == b':' {
+        &t[1..]
+    } else {
+        t
+    };
+    t.replace("%20", " ")
+}
+
 async fn open(app: &AppHandle, target: &str) -> String {
-    let target = target.trim();
+    let target = normalize_target(target);
+    let target = target.as_str();
     if target.is_empty() {
         return "Error: nothing to open.".into();
     }
@@ -411,6 +531,17 @@ mod tests {
     }
 
     #[test]
+    fn reads_paths_the_way_models_write_them() {
+        assert_eq!(
+            normalize_target("/C:/Users/talha/AppData"),
+            "C:/Users/talha/AppData"
+        );
+        assert_eq!(normalize_target("file:///C:/a%20b/x.pdf"), "C:/a b/x.pdf");
+        assert_eq!(normalize_target("<https://x.dev>"), "https://x.dev");
+        assert_eq!(normalize_target("C:\\x"), "C:\\x");
+    }
+
+    #[test]
     fn never_opens_programs() {
         assert!(runs_code("C:/Users/me/Downloads/setup.EXE"));
         assert!(runs_code("C:/x/run.ps1"));
@@ -422,6 +553,9 @@ mod tests {
     #[test]
     fn tools_have_short_names() {
         let names: Vec<_> = defs().into_iter().map(|d| d.name).collect();
-        assert_eq!(names, [SEARCH, TODAY, RECENT, SCREEN, PROPOSE, OPEN]);
+        assert_eq!(
+            names,
+            [SEARCH, FIND, REVEAL, TODAY, RECENT, SCREEN, PROPOSE, OPEN]
+        );
     }
 }

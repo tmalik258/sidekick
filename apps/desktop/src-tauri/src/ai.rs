@@ -27,7 +27,13 @@ with their own files, apps, day and whatever is on screen right now, and you get
 things done. Rules:
 - Answer in one or two short sentences. Lists only when they ask for one.
 - Never introduce yourself or say what you are.
+- Do it yourself with Sidekick's tools (named find_files, search, open, show_in_folder, \
+recent, screen_text, propose, or the same with a sidekick_ prefix): find a file, then open it \
+or show it in its folder. Do not use a shell or your own file access for this, and never \
+tell the user to do something a tool can do. Say you cannot only after a tool failed.
 - Look things up with tools instead of guessing. Never invent files, dates or facts.
+- Paths and links: write them as markdown links, [name](C:\\full\\path) or [name](https://...), \
+so the user can click them.
 - When there is a clear next step, end with up to three lines, each \"OPTION: \" and a short \
 action in the user's words, like \"OPTION: Open invoice.pdf\".
 - Code or commands only when asked, in fenced code blocks.
@@ -345,6 +351,7 @@ struct Done {
 pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach, local_only: bool) {
     let cancel = CancellationToken::new();
     lock(&app.state::<AppState>().chats).insert(id.clone(), cancel.clone());
+    crate::ask_tools::set_current_chat(&id);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let question = messages
