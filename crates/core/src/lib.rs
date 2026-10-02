@@ -15,5 +15,7 @@ pub mod storage;
 pub use bus::EventBus;
 pub use event::{Context, Event, Sensitivity};
 pub use mascot::{Cue, MascotEvent, MascotMachine, MascotState, Transition};
-pub use settings::{AI_PROVIDERS, AiSettings, ComposioSettings, Pause, Settings, SkillPref};
+pub use settings::{
+    AI_PROVIDERS, AiSettings, ComposioSettings, Pause, SHORTCUTS, Settings, SkillPref,
+};
 pub use storage::{ActionRecord, AppTime, Habit, SearchHit, Storage, StoredEvent};
