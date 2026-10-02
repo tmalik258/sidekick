@@ -87,6 +87,9 @@ export interface VoiceStatus {
 
 /** The first-run welcome line and when each part of it is heard. */
 export interface WelcomeSpeech {
+  /** The welcome step being spoken, and every step's line. */
+  step: number;
+  lines: string[];
   script: string;
   /** Sentences as queued: start (Unix ms) and length (ms). */
   pieces: { text: string; startsAt: number; ms: number }[];
