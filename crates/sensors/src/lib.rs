@@ -11,6 +11,7 @@ mod claude_code;
 mod clipboard;
 pub mod color;
 mod downloads;
+pub mod entity;
 pub mod file_info;
 mod gate;
 pub mod http;

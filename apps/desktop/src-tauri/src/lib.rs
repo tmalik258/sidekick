@@ -19,6 +19,7 @@ mod learn;
 mod mascot;
 mod mcp;
 mod meetings;
+mod moments;
 mod pipeline;
 mod privacy;
 mod projects;
@@ -243,6 +244,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
 
     pipeline::start(app);
     timetrack::start(app);
+    moments::start(app);
     // Prefer bundled models; only then network. Welcome opens from the island
     // once it listens (ask_ensure_welcome), or after models become ready.
     voice::seed_from_bundle(app);

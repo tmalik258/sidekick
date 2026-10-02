@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime};
 
-use chrono::{Datelike, Local, Timelike, Weekday};
+use chrono::{Local, Timelike};
 use sidekick_core::Event;
 use tauri::{AppHandle, Manager};
 
@@ -97,7 +97,9 @@ pub async fn summarize(app: &AppHandle, path: &str) -> Result<String, String> {
     Ok(format!("Reading {name}"))
 }
 
-/// Once a week (Monday from 10:00), when Downloads has piled up.
+/// Once a day from 10:00, when Downloads has piled up: old files, loose
+/// files to sort, or installers that were most likely run already. The
+/// skill's cooldown keeps it to about once a week.
 pub fn start_weekly_check(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -105,8 +107,7 @@ pub fn start_weekly_check(app: &AppHandle) {
         loop {
             tokio::time::sleep(Duration::from_secs(30 * 60)).await;
             let now = Local::now();
-            if now.weekday() != Weekday::Mon || now.hour() < 10 || done_on == Some(now.date_naive())
-            {
+            if now.hour() < 10 || done_on == Some(now.date_naive()) {
                 continue;
             }
             let allowed = {
@@ -124,13 +125,54 @@ pub fn start_weekly_check(app: &AppHandle) {
             let cutoff = SystemTime::now() - sidekick_actions::cleanup::OLD_AFTER;
             let files = sidekick_actions::cleanup::old_files(&dir, cutoff);
             let mb = files.iter().map(|(_, s)| s).sum::<u64>() / 1_000_000;
-            if files.len() >= 10 || mb >= 200 {
-                app.state::<AppState>().bus.publish(Event::new(
-                    DOWNLOADS_OLD,
-                    "downloads",
-                    serde_json::json!({ "count": files.len(), "mb": mb, "dir": dir.display().to_string() }),
-                ));
+            let day = SystemTime::now() - Duration::from_secs(24 * 60 * 60);
+            let loose = sidekick_actions::cleanup::loose_files(&dir, day).len();
+            let installers = sidekick_actions::cleanup::old_installers(
+                &dir,
+                SystemTime::now() - sidekick_actions::cleanup::INSTALLER_AFTER,
+            )
+            .len();
+            if let Some(e) = piling_up(files.len(), mb, loose, installers, &dir) {
+                app.state::<AppState>().bus.publish(e);
             }
         }
     });
+}
+
+/// The Downloads event, when there is enough to bother you with.
+fn piling_up(old: usize, mb: u64, loose: usize, installers: usize, dir: &Path) -> Option<Event> {
+    if old < 10 && mb < 200 && loose < 25 && installers < 3 {
+        return None;
+    }
+    let mut parts = Vec::new();
+    if loose > 0 {
+        parts.push(format!("{loose} loose files"));
+    }
+    if installers > 0 {
+        parts.push(format!("{installers} old installers"));
+    }
+    if old > 0 {
+        parts.push(format!("{old} files over 30 days ({mb} MB)"));
+    }
+    Some(Event::new(
+        DOWNLOADS_OLD,
+        "downloads",
+        serde_json::json!({
+            "count": old, "mb": mb, "loose": loose, "installers": installers,
+            "summary": parts.join(", "), "dir": dir.display().to_string(),
+        }),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn speaks_up_only_when_downloads_piles_up() {
+        let dir = Path::new("C:/Users/me/Downloads");
+        assert!(piling_up(3, 10, 5, 1, dir).is_none());
+        let e = piling_up(0, 0, 30, 4, dir).unwrap();
+        assert_eq!(e.payload["summary"], "30 loose files, 4 old installers");
+    }
 }

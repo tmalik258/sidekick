@@ -1,0 +1,19 @@
+id: system.back
+name: Where was I
+description: Back from a break of 10 minutes or more, show what you were doing and offer to pick it up again.
+priority: 50
+cooldown_secs: 1800
+trigger:
+  event: day.back
+suggestion:
+  title: "Welcome back"
+  detail: "You were in {{app}}: {{title}}"
+  options:
+    - label: Where was I?
+      action: ask_ai
+      args:
+        prompt: "I'm back from a {{minutes}} minute break. In two or three short sentences, remind me what I was doing and suggest the next step."
+        page: "{{recap}}"
+        clipboard: "false"
+      requires: ["ai"]
+    - { label: "Reopen {{page_title}}", action: open_url, args: { url: "{{page_url}}" }, when: { page_url: { regex: "^https?://" } } }

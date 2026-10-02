@@ -1,0 +1,16 @@
+id: clipboard.phone
+name: Copied phone numbers
+description: When you copy a phone number, offer it without spaces or dashes, or open a WhatsApp chat with it.
+priority: 35
+cooldown_secs: 20
+dedupe: "{{number}}"
+trigger:
+  event: clipboard.changed
+  where:
+    entity: { equals: phone }
+suggestion:
+  title: "Phone number copied"
+  detail: "{{number}}"
+  options:
+    - { label: "Copy {{number}}", action: copy_text, args: { text: "{{number}}" } }
+    - { label: WhatsApp, action: open_url, args: { url: "{{whatsapp_url}}" } }

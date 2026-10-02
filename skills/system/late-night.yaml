@@ -1,0 +1,13 @@
+id: system.late-night
+name: Late night
+description: Once a night, after 11 pm, offer night light and Do Not Disturb.
+priority: 25
+cooldown_secs: 43200
+trigger:
+  event: time.late_night
+suggestion:
+  title: "It's {{time}}"
+  detail: "Easier on the eyes, and no pings?"
+  options:
+    - { label: Night light, action: open_system_page, args: { page: nightlight } }
+    - { label: Do Not Disturb, action: open_system_page, args: { page: focus } }
