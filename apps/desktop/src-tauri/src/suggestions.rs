@@ -295,7 +295,7 @@ fn show(app: &AppHandle, proposal: Proposal) {
 /// the last choice (which then comes first).
 pub fn can_always(proposal: &Proposal, index: usize, action: &str) -> bool {
     proposal.trust == Trust::Suggest
-        && crate::learn::tracked(&proposal.skill_id)
+        && crate::learn::can_automate(&proposal.skill_id)
         && sidekick_actions::is_safe(action)
         && (index == 0 || proposal.remember.is_some())
 }
