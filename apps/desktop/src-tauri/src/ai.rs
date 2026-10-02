@@ -62,16 +62,18 @@ fn local_model(ai: &AiSettings) -> OpenAiCompat {
 
 /// The router for one Ask-mode chat: the local model gets Composio's tools
 /// when they are set up and the chat may leave the PC.
-fn chat_router(
+async fn chat_router(
     app: &AppHandle,
     chat_id: &str,
     handoff: &Arc<std::sync::Mutex<Option<String>>>,
     local_only: bool,
 ) -> Router {
     let settings = lock(&app.state::<AppState>().settings).clone();
-    let server = (!local_only)
-        .then(|| crate::composio::configured(&settings.composio))
-        .flatten();
+    let server = if local_only || !settings.ai.local.enabled {
+        None
+    } else {
+        crate::composio::server(&settings.composio).await
+    };
     let list = providers(app, &settings.ai, false)
         .into_iter()
         .map(|p| match (&server, p.id()) {
@@ -335,7 +337,7 @@ pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach,
             image,
         };
         let handoff = Arc::new(std::sync::Mutex::new(None));
-        let router = chat_router(&app, &id, &handoff, local_only);
+        let router = chat_router(&app, &id, &handoff, local_only).await;
         let speak = attach.speak && crate::voice::begin_answer(&app, &id);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
         let forward = {

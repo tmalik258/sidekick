@@ -49,8 +49,6 @@ pub struct Capabilities {
     pub tesseract: Option<PathBuf>,
     /// Poppler's pdftotext, for summarizing PDFs.
     pub pdftotext: Option<PathBuf>,
-    /// FATHOM_API_KEY is set, so meeting notes can be fetched.
-    pub fathom: bool,
 }
 
 impl Capabilities {
@@ -80,7 +78,6 @@ impl Capabilities {
             bw: which::which("bw").ok(),
             tesseract: which::which("tesseract").ok().or_else(find_tesseract),
             pdftotext: which::which("pdftotext").ok(),
-            fathom: std::env::var("FATHOM_API_KEY").is_ok_and(|k| !k.trim().is_empty()),
         }
     }
 
@@ -102,7 +99,6 @@ impl Capabilities {
             Some(("tool", "op")) => self.op.is_some(),
             Some(("tool", "bw")) => self.bw.is_some(),
             Some(("tool", "tesseract")) => self.tesseract.is_some(),
-            Some(("tool", "fathom")) => self.fathom,
             _ => false,
         }
     }

@@ -41,4 +41,5 @@ tokio.workspace = true
 ulid.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
 xcap = "0.9"

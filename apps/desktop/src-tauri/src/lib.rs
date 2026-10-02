@@ -4,6 +4,7 @@ mod brief;
 mod browser;
 mod commands;
 mod composio;
+mod composio_api;
 mod decide;
 mod fathom;
 mod files;
@@ -12,11 +13,13 @@ mod layout;
 mod learn;
 mod mascot;
 mod mcp;
+mod meetings;
 mod pipeline;
 mod privacy;
 mod projects;
 mod screen;
 mod search;
+mod secrets;
 mod setup;
 mod state;
 mod suggestions;
@@ -86,6 +89,10 @@ pub fn run() {
             commands::setup_status,
             commands::ai_handoff,
             commands::composio_import,
+            commands::composio_sign_in,
+            commands::composio_sign_out,
+            commands::composio_status,
+            commands::composio_connect,
             commands::composio_test,
             commands::setup_run,
             commands::backup_export,
@@ -226,6 +233,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     files::start_weekly_check(app);
     layout::start(app);
     mcp::start(app, mcp_token);
+    meetings::start(app);
     tauri::async_runtime::spawn(async move {
         let sensors: Vec<Box<dyn Sensor>> = vec![
             Box::new(DownloadsSensor::new()),

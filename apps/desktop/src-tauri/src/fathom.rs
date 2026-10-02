@@ -1,17 +1,16 @@
 //! Fathom follow-up (FR-COMM-03): after a meeting, fetch its Fathom summary
-//! and action items with your own API key (FATHOM_API_KEY, never stored)
-//! and have the AI draft the follow-up in Ask mode.
-
-use std::time::Duration;
+//! and action items through Composio (Fathom connected there) and have the
+//! AI draft the follow-up in Ask mode.
 
 use chrono::{DateTime, Utc};
-use serde_json::Value;
-use tauri::AppHandle;
+use serde_json::{Value, json};
+use tauri::{AppHandle, Manager};
 
-const API: &str = "https://api.fathom.ai/external/v1/meetings";
+use crate::state::{AppState, lock};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Notes {
+    pub recording_id: Option<i64>,
     pub title: String,
     pub summary: String,
     pub action_items: Vec<String>,
@@ -27,7 +26,7 @@ fn time(v: &Value) -> Option<DateTime<Utc>> {
 /// Picks the meeting that started closest to `start` (within two hours), or
 /// the newest one when the start is unknown.
 pub fn pick(body: &Value, start: Option<DateTime<Utc>>) -> Option<Notes> {
-    let items = body["items"].as_array()?;
+    let items = crate::composio_api::find_array(body, &["items", "meetings"])?;
     let started =
         |m: &Value| time(&m["scheduled_start_time"]).or_else(|| time(&m["recording_start_time"]));
     let item = match start {
@@ -54,6 +53,9 @@ pub fn pick(body: &Value, start: Option<DateTime<Utc>>) -> Option<Notes> {
         })
         .unwrap_or_default();
     Some(Notes {
+        recording_id: item["recording_id"]
+            .as_i64()
+            .or_else(|| item["recording_id"].as_str().and_then(|s| s.parse().ok())),
         title: item["title"]
             .as_str()
             .or(item["meeting_title"].as_str())
@@ -68,44 +70,45 @@ pub fn pick(body: &Value, start: Option<DateTime<Utc>>) -> Option<Notes> {
     })
 }
 
-async fn fetch(key: &str, start: Option<DateTime<Utc>>) -> Result<Value, String> {
-    let client = reqwest::Client::builder()
-        .user_agent("Sidekick")
-        .timeout(Duration::from_secs(20))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let mut req = client.get(API).header("X-Api-Key", key).query(&[
-        ("include_summary", "true"),
-        ("include_action_items", "true"),
-    ]);
-    if let Some(s) = start {
-        req = req.query(&[(
-            "created_after",
-            (s - chrono::Duration::hours(2)).to_rfc3339(),
-        )]);
-    }
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| format!("Fathom: {}", e.without_url()))?;
-    match resp.status().as_u16() {
-        200 => resp.json().await.map_err(|e| format!("Fathom: {e}")),
-        401 | 403 => Err("Fathom did not accept FATHOM_API_KEY.".into()),
-        429 => Err("Fathom is rate limiting; try again in a minute.".into()),
-        s => Err(format!("Fathom answered {s}.")),
+/// The first string under `key`, searched depth first.
+fn find_str<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
+    match v {
+        Value::Object(map) => map
+            .get(key)
+            .and_then(Value::as_str)
+            .or_else(|| map.values().find_map(|x| find_str(x, key))),
+        Value::Array(items) => items.iter().find_map(|x| find_str(x, key)),
+        _ => None,
     }
 }
 
 pub async fn follow_up(app: &AppHandle, start: &str, title: &str) -> Result<String, String> {
-    let key = std::env::var("FATHOM_API_KEY")
-        .ok()
-        .filter(|k| !k.trim().is_empty())
-        .ok_or("Set FATHOM_API_KEY to use Fathom notes.")?;
+    let composio = lock(&app.state::<AppState>().settings).composio.clone();
     let start = DateTime::parse_from_rfc3339(start)
         .ok()
         .map(|t| t.with_timezone(&Utc));
-    let body = fetch(key.trim(), start).await?;
-    let notes = pick(&body, start).ok_or(format!("No Fathom recording found for {title} yet."))?;
+    let mut args = json!({ "include_action_items": true });
+    if let Some(s) = start {
+        args["created_after"] = json!((s - chrono::Duration::hours(2)).to_rfc3339());
+    }
+    let body = crate::composio::run_tool(&composio, "FATHOM_LIST_MEETINGS", args).await?;
+    let mut notes =
+        pick(&body, start).ok_or(format!("No Fathom recording found for {title} yet."))?;
+    if notes.summary.is_empty()
+        && let Some(id) = notes.recording_id
+    {
+        let summary = crate::composio::run_tool(
+            &composio,
+            "FATHOM_GET_RECORDING_SUMMARY",
+            json!({ "recording_id": id }),
+        )
+        .await?;
+        notes.summary = find_str(&summary, "markdown_formatted")
+            .or_else(|| find_str(&summary, "summary"))
+            .unwrap_or_default()
+            .trim()
+            .to_owned();
+    }
     if notes.summary.is_empty() {
         return Err("Fathom is still writing the notes; try again in a few minutes.".into());
     }
@@ -138,8 +141,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn finds_summary_text_anywhere() {
+        let v = json!({ "data": { "summary": { "markdown_formatted": "## Notes" } } });
+        assert_eq!(find_str(&v, "markdown_formatted"), Some("## Notes"));
+    }
+
+    #[test]
     fn picks_the_meeting_by_start_time() {
-        let body = serde_json::json!({
+        let body = serde_json::json!({ "data": {
             "items": [
                 {
                     "title": "Weekly sync",
@@ -147,6 +156,7 @@ mod tests {
                     "default_summary": { "markdown_formatted": "## Summary\nOld" }
                 },
                 {
+                    "recording_id": 42,
                     "title": "Design review",
                     "share_url": "https://fathom.video/share/abc",
                     "scheduled_start_time": "2026-10-01T15:00:00Z",
@@ -155,12 +165,13 @@ mod tests {
                 }
             ],
             "next_cursor": null
-        });
+        }});
         let start = DateTime::parse_from_rfc3339("2026-10-01T15:02:00Z")
             .unwrap()
             .with_timezone(&Utc);
         let n = pick(&body, Some(start)).unwrap();
         assert_eq!(n.title, "Design review");
+        assert_eq!(n.recording_id, Some(42));
         assert_eq!(n.summary, "## Summary\nAgreed on mocks.");
         assert_eq!(n.action_items, vec!["Sara sends mocks"]);
         assert_eq!(

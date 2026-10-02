@@ -158,6 +158,7 @@ impl Env for AppEnv<'_> {
     fn has(&self, requirement: &str) -> bool {
         match requirement {
             "ai" => self.ai_ready,
+            r if r.starts_with("app:") => crate::composio::app_connected(&r[4..]),
             _ => self.caps.has(requirement),
         }
     }

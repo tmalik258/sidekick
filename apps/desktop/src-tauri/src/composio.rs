@@ -101,8 +101,54 @@ const SLUG_KEYS: &[&str] = &[
     "toolSlug",
 ];
 
-/// The Composio MCP link and headers, when Composio is switched on.
-pub fn configured(c: &ComposioSettings) -> Option<(String, Vec<(String, String)>)> {
+/// Signed in with the Connect button: the key is in Credential Manager.
+pub fn signed_in() -> bool {
+    crate::secrets::get(crate::composio_api::KEY_NAME).is_some()
+}
+
+/// Composio is on and either signed in or given an MCP link by hand.
+pub fn is_set_up(c: &ComposioSettings) -> bool {
+    c.enabled && (signed_in() || manual(c).is_some())
+}
+
+/// The MCP link and headers chat uses: a session for the signed-in
+/// account, else a link pasted or copied from Claude Code.
+pub async fn server(c: &ComposioSettings) -> Option<(String, Vec<(String, String)>)> {
+    if !c.enabled {
+        return None;
+    }
+    if let Some(key) = crate::secrets::get(crate::composio_api::KEY_NAME) {
+        match crate::composio_api::session(&key, &user_id(c)).await {
+            Ok(s) if !s.mcp_url.is_empty() => {
+                return Some((s.mcp_url, vec![("x-api-key".into(), key)]));
+            }
+            Ok(_) => log::warn!("Composio session has no MCP link"),
+            Err(err) => log::warn!("Composio session failed: {err}"),
+        }
+    }
+    manual(c)
+}
+
+pub fn user_id(c: &ComposioSettings) -> String {
+    Some(c.user_id.trim())
+        .filter(|u| !u.is_empty())
+        .unwrap_or("default")
+        .to_owned()
+}
+
+/// Runs one Composio tool for Sidekick itself (calendar, brief, notes).
+pub async fn run_tool(c: &ComposioSettings, tool: &str, args: Value) -> Result<Value, String> {
+    if !c.enabled {
+        return Err("Composio is off".into());
+    }
+    let key =
+        crate::secrets::get(crate::composio_api::KEY_NAME).ok_or("Composio is not connected")?;
+    let session = crate::composio_api::session(&key, &user_id(c)).await?;
+    crate::composio_api::execute(&key, &session, tool, args).await
+}
+
+/// A link given by hand (or copied from Claude Code), when Composio is on.
+pub fn manual(c: &ComposioSettings) -> Option<(String, Vec<(String, String)>)> {
     let url = c.url.trim();
     if !c.enabled || !(url.starts_with("https://") || url.starts_with("http://")) {
         return None;
@@ -468,7 +514,7 @@ pub fn handoff_markdown(
 /// folder holding only that conversation (and Composio's MCP config when
 /// Claude Code does not have Composio yet). The folder stays the same, so
 /// Claude Code asks to trust it only once. Returns the folder.
-pub fn open_in_claude_code(
+pub async fn open_in_claude_code(
     app: &AppHandle,
     messages: &[sidekick_ai::Message],
     reason: Option<&str>,
@@ -488,7 +534,7 @@ pub fn open_in_claude_code(
         .map(|h| std::fs::read_to_string(h.join(".claude.json")).unwrap_or_default())
         .unwrap_or_default();
     let mut mcp_config = None;
-    if let Some((url, headers)) = configured(&settings.composio)
+    if let Some((url, headers)) = server(&settings.composio).await
         && from_claude_config(&claude_json).is_none()
     {
         let headers: serde_json::Map<String, Value> = headers
@@ -554,6 +600,148 @@ fn launch(
     ))
 }
 
+pub const CHANGED_EVENT: &str = "composio://changed";
+const SIGN_IN_WAIT: Duration = Duration::from_secs(10 * 60);
+const CONNECT_WAIT: Duration = Duration::from_secs(5 * 60);
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Changed {
+    ok: bool,
+    message: String,
+}
+
+fn changed(app: &AppHandle, ok: bool, message: impl Into<String>) {
+    let _ = app.emit(
+        CHANGED_EVENT,
+        Changed {
+            ok,
+            message: message.into(),
+        },
+    );
+}
+
+async fn open_url(app: &AppHandle, url: &str) -> Result<(), String> {
+    crate::state::executor(&app.state::<AppState>())
+        .run("open_url", &serde_json::json!({ "url": url }))
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Starts signing in: opens Composio in the browser and waits there for the
+/// user to allow Sidekick. Returns the code the page shows, so the user can
+/// check it matches.
+pub async fn sign_in(app: &AppHandle) -> Result<String, String> {
+    let login = crate::composio_api::begin_login().await?;
+    open_url(app, &login.url).await?;
+    let app = app.clone();
+    let id = login.id.clone();
+    tauri::async_runtime::spawn(async move {
+        let started = std::time::Instant::now();
+        while started.elapsed() < SIGN_IN_WAIT {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            match crate::composio_api::poll_login(&id).await {
+                Ok(Some((key, who))) => return finish_sign_in(&app, &key, &who).await,
+                Ok(None) => {}
+                Err(err) => log::warn!("Composio sign-in check failed: {err}"),
+            }
+        }
+        changed(
+            &app,
+            false,
+            "Composio sign-in timed out. Press Connect again.",
+        );
+    });
+    Ok(login.code)
+}
+
+async fn finish_sign_in(app: &AppHandle, key: &str, who: &str) {
+    if let Err(err) = crate::secrets::set(crate::composio_api::KEY_NAME, key) {
+        return changed(app, false, err);
+    }
+    crate::composio_api::forget_session();
+    let user = crate::composio_api::guess_user_id(key).await;
+    let mut settings = lock(&app.state::<AppState>().settings).clone();
+    settings.composio.enabled = true;
+    settings.composio.account = who.to_owned();
+    settings.composio.user_id = user;
+    if let Err(err) = crate::commands::apply_settings(app, settings) {
+        return changed(app, false, err);
+    }
+    let who = if who.is_empty() { "your account" } else { who };
+    changed(app, true, format!("Composio connected as {who}"));
+}
+
+pub fn sign_out(app: &AppHandle) -> Result<(), String> {
+    crate::secrets::delete(crate::composio_api::KEY_NAME);
+    crate::composio_api::forget_session();
+    if let Ok(mut connected) = CONNECTED.write() {
+        connected.clear();
+    }
+    let mut settings = lock(&app.state::<AppState>().settings).clone();
+    settings.composio.account.clear();
+    settings.composio.user_id.clear();
+    crate::commands::apply_settings(app, settings).map(|_| ())
+}
+
+/// Sidekick's apps and which are connected on Composio.
+pub async fn apps(c: &ComposioSettings) -> Result<Vec<crate::composio_api::App>, String> {
+    let key =
+        crate::secrets::get(crate::composio_api::KEY_NAME).ok_or("Composio is not connected")?;
+    let session = crate::composio_api::session(&key, &user_id(c)).await?;
+    let list = crate::composio_api::apps(&key, &session).await?;
+    if let Ok(mut connected) = CONNECTED.write() {
+        *connected = list
+            .iter()
+            .filter(|a| a.connected)
+            .map(|a| a.slug.clone())
+            .collect();
+    }
+    Ok(list)
+}
+
+/// Apps last seen connected, for skills that need one (`app:fathom`).
+static CONNECTED: std::sync::RwLock<Vec<String>> = std::sync::RwLock::new(Vec::new());
+
+pub fn app_connected(slug: &str) -> bool {
+    CONNECTED
+        .read()
+        .map(|c| c.iter().any(|s| s == slug))
+        .unwrap_or(false)
+}
+
+/// Opens the sign-in page for one app and waits for it to be connected.
+pub async fn connect_app(app: &AppHandle, slug: &str) -> Result<(), String> {
+    if !crate::composio_api::APPS.iter().any(|a| a.0 == slug) {
+        return Err("Unknown app".into());
+    }
+    let c = lock(&app.state::<AppState>().settings).composio.clone();
+    let key = crate::secrets::get(crate::composio_api::KEY_NAME).ok_or("Connect Composio first")?;
+    let session = crate::composio_api::session(&key, &user_id(&c)).await?;
+    let url = crate::composio_api::link(&key, &session, slug).await?;
+    open_url(app, &url).await?;
+    let app = app.clone();
+    let slug = slug.to_owned();
+    tauri::async_runtime::spawn(async move {
+        let started = std::time::Instant::now();
+        while started.elapsed() < CONNECT_WAIT {
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            if let Ok(list) = crate::composio_api::apps(&key, &session).await
+                && let Some(a) = list.iter().find(|a| a.slug == slug && a.connected)
+            {
+                return changed(&app, true, format!("{} connected", a.name));
+            }
+        }
+        changed(
+            &app,
+            false,
+            "Still waiting for the app to connect. Check the browser and press Refresh.",
+        );
+    });
+    Ok(())
+}
+
 /// How the Composio connection went, for the Test button.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -566,7 +754,7 @@ pub struct Check {
 pub async fn test(settings: &ComposioSettings) -> Result<Check, String> {
     let mut on = settings.clone();
     on.enabled = true;
-    let (url, headers) = configured(&on).ok_or("Paste the Composio MCP link first")?;
+    let (url, headers) = server(&on).await.ok_or("Connect Composio first")?;
     let found = tokio::time::timeout(CONNECT_TIMEOUT, async {
         let client = McpClient::connect(&url, headers).await?;
         client.list_tools().await
@@ -686,15 +874,16 @@ mod tests {
                 ("x-api-key".into(), "k".into()),
                 ("empty".into(), " ".into()),
             ]),
+            ..Default::default()
         };
-        let (url, headers) = configured(&c).unwrap();
+        let (url, headers) = manual(&c).unwrap();
         assert!(url.contains("composio"));
         assert_eq!(headers, vec![("x-api-key".to_owned(), "k".to_owned())]);
         c.enabled = false;
-        assert!(configured(&c).is_none());
+        assert!(manual(&c).is_none());
         c.enabled = true;
         c.url = "file:///etc/passwd".into();
-        assert!(configured(&c).is_none());
+        assert!(manual(&c).is_none());
     }
 
     #[test]

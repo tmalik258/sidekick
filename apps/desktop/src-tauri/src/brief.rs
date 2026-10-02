@@ -37,6 +37,17 @@ pub struct Repo {
     pub ahead: usize,
 }
 
+/// What your connected apps (through Composio) have waiting for you.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Waiting {
+    /// Jira issues assigned to you, as (key, summary).
+    pub issues: Vec<(String, String)>,
+    /// Unread mail, as (from, subject).
+    pub mail: Vec<(String, String)>,
+    /// Slack messages to you, as (from, text).
+    pub slack: Vec<(String, String)>,
+}
+
 /// Builds the brief, or None when there is nothing worth saying.
 /// `meetings` are today's, as (local start time, title).
 pub fn compose(
@@ -45,6 +56,7 @@ pub fn compose(
     repos: &[Repo],
     reviews: &[Pr],
     mine: &[Pr],
+    waiting: &Waiting,
 ) -> Option<Event> {
     let mut parts = Vec::new();
     let mut lines = Vec::new();
@@ -90,6 +102,32 @@ pub fn compose(
         lines.push("Your open PRs:".into());
         lines.extend(mine.iter().take(MAX_LIST).map(pr_line));
     }
+    if !waiting.issues.is_empty() {
+        parts.push(plural(waiting.issues.len(), "Jira issue", "Jira issues"));
+        lines.push("Assigned to you in Jira:".into());
+        for (key, summary) in waiting.issues.iter().take(MAX_LIST) {
+            lines.push(format!("- {key}: {summary}"));
+        }
+    }
+    if !waiting.mail.is_empty() {
+        parts.push(plural(waiting.mail.len(), "unread email", "unread emails"));
+        lines.push("Unread mail:".into());
+        for (from, subject) in waiting.mail.iter().take(MAX_LIST) {
+            lines.push(format!("- {from}: {subject}"));
+        }
+    }
+    if !waiting.slack.is_empty() {
+        parts.push(plural(
+            waiting.slack.len(),
+            "Slack message",
+            "Slack messages",
+        ));
+        lines.push("Slack messages to you:".into());
+        for (from, text) in waiting.slack.iter().take(MAX_LIST) {
+            let short: String = text.chars().take(100).collect();
+            lines.push(format!("- {from}: {short}"));
+        }
+    }
     if parts.is_empty() {
         return None;
     }
@@ -105,6 +143,127 @@ pub fn compose(
             "first_title": reviews.first().or(mine.first()).map(|p| p.title.clone()).unwrap_or_default(),
         }),
     ))
+}
+
+fn s(v: &Value) -> String {
+    v.as_str().unwrap_or_default().trim().to_owned()
+}
+
+/// `JIRA_SEARCH_FOR_ISSUES_USING_JQL_GET` issues.
+pub fn parse_issues(v: &Value) -> Vec<(String, String)> {
+    crate::composio_api::find_array(v, &["issues"])
+        .map(|a| {
+            a.iter()
+                .map(|i| (s(&i["key"]), s(&i["fields"]["summary"])))
+                .filter(|(k, _)| !k.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// `GMAIL_FETCH_EMAILS` messages.
+pub fn parse_mail(v: &Value) -> Vec<(String, String)> {
+    crate::composio_api::find_array(v, &["messages"])
+        .map(|a| {
+            a.iter()
+                .map(|m| {
+                    let from = s(&m["sender"]);
+                    let from = if from.is_empty() { s(&m["from"]) } else { from };
+                    // "Sara Khan <sara@client.com>" reads as "Sara Khan".
+                    let from = from
+                        .split(" <")
+                        .next()
+                        .unwrap_or_default()
+                        .trim_matches('"')
+                        .to_owned();
+                    (from, s(&m["subject"]))
+                })
+                .filter(|(_, subject)| !subject.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// `SLACK_SEARCH_MESSAGES` matches.
+pub fn parse_slack(v: &Value) -> Vec<(String, String)> {
+    crate::composio_api::find_array(v, &["matches"])
+        .map(|a| {
+            a.iter()
+                .map(|m| {
+                    let who = s(&m["username"]);
+                    let who = if who.is_empty() { s(&m["user"]) } else { who };
+                    (who, s(&m["text"]))
+                })
+                .filter(|(_, text)| !text.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Asks each connected app what is waiting; an app that fails is left out.
+async fn waiting(app: &AppHandle) -> Waiting {
+    let c = lock(&app.state::<AppState>().settings).composio.clone();
+    let mut w = Waiting::default();
+    if !c.enabled || !crate::composio::signed_in() {
+        return w;
+    }
+    let Ok(apps) = crate::composio::apps(&c).await else {
+        return w;
+    };
+    let has = |slug: &str| apps.iter().any(|a| a.slug == slug && a.connected);
+    let run = |tool: &'static str, args: Value| {
+        let c = c.clone();
+        async move {
+            crate::composio::run_tool(&c, tool, args)
+                .await
+                .inspect_err(|e| log::warn!("morning brief: {e}"))
+                .ok()
+        }
+    };
+    if has("jira")
+        && let Some(v) = run(
+            "JIRA_SEARCH_FOR_ISSUES_USING_JQL_GET",
+            serde_json::json!({
+                "jql": "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC",
+                "max_results": 10,
+                "fields": ["summary", "status"],
+            }),
+        )
+        .await
+    {
+        w.issues = parse_issues(&v);
+    }
+    if has("gmail")
+        && let Some(v) = run(
+            "GMAIL_FETCH_EMAILS",
+            serde_json::json!({
+                "query": "is:unread category:primary newer_than:2d",
+                "max_results": 10,
+                "include_payload": false,
+                "verbose": false,
+            }),
+        )
+        .await
+    {
+        w.mail = parse_mail(&v);
+    }
+    if has("slack") {
+        let since = (Local::now() - chrono::Duration::days(1)).format("%Y-%m-%d");
+        if let Some(v) = run(
+            "SLACK_SEARCH_MESSAGES",
+            serde_json::json!({
+                "query": format!("to:me after:{since}"),
+                "count": 10,
+                "sort": "timestamp",
+                "sort_dir": "desc",
+            }),
+        )
+        .await
+        {
+            w.slack = parse_slack(&v);
+        }
+    }
+    w
 }
 
 fn pr_line(p: &Pr) -> String {
@@ -201,7 +360,7 @@ fn unsaved_repos(roots: &[PathBuf]) -> Vec<Repo> {
         .collect()
 }
 
-fn gather(app: &AppHandle, roots: &[PathBuf]) -> Option<Event> {
+fn gather(app: &AppHandle, roots: &[PathBuf], waiting: &Waiting) -> Option<Event> {
     let yesterday = (Local::now() - chrono::Duration::days(1))
         .format("%Y-%m-%d")
         .to_string();
@@ -227,7 +386,7 @@ fn gather(app: &AppHandle, roots: &[PathBuf]) -> Option<Event> {
     let repos = unsaved_repos(roots);
     let reviews = gh("--review-requested=@me");
     let mine = gh("--author=@me");
-    compose(&rows, &meetings, &repos, &reviews, &mine)
+    compose(&rows, &meetings, &repos, &reviews, &mine, waiting)
 }
 
 /// The day the last brief was shown, kept in a small file so a restart does
@@ -256,8 +415,9 @@ pub fn start(app: &AppHandle, marker: PathBuf, roots: Vec<PathBuf>) {
                 continue;
             }
             let _ = std::fs::write(&marker, &today);
+            let waiting = waiting(&app).await;
             let (app2, roots2) = (app.clone(), roots.clone());
-            let event = tokio::task::spawn_blocking(move || gather(&app2, &roots2))
+            let event = tokio::task::spawn_blocking(move || gather(&app2, &roots2, &waiting))
                 .await
                 .ok()
                 .flatten();
@@ -281,6 +441,46 @@ mod tests {
     }
 
     #[test]
+    fn reads_what_apps_have_waiting() {
+        let jira = serde_json::json!({ "data": { "issues": [
+            { "key": "API-12", "fields": { "summary": "Fix login" } }, { "key": "" }
+        ]}});
+        assert_eq!(
+            parse_issues(&jira),
+            vec![("API-12".to_owned(), "Fix login".to_owned())]
+        );
+        let mail = serde_json::json!({ "messages": [
+            { "sender": "\"Sara Khan\" <sara@client.com>", "subject": "Invoice" },
+            { "from": "bob@x.com", "subject": "" }
+        ]});
+        assert_eq!(
+            parse_mail(&mail),
+            vec![("Sara Khan".to_owned(), "Invoice".to_owned())]
+        );
+        let slack = serde_json::json!({ "messages": { "matches": [{ "username": "ali", "text": "can you check?" }] } });
+        assert_eq!(
+            parse_slack(&slack),
+            vec![("ali".to_owned(), "can you check?".to_owned())]
+        );
+        let w = Waiting {
+            issues: parse_issues(&jira),
+            mail: parse_mail(&mail),
+            slack: parse_slack(&slack),
+        };
+        let e = compose(&[], &[], &[], &[], &[], &w).unwrap();
+        assert_eq!(
+            e.payload["headline"],
+            "1 Jira issue · 1 unread email · 1 Slack message"
+        );
+        assert!(
+            e.payload["text"]
+                .as_str()
+                .unwrap()
+                .contains("- API-12: Fix login")
+        );
+    }
+
+    #[test]
     fn composes_a_brief() {
         let rows = [AppTime {
             app: "Code".into(),
@@ -293,7 +493,15 @@ mod tests {
             ahead: 1,
         }];
         let meetings = [("15:00".to_owned(), "Design review".to_owned())];
-        let e = compose(&rows, &meetings, &repos, &[pr("me/api", "Fix login")], &[]).unwrap();
+        let e = compose(
+            &rows,
+            &meetings,
+            &repos,
+            &[pr("me/api", "Fix login")],
+            &[],
+            &Waiting::default(),
+        )
+        .unwrap();
         assert_eq!(
             e.payload["headline"],
             "Yesterday 1 h 30 min · 1 meeting · 1 repo unsaved · 1 review waiting"
@@ -312,7 +520,7 @@ mod tests {
             project: String::new(),
             secs: 600,
         }];
-        assert!(compose(&short, &[], &[], &[], &[]).is_none());
+        assert!(compose(&short, &[], &[], &[], &[], &Waiting::default()).is_none());
     }
 
     #[test]
