@@ -28,7 +28,8 @@ pub struct ClaudeCodeSensor {
 pub struct Approvals(Arc<Mutex<HashMap<String, oneshot::Sender<Option<bool>>>>>);
 
 impl Approvals {
-    fn open(&self, id: &str) -> oneshot::Receiver<Option<bool>> {
+    /// Waits for an answer to `id`; also used for browser pairing.
+    pub fn open(&self, id: &str) -> oneshot::Receiver<Option<bool>> {
         let (tx, rx) = oneshot::channel();
         if let Ok(mut m) = self.0.lock() {
             m.insert(id.to_owned(), tx);
@@ -36,7 +37,7 @@ impl Approvals {
         rx
     }
 
-    fn close(&self, id: &str) {
+    pub fn close(&self, id: &str) {
         if let Ok(mut m) = self.0.lock() {
             m.remove(id);
         }

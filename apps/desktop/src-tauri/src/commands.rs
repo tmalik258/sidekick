@@ -923,3 +923,52 @@ pub async fn claude_add_mcp(app: AppHandle) -> CmdResult<()> {
     let url = format!("http://127.0.0.1:{}/mcp", crate::mcp::PORT);
     crate::claude_config::add_mcp(&claude, &url, &state.mcp_token).await
 }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserStatus {
+    id: String,
+    name: String,
+    /// The extension checked in from this kind of browser recently.
+    connected: bool,
+}
+
+/// Installed browsers and whether the extension is connected in each.
+#[tauri::command]
+pub fn browsers_status(app: AppHandle) -> Vec<BrowserStatus> {
+    let state = app.state::<AppState>();
+    let seen = state.browser.seen();
+    let now = chrono::Utc::now().timestamp();
+    let recent = |name: &str| {
+        seen.iter()
+            .any(|(n, t)| n.eq_ignore_ascii_case(name) && now - t < 7 * 24 * 3600)
+    };
+    executor(&state)
+        .capabilities()
+        .browsers
+        .iter()
+        .map(|b| {
+            let name = b.label().to_owned();
+            // Firefox and Zen report as Firefox.
+            let reported = if b.id == "zen" {
+                "Firefox"
+            } else {
+                name.as_str()
+            };
+            BrowserStatus {
+                connected: recent(reported),
+                id: b.id.clone(),
+                name,
+            }
+        })
+        .collect()
+}
+
+/// Opens a browser's extensions page with the extension's path copied.
+#[tauri::command]
+pub async fn extension_install(
+    app: AppHandle,
+    browser: String,
+) -> CmdResult<crate::extension::Guide> {
+    crate::extension::install(&app, &browser).await
+}

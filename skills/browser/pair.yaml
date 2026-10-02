@@ -1,0 +1,12 @@
+id: browser.pair
+name: Connect the browser extension
+description: When the Sidekick extension asks to connect, Allow or Deny it from the island. No pairing code to copy. Never automatic.
+priority: 96
+trigger:
+  event: browser.pair_request
+suggestion:
+  title: "Connect {{browser}} to Sidekick?"
+  detail: "The Sidekick extension is asking (id {{extension}})."
+  options:
+    - { label: Allow, action: browser_pair_allow, args: { id: "{{id}}" } }
+    - { label: Deny, action: browser_pair_deny, args: { id: "{{id}}" } }

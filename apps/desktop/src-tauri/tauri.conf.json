@@ -52,6 +52,9 @@
       "nsis": {
         "installMode": "currentUser"
       }
+    },
+    "resources": {
+      "../../extension/": "extension/"
     }
   }
 }

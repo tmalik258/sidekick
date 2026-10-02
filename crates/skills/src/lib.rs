@@ -93,6 +93,10 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/dev/claude-needs-you.yaml"),
     ),
     (
+        "browser/pair.yaml",
+        include_str!("../../../skills/browser/pair.yaml"),
+    ),
+    (
         "browser/login.yaml",
         include_str!("../../../skills/browser/login.yaml"),
     ),
@@ -210,6 +214,8 @@ pub const ACTIONS: &[&str] = &[
     "claude_allow",
     "claude_deny",
     "claude_pass",
+    "browser_pair_allow",
+    "browser_pair_deny",
     "browser_fill",
     "browser_close_duplicates",
     "browser_save_session",
