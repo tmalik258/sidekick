@@ -18,6 +18,7 @@ mod layout;
 mod learn;
 mod mascot;
 mod mcp;
+mod mcp_oauth;
 mod meetings;
 mod moments;
 mod pipeline;
@@ -116,6 +117,7 @@ pub fn run() {
             commands::composio_sign_out,
             commands::composio_status,
             commands::composio_connect,
+            commands::composio_use_key,
             commands::composio_test,
             commands::setup_run,
             commands::backup_export,
