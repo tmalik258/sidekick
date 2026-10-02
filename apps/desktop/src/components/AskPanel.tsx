@@ -18,6 +18,7 @@ import {
   runProposal,
   sendChat,
   setAsk,
+  setAskModel,
   startListening,
   startSkill,
   stopListening,
@@ -76,6 +77,10 @@ export function AskPanel() {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [hits, setHits] = useState<{ query: string; items: SearchHit[] } | null>(null);
   const [clips, setClips] = useState<{ text: string; ts: string }[] | null>(null);
+  // The highlighted clip or search result, moved with the arrow keys.
+  const [pick, setPick] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new list starts at its top
+  useEffect(() => setPick(0), [clips, hits]);
   const [projects, setProjects] = useState<{ name: string; path: string }[]>([]);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -124,6 +129,7 @@ export function AskPanel() {
   const chatPage = useSidekick((s) => s.chatPage);
   const { data: calendar } = useCached<CalendarToday>("calendar-today", api.calendarToday);
   const agent = useAgentName();
+  const askModel = useSidekick((s) => s.askModel);
   const starters = useMemo(
     () =>
       contextStarters({
@@ -213,16 +219,22 @@ export function AskPanel() {
   if (!ask) return null;
 
   const streaming = chatId !== null;
-  const asking = text.trim().length > 0;
+  // While the clipboard history is open, typing filters it instead of asking.
+  const clipFilter = clips !== null ? text.trim().toLowerCase() : "";
+  const asking = text.trim().length > 0 && clips === null;
+  const shownClips = clips?.filter((c) => !clipFilter || c.text.toLowerCase().includes(clipFilter)) ?? [];
   // With a conversation going, the body shows it; commands show only while typing.
-  const showClips = clips !== null && !asking;
+  const showClips = clips !== null;
   const showHits = hits !== null && !asking && !showClips;
   const showChat = turns.length > 0 && !asking && !showHits && !showClips;
   // While typing, the first rows are "Ask", "Search" and "Teach a skill".
   const lead = asking ? 3 : 0;
   const rows =
     hearing !== null ? 0 : asking ? commands.length + lead : showChat || showHits || showClips ? 0 : commands.length;
-  const best = providers.find((p) => p.available && (!ask.localOnly || p.local) && p.id !== "semif");
+  // Models that can answer now; the picked one (if still there) goes first.
+  const choices = providers.filter((p) => p.available && (!ask.localOnly || p.local) && p.id !== "semif");
+  const pickedModel = choices.find((p) => p.id === askModel) ?? null;
+  const best = pickedModel ?? choices[0];
 
   const runRow = (i: number) => {
     if (asking && i === 0) {
@@ -248,8 +260,34 @@ export function AskPanel() {
     if (!cmd.stay) void api.askClose();
   };
 
+  // Clipboard history and search results: arrows move, Enter uses it.
+  const listLen = showClips ? shownClips.length : showHits && hits ? hits.items.length : 0;
+  const openListItem = (i: number) => {
+    if (showClips) {
+      const c = shownClips[i];
+      if (c) void api.clipboardCopy(c.text).then(() => api.askClose());
+    } else if (showHits && hits) {
+      const h = hits.items[i];
+      if (h) void api.openReference(h.source, h.reference);
+    }
+  };
+
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "ArrowDown" && rows) {
+    if (e.altKey && e.key.toLowerCase() === "m" && choices.length > 1) {
+      // Alt M: next model (Auto, then each one that can answer).
+      e.preventDefault();
+      const ids = [null, ...choices.map((c) => c.id)];
+      setAskModel(ids[(ids.indexOf(pickedModel?.id ?? null) + 1) % ids.length]);
+      return;
+    }
+    if (listLen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      setPick((p) => (Math.min(p, listLen - 1) + step + listLen) % listLen);
+    } else if (listLen && e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      openListItem(Math.min(pick, listLen - 1));
+    } else if (e.key === "ArrowDown" && rows) {
       e.preventDefault();
       setSelected((s) => (s + 1) % rows);
     } else if (e.key === "ArrowUp" && rows) {
@@ -297,6 +335,7 @@ export function AskPanel() {
             onChange={(e) => {
               setText(e.target.value);
               setSelected(0);
+              setPick(0);
             }}
             onKeyDown={onKey}
             placeholder={turns.length ? "Ask a follow-up" : "Ask Sidekick or type a command"}
@@ -340,7 +379,12 @@ export function AskPanel() {
             className="ask-scroll mt-2 overflow-y-auto pr-1"
             style={{ maxHeight: scrollMax }}
           >
-            <Clips items={clips} />
+            <Clips
+              items={shownClips}
+              filtered={clipFilter.length > 0}
+              active={Math.min(pick, shownClips.length - 1)}
+              onHover={setPick}
+            />
           </motion.div>
         ) : showHits && hits ? (
           <motion.div
@@ -351,7 +395,12 @@ export function AskPanel() {
             className="ask-scroll mt-2 overflow-y-auto pr-1"
             style={{ maxHeight: scrollMax }}
           >
-            <Results query={hits.query} items={hits.items} />
+            <Results
+              query={hits.query}
+              items={hits.items}
+              active={Math.min(pick, hits.items.length - 1)}
+              onHover={setPick}
+            />
           </motion.div>
         ) : showChat ? (
           <motion.div
@@ -430,16 +479,16 @@ export function AskPanel() {
 
       <div className="mt-2 flex items-center gap-2 text-[11px] text-[rgb(235_235_245/0.45)]">
         <span className={`size-1.5 rounded-full ${best ? "bg-[#30d158]" : "bg-[#ffd60a]"}`} aria-hidden="true" />
-        <span className="truncate">
-          {best
-            ? `${PROVIDER_LABELS[best.id] ?? best.id}${best.local ? ", on this PC" : ""}`
-            : ask.localOnly
-              ? "No local model running"
-              : "No AI set up yet. See Settings > AI"}
-        </span>
+        {best ? (
+          <ModelPicker choices={choices} best={best} picked={pickedModel} />
+        ) : (
+          <span className="truncate">
+            {ask.localOnly ? "No local model running" : "No AI set up yet. See Settings > AI"}
+          </span>
+        )}
         <span className="ml-auto flex shrink-0 items-center gap-2.5">
           <span>
-            <Kbd>Enter</Kbd> {asking ? "ask" : "run"}
+            <Kbd>Enter</Kbd> {asking ? "ask" : showClips ? "copy" : showHits ? "open" : "run"}
           </span>
           {(asking || turns.length > 0) && (
             <span>
@@ -580,7 +629,7 @@ function Row({
         onMouseMove={onHover}
         onClick={onClick}
         className={`flex w-full items-center gap-2.5 rounded-[14px] px-1.5 py-1.5 text-left text-[13.5px] tracking-[-0.01em] transition-colors duration-100 ${
-          active ? "bg-white/[0.1] text-white" : "text-white/80"
+          active ? "bg-white/[0.14] text-white ring-1 ring-inset ring-white/25" : "text-white/80"
         }`}
       >
         {children}
@@ -619,23 +668,50 @@ function Snippet({ text }: { text: string }) {
   );
 }
 
-/** Clipboard history: click to copy again (FR-CLIP-01). */
-function Clips({ items }: { items: { text: string; ts: string }[] }) {
+/** Keeps the highlighted row of a list in view as the arrows move it. */
+function scrollIfActive(active: boolean) {
+  return (el: HTMLElement | null) => {
+    if (active && el) el.scrollIntoView({ block: "nearest" });
+  };
+}
+
+/** Clipboard history: arrows or the mouse pick, Enter or a click copies
+ * again (FR-CLIP-01). Typing filters the list. */
+function Clips({
+  items,
+  filtered,
+  active,
+  onHover,
+}: {
+  items: { text: string; ts: string }[];
+  filtered: boolean;
+  active: number;
+  onHover: (i: number) => void;
+}) {
   if (items.length === 0)
-    return <p className="py-2 text-[13px] text-[rgb(235_235_245/0.6)]">Nothing copied yet. Secrets are never kept.</p>;
+    return (
+      <p className="py-2 text-[13px] text-[rgb(235_235_245/0.6)]">
+        {filtered ? "No copied text matches." : "Nothing copied yet. Secrets are never kept."}
+      </p>
+    );
   return (
-    <ul className="-mx-1.5 py-1">
-      {items.map((c) => (
-        <li key={`${c.ts}${c.text.slice(0, 40)}`}>
+    <ul className="py-1" aria-label="Clipboard history">
+      {items.map((c, i) => (
+        <li key={`${c.ts}${c.text.slice(0, 40)}`} ref={scrollIfActive(i === active)}>
           <button
             type="button"
+            aria-current={i === active}
+            onMouseMove={() => onHover(i)}
             onClick={() => void api.clipboardCopy(c.text).then(() => api.askClose())}
-            className="flex w-full items-center gap-2 rounded-[14px] px-1.5 py-1.5 text-left transition-colors duration-100 hover:bg-white/[0.1]"
+            className={`flex w-full items-center gap-2 rounded-[14px] px-1.5 py-1.5 text-left transition-colors duration-100 ${
+              i === active ? "bg-white/[0.14] ring-1 ring-inset ring-white/25" : "hover:bg-white/[0.08]"
+            }`}
           >
             <span className="line-clamp-2 min-w-0 flex-1 font-mono text-[12px] break-all text-white/85">{c.text}</span>
             <span className="shrink-0 text-[11px] text-[rgb(235_235_245/0.4)] tabular-nums">
               {new Date(c.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </span>
+            {i === active && <Kbd>Enter</Kbd>}
           </button>
         </li>
       ))}
@@ -643,7 +719,17 @@ function Clips({ items }: { items: { text: string; ts: string }[] }) {
   );
 }
 
-function Results({ query, items }: { query: string; items: SearchHit[] }) {
+function Results({
+  query,
+  items,
+  active,
+  onHover,
+}: {
+  query: string;
+  items: SearchHit[];
+  active: number;
+  onHover: (i: number) => void;
+}) {
   if (items.length === 0)
     return (
       <p className="py-2 text-[13px] text-[rgb(235_235_245/0.6)]">
@@ -651,16 +737,20 @@ function Results({ query, items }: { query: string; items: SearchHit[] }) {
       </p>
     );
   return (
-    <ul className="-mx-1.5 py-1">
-      {items.map((h) => {
+    <ul className="py-1">
+      {items.map((h, i) => {
         const opens = ["file", "download", "screenshot", "page"].includes(h.source);
         return (
-          <li key={`${h.source}|${h.reference}`}>
+          <li key={`${h.source}|${h.reference}`} ref={scrollIfActive(i === active)}>
             <button
               type="button"
               disabled={!opens}
+              aria-current={i === active}
+              onMouseMove={() => onHover(i)}
               onClick={() => void api.openReference(h.source, h.reference)}
-              className="flex w-full flex-col gap-0.5 rounded-[14px] px-1.5 py-1.5 text-left transition-colors duration-100 enabled:hover:bg-white/[0.1]"
+              className={`flex w-full flex-col gap-0.5 rounded-[14px] px-1.5 py-1.5 text-left transition-colors duration-100 ${
+                i === active ? "bg-white/[0.14] ring-1 ring-inset ring-white/25" : "enabled:hover:bg-white/[0.08]"
+              }`}
             >
               <span className="flex items-center gap-2 text-[13px]">
                 <span className="rounded-full bg-white/[0.12] px-1.5 py-px text-[10.5px] text-white/70">
@@ -954,6 +1044,88 @@ function toolLabel(name: string) {
   if (words.length === 0) return "a tool";
   const [first, ...rest] = words;
   return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(" ");
+}
+
+/** The model that answers in Ask mode: Auto (Sidekick picks) or one of
+ * those that can answer now. Kept for next time. */
+function ModelPicker({
+  choices,
+  best,
+  picked,
+}: {
+  choices: ProviderStatus[];
+  best: ProviderStatus;
+  picked: ProviderStatus | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
+  const label = (p: ProviderStatus) => `${PROVIDER_LABELS[p.id] ?? p.id}${p.local ? ", on this PC" : ""}`;
+  const items: { id: string | null; text: string }[] = [
+    { id: null, text: `Auto (${PROVIDER_LABELS[choices[0]?.id] ?? "best"})` },
+    ...choices.map((p) => ({ id: p.id, text: label(p) })),
+  ];
+  useEffect(() => {
+    if (open) listRef.current?.querySelector<HTMLButtonElement>("[aria-checked=true]")?.focus();
+  }, [open]);
+  const choose = (id: string | null) => {
+    setAskModel(id);
+    setOpen(false);
+  };
+  const onListKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const buttons = [...(listRef.current?.querySelectorAll<HTMLButtonElement>("button") ?? [])];
+    const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      buttons[(at + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length]?.focus();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(false);
+    }
+  };
+  return (
+    <span className="relative min-w-0">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Change the model (Alt M)"
+        onClick={() => setOpen((o) => !o)}
+        className="flex max-w-full items-center gap-1 truncate rounded-md px-1 py-0.5 hover:bg-white/[0.08] hover:text-white/80"
+      >
+        <span className="truncate">{picked ? label(picked) : `Auto: ${label(best)}`}</span>
+        <span aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div
+          ref={listRef}
+          role="menu"
+          aria-label="Model"
+          onKeyDown={onListKey}
+          className="absolute bottom-full left-0 z-20 mb-1.5 flex min-w-52 flex-col gap-0.5 rounded-xl bg-[#1c1c1e] p-1 text-[12.5px] shadow-xl ring-1 ring-white/10"
+        >
+          {items.map((it) => {
+            const on = (picked?.id ?? null) === it.id;
+            return (
+              <button
+                key={it.id ?? "auto"}
+                type="button"
+                role="menuitemradio"
+                aria-checked={on}
+                onClick={() => choose(it.id)}
+                className={`flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-1.5 text-left ${
+                  on ? "bg-white/[0.12] text-white" : "text-white/75 hover:bg-white/[0.08]"
+                }`}
+              >
+                {it.text}
+                {on && <span aria-hidden="true">✓</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </span>
+  );
 }
 
 /** The coding agent that gets handoffs: Claude Code or Codex. */

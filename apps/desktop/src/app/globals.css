@@ -373,3 +373,30 @@ body {
   outline: 2px solid #0a84ff;
   outline-offset: 2px;
 }
+
+/* Keyboard focus: a clear ring on anything reached with Tab, everywhere.
+   Mouse clicks do not show it (focus-visible). */
+:where(
+  button,
+  a,
+  summary,
+  select,
+  input[type="checkbox"],
+  input[type="radio"],
+  [role="button"],
+  [role="switch"],
+  [role="tab"],
+  [tabindex]
+):focus-visible {
+  outline: 2px solid #0a84ff;
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

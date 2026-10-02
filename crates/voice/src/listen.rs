@@ -50,6 +50,10 @@ pub struct ListenerConfig {
 /// Audio kept from before the wake phrase was recognised, so the first
 /// words after it are not lost.
 const PRIME: usize = MIC_RATE as usize * 3 / 2;
+/// After the wake phrase people pause before the question. Until this much
+/// audio has passed, an utterance that is only the wake phrase does not end
+/// listening; it waits for the question instead.
+const QUESTION_GRACE: usize = MIC_RATE as usize * 8;
 
 /// Owns the keyword spotter and the streaming recognizer.
 pub struct Engine {
@@ -59,6 +63,10 @@ pub struct Engine {
     listening: bool,
     recent: VecDeque<f32>,
     last: String,
+    /// Audio fed since listening started.
+    heard: usize,
+    /// While waiting, the speech model transcribes and wakes on the phrase.
+    transcript_wake: bool,
 }
 
 fn model(
@@ -87,7 +95,16 @@ fn model(
 const _: () = assert!(MIC_RATE == 16_000);
 
 impl Engine {
+    /// With the wake word on, both the keyword model and the transcript
+    /// listen for it: either one wakes Sidekick.
     pub fn new(models: &Path, wake_word: bool) -> Result<Self> {
+        Self::with_wake(models, wake_word, wake_word)
+    }
+
+    /// `keyword`: the small keyword model. `transcript`: the speech model
+    /// runs all the time and wakes on "hey Sidekick" in what it hears.
+    pub fn with_wake(models: &Path, keyword: bool, transcript: bool) -> Result<Self> {
+        let wake_word = keyword;
         if !SPEECH.installed(models) || (wake_word && !WAKE.installed(models)) {
             return Err(VoiceError::MissingModels);
         }
@@ -145,6 +162,8 @@ impl Engine {
             listening: false,
             recent: VecDeque::with_capacity(PRIME + 4096),
             last: String::new(),
+            heard: 0,
+            transcript_wake: transcript,
         })
     }
 
@@ -167,6 +186,7 @@ impl Engine {
 
     fn start_listening(&mut self) {
         self.listening = true;
+        self.heard = 0;
         self.last.clear();
         let prime: Vec<f32> = self.recent.iter().copied().collect();
         self.recognizer.reset(&self.stream);
@@ -181,27 +201,47 @@ impl Engine {
             self.recent.pop_front();
         }
         if !self.listening {
-            if self.spot(chunk) {
-                out.push(Heard::Wake);
-                self.start_listening();
+            let spotted = self.spot(chunk);
+            if !self.transcript_wake {
+                if spotted {
+                    out.push(Heard::Wake);
+                    self.start_listening();
+                }
+                return out;
             }
-            return out;
+            // The transcript already holds the wake audio, so listening
+            // just carries on from here.
+            let text = self.decode(chunk);
+            if spotted || crate::text::find_wake(&text).is_some() {
+                out.push(Heard::Wake);
+                self.listening = true;
+                self.heard = 0;
+                self.last.clear();
+            } else {
+                if self.recognizer.is_endpoint(&self.stream) {
+                    self.recognizer.reset(&self.stream);
+                }
+                return out;
+            }
+        } else {
+            self.decode(chunk);
+            self.heard += chunk.len();
         }
-        self.stream.accept_waveform(MIC_RATE as i32, chunk);
-        while self.recognizer.is_ready(&self.stream) {
-            self.recognizer.decode(&self.stream);
-        }
-        let text = self
-            .recognizer
-            .get_result(&self.stream)
-            .map(|r| r.text.trim().to_owned())
-            .unwrap_or_default();
+        let text = self.current_text();
         if text != self.last {
             self.last = text.clone();
             out.push(Heard::Partial(text.clone()));
         }
         if self.recognizer.is_endpoint(&self.stream) {
             self.recognizer.reset(&self.stream);
+            // Only the wake phrase so far: keep listening for the question.
+            if crate::text::strip_wake(&text).is_empty() && self.heard < QUESTION_GRACE {
+                if !self.last.is_empty() {
+                    self.last.clear();
+                    out.push(Heard::Partial(String::new()));
+                }
+                return out;
+            }
             if let Some((spotter, kws)) = &self.spotter {
                 spotter.reset(kws);
             }
@@ -212,6 +252,30 @@ impl Engine {
             out.push(Heard::Final(text));
         }
         out
+    }
+
+    fn decode(&self, chunk: &[f32]) -> String {
+        self.stream.accept_waveform(MIC_RATE as i32, chunk);
+        while self.recognizer.is_ready(&self.stream) {
+            self.recognizer.decode(&self.stream);
+        }
+        self.raw_text()
+    }
+
+    fn raw_text(&self) -> String {
+        self.recognizer
+            .get_result(&self.stream)
+            .map(|r| r.text.trim().to_owned())
+            .unwrap_or_default()
+    }
+
+    /// What was said from the wake phrase on (words before it are chatter).
+    fn current_text(&self) -> String {
+        let text = self.raw_text();
+        match crate::text::find_wake(&text) {
+            Some(at) => text[at..].to_owned(),
+            None => text,
+        }
     }
 
     fn spot(&self, chunk: &[f32]) -> bool {

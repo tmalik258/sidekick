@@ -67,6 +67,36 @@ pub fn strip_wake(text: &str) -> String {
     }
 }
 
+/// Where the wake phrase starts in a running transcript: a greeting and the
+/// name anywhere ("so, hey sidekick, what..."), or the bare name as the
+/// first word. None when it is not there.
+pub fn find_wake(text: &str) -> Option<usize> {
+    let mut starts = Vec::new();
+    let mut in_word = false;
+    for (i, c) in text.char_indices() {
+        let part = c.is_alphanumeric() || c == '\'';
+        if part && !in_word {
+            starts.push(i);
+        }
+        in_word = part;
+    }
+    starts.into_iter().enumerate().find_map(|(n, s)| {
+        let rest = &text[s..];
+        let first: String = rest
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '\'')
+            .collect::<String>()
+            .to_lowercase();
+        // "a" is a greeting only at the very start; mid-sentence it is
+        // just a word ("a sidekick app").
+        let greeting = GREETINGS.contains(&first.as_str()) && (n == 0 || first != "a");
+        (greeting || n == 0)
+            .then(|| strip_wake(rest) != rest.trim())
+            .filter(|found| *found)
+            .map(|_| s)
+    })
+}
+
 /// "hey side*": the greeting's next word starts like the name. A bare "side"
 /// or "sight" also takes a short k/c/g fragment after it ("side caig").
 fn loose_name(words: &[(String, usize)]) -> Option<usize> {
@@ -190,6 +220,18 @@ impl Sentences {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finds_the_wake_phrase_mid_sentence() {
+        assert_eq!(find_wake("hey sidekick what time is it"), Some(0));
+        let t = "so anyway hey sidekick open my notes";
+        assert_eq!(&t[find_wake(t).unwrap()..], "hey sidekick open my notes");
+        assert_eq!(find_wake("sidekick open my notes"), Some(0));
+        assert_eq!(find_wake("i built a sidekick app"), None);
+        assert_eq!(find_wake("my sidekick is great"), None);
+        assert_eq!(find_wake("ok cider kick play music"), Some(0));
+        assert_eq!(find_wake("nothing to see here"), None);
+    }
 
     #[test]
     fn strips_the_wake_phrase() {
