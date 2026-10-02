@@ -113,6 +113,10 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/dev/claude-finished.yaml"),
     ),
     (
+        "dev/codex-finished.yaml",
+        include_str!("../../../skills/dev/codex-finished.yaml"),
+    ),
+    (
         "dev/claude-needs-you.yaml",
         include_str!("../../../skills/dev/claude-needs-you.yaml"),
     ),

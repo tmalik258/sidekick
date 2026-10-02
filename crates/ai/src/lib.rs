@@ -8,6 +8,7 @@
 
 mod anthropic;
 mod claude_code;
+mod codex;
 mod decide;
 mod mcp;
 mod openai;
@@ -19,6 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub use anthropic::Anthropic;
 use async_trait::async_trait;
 pub use claude_code::ClaudeCode;
+pub use codex::Codex;
 pub use decide::{Decider, Decision, DecisionOption, LocalDecider, Ranked, SemIf};
 pub use mcp::{McpClient, McpTool};
 pub use openai::{

@@ -223,6 +223,10 @@ pub struct AiSettings {
     /// Chat providers in the order they are tried: ids from [`AI_PROVIDERS`].
     pub order: Vec<String>,
     pub claude_code: ClaudeCodePref,
+    pub codex: CodexPref,
+    /// Which coding agent gets handoffs and changes: "auto" (Claude Code
+    /// when installed, else Codex), "claude_code" or "codex".
+    pub coding_agent: String,
     pub local: LocalModelPref,
     pub anthropic: AnthropicPref,
     pub semif: SemIfPref,
@@ -239,6 +243,29 @@ pub struct ClaudeCodePref {
     /// Empty means Claude Code's own default.
     pub model: String,
 }
+
+/// OpenAI's Codex CLI, the same way as Claude Code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CodexPref {
+    pub enabled: bool,
+    /// Path to `codex`; empty means look it up on PATH.
+    pub path: String,
+    /// Empty means Codex's own default.
+    pub model: String,
+}
+
+impl Default for CodexPref {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            path: String::new(),
+            model: String::new(),
+        }
+    }
+}
+
+pub const CODING_AGENTS: [&str; 3] = ["auto", "claude_code", "codex"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -275,13 +302,15 @@ pub struct SemIfPref {
     pub gguf: String,
 }
 
-pub const AI_PROVIDERS: [&str; 3] = ["claude_code", "anthropic", "local"];
+pub const AI_PROVIDERS: [&str; 4] = ["claude_code", "codex", "anthropic", "local"];
 
 impl Default for AiSettings {
     fn default() -> Self {
         Self {
             order: AI_PROVIDERS.map(String::from).to_vec(),
             claude_code: ClaudeCodePref::default(),
+            codex: CodexPref::default(),
+            coding_agent: "auto".into(),
             local: LocalModelPref::default(),
             anthropic: AnthropicPref::default(),
             semif: SemIfPref::default(),
@@ -337,6 +366,7 @@ impl Default for SemIfPref {
 impl AiSettings {
     fn sanitized(mut self) -> Self {
         let mut order: Vec<String> = Vec::new();
+        let had_codex = self.order.iter().any(|id| id == "codex");
         for id in self
             .order
             .iter()
@@ -346,7 +376,20 @@ impl AiSettings {
                 order.push(id.clone());
             }
         }
+        // Settings from before Codex: it goes right after Claude Code.
+        if !had_codex
+            && let (Some(c), Some(x)) = (
+                order.iter().position(|i| i == "claude_code"),
+                order.iter().position(|i| i == "codex"),
+            )
+        {
+            let codex = order.remove(x);
+            order.insert(c + 1, codex);
+        }
         self.order = order;
+        if !CODING_AGENTS.contains(&self.coding_agent.as_str()) {
+            self.coding_agent = "auto".into();
+        }
         if self.local.base_url.trim().is_empty() {
             self.local.base_url = LocalModelPref::default().base_url;
         }
@@ -540,7 +583,8 @@ mod tests {
         s.ai.semif.mode = "weird".into();
         s.palette_hotkey = " ".into();
         let s = s.sanitized();
-        assert_eq!(s.ai.order, ["local", "claude_code", "anthropic"]);
+        assert_eq!(s.ai.order, ["local", "claude_code", "codex", "anthropic"]);
+        assert_eq!(s.ai.coding_agent, "auto");
         assert_eq!(s.ai.semif.mode, "direct");
         assert_eq!(s.palette_hotkey, DEFAULT_PALETTE_HOTKEY);
     }
