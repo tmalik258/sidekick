@@ -432,7 +432,7 @@ export interface ComposioSettings {
   /** Who signed in (their email). */
   account: string;
   userId: string;
-  /** An MCP link given by hand instead of signing in. */
+  /** Another MCP link; empty means Composio Connect. */
   url: string;
   headers: Record<string, string>;
 }
@@ -440,8 +440,8 @@ export interface ComposioSettings {
 export interface ComposioApp {
   slug: string;
   name: string;
+  /** What Sidekick uses it for; empty for other apps in the account. */
   why: string;
-  logo: string;
   connected: boolean;
 }
 

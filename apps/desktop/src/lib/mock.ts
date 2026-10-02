@@ -370,41 +370,47 @@ commands.composio_import = () => {
   return settings;
 };
 const COMPOSIO_APPS = [
-  ["googlecalendar", "Google Calendar", "Meeting reminders and Join"],
-  ["outlook", "Outlook", "Meetings and mail"],
-  ["gmail", "Gmail", "Unread mail in the morning brief"],
-  ["slack", "Slack", "Mentions in the morning brief"],
-  ["jira", "Jira", "Your issues in the morning brief"],
-  ["fathom", "Fathom", "Meeting notes and follow-ups"],
-  ["github", "GitHub", "Reading issues and PRs"],
-  ["notion", "Notion", "Reading your pages"],
+  ["googlecalendar", "Google Calendar", "Meeting reminders and your day"],
+  ["outlook", "Outlook", "Calendar and mail from Microsoft 365"],
+  ["gmail", "Gmail", "Unread client mail in the morning brief"],
+  ["slack", "Slack", "Messages to you in the brief"],
+  ["jira", "Jira", "Issues assigned to you"],
+  ["github", "GitHub", "Pull requests and issues"],
+  ["fathom", "Fathom", "Meeting notes for follow-ups"],
+  ["notion", "Notion", "Pages and notes in Ask mode"],
 ];
-const connected = new Set(["googlecalendar", "jira"]);
+// Apps already connected in the account (as Claude sees them).
+const OTHER_APPS = [
+  ["figma", "Figma"],
+  ["googledrive", "Google Drive"],
+  ["googlesheets", "Google Sheets"],
+  ["linkedin", "LinkedIn"],
+];
+const connected = new Set(["googlecalendar", "gmail", "slack", "github"]);
 commands.composio_status = () => {
   const signedIn = Boolean(settings.composio.account);
   return {
     signedIn,
     account: settings.composio.account,
-    apps: COMPOSIO_APPS.map(([slug, name, why]) => ({
-      slug,
-      name,
-      why,
-      logo: "",
-      connected: signedIn && connected.has(slug),
-    })),
+    apps: [
+      ...COMPOSIO_APPS.map(([slug, name, why]) => ({ slug, name, why, connected: signedIn && connected.has(slug) })),
+      ...(signedIn ? OTHER_APPS.map(([slug, name]) => ({ slug, name, why: "", connected: true })) : []),
+    ],
     error: null,
   };
 };
+const signedInNow = (how: string) => {
+  settings = { ...settings, composio: { ...settings.composio, enabled: true, account: how, userId: "" } };
+  emit("settings://changed", settings);
+  emit("composio://changed", { ok: true, message: "Composio connected with 8 apps" });
+};
 commands.composio_sign_in = () => {
-  later(2500, () => {
-    settings = {
-      ...settings,
-      composio: { ...settings.composio, enabled: true, account: "you@example.com", userId: "you@example.com" },
-    };
-    emit("settings://changed", settings);
-    emit("composio://changed", { ok: true, message: "Signed in as you@example.com" });
-  });
-  return "K7Q2";
+  later(2500, () => signedInNow("Composio Connect"));
+  return "Composio opened in your browser";
+};
+commands.composio_use_key = () => {
+  later(300, () => signedInNow("Composio key"));
+  return "Composio connected";
 };
 commands.composio_sign_out = () => {
   settings = { ...settings, composio: { ...settings.composio, enabled: false, account: "", userId: "" } };

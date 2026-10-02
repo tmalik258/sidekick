@@ -805,7 +805,7 @@ pub async fn ai_handoff(
         .map(|dir| dir.display().to_string())
 }
 
-/// Opens Composio in the browser to sign in; returns the code it shows.
+/// Opens Composio Connect in the browser to sign in.
 #[tauri::command]
 pub async fn composio_sign_in(app: AppHandle) -> CmdResult<String> {
     crate::composio::sign_in(&app).await
@@ -837,9 +837,10 @@ pub async fn composio_status(app: AppHandle) -> ComposioStatus {
             error: None,
         };
     }
+    // A slow or failed check keeps the last list and says so softly.
     let (apps, error) = match crate::composio::apps(&c).await {
         Ok(a) => (a, None),
-        Err(e) => (Vec::new(), Some(e)),
+        Err(e) => (crate::composio::cached_apps(), Some(e)),
     };
     ComposioStatus {
         signed_in: true,
@@ -847,6 +848,12 @@ pub async fn composio_status(app: AppHandle) -> ComposioStatus {
         apps,
         error,
     }
+}
+
+/// Connects with a Composio consumer key instead of the browser sign-in.
+#[tauri::command]
+pub async fn composio_use_key(app: AppHandle, key: String) -> CmdResult<String> {
+    crate::composio::use_key(&app, &key).await
 }
 
 /// Opens the browser to connect one app on Composio.
