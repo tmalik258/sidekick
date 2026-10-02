@@ -2,9 +2,11 @@
 //! files and history, read your day, see what just happened, and open
 //! things. They answer in short plain text a small model can use.
 
+use serde::Serialize;
 use serde_json::{Value, json};
 use sidekick_ai::ToolDef;
-use tauri::{AppHandle, Manager};
+use sidekick_core::ActionRecord;
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::state::{AppState, executor, lock};
 
@@ -13,6 +15,56 @@ const TODAY: &str = "today";
 const RECENT: &str = "recent";
 const OPEN: &str = "open";
 const SCREEN: &str = "screen_text";
+const PROPOSE: &str = "propose";
+
+pub const PROPOSAL_EVENT: &str = "ai://proposal";
+const SKILL_ID: &str = "ask";
+
+/// What Ask may offer to do. Each runs only after the user taps it, and
+/// files it makes or moves can be undone.
+const ASK_ACTIONS: &[&str] = &[
+    "open_path",
+    "reveal_path",
+    "open_url",
+    "open_folder",
+    "open_in_editor",
+    "launch_project",
+    "copy_text",
+    "convert",
+    "extract_archive",
+    "extract_text",
+    "zip",
+    "move_file",
+    "git_pull",
+    "install_deps",
+    "create_env",
+];
+
+/// An action waiting for a tap, from one chat.
+#[derive(Debug, Clone)]
+pub struct Proposed {
+    pub action: String,
+    pub args: Value,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProposalNote<'a> {
+    chat_id: &'a str,
+    id: &'a str,
+    label: &'a str,
+}
+
+/// What a tapped action did, for the answer it belongs to.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ran {
+    pub ok: bool,
+    pub message: String,
+    pub undo_id: Option<i64>,
+    pub path: Option<String>,
+}
 
 /// Most screen text handed to the model.
 const MAX_SCREEN_TEXT: usize = 4000;
@@ -54,6 +106,24 @@ pub fn defs() -> Vec<ToolDef> {
             parameters: json!({ "type": "object", "properties": {} }),
         },
         ToolDef {
+            name: PROPOSE.into(),
+            description: "Offer to do something for the user as a button they tap: move_file \
+                {path, to}, zip {paths, name}, convert {path, to: png|jpg|webp|pdf|mp3|mp4}, \
+                extract_archive {path}, extract_text {path}, open_path {path}, reveal_path {path}, \
+                open_url {url}, launch_project {path}, git_pull {path}, install_deps {path}. \
+                Use full paths from search. Nothing happens until they tap it."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ASK_ACTIONS },
+                    "args": { "type": "object" },
+                    "label": { "type": "string", "description": "Button text, e.g. Move invoice.pdf to Invoices" }
+                },
+                "required": ["action", "args", "label"],
+            }),
+        },
+        ToolDef {
             name: OPEN.into(),
             description: "Open a file, folder or web page for the user. Pass a full path \
                 from search, or a URL."
@@ -68,8 +138,9 @@ pub fn defs() -> Vec<ToolDef> {
 }
 
 /// Runs a local tool, or `None` when `name` is not one of them.
-pub async fn run(app: &AppHandle, name: &str, args: &Value) -> Option<String> {
+pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Option<String> {
     Some(match name {
+        PROPOSE => propose(app, chat_id, args),
         SEARCH => {
             let query = args["query"].as_str().unwrap_or_default();
             crate::mcp::call_text(
@@ -91,6 +162,88 @@ pub async fn run(app: &AppHandle, name: &str, args: &Value) -> Option<String> {
             Err(e) => format!("Error: could not capture the screen: {e}"),
         },
         _ => return None,
+    })
+}
+
+/// Keeps an action as a button under the answer; it runs on a tap.
+fn propose(app: &AppHandle, chat_id: &str, args: &Value) -> String {
+    let action = args["action"].as_str().unwrap_or_default();
+    if !ASK_ACTIONS.contains(&action) {
+        return format!("Error: {action} is not something you can offer.");
+    }
+    let label: String = args["label"]
+        .as_str()
+        .filter(|l| !l.trim().is_empty())
+        .unwrap_or(action)
+        .chars()
+        .take(60)
+        .collect();
+    let action_args = args["args"].clone();
+    if action == "open_path" && action_args["path"].as_str().is_some_and(runs_code) {
+        return "Refused: that file runs a program. Tell the user to open it themselves.".into();
+    }
+    let id = ulid::Ulid::new().to_string();
+    lock(&app.state::<AppState>().ask_proposals).insert(
+        id.clone(),
+        Proposed {
+            action: action.into(),
+            args: action_args,
+            label: label.clone(),
+        },
+    );
+    let _ = app.emit(
+        PROPOSAL_EVENT,
+        ProposalNote {
+            chat_id,
+            id: &id,
+            label: &label,
+        },
+    );
+    format!("Shown to the user as a button \"{label}\". Say in one short sentence what it will do.")
+}
+
+/// Runs a proposal the user tapped, logs it, and keeps Undo for files it
+/// made or moved.
+pub async fn run_proposal(app: &AppHandle, id: &str) -> Result<Ran, String> {
+    let proposed = lock(&app.state::<AppState>().ask_proposals)
+        .remove(id)
+        .ok_or("That button has expired; ask again")?;
+    let exec = executor(&app.state::<AppState>());
+    let result = exec.run(&proposed.action, &proposed.args).await;
+    let (ok, message, path) = match &result {
+        Ok(o) => (true, o.message.clone(), o.path.clone()),
+        Err(e) => (false, e.to_string(), None),
+    };
+    let undo_path = match (&result, proposed.action.as_str()) {
+        (Ok(o), "move_file") => o
+            .path
+            .as_deref()
+            .zip(proposed.args["path"].as_str())
+            .map(|(now, from)| crate::undo::move_back(now, from)),
+        (Ok(o), action) => crate::undo::undo_path(action, o.path.as_deref()),
+        _ => None,
+    };
+    let record = ActionRecord {
+        id: 0,
+        ts: chrono::Utc::now().to_rfc3339(),
+        skill_id: SKILL_ID.into(),
+        action: proposed.action.clone(),
+        label: proposed.label.clone(),
+        ok,
+        message: message.clone(),
+        auto: false,
+        undo_path: undo_path.clone(),
+        undone: false,
+    };
+    let undo_id = lock(&app.state::<AppState>().storage)
+        .log_action(&record)
+        .ok()
+        .filter(|_| undo_path.is_some());
+    Ok(Ran {
+        ok,
+        message,
+        undo_id,
+        path,
     })
 }
 

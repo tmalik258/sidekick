@@ -167,6 +167,15 @@ export interface Turn extends ChatMessage {
   handoff?: string | null;
   /** The app tool the local model is using right now. */
   tool?: string | null;
+  /** Actions offered as buttons; each runs on a tap. */
+  proposals?: Proposal[];
+}
+
+export interface Proposal {
+  id: string;
+  label: string;
+  /** Set once tapped: what happened, and Undo if it can be undone. */
+  ran?: { ok: boolean; message: string; undoId: number | null; path: string | null; undone?: boolean };
 }
 
 export interface AskContext {

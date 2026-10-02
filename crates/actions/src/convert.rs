@@ -102,8 +102,48 @@ pub async fn extract(caps: &Capabilities, archive: &Path) -> Result<Outcome, Act
     })
 }
 
-/// `dir/stem.ext`, or `dir/stem (2).ext` and so on when taken. An empty ext
-/// makes a folder name.
+/// Zips files or folders that sit in one folder into `name.zip` next to
+/// them. bsdtar picks the zip format from the extension.
+pub async fn zip(
+    caps: &Capabilities,
+    paths: &[PathBuf],
+    name: &str,
+) -> Result<Outcome, ActionError> {
+    let tar = caps.tar.as_ref().ok_or_else(|| missing("tar"))?;
+    let first = paths.first().ok_or(ActionError::MissingArg("paths"))?;
+    let dir = first.parent().unwrap_or(Path::new("."));
+    if paths.iter().any(|p| p.parent() != Some(dir)) {
+        return Err(ActionError::Invalid(
+            "the items must be in one folder".into(),
+        ));
+    }
+    let stem = if name.trim().is_empty() {
+        first
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Archive".into())
+    } else {
+        name.trim().trim_end_matches(".zip").to_owned()
+    };
+    let dest = unique_path(dir, &stem, "zip");
+    let mut cmd = Command::new(tar);
+    cmd.arg("-a").arg("-cf").arg(&dest).arg("-C").arg(dir);
+    for p in paths {
+        cmd.arg(
+            p.file_name()
+                .ok_or(ActionError::Invalid("not a file".into()))?,
+        );
+    }
+    if let Err(err) = run(&mut cmd).await {
+        let _ = std::fs::remove_file(&dest);
+        return Err(err);
+    }
+    Ok(Outcome {
+        message: format!("Zipped into {}", file_name(&dest)),
+        path: Some(dest.display().to_string()),
+    })
+}
+
 /// The text in an image, read with Tesseract. Empty when there is none.
 pub async fn ocr_text(caps: &Capabilities, image: &Path) -> Result<String, ActionError> {
     let tesseract = caps
@@ -148,6 +188,8 @@ pub async fn ocr(caps: &Capabilities, image: &Path) -> Result<Outcome, ActionErr
     })
 }
 
+/// `dir/stem.ext`, or `dir/stem (2).ext` and so on when taken. An empty ext
+/// makes a folder name.
 pub fn unique_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
     let make = |n: u32| {
         let base = if n == 1 {

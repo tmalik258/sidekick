@@ -10,7 +10,9 @@ use tauri::{AppHandle, Manager};
 use crate::state::{AppState, lock};
 
 /// Actions whose `Outcome::path` is something they created.
-const UNDOABLE: &[&str] = &["convert", "extract_archive"];
+const UNDOABLE: &[&str] = &["convert", "extract_archive", "zip"];
+/// A moved file's undo record: where it is now, then where it came from.
+const MOVE_BACK: &str = "move-back:";
 const WINDOW_HOURS: i64 = 24;
 
 pub fn undo_path(action: &str, produced: Option<&str>) -> Option<String> {
@@ -18,6 +20,11 @@ pub fn undo_path(action: &str, produced: Option<&str>) -> Option<String> {
         .contains(&action)
         .then(|| produced.map(str::to_owned))
         .flatten()
+}
+
+/// Undo for a move puts the file back where it was.
+pub fn move_back(now: &str, from: &str) -> String {
+    format!("{MOVE_BACK}{now}\n{from}")
 }
 
 /// Refuses anything that is not plainly a single item inside a folder.
@@ -49,6 +56,29 @@ pub fn undo(app: &AppHandle, id: i64) -> Result<String, String> {
         .with_timezone(&Utc);
     if Utc::now() - when > chrono::Duration::hours(WINDOW_HOURS) {
         return Err("Undo is only kept for 24 hours".into());
+    }
+    if let Some(rest) = path.strip_prefix(MOVE_BACK) {
+        let (now, from) = rest
+            .split_once('\n')
+            .ok_or("This action cannot be undone")?;
+        let (now, from) = (Path::new(now), Path::new(from));
+        if !now.exists() {
+            return Err("It was already moved or deleted".into());
+        }
+        if from.exists() {
+            return Err("Something else is in its old place now".into());
+        }
+        std::fs::rename(now, from)
+            .or_else(|_| std::fs::copy(now, from).and_then(|_| std::fs::remove_file(now)))
+            .map_err(|e| format!("could not move it back: {e}"))?;
+        lock(&state.storage)
+            .mark_undone(id)
+            .map_err(|e| e.to_string())?;
+        let name = from
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        return Ok(format!("Moved {name} back"));
     }
     let path = Path::new(&path);
     if !path.exists() {
