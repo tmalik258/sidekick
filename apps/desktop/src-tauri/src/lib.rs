@@ -11,6 +11,8 @@ mod commands;
 mod composio;
 mod composio_api;
 mod decide;
+#[cfg(test)]
+mod decisions_test;
 mod detect;
 mod extension;
 mod fathom;
