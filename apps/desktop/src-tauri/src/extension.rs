@@ -63,6 +63,7 @@ fn extensions_page(browser: &str) -> Option<(&'static str, bool)> {
         "chrome" => ("chrome://extensions/", false),
         "edge" => ("edge://extensions/", false),
         "brave" => ("brave://extensions/", false),
+        "samsung" => ("samsunginternet://extensions/", false),
         "firefox" | "zen" => ("about:debugging#/runtime/this-firefox", true),
         _ => return None,
     })
