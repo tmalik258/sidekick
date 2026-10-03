@@ -33,13 +33,6 @@ export function IslandSettings() {
         >
           Ask
         </button>
-        <button
-          type="button"
-          onClick={() => void api.askClose()}
-          className="chip rounded-full bg-white px-3 py-1 text-[12px] font-medium text-black hover:bg-white/90"
-        >
-          Done
-        </button>
       </div>
       <SettingsPanel />
     </div>
