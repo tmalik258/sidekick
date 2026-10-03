@@ -494,6 +494,8 @@ pub struct LocalWithTools {
     pub chat_id: String,
     pub handoff: Arc<Mutex<Option<String>>>,
     pub server: Option<(String, Vec<(String, String)>)>,
+    /// This PC only: no web tools, so nothing leaves the PC.
+    pub offline: bool,
 }
 
 #[async_trait]
@@ -528,6 +530,9 @@ impl AiProvider for LocalWithTools {
             .map(|m| m.content.as_str())
             .unwrap_or_default();
         let mut defs = crate::ask_tools::defs();
+        if self.offline {
+            defs.retain(|d| !crate::ask_tools::is_web(&d.name));
+        }
         if client.is_some() {
             defs.extend(pick_tools(&tools, question));
         } else {

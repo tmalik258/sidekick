@@ -138,6 +138,8 @@ fn tool_error(t: impl Into<String>) -> Value {
 /// `sidekick_` prefix. Search and today keep their own versions below.
 const SHARED: &[&str] = &[
     "find_files",
+    "web_search",
+    "read_page",
     "pc_status",
     "pc_control",
     "windows",
@@ -400,6 +402,8 @@ mod tests {
                 "sidekick_recent",
                 "sidekick_screen_text",
                 "sidekick_propose",
+                "sidekick_web_search",
+                "sidekick_read_page",
                 "sidekick_pc_status",
                 "sidekick_pc_control",
                 "sidekick_windows",

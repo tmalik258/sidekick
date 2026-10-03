@@ -62,6 +62,7 @@ export const EVENTS = {
   voiceDownload: "voice://download",
   suggestionLater: "suggestion://later",
   composioChanged: "composio://changed",
+  guideKey: "guide://key",
   voiceWelcome: "voice://welcome",
 } as const;
 
@@ -85,6 +86,7 @@ export interface EventPayloads {
   [EVENTS.voiceDownload]: VoiceDownload;
   [EVENTS.suggestionLater]: number;
   [EVENTS.composioChanged]: { ok: boolean; message: string };
+  [EVENTS.guideKey]: number;
   [EVENTS.voiceWelcome]: WelcomeSpeech;
 }
 
@@ -175,6 +177,7 @@ export const api = {
   aiOpenLink: (target: string) => invoke<string>("ai_open_link", { target }),
   codexAddNotify: () => invoke<string | null>("codex_add_notify"),
   codexAddMcp: () => invoke<string | null>("codex_add_mcp"),
+  guideKeys: (buttons: number) => invoke<void>("guide_keys", { buttons }),
   setupDetect: () => invoke<Found>("setup_detect"),
   setupApply: (plan: SetupPlan) => invoke<string[]>("setup_apply", { plan }),
   claudeAddHooks: () => invoke<string | null>("claude_add_hooks"),
