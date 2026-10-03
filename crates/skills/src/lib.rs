@@ -243,6 +243,8 @@ pub const ACTIONS: &[&str] = &[
     "notify_level",
     "close_app",
     "sleep_pc",
+    "install_app",
+    "update_app",
     "empty_recycle_bin",
     "convert",
     "extract_archive",
