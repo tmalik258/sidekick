@@ -26,6 +26,7 @@ mod mcp;
 mod mcp_oauth;
 mod meetings;
 mod moments;
+mod password_save;
 mod pipeline;
 mod privacy;
 mod projects;
@@ -169,6 +170,14 @@ pub fn run() {
             commands::ask_resume_welcome,
             commands::ask_close,
             commands::browser_info,
+            commands::password_save_status,
+            commands::password_save_draft,
+            commands::password_save_commit,
+            commands::password_save_cancel,
+            commands::passwords_mirror,
+            commands::passwords_mirror_status,
+            commands::passwords_mirror_cancel,
+            commands::password_browsers,
             commands::time_today,
             commands::skill_install,
             commands::search,
@@ -256,6 +265,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         browser: bridge.clone(),
         browser_token: browser_token.clone(),
         mcp_token: mcp_token.clone(),
+        pending_password: Mutex::default(),
     });
 
     pipeline::start(app);
