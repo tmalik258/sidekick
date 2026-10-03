@@ -227,10 +227,19 @@ pub fn start(app: &AppHandle) {
             }
             if let Some((name, project)) = long_session {
                 let minutes = FOCUS_AFTER.as_secs() / 60;
+                let dnd = tokio::task::spawn_blocking(sidekick_actions::pc::read_state)
+                    .await
+                    .map(|s| s.do_not_disturb)
+                    .unwrap_or_default();
                 state.bus.publish(Event::new(
                     LONG_SESSION,
                     "time",
-                    serde_json::json!({ "app": name, "project": project, "minutes": minutes }),
+                    serde_json::json!({
+                        "app": name,
+                        "project": project,
+                        "minutes": minutes,
+                        "dnd": dnd.as_str(),
+                    }),
                 ));
             }
         }

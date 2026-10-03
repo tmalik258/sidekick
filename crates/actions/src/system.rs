@@ -183,7 +183,8 @@ pub fn open_system_page(page: &str) -> Result<Outcome, ActionError> {
             spawn_detached(std::process::Command::new("taskmgr.exe"))?;
             return Ok(Outcome::msg("Opened Task Manager"));
         }
-        other => return Err(ActionError::Invalid(format!("unknown system page {other}"))),
+        other => crate::pc::settings_uri(other)
+            .ok_or_else(|| ActionError::Invalid(format!("unknown system page {other}")))?,
     };
     if !cfg!(windows) {
         return Err(ActionError::Failed(

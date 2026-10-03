@@ -614,4 +614,36 @@ suggestion:
         assert_eq!(p.options.len(), 1);
         assert_eq!(p.options[0].label, "Convert to WebP");
     }
+
+    #[test]
+    fn late_night_offers_only_what_is_off() {
+        let late = crate::builtin()
+            .into_iter()
+            .find(|s| s.id == "system.late-night")
+            .unwrap();
+        let ev = |night: &str, dnd: &str| {
+            Event::new(
+                "time.late_night",
+                "time",
+                serde_json::json!({ "time": "23:10", "night_light": night, "dnd": dnd }),
+            )
+        };
+        let labels = |night: &str, dnd: &str| {
+            Engine::new(vec![late.clone()])
+                .evaluate(&ev(night, dnd), &env(), Instant::now())
+                .map(|p| p.options.into_iter().map(|o| o.label).collect::<Vec<_>>())
+        };
+        assert_eq!(
+            labels("off", "off").unwrap(),
+            ["Night light", "Do Not Disturb"]
+        );
+        // Night light on (or on its schedule right now): not offered.
+        assert_eq!(labels("on", "off").unwrap(), ["Do Not Disturb"]);
+        assert_eq!(
+            labels("unknown", "on").unwrap(),
+            ["Night light"],
+            "unknown still offers"
+        );
+        assert!(labels("on", "on").is_none(), "nothing to offer, no card");
+    }
 }

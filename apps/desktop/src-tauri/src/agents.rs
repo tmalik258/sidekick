@@ -141,7 +141,7 @@ pub async fn hand_off(
     let state = app.state::<AppState>();
     let settings = lock(&state.settings).clone();
     let agent = chosen(&settings)
-        .ok_or("Install Claude Code or Codex first (Settings > Home > Setup), then try again.")?;
+        .ok_or("Install Claude Code or Codex first (Settings > AI), then try again.")?;
     let exe = agent
         .resolve(&settings)
         .ok_or_else(|| format!("{} is not installed", agent.name()))?;

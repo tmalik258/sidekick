@@ -8,6 +8,8 @@ use sidekick_ai::ToolDef;
 use sidekick_core::ActionRecord;
 use tauri::{AppHandle, Emitter, Manager};
 
+use sidekick_actions::pc;
+
 use crate::state::{AppState, executor, lock};
 
 const SEARCH: &str = "search";
@@ -18,6 +20,9 @@ const SCREEN: &str = "screen_text";
 const PROPOSE: &str = "propose";
 const FIND: &str = "find_files";
 const REVEAL: &str = "show_in_folder";
+const PC_STATUS: &str = "pc_status";
+const PC: &str = "pc_control";
+const WINDOWS: &str = "windows";
 
 /// The Ask chat answering right now, so tools called through Sidekick's
 /// MCP server (by Claude Code or Codex) put their buttons in it.
@@ -54,6 +59,11 @@ const ASK_ACTIONS: &[&str] = &[
     "git_pull",
     "install_deps",
     "create_env",
+    "open_system_page",
+    "launch_app",
+    "close_app",
+    "sleep_pc",
+    "empty_recycle_bin",
 ];
 
 /// An action waiting for a tap, from one chat.
@@ -152,7 +162,8 @@ pub fn defs() -> Vec<ToolDef> {
             description: "Offer to do something for the user as a button they tap: move_file \
                 {path, to}, zip {paths, name}, convert {path, to: png|jpg|webp|pdf|mp3|mp4}, \
                 extract_archive {path}, extract_text {path}, open_path {path}, reveal_path {path}, \
-                open_url {url}, launch_project {path}, git_pull {path}, install_deps {path}. \
+                open_url {url}, launch_project {path}, git_pull {path}, install_deps {path}, \
+                close_app {name}, sleep_pc {}, empty_recycle_bin {}. \
                 Use full paths from search. Nothing happens until they tap it."
                 .into(),
             parameters: json!({
@@ -163,6 +174,52 @@ pub fn defs() -> Vec<ToolDef> {
                     "label": { "type": "string", "description": "Button text, e.g. Move invoice.pdf to Invoices" }
                 },
                 "required": ["action", "args", "label"],
+            }),
+        },
+        ToolDef {
+            name: PC_STATUS.into(),
+            description: "What is on right now on this Windows PC: night light, Do Not Disturb, \
+                dark mode, battery, brightness, Wi-Fi. Check this before suggesting a change, and \
+                never offer to turn on what is already on."
+                .into(),
+            parameters: json!({ "type": "object", "properties": {} }),
+        },
+        ToolDef {
+            name: PC.into(),
+            description: "Change an everyday Windows setting right away: volume_up, volume_down, \
+                mute, set_volume {level}, brightness {level}, dark_mode_on, dark_mode_off, lock, \
+                open_settings {page} (no page opens Windows Settings itself). Pages: home, display, nightlight, sound, notifications, focus \
+                (Do Not Disturb), bluetooth, wifi, network, battery, power, storage, apps, \
+                default_apps, startup_apps, colors, background, mouse, keyboard, printers, updates, \
+                privacy, accounts, time, language, about. Night light and Do Not Disturb have no \
+                switch: open their page."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "what": { "type": "string", "enum": [
+                        "volume_up", "volume_down", "mute", "set_volume", "brightness",
+                        "dark_mode_on", "dark_mode_off", "lock", "open_settings"
+                    ] },
+                    "level": { "type": "integer", "minimum": 0, "maximum": 100 },
+                    "page": { "type": "string" }
+                },
+                "required": ["what"],
+            }),
+        },
+        ToolDef {
+            name: WINDOWS.into(),
+            description: "Apps and windows: list (the open windows), focus {name} (bring one \
+                to the front), launch {name} (start an installed app, e.g. Spotify). To close one, \
+                use propose with close_app."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["list", "focus", "launch"] },
+                    "name": { "type": "string", "description": "App or window name" }
+                },
+                "required": ["action"],
             }),
         },
         ToolDef {
@@ -187,6 +244,35 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
         REVEAL => reveal(app, args["path"].as_str().unwrap_or_default()).await,
         SEARCH => search(app, args["query"].as_str().unwrap_or_default()).await,
         TODAY => today(app).await,
+        PC_STATUS => blocking(|| Ok(pc::describe(&pc::read_state()))).await,
+        PC => {
+            let what = args["what"].as_str().unwrap_or_default().to_owned();
+            let level = args["level"].as_u64().and_then(|v| u8::try_from(v).ok());
+            let page = args["page"].as_str().map(str::to_owned);
+            blocking(move || pc::control(&what, level, page.as_deref()).map(|o| o.message)).await
+        }
+        WINDOWS => {
+            let name = args["name"].as_str().unwrap_or_default().to_owned();
+            match args["action"].as_str().unwrap_or("list") {
+                "focus" => blocking(move || pc::focus_window(&name).map(|o| o.message)).await,
+                "launch" => blocking(move || pc::launch_app(&name).map(|o| o.message)).await,
+                _ => {
+                    blocking(|| {
+                        pc::windows().map(|w| {
+                            if w.is_empty() {
+                                "No open windows.".to_owned()
+                            } else {
+                                w.iter()
+                                    .map(|w| format!("- {}: {}", w.app, w.title))
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            }
+                        })
+                    })
+                    .await
+                }
+            }
+        }
         RECENT => recent(app),
         OPEN => open(app, args["target"].as_str().unwrap_or_default()).await,
         SCREEN => match crate::ai::screenshot(app).await {
@@ -199,6 +285,17 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
         },
         _ => return None,
     })
+}
+
+/// Runs PC work off the async runtime; errors read as text for the model.
+async fn blocking(
+    f: impl FnOnce() -> Result<String, sidekick_actions::ActionError> + Send + 'static,
+) -> String {
+    match tokio::task::spawn_blocking(f).await {
+        Ok(Ok(text)) => text,
+        Ok(Err(e)) => format!("Error: {e}"),
+        Err(e) => format!("Error: {e}"),
+    }
 }
 
 /// Searches everything on this PC (files, downloads, screenshots, clipboard,
@@ -555,7 +652,9 @@ mod tests {
         let names: Vec<_> = defs().into_iter().map(|d| d.name).collect();
         assert_eq!(
             names,
-            [SEARCH, FIND, REVEAL, TODAY, RECENT, SCREEN, PROPOSE, OPEN]
+            [
+                SEARCH, FIND, REVEAL, TODAY, RECENT, SCREEN, PROPOSE, PC_STATUS, PC, WINDOWS, OPEN
+            ]
         );
     }
 }
