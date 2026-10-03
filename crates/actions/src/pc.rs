@@ -245,6 +245,7 @@ pub fn parse_dnd(out: &str) -> Result<(bool, bool), String> {
 
 /// Turns Do Not Disturb on or off, and says so.
 pub fn set_dnd(on: bool) -> Result<Outcome, ActionError> {
+    state_changed();
     if !cfg!(windows) {
         return Err(ActionError::Failed("Do Not Disturb needs Windows".into()));
     }
@@ -373,10 +374,33 @@ pub(crate) fn powershell(_script: &str, _env: &[(&str, &str)]) -> Result<String,
 }
 
 /// What is on right now. Everything reads as unknown off Windows.
+/// The last reading and when it was taken. Several moments can ask within
+/// seconds; each reading starts a PowerShell.
+static STATE_CACHE: std::sync::Mutex<Option<(std::time::Instant, PcState)>> =
+    std::sync::Mutex::new(None);
+const STATE_FRESH: std::time::Duration = std::time::Duration::from_secs(20);
+
 pub fn read_state() -> PcState {
-    powershell(STATUS_SCRIPT, &[])
+    if let Ok(cache) = STATE_CACHE.lock()
+        && let Some((at, state)) = cache.as_ref()
+        && at.elapsed() < STATE_FRESH
+    {
+        return state.clone();
+    }
+    let state = powershell(STATUS_SCRIPT, &[])
         .map(|t| parse_state(&t))
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if let Ok(mut cache) = STATE_CACHE.lock() {
+        *cache = Some((std::time::Instant::now(), state.clone()));
+    }
+    state
+}
+
+/// Forgets the last reading (Sidekick just changed something).
+fn state_changed() {
+    if let Ok(mut cache) = STATE_CACHE.lock() {
+        *cache = None;
+    }
 }
 
 /// Switches a radio (Bluetooth or Wi-Fi) through Windows' Radio API.
@@ -537,6 +561,7 @@ fn level(value: Option<u8>) -> Result<u8, ActionError> {
 
 /// One everyday switch. All are reversible and need no confirmation.
 pub fn control(what: &str, value: Option<u8>, page: Option<&str>) -> Result<Outcome, ActionError> {
+    state_changed();
     // Volume keys move 2% per press.
     const KEYS: &str = "$s=New-Object -ComObject WScript.Shell;";
     let msg = |m: &str| Ok(Outcome::msg(m));
