@@ -23,6 +23,8 @@ const REVEAL: &str = "show_in_folder";
 const PC_STATUS: &str = "pc_status";
 const PC: &str = "pc_control";
 const WINDOWS: &str = "windows";
+const WEB_SEARCH: &str = "web_search";
+const READ_PAGE: &str = "read_page";
 
 /// The Ask chat answering right now, so tools called through Sidekick's
 /// MCP server (by Claude Code or Codex) put their buttons in it.
@@ -177,6 +179,29 @@ pub fn defs() -> Vec<ToolDef> {
             }),
         },
         ToolDef {
+            name: WEB_SEARCH.into(),
+            description: "Search the web for anything not on this PC: news, docs, prices, \
+                how-tos, facts that may have changed. Returns titles, links and snippets; use \
+                read_page on a link for the details."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": { "query": { "type": "string" } },
+                "required": ["query"],
+            }),
+        },
+        ToolDef {
+            name: READ_PAGE.into(),
+            description: "Read a web page as text, from a link the user gave or one web_search \
+                found."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": { "url": { "type": "string" } },
+                "required": ["url"],
+            }),
+        },
+        ToolDef {
             name: PC_STATUS.into(),
             description: "What is on right now on this Windows PC: night light, Do Not Disturb, \
                 dark mode, battery, brightness, Wi-Fi. Check this before suggesting a change, and \
@@ -236,6 +261,11 @@ pub fn defs() -> Vec<ToolDef> {
     ]
 }
 
+/// Tools that reach the internet, left out for "This PC only".
+pub fn is_web(name: &str) -> bool {
+    name == WEB_SEARCH || name == READ_PAGE
+}
+
 /// Runs a local tool, or `None` when `name` is not one of them.
 pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Option<String> {
     Some(match name {
@@ -244,6 +274,12 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
         REVEAL => reveal(app, args["path"].as_str().unwrap_or_default()).await,
         SEARCH => search(app, args["query"].as_str().unwrap_or_default()).await,
         TODAY => today(app).await,
+        WEB_SEARCH => crate::web::search(args["query"].as_str().unwrap_or_default())
+            .await
+            .unwrap_or_else(|e| format!("Error: {e}")),
+        READ_PAGE => crate::web::read(args["url"].as_str().unwrap_or_default())
+            .await
+            .unwrap_or_else(|e| format!("Error: {e}")),
         PC_STATUS => blocking(|| Ok(pc::describe(&pc::read_state()))).await,
         PC => {
             let what = args["what"].as_str().unwrap_or_default().to_owned();
@@ -653,7 +689,8 @@ mod tests {
         assert_eq!(
             names,
             [
-                SEARCH, FIND, REVEAL, TODAY, RECENT, SCREEN, PROPOSE, PC_STATUS, PC, WINDOWS, OPEN
+                SEARCH, FIND, REVEAL, TODAY, RECENT, SCREEN, PROPOSE, WEB_SEARCH, READ_PAGE,
+                PC_STATUS, PC, WINDOWS, OPEN
             ]
         );
     }

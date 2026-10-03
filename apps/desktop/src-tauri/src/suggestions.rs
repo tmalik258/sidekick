@@ -57,6 +57,8 @@ const DIGITS: [Code; 10] = [
 /// the island never takes focus, and exist only while a suggestion is showing
 /// so they never steal keys otherwise.
 fn bind_keys(app: &AppHandle, options: usize) {
+    // The guide card's keys step aside while a suggestion shows.
+    release_digits(app);
     let gs = app.global_shortcut();
     for (n, code) in DIGITS.iter().enumerate().take(options.min(9) + 1) {
         let shortcut = Shortcut::new(Some(Modifiers::ALT), *code);
@@ -74,18 +76,59 @@ fn bind_keys(app: &AppHandle, options: usize) {
     }
 }
 
-fn unbind_keys(app: &AppHandle) {
+fn release_digits(app: &AppHandle) {
     let gs = app.global_shortcut();
     for digit in DIGITS {
         let _ = gs.unregister(Shortcut::new(Some(Modifiers::ALT), digit));
     }
 }
 
+fn unbind_keys(app: &AppHandle) {
+    release_digits(app);
+    // The guide card gets its keys back once the suggestion is gone.
+    bind_guide_keys(app);
+}
+
+/// Buttons on the guide card (the steps shown while Sidekick waits on
+/// something you finish in another app). The island has no focus there, so
+/// like a suggestion's options they are global Alt keys: Alt+1..N press a
+/// button, Alt+0 cancels.
+static GUIDE_KEYS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub const GUIDE_KEY_EVENT: &str = "guide://key";
+
+pub fn set_guide_keys(app: &AppHandle, buttons: usize) {
+    GUIDE_KEYS.store(buttons.min(9), Ordering::SeqCst);
+    if current(app).is_none() {
+        release_digits(app);
+        bind_guide_keys(app);
+    }
+}
+
+fn bind_guide_keys(app: &AppHandle) {
+    let buttons = GUIDE_KEYS.load(Ordering::SeqCst);
+    if buttons == 0 {
+        return;
+    }
+    let gs = app.global_shortcut();
+    for (n, code) in DIGITS.iter().enumerate().take(buttons + 1) {
+        let shortcut = Shortcut::new(Some(Modifiers::ALT), *code);
+        let result = gs.on_shortcut(shortcut, move |app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                let _ = app.emit(GUIDE_KEY_EVENT, n);
+            }
+        });
+        if let Err(err) = result {
+            log::warn!("could not register Alt+{n} for the guide: {err}");
+        }
+    }
+}
+
 /// Registers the keys again for the active suggestion, after something else
 /// cleared every shortcut (changing the Ask shortcut does).
 pub fn rebind_keys(app: &AppHandle) {
-    if let Some(s) = current(app) {
-        bind_keys(app, s.options.len());
+    match current(app) {
+        Some(s) => bind_keys(app, s.options.len()),
+        None => bind_guide_keys(app),
     }
 }
 

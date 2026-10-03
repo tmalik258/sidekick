@@ -41,6 +41,7 @@ mod tray;
 mod undo;
 mod updates;
 mod voice;
+mod web;
 mod windows;
 
 use std::error::Error;
@@ -125,6 +126,7 @@ pub fn run() {
             commands::ai_open_link,
             commands::codex_add_notify,
             commands::codex_add_mcp,
+            commands::guide_keys,
             commands::composio_test,
             commands::setup_run,
             commands::backup_export,

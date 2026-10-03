@@ -15,7 +15,7 @@ import { isPaused, type MascotState, type Suggestion } from "@/lib/types";
 import { ASK_ORB, AskPanel } from "./AskPanel";
 import { Icon } from "./Icon";
 import { Glance, RoundButton } from "./IslandGlance";
-import { IslandGuide } from "./IslandGuide";
+import { IslandGuide, useGuide } from "./IslandGuide";
 import { IslandSettings } from "./IslandSettings";
 import { IslandWelcome } from "./IslandWelcome";
 import { Orb } from "./Orb";
@@ -83,6 +83,7 @@ export function Island() {
   const chatting = useSidekick((s) => s.chatId !== null);
   const voiceStatus = useSidekick((s) => s.voiceStatus);
   const waiting = useSidekick((s) => (s.ask ? null : s.waiting));
+  const guide = useGuide(waiting);
   // Voice with Ask closed: a compact pill while listening and thinking; the
   // island opens only when the answer starts.
   const hearing = useSidekick((s) => (s.ask ? null : s.hearing));
@@ -311,7 +312,7 @@ export function Island() {
                 transition={{ duration: 0.28, delay: 0.06, ease: [0.23, 1, 0.32, 1] }}
               >
                 {showGuide && waiting ? (
-                  <IslandGuide waiting={waiting} />
+                  <IslandGuide waiting={waiting} guide={guide} />
                 ) : (
                   <ExpandedContent mascot={mascot} paused={paused} suggestion={suggestion} />
                 )}

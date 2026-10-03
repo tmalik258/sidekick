@@ -129,7 +129,7 @@ pub fn steps(firefox: bool) -> Vec<String> {
         vec![
             open.into(),
             "Turn on Developer mode (top right), then click Load unpacked.".into(),
-            "Click Copy folder path below, paste it into the folder box and press Enter, then Select Folder.".into(),
+            "Copy folder path below (or its Alt key), paste it into the folder box and press Enter, then Select Folder.".into(),
             "Press Allow on Sidekick's island when it asks.".into(),
         ]
     }
