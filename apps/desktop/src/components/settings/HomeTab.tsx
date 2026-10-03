@@ -67,7 +67,7 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
       <Section title="Today" keywords="time tracking hours apps">
         <TimeToday />
       </Section>
-      <Section title="Appearance" keywords="theme orb color look">
+      <Section title="Appearance" keywords="theme orb color look fullscreen hide">
         <div className="grid grid-cols-3 gap-3">
           {THEMES.map((t) => (
             <button
@@ -92,6 +92,12 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
             onChange={(v) => save({ collapseAfterSecs: Number(v) })}
           />
         </Field>
+        <Toggle
+          label="Hide while fullscreen"
+          hint="Keeps the island out of videos, slides and games. Hover the top edge to bring it back."
+          checked={settings.hideInFullscreen}
+          onChange={(hideInFullscreen) => save({ hideInFullscreen })}
+        />
       </Section>
       <Section
         collapsible
