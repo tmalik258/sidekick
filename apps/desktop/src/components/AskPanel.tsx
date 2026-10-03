@@ -34,6 +34,7 @@ import {
   updateSettings,
   useSidekick,
 } from "@/lib/store";
+import { toolStatus } from "@/lib/tools";
 import {
   type Agents,
   type AskContext,
@@ -887,8 +888,11 @@ function Chat({ turns }: { turns: Turn[] }) {
               ) : t.streaming ? (
                 <Thinking />
               ) : null}
-              {t.streaming && t.tool && (
-                <p className="mt-0.5 text-[11.5px] text-[rgb(235_235_245/0.5)]">{toolStatus(t.tool)}</p>
+              {(t.steps?.length ?? 0) > 1 ? (
+                <Steps steps={t.steps ?? []} running={!!t.streaming} />
+              ) : (
+                t.streaming &&
+                t.tool && <p className="mt-0.5 text-[11.5px] text-[rgb(235_235_245/0.5)]">{toolStatus(t.tool)}</p>
               )}
               {t.error && (
                 <p className="mt-1 rounded-xl bg-[#ff453a]/15 px-3 py-2 text-[12.5px] text-[#ffb4ae]">{t.error}</p>
@@ -994,6 +998,47 @@ function contextStarters({
     },
   );
   return out.slice(0, 3);
+}
+
+/** The steps of a multi-step task: done ones ticked, the current one live.
+ * Folds to one line once the answer is in. */
+function Steps({ steps, running }: { steps: string[]; running: boolean }) {
+  const [open, setOpen] = useState(false);
+  if (!running && !open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="chip mt-1 text-[11.5px] text-[rgb(235_235_245/0.45)] hover:text-white"
+      >
+        {steps.length} steps
+      </button>
+    );
+  }
+  // Steps only grow, in order, so their position is a stable id.
+  const keyed = steps.map((s, n) => ({ s, id: `${n}:${s}` }));
+  return (
+    <ol className="mt-1 flex flex-col gap-0.5 text-[11.5px]">
+      {keyed.map(({ s, id }, i) => {
+        const live = running && i === steps.length - 1;
+        return (
+          <li
+            key={id}
+            className={`flex items-center gap-1.5 ${live ? "text-white/80" : "text-[rgb(235_235_245/0.45)]"}`}
+          >
+            <span
+              className={`grid size-3 shrink-0 place-items-center rounded-full text-[8px] ${
+                live ? "animate-pulse bg-[#0a84ff]/60" : "bg-[#30d158]/70 text-black"
+              }`}
+            >
+              {live ? "" : "✓"}
+            </span>
+            {toolStatus(s).replace(/\.\.\.$/, "")}
+          </li>
+        );
+      })}
+    </ol>
+  );
 }
 
 /** Buttons still waiting for a tap; they take Alt 1, Alt 2... first. */
@@ -1126,48 +1171,6 @@ function AnswerOptions({ options, start }: { options: string[]; start: number })
       ))}
     </div>
   );
-}
-
-/** What a tool call looks like while it runs. Sidekick's own tools by name. */
-const LOCAL_TOOLS: Record<string, string> = {
-  search: "Searching your PC...",
-  web_search: "Searching the web...",
-  sidekick_web_search: "Searching the web...",
-  read_page: "Reading the page...",
-  sidekick_read_page: "Reading the page...",
-  WebSearch: "Searching the web...",
-  WebFetch: "Reading the page...",
-  browser: "Working in your browser...",
-  sidekick_browser: "Working in your browser...",
-  app_action: "Preparing the change...",
-  sidekick_app_action: "Preparing the change...",
-  desktop: "Working in the app...",
-  sidekick_desktop: "Working in the app...",
-  apps: "Looking up apps...",
-  sidekick_apps: "Looking up apps...",
-  notifications: "Checking your notifications...",
-  sidekick_notifications: "Checking your notifications...",
-  pc_status: "Checking your PC...",
-  pc_control: "Changing a setting...",
-  windows: "Looking at your windows...",
-  today: "Checking your day...",
-  recent: "Looking at what just happened...",
-  open: "Opening...",
-};
-
-function toolStatus(name: string): string {
-  return LOCAL_TOOLS[name] ?? `Reading with ${toolLabel(name)}...`;
-}
-
-/** `JIRA_SEARCH_ISSUES` reads as "Jira search issues". */
-function toolLabel(name: string) {
-  const words = name
-    .toLowerCase()
-    .split(/[_\-\s]+/)
-    .filter(Boolean);
-  if (words.length === 0) return "a tool";
-  const [first, ...rest] = words;
-  return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(" ");
 }
 
 /** The model that answers in Ask mode: Auto (Sidekick picks) or one of

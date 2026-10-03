@@ -128,7 +128,7 @@ pub fn is_embedding_model(name: &str) -> bool {
 }
 
 /// Most tool rounds before the model must answer with what it has.
-pub const MAX_TOOL_STEPS: usize = 6;
+pub const MAX_TOOL_STEPS: usize = 12;
 /// Longest tool result passed back to the model; small models have small
 /// contexts.
 const MAX_TOOL_RESULT: usize = 6_000;

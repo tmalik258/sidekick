@@ -174,8 +174,10 @@ export interface Turn extends ChatMessage {
   screen?: boolean;
   /** Why the local model suggests continuing in Claude Code. */
   handoff?: string | null;
-  /** The app tool the local model is using right now. */
+  /** The tool the model is using right now. */
   tool?: string | null;
+  /** Every tool step taken for this answer, in order (multi-step tasks). */
+  steps?: string[];
   /** Actions offered as buttons; each runs on a tap. */
   proposals?: Proposal[];
 }
