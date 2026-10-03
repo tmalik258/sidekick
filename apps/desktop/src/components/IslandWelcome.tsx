@@ -78,7 +78,7 @@ export function IslandWelcome() {
           {STEPS.map((s, i) => (
             <span
               key={s}
-              className={`h-1.5 rounded-full transition-all duration-300 ${i === step ? "w-4 bg-white" : "w-1.5 bg-white/25"}`}
+              className={`h-1.5 rounded-full transition-[width,background-color] duration-200 ease-out ${i === step ? "w-4 bg-white" : "w-1.5 bg-white/25"}`}
             />
           ))}
         </div>
