@@ -145,6 +145,75 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   codex_add_notify: () => "C:\\Users\\you\\.codex\\config.toml.sidekick-backup-20261002",
   codex_add_mcp: () => null,
   guide_keys: () => null,
+  notifications_silence: () => null,
+  notifications_set_level: (args) => {
+    const from = String(args.from);
+    const level = String(args.level);
+    const apps = { ...settings.notifications.apps, [from]: level as never };
+    if (level === "auto") delete apps[from];
+    settings = { ...settings, notifications: { ...settings.notifications, apps } };
+    return `${from}: ${level}`;
+  },
+  notifications_status: () => {
+    const ago = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+    const items = settings.notifications.enabled
+      ? [
+          {
+            id: 9,
+            app: "Chrome",
+            title: "Google",
+            body: "G-482913 is your verification code",
+            ts: ago(2),
+            level: "now",
+            why: "login code",
+            code: "482913",
+          },
+          {
+            id: 8,
+            app: "WhatsApp",
+            title: "Ali Khan",
+            body: "Can you send the invoice today?",
+            ts: ago(6),
+            level: "soon",
+            why: "message",
+          },
+          {
+            id: 7,
+            app: "Slack",
+            title: "#dev",
+            body: "Sara mentioned you: can you review the PR?",
+            ts: ago(14),
+            level: "soon",
+            why: "mention",
+          },
+          {
+            id: 6,
+            app: "Chrome",
+            title: "Daraz",
+            body: "Flash sale: 50% off today only",
+            ts: ago(30),
+            level: "digest",
+            why: "promotion",
+          },
+          {
+            id: 5,
+            app: "Windows Update",
+            title: "Updates are ready",
+            body: "Restart to finish installing",
+            ts: ago(55),
+            level: "digest",
+            why: "update",
+          },
+        ]
+      : [];
+    const apps: { app: string; level: string | null; count: number }[] = [];
+    for (const it of items) {
+      const found = apps.find((a) => a.app === it.app);
+      if (found) found.count += 1;
+      else apps.push({ app: it.app, level: settings.notifications.apps[it.app] ?? null, count: 1 });
+    }
+    return { readable: settings.notifications.enabled, error: null, items, apps };
+  },
   actions_recent: () => [],
   reveal_path: () => undefined,
   open_settings: () => commands.ask_open?.({ view: "settings" }),

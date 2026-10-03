@@ -618,6 +618,16 @@ async fn execute(
                 path: None,
             });
         }
+        "notify_level" => {
+            let level = arg("level")
+                .and_then(crate::inbox::Level::parse)
+                .ok_or("pick now, soon, digest or never")?;
+            let message = crate::inbox::set_level(app, arg("app").unwrap_or_default(), level)?;
+            return Ok(sidekick_actions::Outcome {
+                message,
+                path: None,
+            });
+        }
         "browser_fill" | "browser_close_duplicates" | "browser_save_session" => {
             return crate::browser::run(app, &option.action, &option.args).await;
         }
@@ -684,6 +694,18 @@ pub fn dismiss(app: &AppHandle, id: &str, reason: &str) -> Result<(), String> {
         active.proposal.skill_id
     );
     crate::learn::on_dismiss(app, &active.proposal.skill_id, reason);
+    if reason == "user" && active.proposal.skill_id.starts_with("notify.") {
+        let from = active
+            .proposal
+            .options
+            .iter()
+            .find_map(|o| o.args["app"].as_str().or(o.args["name"].as_str()))
+            .unwrap_or_default()
+            .to_owned();
+        if let Some(note) = crate::inbox::on_dismiss(app, &from) {
+            log::info!("notifications: {note}");
+        }
+    }
     // Shown while nobody was looking: keep it, so hovering the island
     // later still finds it.
     if reason == "timeout" {
