@@ -1,0 +1,14 @@
+id: notify.now
+name: Important notification
+description: A notification that needs you now (a login code, a VIP, security, a payment, a meeting). Windows stays silent; the rest waits.
+priority: 85
+dedupe: "{{id}}"
+trigger:
+  event: notification.now
+suggestion:
+  title: "{{app}}: {{title}}"
+  detail: "{{body}}"
+  options:
+    - { label: "Copy {{code}}", action: copy_text, args: { text: "{{code}}" }, when: { code: { exists: true } } }
+    - { label: "Open {{app}}", action: open_app, args: { name: "{{app}}" } }
+    - { label: "Less from {{app}}", action: notify_level, args: { app: "{{app}}", level: soon } }

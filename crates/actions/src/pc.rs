@@ -391,6 +391,11 @@ pub fn launch_app(q: &str) -> Result<Outcome, ActionError> {
     }
 }
 
+/// Brings an app to the front, or starts it when it is not open.
+pub fn open_app(q: &str) -> Result<Outcome, ActionError> {
+    focus_window(q).or_else(|_| launch_app(q))
+}
+
 pub fn sleep_pc() -> Result<Outcome, ActionError> {
     powershell("rundll32.exe powrprof.dll,SetSuspendState 0,1,0", &[])?;
     Ok(Outcome::msg("Going to sleep"))

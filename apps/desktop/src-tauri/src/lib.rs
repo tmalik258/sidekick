@@ -16,6 +16,7 @@ mod fathom;
 mod files;
 mod find;
 mod health;
+mod inbox;
 mod island;
 mod layout;
 mod learn;
@@ -127,6 +128,9 @@ pub fn run() {
             commands::codex_add_notify,
             commands::codex_add_mcp,
             commands::guide_keys,
+            commands::notifications_status,
+            commands::notifications_set_level,
+            commands::notifications_silence,
             commands::composio_test,
             commands::setup_run,
             commands::backup_export,
@@ -256,6 +260,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     pipeline::start(app);
     timetrack::start(app);
     moments::start(app);
+    inbox::start(app);
     // Prefer bundled models; only then network. Welcome opens from the island
     // once it listens (ask_ensure_welcome), or after models become ready.
     voice::seed_from_bundle(app);

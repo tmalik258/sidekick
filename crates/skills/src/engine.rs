@@ -646,4 +646,29 @@ suggestion:
         );
         assert!(labels("on", "on").is_none(), "nothing to offer, no card");
     }
+
+    #[test]
+    fn notification_card_offers_copy_only_with_a_code() {
+        let now = crate::builtin()
+            .into_iter()
+            .find(|s| s.id == "notify.now")
+            .unwrap();
+        let ev = |id: i64, code: serde_json::Value| {
+            Event::new(
+                "notification.now",
+                "notifications",
+                serde_json::json!({ "id": id, "app": "Chrome", "title": "Google", "body": "x", "code": code }),
+            )
+        };
+        let mut e = Engine::new(vec![now]);
+        let p = e
+            .evaluate(&ev(1, serde_json::json!("482913")), &env(), Instant::now())
+            .unwrap();
+        assert_eq!(p.options[0].label, "Copy 482913");
+        assert_eq!(p.options[0].args["text"], "482913");
+        let p = e
+            .evaluate(&ev(2, serde_json::Value::Null), &env(), Instant::now())
+            .unwrap();
+        assert_eq!(p.options[0].label, "Open Chrome");
+    }
 }

@@ -15,6 +15,7 @@ listeners = "0.6"
 log.workspace = true
 notify = "8"
 regex = "1"
+rusqlite.workspace = true
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 rrule = "0.14"
 sha2 = "0.10"
