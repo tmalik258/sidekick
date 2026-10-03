@@ -175,6 +175,7 @@ pub fn read_state() -> PcState {
 
 /// Settings pages by name; nothing else can be opened through here.
 pub const SETTINGS_PAGES: &[(&str, &str)] = &[
+    ("home", "ms-settings:"),
     ("display", "ms-settings:display"),
     ("nightlight", "ms-settings:nightlight"),
     ("sound", "ms-settings:sound"),
@@ -281,7 +282,8 @@ pub fn control(what: &str, value: Option<u8>, page: Option<&str>) -> Result<Outc
             msg("Locked")
         }
         "open_settings" => {
-            let page = page.unwrap_or_default();
+            // No page: the Settings home.
+            let page = page.filter(|p| !p.trim().is_empty()).unwrap_or("home");
             let uri = settings_uri(page).ok_or_else(|| {
                 ActionError::Invalid(format!(
                     "unknown settings page {page}; one of: {}",
@@ -439,6 +441,7 @@ mod tests {
         assert!(control("set_volume", Some(150), None).is_err());
         assert!(control("open_settings", None, Some("cmd.exe")).is_err());
         assert_eq!(settings_uri("nightlight"), Some("ms-settings:nightlight"));
+        assert_eq!(settings_uri("home"), Some("ms-settings:"));
         assert!(query("**").is_err());
         assert_eq!(query(" chr*ome ").unwrap(), "chrome");
     }

@@ -188,7 +188,7 @@ pub fn defs() -> Vec<ToolDef> {
             name: PC.into(),
             description: "Change an everyday Windows setting right away: volume_up, volume_down, \
                 mute, set_volume {level}, brightness {level}, dark_mode_on, dark_mode_off, lock, \
-                open_settings {page}. Pages: display, nightlight, sound, notifications, focus \
+                open_settings {page} (no page opens Windows Settings itself). Pages: home, display, nightlight, sound, notifications, focus \
                 (Do Not Disturb), bluetooth, wifi, network, battery, power, storage, apps, \
                 default_apps, startup_apps, colors, background, mouse, keyboard, printers, updates, \
                 privacy, accounts, time, language, about. Night light and Do Not Disturb have no \
