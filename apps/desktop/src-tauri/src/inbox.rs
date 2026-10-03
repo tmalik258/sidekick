@@ -7,10 +7,13 @@
 //! - digest: promos, updates, chatter. Kept for "what did I miss?".
 //! - never: apps the user muted. Dropped.
 //!
-//! Rules decide the clear cases; the local model looks at the rest. The
-//! user's own picks (per app, VIPs, "Less from") always win.
+//! The local model decides, with context: what reached the user in the last
+//! hours, earlier notifications about the same thing (so the Gmail copy of
+//! an Upwork alert folds into the first), and what the user did with cards
+//! before. Rules are only a safety net: login codes and muted apps, and the
+//! whole decision when no model is running.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -81,6 +84,25 @@ pub struct Item {
     pub level: Level,
     pub why: String,
     pub code: Option<String>,
+    /// Mirrored from the phone (Phone Link).
+    pub phone: bool,
+    /// Other apps that brought the same thing ("Gmail" for an Upwork alert).
+    pub also: Vec<String>,
+}
+
+impl Item {
+    /// "WhatsApp" or "Gmail (phone)".
+    pub fn source(&self) -> String {
+        source(&self.app, self.phone)
+    }
+}
+
+fn source(app: &str, phone: bool) -> String {
+    if phone {
+        format!("{app} (phone)")
+    } else {
+        app.to_owned()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -88,8 +110,10 @@ pub struct Sorted {
     pub level: Level,
     pub why: &'static str,
     pub code: Option<String>,
-    /// No rule was sure; the local model may raise it.
+    /// No rule was sure (used when no model is running).
     pub unsure: bool,
+    /// The model's one-line reason, shown on the card.
+    pub reason: Option<String>,
 }
 
 static CODE_WORDS: LazyLock<Regex> = LazyLock::new(|| {
@@ -145,6 +169,7 @@ pub fn sort(app: &str, title: &str, body: &str, s: &NotificationSettings) -> Sor
         why,
         code: None,
         unsure: false,
+        reason: None,
     };
     if user == Some(Level::Never) {
         return pick(Level::Never, "muted app");
@@ -157,6 +182,7 @@ pub fn sort(app: &str, title: &str, body: &str, s: &NotificationSettings) -> Sor
             why: "login code",
             code: Some(c[1].to_owned()),
             unsure: false,
+            reason: None,
         };
     }
     if s.vip
@@ -196,6 +222,7 @@ pub fn sort(app: &str, title: &str, body: &str, s: &NotificationSettings) -> Sor
         why: "everything else",
         code: None,
         unsure: true,
+        reason: None,
     }
 }
 
@@ -206,7 +233,30 @@ struct Inbox {
     error: Option<String>,
     pending: Vec<Item>,
     last_soon: Option<Instant>,
-    dismissals: std::collections::HashMap<String, u32>,
+    dismissals: HashMap<String, u32>,
+    /// What the user did with notification cards, newest last.
+    lessons: VecDeque<String>,
+    /// Meaning vectors of recent items, by id, for spotting repeats.
+    vectors: HashMap<i64, Vec<f32>>,
+}
+
+/// Lessons kept for the model.
+const LESSONS: usize = 20;
+/// How far back a repeat is looked for.
+const REPEAT_WINDOW: chrono::Duration = chrono::Duration::hours(3);
+/// The model has this long per notification; then the rules decide.
+const JUDGE_WAIT: Duration = Duration::from_secs(6);
+/// Notifications judged by the model from one read.
+const JUDGED_PER_POLL: usize = 5;
+
+/// Something the user did with a notification card ("Dismissed: Sara on
+/// Slack"); the model reads these as examples of what matters to them.
+pub fn lesson(text: String) {
+    let mut i = inbox();
+    i.lessons.push_back(text);
+    while i.lessons.len() > LESSONS {
+        i.lessons.pop_front();
+    }
 }
 
 static INBOX: LazyLock<Mutex<Inbox>> = LazyLock::new(|| Mutex::new(Inbox::default()));
@@ -217,35 +267,210 @@ fn inbox() -> std::sync::MutexGuard<'static, Inbox> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-/// Asks the local model about a notification no rule was sure of.
-async fn ask_model(app: &AppHandle, t: &Toast) -> Option<Level> {
-    let ai = lock(&app.state::<AppState>().settings).ai.clone();
-    if !ai.local.enabled {
-        return None;
+/// Words that carry meaning, for comparing two notifications.
+fn words(text: &str) -> HashSet<String> {
+    const SKIP: &[&str] = &[
+        "the",
+        "and",
+        "for",
+        "you",
+        "your",
+        "with",
+        "this",
+        "that",
+        "from",
+        "new",
+        "has",
+        "have",
+        "are",
+        "was",
+        "via",
+        "notification",
+        "notifications",
+        "alert",
+    ];
+    text.split(|c: char| !c.is_alphanumeric())
+        .map(str::to_lowercase)
+        .filter(|w| w.len() >= 3 && !SKIP.contains(&w.as_str()))
+        .collect()
+}
+
+/// How much of the shorter text the longer one repeats (0 to 1), so a
+/// short app alert and the longer email about it still match.
+pub fn overlap(a: &str, b: &str) -> f32 {
+    let (a, b) = (words(a), words(b));
+    let small = a.len().min(b.len());
+    if small < 3 {
+        return 0.0;
     }
-    let model = crate::ai::local_model(&ai);
-    let req = sidekick_ai::ChatRequest {
-        system: "You sort desktop notifications. Answer with one word: now (the user must see it \
-                 right away: a person needs them, money, security, a deadline today), soon (a \
-                 message or task for later today), or digest (anything else)."
-            .into(),
-        messages: vec![sidekick_ai::Message::user(format!(
-            "App: {}\nTitle: {}\nText: {}",
-            t.app,
-            t.title,
-            t.body.chars().take(400).collect::<String>()
-        ))],
-        image: None,
-    };
-    let answer = tokio::time::timeout(Duration::from_secs(8), model.complete(&req, json!({})))
+    a.intersection(&b).count() as f32 / small as f32
+}
+
+fn cosine(a: &[f32], b: &[f32]) -> f32 {
+    let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
+    let na: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let nb: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if na == 0.0 || nb == 0.0 {
+        0.0
+    } else {
+        dot / (na * nb)
+    }
+}
+
+/// The meaning vector of a notification, when an embedding model is set.
+async fn embed(app: &AppHandle, text: &str) -> Option<Vec<f32>> {
+    let (client, model) = crate::search::embedder(app)?;
+    let input = vec![text.chars().take(500).collect::<String>()];
+    tokio::time::timeout(Duration::from_secs(3), client.embed(&model, &input))
         .await
         .ok()?
         .ok()?
-        .to_lowercase();
-    ["now", "soon", "digest"]
         .into_iter()
-        .find(|w| answer.contains(w))
-        .and_then(Level::parse)
+        .next()
+}
+
+/// Earlier notifications that may be about the same thing, best first.
+fn candidates(new_text: &str, vector: Option<&[f32]>) -> Vec<(Item, f32)> {
+    let cutoff = chrono::Utc::now() - REPEAT_WINDOW;
+    let i = inbox();
+    let mut found: Vec<(Item, f32)> = i
+        .items
+        .iter()
+        .filter(|it| {
+            chrono::DateTime::parse_from_rfc3339(&it.ts)
+                .is_ok_and(|t| t.with_timezone(&chrono::Utc) > cutoff)
+        })
+        .filter_map(|it| {
+            let words = overlap(new_text, &format!("{} {}", it.title, it.body));
+            let meaning = vector
+                .zip(i.vectors.get(&it.id))
+                .map_or(0.0, |(a, b)| cosine(a, b));
+            let score = words.max(meaning);
+            (words >= 0.5 || meaning >= 0.8).then(|| (it.clone(), score))
+        })
+        .collect();
+    found.sort_by(|a, b| b.1.total_cmp(&a.1));
+    found.truncate(3);
+    found
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Verdict {
+    pub level: Level,
+    pub same_as: Option<i64>,
+    pub why: String,
+}
+
+/// Reads the model's JSON answer.
+pub fn parse_verdict(answer: &str) -> Option<Verdict> {
+    let start = answer.find('{')?;
+    let end = answer.rfind('}')?;
+    let v: serde_json::Value = serde_json::from_str(answer.get(start..=end)?).ok()?;
+    let level = match v["level"].as_str()?.to_lowercase().as_str() {
+        "now" => Level::Now,
+        "soon" => Level::Soon,
+        "digest" => Level::Digest,
+        "skip" | "never" => Level::Never,
+        _ => return None,
+    };
+    Some(Verdict {
+        level,
+        same_as: v["same_as"].as_i64(),
+        why: v["why"]
+            .as_str()
+            .unwrap_or_default()
+            .chars()
+            .take(80)
+            .collect(),
+    })
+}
+
+const JUDGE_SYSTEM: &str = "You decide which desktop notifications reach the user. Reply with JSON only: \
+{\"level\":\"now|soon|digest|skip\",\"same_as\":<id or null>,\"why\":\"<at most 8 words>\"}. \
+now: they need it right away (a person waiting on them, money, security, a meeting or deadline now, \
+something they were waiting for). soon: worth seeing today (messages, mentions, things to act on, \
+leads and job alerts they care about). digest: fine to skim later (updates, newsletters, social). \
+skip: no value (empty 'you have new messages' pings, ads, duplicates of nothing useful). \
+same_as: the id of an earlier notification about the same thing (the same job, message, order or \
+event), even from another app or in other words; it then folds into that one. Learn from what the \
+user did before.";
+
+/// Asks the local model about one notification, with what came before.
+async fn judge(
+    app: &AppHandle,
+    t: &Toast,
+    rule: &Sorted,
+    similar: &[(Item, f32)],
+) -> Option<Verdict> {
+    let settings = lock(&app.state::<AppState>().settings).clone();
+    if !settings.ai.local.enabled {
+        return None;
+    }
+    let (recent, lessons) = {
+        let i = inbox();
+        let recent: Vec<String> = i
+            .items
+            .iter()
+            .take(12)
+            .map(|it| {
+                format!(
+                    "- {} ({}): {}: {}",
+                    it.source(),
+                    it.level.as_str(),
+                    it.title,
+                    it.body.chars().take(80).collect::<String>()
+                )
+            })
+            .collect();
+        (recent, i.lessons.iter().cloned().collect::<Vec<_>>())
+    };
+    let mut prompt = String::new();
+    if !settings.notifications.vip.is_empty() {
+        prompt.push_str(&format!(
+            "People who always matter: {}\n",
+            settings.notifications.vip.join(", ")
+        ));
+    }
+    if !lessons.is_empty() {
+        prompt.push_str(&format!(
+            "What the user did with earlier cards:\n{}\n",
+            lessons.join("\n")
+        ));
+    }
+    if !recent.is_empty() {
+        prompt.push_str(&format!("Recent notifications:\n{}\n", recent.join("\n")));
+    }
+    if !similar.is_empty() {
+        prompt.push_str("Possibly the same thing:\n");
+        for (it, _) in similar {
+            prompt.push_str(&format!(
+                "- id {}: {}: {}: {}\n",
+                it.id,
+                it.source(),
+                it.title,
+                it.body.chars().take(160).collect::<String>()
+            ));
+        }
+    }
+    prompt.push_str(&format!(
+        "Time: {}\nRules alone would say: {}\nNew notification from {}:\nTitle: {}\nText: {}",
+        chrono::Local::now().format("%a %H:%M"),
+        rule.level.as_str(),
+        source(&t.app, t.phone),
+        t.title,
+        t.body.chars().take(400).collect::<String>()
+    ));
+    let model = crate::ai::local_model(&settings.ai);
+    let req = sidekick_ai::ChatRequest {
+        system: JUDGE_SYSTEM.into(),
+        messages: vec![sidekick_ai::Message::user(prompt)],
+        image: None,
+    };
+    let answer = tokio::time::timeout(JUDGE_WAIT, model.complete(&req, json!({})))
+        .await
+        .ok()?
+        .ok()?;
+    parse_verdict(&answer)
 }
 
 pub fn start(app: &AppHandle) {
@@ -294,8 +519,10 @@ pub fn start(app: &AppHandle) {
                     continue;
                 }
             };
-            for t in new {
-                take(&app, &settings, t).await;
+            // A burst (after a sync, or waking the PC) is judged up to a
+            // point; past it the rules decide, so nothing waits long.
+            for (n, t) in new.into_iter().enumerate() {
+                take(&app, &settings, t, n < JUDGED_PER_POLL).await;
             }
             flush_soon(&app, &settings);
         }
@@ -310,16 +537,59 @@ fn denied(app_name: &str, s: &sidekick_core::Settings) -> bool {
             .any(|d| d.trim_end_matches(".exe").eq_ignore_ascii_case(&lower))
 }
 
-async fn take(app: &AppHandle, settings: &sidekick_core::Settings, t: Toast) {
+async fn take(app: &AppHandle, settings: &sidekick_core::Settings, t: Toast, think: bool) {
     if denied(&t.app, settings) {
         return;
     }
     let mut sorted = sort(&t.app, &t.title, &t.body, &settings.notifications);
-    if sorted.unsure
-        && let Some(level) = ask_model(app, &t).await
-    {
-        sorted.level = level;
-        sorted.why = "the local model";
+    // Muted apps and login codes need no judgement (and codes no delay).
+    let firm = matches!(sorted.why, "muted app" | "login code") || !think;
+    let text = format!("{} {}", t.title, t.body);
+    let vector = if firm { None } else { embed(app, &text).await };
+    let similar = if firm {
+        Vec::new()
+    } else {
+        candidates(&text, vector.as_deref())
+    };
+    let mut repeat_of: Option<i64> = None;
+    if !firm {
+        match judge(app, &t, &sorted, &similar).await {
+            Some(v) => {
+                repeat_of = v
+                    .same_as
+                    .filter(|id| similar.iter().any(|(it, _)| it.id == *id));
+                // The user's own pick for an app or a VIP keeps its level.
+                if !matches!(sorted.why, "your choice for this app" | "from a VIP") {
+                    sorted.level = v.level;
+                    sorted.why = "Sidekick's judgement";
+                }
+                sorted.reason = Some(v.why);
+            }
+            // No model: a near copy of something recent is still a repeat.
+            None => {
+                repeat_of = similar
+                    .first()
+                    .filter(|(_, score)| *score >= 0.75)
+                    .map(|(it, _)| it.id);
+            }
+        }
+    }
+    if let Some(first) = repeat_of {
+        let mut i = inbox();
+        let also = source(&t.app, t.phone);
+        if let Some(it) = i.items.iter_mut().find(|it| it.id == first)
+            && it.source() != also
+            && !it.also.contains(&also)
+        {
+            it.also.push(also.clone());
+        }
+        if let Some(it) = i.pending.iter_mut().find(|it| it.id == first)
+            && !it.also.contains(&also)
+        {
+            it.also.push(also);
+        }
+        log::debug!("notification {} folded into {first}", t.id);
+        return;
     }
     let item = Item {
         id: t.id,
@@ -328,9 +598,19 @@ async fn take(app: &AppHandle, settings: &sidekick_core::Settings, t: Toast) {
         body: t.body.clone(),
         ts: t.arrived.to_rfc3339(),
         level: sorted.level,
-        why: sorted.why.into(),
+        why: sorted.reason.clone().unwrap_or_else(|| sorted.why.into()),
         code: sorted.code.clone(),
+        phone: t.phone,
+        also: Vec::new(),
     };
+    if let Some(v) = vector {
+        let mut i = inbox();
+        i.vectors.insert(item.id, v);
+        if i.vectors.len() > KEEP {
+            let keep: HashSet<i64> = i.items.iter().map(|it| it.id).collect();
+            i.vectors.retain(|id, _| keep.contains(id));
+        }
+    }
     {
         let mut i = inbox();
         if sorted.level != Level::Never {
@@ -352,6 +632,7 @@ async fn take(app: &AppHandle, settings: &sidekick_core::Settings, t: Toast) {
             json!({
                 "id": item.id,
                 "app": item.app,
+                "source": item.source(),
                 "title": item.title,
                 "body": clip(&item.body, 160),
                 "why": item.why,
@@ -393,18 +674,18 @@ fn flush_soon(app: &AppHandle, settings: &sidekick_core::Settings) {
 fn digest(pending: &[Item]) -> (String, String) {
     if let [only] = pending {
         let title = if only.title.is_empty() {
-            only.app.clone()
+            only.source()
         } else {
-            format!("{} on {}", only.title, only.app)
+            format!("{} on {}", only.title, only.source())
         };
         return (title, clip(&only.body, 200));
     }
     let mut latest: Vec<(String, String)> = Vec::new();
     for it in pending.iter().rev() {
         let who = if it.title.is_empty() {
-            it.app.clone()
+            it.source()
         } else {
-            format!("{} ({})", it.title, it.app)
+            format!("{} ({})", it.title, it.source())
         };
         if !latest.iter().any(|(w, _)| *w == who) {
             latest.push((who, it.body.clone()));
@@ -479,6 +760,7 @@ pub fn set_level(app: &AppHandle, from: &str, level: Level) -> Result<String, St
         .insert(from.to_owned(), level.as_str().to_owned());
     crate::commands::apply_settings(app, next)?;
     inbox().dismissals.remove(from);
+    lesson(format!("Set {from} to {}", level.as_str()));
     Ok(match level {
         Level::Now => format!("{from} always comes through"),
         Level::Soon => format!("{from} waits for a quiet moment"),
@@ -598,6 +880,8 @@ mod tests {
             level: Level::Soon,
             why: String::new(),
             code: None,
+            phone: false,
+            also: Vec::new(),
         }
     }
 
