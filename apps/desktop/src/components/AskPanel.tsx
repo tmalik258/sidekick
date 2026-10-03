@@ -1222,7 +1222,7 @@ function Steps({ steps, running }: { steps: string[]; running: boolean }) {
           >
             <span
               className={`grid size-3 shrink-0 place-items-center rounded-full text-[8px] ${
-                live ? "animate-pulse bg-[#0a84ff]/60" : "bg-[#30d158]/70 text-black"
+                live ? "animate-pulse bg-[#0a84ff]/60" : "bg-[#30d158]/70 text-black transition-colors duration-150"
               }`}
             >
               {live ? "" : "✓"}
@@ -1559,7 +1559,12 @@ function Handoff({ turns, reason }: { turns: Turn[]; reason: string | null }) {
 /** An answer as it arrives: word by word at a reading pace. */
 function Answer({ text, live }: { text: string; live: boolean }) {
   const shown = useReveal(text, live);
-  return <Markdown text={shown} />;
+  // The first words fade in; after that, words stream without animation.
+  return (
+    <div className="fade-in">
+      <Markdown text={shown} />
+    </div>
+  );
 }
 
 /** Before the first words: what Sidekick is doing, or "Thinking". */
