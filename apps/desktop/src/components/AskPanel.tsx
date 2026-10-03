@@ -899,8 +899,9 @@ function Chat({ turns }: { turns: Turn[] }) {
               )}
               {skillMode && !t.streaming && yamlBlock(t.content) && <AddSkill yaml={yamlBlock(t.content) ?? ""} />}
               {!t.streaming && t.provider && (
-                <p className="mt-0.5 text-[11px] text-[rgb(235_235_245/0.35)]">
+                <p className="mt-0.5 flex items-center gap-2 text-[11px] text-[rgb(235_235_245/0.35)]">
                   {PROVIDER_LABELS[t.provider] ?? t.provider}
+                  {i === turns.length - 1 && i > 0 && !skillMode && <SaveRecipe prompt={turns[i - 1]?.content ?? ""} />}
                 </p>
               )}
               {t.proposals && t.proposals.length > 0 && <Proposals items={t.proposals} keys={i === turns.length - 1} />}
@@ -998,6 +999,27 @@ function contextStarters({
     },
   );
   return out.slice(0, 3);
+}
+
+/** Keeps the question as a recipe, to run again by name or on a trigger. */
+function SaveRecipe({ prompt }: { prompt: string }) {
+  const [saved, setSaved] = useState<string | null>(null);
+  if (!prompt.trim()) return null;
+  if (saved) return <span>{saved}</span>;
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        void api
+          .recipeSave({ id: "", name: "", prompt, trigger: { when: "manual" }, auto: false, enabled: true })
+          .then(setSaved)
+          .catch((e) => setSaved(String(e)))
+      }
+      className="chip hover:text-white"
+    >
+      Save as recipe
+    </button>
+  );
 }
 
 /** The steps of a multi-step task: done ones ticked, the current one live.

@@ -16,8 +16,8 @@ pub use bus::EventBus;
 pub use event::{Context, Event, Sensitivity};
 pub use mascot::{Cue, MascotEvent, MascotMachine, MascotState, Transition};
 pub use settings::{
-    AI_PROVIDERS, AiSettings, ComposioSettings, NOTIFY_LEVELS, NotificationSettings, Pause,
-    SHORTCUTS, Settings, SkillPref,
+    AI_PROVIDERS, AiSettings, ComposioSettings, NOTIFY_LEVELS, NotificationSettings, Pause, Recipe,
+    SHORTCUTS, Settings, SkillPref, Trigger,
 };
 pub use storage::{
     ActionRecord, AppTime, ChatSummary, Habit, RoutineOpen, SearchHit, Storage, StoredEvent,

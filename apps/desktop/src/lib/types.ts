@@ -58,6 +58,8 @@ export interface Settings {
   /** Fade the island while a fullscreen app is in front. */
   hideInFullscreen: boolean;
   notifications: NotificationSettings;
+  recipes: Recipe[];
+  memory: string[];
 }
 
 export interface CalendarToday {
@@ -330,6 +332,8 @@ export const DEFAULT_SETTINGS: Settings = {
   routinesAuto: false,
   hideInFullscreen: false,
   notifications: { enabled: true, apps: {}, vip: [] },
+  recipes: [],
+  memory: [],
   voice: {
     enabled: true,
     wakeWord: true,
@@ -597,4 +601,24 @@ export interface InboxStatus {
   items: InboxItem[];
   /** Apps seen so far, newest first, with Sidekick's level for each. */
   apps: { app: string; level: NotifyLevel | null; count: number }[];
+}
+
+/** When a recipe runs. */
+export type Trigger =
+  | { when: "manual" }
+  | { when: "time"; time: string; days: string[] }
+  | { when: "notification"; app: string; contains: string }
+  | { when: "download"; kind: string }
+  | { when: "meeting_ended" }
+  | { when: "app_opened"; app: string };
+
+/** A saved task: what to do, in the user's words, and when. */
+export interface Recipe {
+  id: string;
+  name: string;
+  prompt: string;
+  trigger: Trigger;
+  /** Start without asking first; sending still waits for a tap. */
+  auto: boolean;
+  enabled: boolean;
 }

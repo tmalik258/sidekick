@@ -1,0 +1,12 @@
+id: recipes.due
+name: Recipe ready to run
+description: A saved recipe's trigger happened (a time, a notification, a download, a meeting ending, an app opening). Recipes set to start alone skip this card.
+priority: 60
+dedupe: "{{id}}"
+trigger:
+  event: recipe.due
+suggestion:
+  title: "{{name}}"
+  detail: "{{why}}"
+  options:
+    - { label: Run it, action: recipe_run, args: { id: "{{id}}" } }

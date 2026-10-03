@@ -146,6 +146,20 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   codex_add_mcp: () => null,
   guide_keys: () => null,
   notifications_silence: () => null,
+  recipe_save: (args) => {
+    const r = args.recipe as Settings["recipes"][number];
+    const recipe = { ...r, id: r.id || `r${Date.now()}`, name: r.name || r.prompt.split(" ").slice(0, 6).join(" ") };
+    settings = { ...settings, recipes: [...settings.recipes.filter((x) => x.id !== recipe.id), recipe] };
+    emit("settings://changed", settings);
+    return `Saved recipe ${recipe.name}`;
+  },
+  recipe_delete: (args) => {
+    settings = { ...settings, recipes: settings.recipes.filter((x) => x.id !== args.id) };
+    emit("settings://changed", settings);
+    return "Deleted";
+  },
+  recipe_run: () => "Running",
+  know_how_clear: () => null,
   notifications_set_level: (args) => {
     const from = String(args.from);
     const level = String(args.level);
