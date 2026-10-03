@@ -26,6 +26,7 @@ mod mcp;
 mod mcp_oauth;
 mod meetings;
 mod moments;
+mod office;
 mod password_save;
 mod pipeline;
 mod privacy;
