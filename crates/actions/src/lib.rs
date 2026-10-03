@@ -9,6 +9,7 @@ pub mod cleanup;
 mod convert;
 pub mod dev;
 mod files;
+pub mod office;
 pub mod passwords;
 pub mod pc;
 mod system;
@@ -18,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 pub use capabilities::{Browser, Capabilities, default_browser};
+pub use convert::TextBox;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -98,6 +100,16 @@ impl Executor {
     /// The text in an image (OCR), for questions about the screen.
     pub async fn read_text(&self, image: &Path) -> Result<String, ActionError> {
         convert::ocr_text(&self.caps, image).await
+    }
+
+    /// Where `target` is in an image, by its text.
+    pub async fn find_text(
+        &self,
+        image: &Path,
+        target: &str,
+    ) -> Result<Option<TextBox>, ActionError> {
+        let tsv = convert::ocr_tsv(&self.caps, image).await?;
+        Ok(convert::find_text_box(&tsv, target))
     }
 
     /// Runs one action. Blocking work happens off the async runtime.
