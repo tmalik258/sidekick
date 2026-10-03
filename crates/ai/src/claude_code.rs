@@ -48,7 +48,11 @@ impl ClaudeCode {
             args.push("--mcp-config".into());
             args.push(config.to_string_lossy().into_owned());
             args.push("--allowedTools".into());
-            args.push("mcp__sidekick".into());
+            args.push("mcp__sidekick,WebSearch,WebFetch".into());
+        } else {
+            // Claude Code's own web tools, which `-p` refuses unless allowed.
+            args.push("--allowedTools".into());
+            args.push("WebSearch,WebFetch".into());
         }
         args
     }
