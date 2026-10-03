@@ -112,7 +112,7 @@ function LaterList() {
   if (items.length === 0) return null;
   const missed = items.some((l) => l.missed);
   return (
-    <div className="mt-3 flex flex-col gap-1.5">
+    <div className="mt-3 flex flex-col gap-1.5" style={{ marginLeft: "calc(var(--orb-indent, 0px) * -1)" }}>
       <div className="flex items-center justify-between text-[12px] text-[rgb(235_235_245/0.6)]">
         <span>{missed ? "You missed" : "Saved for later"}</span>
         <button type="button" onClick={() => void api.laterClear()} className="chip hover:text-white">

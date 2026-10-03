@@ -111,7 +111,7 @@ pub struct Settings {
 /// How much a notification interrupts.
 pub const NOTIFY_LEVELS: &[&str] = &["now", "soon", "digest", "never"];
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct NotificationSettings {
     /// Read and sort Windows notifications.
@@ -121,6 +121,18 @@ pub struct NotificationSettings {
     pub apps: BTreeMap<String, String>,
     /// People whose messages always come through right away.
     pub vip: Vec<String>,
+}
+
+impl Default for NotificationSettings {
+    /// On from the start: nothing changes until Windows is silenced, and
+    /// then only what matters comes up.
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            apps: BTreeMap::new(),
+            vip: Vec::new(),
+        }
+    }
 }
 
 /// Password managers are ignored from the start (FR-RAG-08).

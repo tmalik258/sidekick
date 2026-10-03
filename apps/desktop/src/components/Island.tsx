@@ -6,7 +6,7 @@
 // and interruptible; content cross-fades through a short blur.
 
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "motion/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
 import { playSound } from "@/lib/sound";
@@ -305,7 +305,15 @@ export function Island() {
                 key="expanded"
                 ref={contentRef}
                 className="absolute top-0 right-0"
-                style={{ left: EXPANDED.pad + ORB + 14, paddingTop: EXPANDED.pad, paddingRight: EXPANDED.pad }}
+                style={
+                  {
+                    left: EXPANDED.pad + ORB + 14,
+                    paddingTop: EXPANDED.pad,
+                    paddingRight: EXPANDED.pad,
+                    // Lists below the orb (You missed) reach back under it.
+                    "--orb-indent": `${ORB + 14}px`,
+                  } as CSSProperties
+                }
                 initial={reduced ? { opacity: 0 } : { opacity: 0, filter: "blur(6px)", y: 4 }}
                 animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
                 exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
