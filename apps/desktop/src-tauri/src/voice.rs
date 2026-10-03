@@ -102,6 +102,9 @@ pub struct Voice {
     /// Ask mode was opened by the wake word, so it closes again if nothing
     /// was said.
     opened_by_voice: AtomicBool,
+    /// Listening because the user pressed to talk, not because a wake
+    /// phrase was heard; short answers are taken as said.
+    pushed: AtomicBool,
     /// Spoken the first-run welcome line once this process.
     welcome_greeted: AtomicBool,
     /// Welcome opened before the voice was ready; greet after download.
@@ -126,6 +129,7 @@ impl Voice {
             downloading: AtomicBool::new(false),
             cancel_download: AtomicBool::new(false),
             opened_by_voice: AtomicBool::new(false),
+            pushed: AtomicBool::new(false),
             welcome_greeted: AtomicBool::new(false),
             pending_welcome_greet: AtomicBool::new(false),
             speaking: Mutex::default(),
@@ -587,9 +591,12 @@ fn on_heard(app: &AppHandle, heard: Heard) {
         }
         Heard::Partial(text) => emit_heard(app, strip_wake(&text), false),
         Heard::Final(text) => {
-            let text = strip_wake(&text);
+            let mut text = strip_wake(&text);
+            let pushed = v.pushed.swap(false, Ordering::SeqCst);
             if let Some((id, labels)) = lock(&v.choosing).take() {
                 mascot::dispatch(app, MascotEvent::Cancelled);
+                // Clears what showed as heard; an empty answer asks nothing.
+                emit_heard(app, String::new(), true);
                 let result = match match_choice(&text, &labels) {
                     Choice::Option(i) => crate::suggestions::choose(app, &id, i),
                     Choice::Dismiss => crate::suggestions::dismiss(app, &id, "voice"),
@@ -600,19 +607,33 @@ fn on_heard(app: &AppHandle, heard: Heard) {
                 }
                 return;
             }
+            // A wake on a stray sound turns noise into a word or two
+            // ("byzant mixed"); that is not a question, so go back to rest.
+            if !pushed && !text.is_empty() && !sidekick_voice::text::looks_like_request(&text) {
+                log::debug!("voice: ignored {text:?}");
+                text.clear();
+            }
             mascot::dispatch(app, MascotEvent::Cancelled);
             emit_heard(app, text, true);
             v.opened_by_voice.store(false, Ordering::SeqCst);
         }
         Heard::Error(err) => {
             *lock(&v.last_error) = Some(err);
+            v.pushed.store(false, Ordering::SeqCst);
             mascot::dispatch(app, MascotEvent::Cancelled);
+            // Whatever was showing as heard goes away.
+            emit_heard(app, String::new(), true);
+            v.opened_by_voice.store(false, Ordering::SeqCst);
             // This runs on the listener thread, which cannot join itself.
             let app = app.clone();
             std::thread::spawn(move || {
                 let old = lock(&voice(&app).runtime).take();
                 drop(old);
                 emit_state(&app);
+                // Start the microphone again (a headset unplugged, the PC
+                // woke up); if it is really gone, the error stays shown.
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                refresh(&app);
             });
         }
     }
@@ -637,6 +658,7 @@ pub fn listen(app: &AppHandle) -> Result<(), String> {
     let Some(listener) = runtime.as_ref().and_then(|r| r.listener.as_ref()) else {
         return Err("Voice is off. Turn it on in Settings > Voice.".into());
     };
+    v.pushed.store(true, Ordering::SeqCst);
     listener.send(Control::ListenNow);
     Ok(())
 }
@@ -644,6 +666,7 @@ pub fn listen(app: &AppHandle) -> Result<(), String> {
 /// Stops listening and speaking (Esc, Stop).
 pub fn stop(app: &AppHandle) {
     let v = voice(app);
+    v.pushed.store(false, Ordering::SeqCst);
     if let Some(l) = lock(&v.runtime).as_ref().and_then(|r| r.listener.as_ref()) {
         l.send(Control::Cancel);
     }
