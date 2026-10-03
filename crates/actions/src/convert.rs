@@ -171,6 +171,105 @@ pub async fn ocr_text(caps: &Capabilities, image: &Path) -> Result<String, Actio
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
 }
 
+/// Tesseract's word boxes (its `tsv` output) for an image.
+pub async fn ocr_tsv(caps: &Capabilities, image: &Path) -> Result<String, ActionError> {
+    let tesseract = caps
+        .tesseract
+        .as_ref()
+        .ok_or_else(|| missing("Tesseract"))?;
+    let mut cmd = Command::new(tesseract);
+    cmd.arg(image)
+        .arg("stdout")
+        .arg("tsv")
+        .kill_on_drop(true)
+        .stdin(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(0x0800_0000);
+    }
+    let out = tokio::time::timeout(TIMEOUT, cmd.output())
+        .await
+        .map_err(|_| ActionError::Failed("reading the screen took too long".into()))?
+        .map_err(fail)?;
+    if !out.status.success() {
+        return Err(ActionError::Failed(
+            "Tesseract could not read the image".into(),
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// A box in image pixels: left, top, width, height.
+pub type TextBox = (i32, i32, i32, i32);
+
+/// Where `target` appears in Tesseract's word boxes: the words in order on
+/// one line, matched without case or punctuation. The best match is the
+/// one whose line is shortest (a button rather than a sentence mentioning
+/// it).
+pub fn find_text_box(tsv: &str, target: &str) -> Option<TextBox> {
+    let norm = |s: &str| -> String {
+        s.chars()
+            .filter(|c| c.is_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect()
+    };
+    let want: Vec<String> = target
+        .split_whitespace()
+        .map(norm)
+        .filter(|w| !w.is_empty())
+        .collect();
+    if want.is_empty() {
+        return None;
+    }
+    // Words grouped by line: (block, par, line) -> [(word, box)].
+    type Line = ((u32, u32, u32), Vec<(String, TextBox)>);
+    let mut lines: Vec<Line> = Vec::new();
+    for row in tsv.lines().skip(1) {
+        let f: Vec<&str> = row.split('\t').collect();
+        if f.len() < 12 || f[0] != "5" {
+            continue;
+        }
+        let num = |i: usize| f[i].trim().parse::<i32>().unwrap_or(0);
+        let word = norm(f[11]);
+        if word.is_empty() {
+            continue;
+        }
+        let key = (num(2) as u32, num(3) as u32, num(4) as u32);
+        let b = (num(6), num(7), num(8), num(9));
+        match lines.last_mut() {
+            Some((k, words)) if *k == key => words.push((word, b)),
+            _ => lines.push((key, vec![(word, b)])),
+        }
+    }
+    let mut best: Option<(usize, TextBox)> = None;
+    for (_, words) in &lines {
+        for start in 0..words.len() {
+            let fits = want.len() <= words.len() - start
+                && want
+                    .iter()
+                    .zip(&words[start..])
+                    .enumerate()
+                    .all(|(i, (w, (got, _)))| {
+                        // The last word may be cut short ("Sav" for "Save").
+                        got == w || (i == want.len() - 1 && got.starts_with(w.as_str()))
+                    });
+            if !fits {
+                continue;
+            }
+            let span = &words[start..start + want.len()];
+            let left = span.iter().map(|(_, b)| b.0).min().unwrap_or(0);
+            let top = span.iter().map(|(_, b)| b.1).min().unwrap_or(0);
+            let right = span.iter().map(|(_, b)| b.0 + b.2).max().unwrap_or(0);
+            let bottom = span.iter().map(|(_, b)| b.1 + b.3).max().unwrap_or(0);
+            let found = (left, top, right - left, bottom - top);
+            if best.is_none_or(|(len, _)| words.len() < len) {
+                best = Some((words.len(), found));
+            }
+        }
+    }
+    best.map(|(_, b)| b)
+}
+
 /// Reads the text in an image with Tesseract and puts it on the clipboard.
 pub async fn ocr(caps: &Capabilities, image: &Path) -> Result<Outcome, ActionError> {
     let text = ocr_text(caps, image).await?;
@@ -279,5 +378,34 @@ mod tests {
         assert_eq!(out.message, "Extracted to bundle");
         assert!(dir.join("bundle/hello.txt").exists());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod find_tests {
+    use super::find_text_box;
+
+    const TSV: &str = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext
+4\t1\t1\t1\t1\t0\t10\t10\t300\t20\t-1\t
+5\t1\t1\t1\t1\t1\t10\t10\t40\t20\t95\tPlease
+5\t1\t1\t1\t1\t2\t55\t10\t30\t20\t95\tclick
+5\t1\t1\t1\t1\t3\t90\t10\t40\t20\t95\tSave
+5\t1\t1\t1\t1\t4\t135\t10\t30\t20\t95\tnow.
+5\t1\t2\t1\t1\t1\t400\t300\t40\t18\t96\tSave
+5\t1\t2\t1\t1\t2\t445\t300\t20\t18\t96\tas
+5\t1\t3\t1\t1\t1\t600\t500\t50\t18\t96\tSave
+";
+
+    #[test]
+    fn finds_text_on_screen() {
+        assert_eq!(
+            find_text_box(TSV, "save"),
+            Some((600, 500, 50, 18)),
+            "the bare button wins"
+        );
+        assert_eq!(find_text_box(TSV, "Save as"), Some((400, 300, 65, 18)));
+        assert_eq!(find_text_box(TSV, "click save"), Some((55, 10, 75, 20)));
+        assert_eq!(find_text_box(TSV, "Cancel"), None);
+        assert_eq!(find_text_box(TSV, "  "), None);
     }
 }

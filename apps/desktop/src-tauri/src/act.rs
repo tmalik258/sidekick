@@ -105,7 +105,7 @@ pub fn decide(agent: &sidekick_core::AgentSettings, place: &str, risk: Risk) -> 
     if tap { Gate::Tap } else { Gate::Run }
 }
 
-fn agent_settings(app: &AppHandle) -> sidekick_core::AgentSettings {
+pub(crate) fn agent_settings(app: &AppHandle) -> sidekick_core::AgentSettings {
     lock(&app.state::<AppState>().settings).agent.clone()
 }
 
@@ -442,7 +442,7 @@ fn desktop_target(app: &AppHandle, args: &Value) -> sidekick_actions::uia::Targe
 /// Controls seen in the last desktop read: number to (kind, name).
 static DESKTOP: LazyLock<Mutex<Elements>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
-async fn blocking<T: Send + 'static>(
+pub(crate) async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, sidekick_actions::ActionError> + Send + 'static,
 ) -> Result<T, String> {
     tokio::task::spawn_blocking(f)
@@ -556,6 +556,54 @@ pub async fn desktop(app: &AppHandle, chat_id: &str, args: &Value) -> String {
                 .await
                 .map(|o| o.message)
         }
+        "click_text" => {
+            // For apps that show no controls (games, remote desktops, some
+            // Electron and Java apps): find the words on screen and click
+            // them.
+            let want = args["text"].as_str().unwrap_or_default().trim().to_owned();
+            if want.is_empty() {
+                return "Error: say which words to click.".into();
+            }
+            let place = target
+                .app
+                .clone()
+                .unwrap_or_else(|| LAST_WINDOW.lock().map(|w| w.clone()).unwrap_or_default());
+            let gate = decide(
+                &agent_settings(app),
+                &place,
+                risk("click", "button", &want, ""),
+            );
+            if gate == Gate::Refuse {
+                return format!(
+                    "Error: the user keeps Sidekick out of {place} (Settings > Skills > Agent)."
+                );
+            }
+            match find_on_screen(app, &want).await {
+                Ok((x, y, how)) => {
+                    let cmd = json!({ "x": x, "y": y, "what": want });
+                    if gate == Gate::Tap {
+                        crate::ask_tools::offer(
+                            app,
+                            chat_id,
+                            "screen_click",
+                            cmd,
+                            &format!("Click {want}"),
+                        );
+                        return format!(
+                            "Found \"{want}\" ({how}). Not clicked yet: it is a button the user taps."
+                        );
+                    }
+                    tokio::task::spawn_blocking(move || crate::screen::click(x, y))
+                        .await
+                        .map_err(|e| e.to_string())
+                        .and_then(|r| r)
+                        .map(|()| {
+                            format!("Clicked \"{want}\" ({how}). Read again to see the result.")
+                        })
+                }
+                Err(e) => Err(e),
+            }
+        }
         "selection" => {
             let t = target.clone();
             blocking(move || uia::selection(&t))
@@ -572,6 +620,67 @@ pub async fn desktop(app: &AppHandle, chat_id: &str, args: &Value) -> String {
         other => Err(format!("unknown desktop action {other}")),
     };
     out.unwrap_or_else(|e| format!("Error: {e}"))
+}
+
+/// Where words are on the user's window, as a desktop point: read with OCR,
+/// or by the vision model when OCR finds nothing and one is set.
+async fn find_on_screen(app: &AppHandle, want: &str) -> Result<(i32, i32, &'static str), String> {
+    let pid = lock(&app.state::<AppState>().last_window)
+        .as_ref()
+        .and_then(|w| w["pid"].as_u64())
+        .and_then(|p| u32::try_from(p).ok());
+    let (png, ox, oy) = tokio::task::spawn_blocking(move || crate::screen::capture_at(pid))
+        .await
+        .map_err(|e| e.to_string())??;
+    let (exec, path, ai) = {
+        let state = app.state::<AppState>();
+        std::fs::create_dir_all(&state.scratch_dir).map_err(|e| e.to_string())?;
+        (
+            crate::state::executor(&state),
+            state.scratch_dir.join("screen-find.png"),
+            lock(&state.settings).ai.local.clone(),
+        )
+    };
+    std::fs::write(&path, &png).map_err(|e| e.to_string())?;
+    let found = exec.find_text(&path, want).await;
+    let _ = std::fs::remove_file(&path);
+    if let Ok(Some((x, y, w, h))) = found {
+        return Ok((ox + x + w / 2, oy + y + h / 2, "read on screen"));
+    }
+    let vision = ai.vision_model.trim().to_owned();
+    if vision.is_empty() {
+        return Err(match found {
+            Err(e) => format!("could not read the screen ({e})"),
+            Ok(_) => format!("\"{want}\" is not on the screen as text"),
+        });
+    }
+    let (w, h) = crate::screen::png_size(&png).ok_or("the screenshot is unreadable")?;
+    let model = sidekick_ai::OpenAiCompat::new(Some(ai.base_url), Some(vision));
+    let req = sidekick_ai::ChatRequest {
+        system: format!(
+            "You locate things in a {w}x{h} screenshot. Answer only JSON: {{\"x\":<int>,\"y\":<int>}} \
+             for the center of the thing asked about, in image pixels, or {{\"none\":true}}."
+        ),
+        messages: vec![sidekick_ai::Message::user(format!("Where is: {want}"))],
+        image: Some(png),
+    };
+    let answer = tokio::time::timeout(Duration::from_secs(40), model.complete(&req, json!({})))
+        .await
+        .map_err(|_| "the vision model took too long".to_owned())?
+        .map_err(|e| e.to_string())?;
+    let (x, y) =
+        point_in(&answer, w, h).ok_or_else(|| format!("\"{want}\" was not found on the screen"))?;
+    Ok((ox + x, oy + y, "seen by the vision model"))
+}
+
+/// The `{"x":..,"y":..}` in a model's answer, when it lies in the image.
+fn point_in(answer: &str, w: u32, h: u32) -> Option<(i32, i32)> {
+    let start = answer.find('{')?;
+    let end = answer.rfind('}')?;
+    let v: Value = serde_json::from_str(answer.get(start..=end)?).ok()?;
+    let x = v["x"].as_f64()?;
+    let y = v["y"].as_f64()?;
+    (x >= 0.0 && y >= 0.0 && x < f64::from(w) && y < f64::from(h)).then_some((x as i32, y as i32))
 }
 
 /// The `apps` tool: find and install apps with winget, Wi-Fi networks.
@@ -691,6 +800,19 @@ pub async fn run(app: &AppHandle, action: &str, args: &Value) -> Option<Result<O
             let text = args["text"].as_str().unwrap_or_default().to_owned();
             blocking(move || sidekick_actions::uia::act(&target, n, &name, &what, &text)).await
         }
+        "excel_write" => crate::office::run_write(args).await,
+        "screen_click" => {
+            let (x, y) = (
+                args["x"].as_i64().unwrap_or_default() as i32,
+                args["y"].as_i64().unwrap_or_default() as i32,
+            );
+            let what = args["what"].as_str().unwrap_or("it").to_owned();
+            tokio::task::spawn_blocking(move || crate::screen::click(x, y))
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|r| r)
+                .map(|()| msg(format!("Clicked {what}")))
+        }
         "desktop_keys" => {
             let target = sidekick_actions::uia::Target {
                 pid: args["pid"].as_u64().and_then(|p| u32::try_from(p).ok()),
@@ -721,6 +843,21 @@ pub async fn run(app: &AppHandle, action: &str, args: &Value) -> Option<Result<O
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_points_from_a_vision_answer() {
+        assert_eq!(
+            point_in("Sure: {\"x\": 120, \"y\": 40.6}", 800, 600),
+            Some((120, 40))
+        );
+        assert_eq!(point_in("{\"none\":true}", 800, 600), None);
+        assert_eq!(
+            point_in("{\"x\":900,\"y\":10}", 800, 600),
+            None,
+            "outside the image"
+        );
+        assert_eq!(point_in("no idea", 800, 600), None);
+    }
 
     #[test]
     fn sending_waits_for_a_tap() {
