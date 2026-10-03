@@ -199,7 +199,9 @@ pub fn start(app: &AppHandle) {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
             let state = app.state::<AppState>();
-            if state.away.load(std::sync::atomic::Ordering::Relaxed) || !timetrack::is_active(&app)
+            if state.away.load(std::sync::atomic::Ordering::Relaxed)
+                || !timetrack::is_active(&app)
+                || crate::state::is_paused(&app)
             {
                 continue;
             }

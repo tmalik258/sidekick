@@ -24,6 +24,7 @@ import {
   cancelChat,
   newChat,
   openChat,
+  retryLast,
   runProposal,
   sendChat,
   setAsk,
@@ -379,15 +380,26 @@ export function AskPanel() {
       return;
     }
     const current = useSidekick.getState();
+    // Listening: Esc only stops the mic and leaves the box ready to type in.
+    if (current.hearing !== null || current.mascot === "listening") {
+      stopListening();
+      requestAnimationFrame(() => inputRef.current?.focus());
+      return;
+    }
     if (current.turns.length > 0 || current.chatId !== null) {
       resetChat();
     } else {
-      if (current.hearing !== null) stopListening();
       void api.askClose();
     }
   };
 
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.altKey && !e.ctrlKey && e.key.toLowerCase() === "h" && !streaming) {
+      // Alt H: chat history.
+      e.preventDefault();
+      openHistory();
+      return;
+    }
     if (e.altKey && e.key.toLowerCase() === "m" && choices.length > 1) {
       // Alt M: next model (Auto, then each one that can answer).
       e.preventDefault();
@@ -476,7 +488,7 @@ export function AskPanel() {
               <button
                 type="button"
                 aria-label="Chat history"
-                title="Chat history"
+                title="Chat history (Alt H)"
                 aria-pressed={historyOpen}
                 onClick={openHistory}
                 className={`chip grid size-7 shrink-0 place-items-center rounded-full text-white/85 ${
@@ -658,7 +670,7 @@ export function AskPanel() {
             </span>
           )}
           <span>
-            <Kbd>Esc</Kbd> {inChat || streaming ? "new chat" : "close"}
+            <Kbd>Esc</Kbd> {hearing !== null ? "stop mic" : inChat || streaming ? "new chat" : "close"}
           </span>
         </span>
       </div>
@@ -1052,6 +1064,7 @@ function Chat({ turns }: { turns: Turn[] }) {
               {t.error && (
                 <p className="mt-1 rounded-xl bg-[#ff453a]/15 px-3 py-2 text-[12.5px] text-[#ffb4ae]">{t.error}</p>
               )}
+              {t.error && !t.streaming && i === turns.length - 1 && <Retry />}
               {skillMode && !t.streaming && yamlBlock(t.content) && <AddSkill yaml={yamlBlock(t.content) ?? ""} />}
               {!t.streaming && t.provider && (
                 <p className="mt-0.5 flex items-center gap-2 text-[11px] text-[rgb(235_235_245/0.35)]">
@@ -1483,6 +1496,30 @@ function useAgentName(): string {
 }
 
 /** Continue this conversation in the coding agent, which can make changes. */
+/** "Try again" (Alt R) under a failed answer. */
+function Retry() {
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.altKey && !e.ctrlKey && e.key.toLowerCase() === "r") {
+        e.preventDefault();
+        retryLast();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  return (
+    <button
+      type="button"
+      onClick={() => retryLast()}
+      className="chip mt-1.5 flex h-8 items-center gap-2 self-start rounded-full bg-white/[0.12] px-3.5 text-[13px] font-medium text-white/90 hover:bg-white/[0.2]"
+    >
+      Try again
+      <kbd className="font-sans text-[11px] text-white/40">Alt R</kbd>
+    </button>
+  );
+}
+
 function Handoff({ turns, reason }: { turns: Turn[]; reason: string | null }) {
   const [state, setState] = useState<string>("idle");
   const agent = useAgentName();
