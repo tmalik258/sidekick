@@ -12,6 +12,7 @@ mod files;
 pub mod passwords;
 pub mod pc;
 mod system;
+pub mod uia;
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -243,6 +244,13 @@ impl Executor {
                     .map_err(fail)?
             }
             "sleep_pc" => pc::sleep_pc(),
+            "install_app" | "update_app" => {
+                let id = arg(args, "id")?.to_owned();
+                let upgrade = action == "update_app";
+                tokio::task::spawn_blocking(move || pc::app_install(&id, upgrade))
+                    .await
+                    .map_err(fail)?
+            }
             "empty_recycle_bin" => tokio::task::spawn_blocking(pc::empty_recycle_bin)
                 .await
                 .map_err(fail)?,
