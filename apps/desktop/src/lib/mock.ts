@@ -467,11 +467,6 @@ commands.setup_status = () => {
   };
 };
 commands.setup_run = () => undefined;
-commands.composio_test = () => ({
-  tools: 42,
-  reads: 30,
-  sample: ["JIRA_SEARCH_ISSUES", "SLACK_LIST_CHANNELS", "GMAIL_FETCH_EMAILS"],
-});
 commands.composio_import = () => {
   settings = {
     ...settings,
@@ -733,7 +728,6 @@ commands.search = (a) => [
 ];
 commands.search_reindex = () => undefined;
 commands.open_reference = () => undefined;
-commands.mcp_info = () => ({ url: "http://127.0.0.1:47823/mcp", token: "browser-preview-mcp-token" });
 commands.time_today = () => [
   { app: "Visual Studio Code", project: "sidekick", secs: 9420 },
   { app: "Google Chrome", project: "", secs: 4310 },
