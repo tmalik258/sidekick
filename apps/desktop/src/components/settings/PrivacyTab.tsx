@@ -390,7 +390,7 @@ function Memory({ onError }: { onError: (e: string) => void }) {
           aria-label="Something to remember"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="My manager is Sara"
+          placeholder="Sign my emails as Ali"
           className="min-w-0 flex-1 rounded-lg border border-(--border) bg-transparent px-2.5 py-1.5 text-[13px] outline-none focus:border-[#0a84ff]"
         />
         <Button small primary disabled={!draft.trim()} onClick={add}>
