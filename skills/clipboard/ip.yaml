@@ -1,0 +1,17 @@
+id: clipboard.ip
+name: Copied IP addresses
+description: When you copy an IP address, look up who owns it, open it in the browser, or copy an SSH command for it.
+priority: 35
+cooldown_secs: 20
+dedupe: "{{ip}}"
+trigger:
+  event: clipboard.changed
+  where:
+    entity: { equals: ip }
+suggestion:
+  title: "IP address copied"
+  detail: "{{ip}}"
+  options:
+    - { label: Look it up, action: open_url, args: { url: "{{lookup_url}}" }, when: { private: { equals: "no" } } }
+    - { label: Open in browser, action: open_url, args: { url: "{{web_url}}" } }
+    - { label: Copy SSH command, action: copy_text, args: { text: "{{ssh}}" } }
