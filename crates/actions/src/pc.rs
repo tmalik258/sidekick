@@ -57,6 +57,79 @@ $w=netsh wlan show interfaces | Select-String '^\s+SSID\s+:' | Select-Object -Fi
 if($w){"wifi=$((($w.Line) -split ':',2)[1].Trim())"}
 "#;
 
+/// Switches Do Not Disturb from Notification Center, the way a person
+/// would: open it, flip the bell switch, close it. Windows has no API for
+/// it. Prints `#ok on|off`, `#already on|off`, or `#error <why>`.
+const DND_SCRIPT: &str = r##"$ErrorActionPreference='Stop'
+try {
+Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
+$A=[System.Windows.Automation.AutomationElement]
+$want=$env:SK_ON -eq '1'
+Start-Process 'ms-actioncenter:'
+$btn=$null
+for($i=0;$i -lt 40 -and -not $btn;$i++){
+  Start-Sleep -Milliseconds 150
+  foreach($w in $A::RootElement.FindAll('Children',[System.Windows.Automation.Condition]::TrueCondition)){
+    if($w.Current.Name -match 'Notification Center|Action center|Notification centre'){
+      $btn=$w.FindAll('Descendants',[System.Windows.Automation.Condition]::TrueCondition) |
+        Where-Object { $_.Current.Name -match 'Do not disturb|Focus assist' -and $_.Current.IsEnabled } |
+        Select-Object -First 1
+      if($btn){break}
+    }
+  }
+}
+if(-not $btn){ '#error the Do not disturb switch was not found in Notification Center'; exit }
+$t=$null
+if($btn.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern,[ref]$t)){
+  $on=$t.Current.ToggleState -eq 'On'
+  if($on -eq $want){ "#already $(if($want){'on'}else{'off'})" }
+  else { $t.Toggle(); Start-Sleep -Milliseconds 200; "#ok $(if($t.Current.ToggleState -eq 'On'){'on'}else{'off'})" }
+} else {
+  $inv=$null
+  if(-not $btn.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern,[ref]$inv)){ '#error the switch did not respond'; exit }
+  $inv.Invoke(); "#ok $(if($want){'on'}else{'off'})"
+}
+} catch { "#error $($_.Exception.Message)" }
+finally {
+  Start-Sleep -Milliseconds 150
+  (New-Object -ComObject WScript.Shell).SendKeys('{ESC}')
+}
+"##;
+
+/// Reads the DND script's answer: the state it ended in, or why it failed.
+pub fn parse_dnd(out: &str) -> Result<(bool, bool), String> {
+    let line = out
+        .lines()
+        .map(str::trim)
+        .find(|l| l.starts_with('#'))
+        .ok_or_else(|| "no answer from Notification Center".to_owned())?;
+    let (tag, rest) = line[1..].split_once(' ').unwrap_or((&line[1..], ""));
+    match tag {
+        "ok" | "already" => Ok((rest.trim() == "on", tag == "already")),
+        _ => Err(rest.trim().to_owned()),
+    }
+}
+
+/// Turns Do Not Disturb on or off, and says so.
+pub fn set_dnd(on: bool) -> Result<Outcome, ActionError> {
+    if !cfg!(windows) {
+        return Err(ActionError::Failed("Do Not Disturb needs Windows".into()));
+    }
+    let out = powershell(DND_SCRIPT, &[("SK_ON", if on { "1" } else { "0" })])?;
+    let (now, already) = parse_dnd(&out).map_err(ActionError::Failed)?;
+    if now != on {
+        return Err(ActionError::Failed(
+            "Windows did not switch Do Not Disturb".into(),
+        ));
+    }
+    Ok(Outcome::msg(match (on, already) {
+        (true, true) => "Do Not Disturb was already on",
+        (true, false) => "Done. Do Not Disturb is on",
+        (false, true) => "Do Not Disturb was already off",
+        (false, false) => "Done. Do Not Disturb is off",
+    }))
+}
+
 /// Reads the status script's `key=value` lines.
 pub fn parse_state(text: &str) -> PcState {
     let mut s = PcState::default();
@@ -407,6 +480,7 @@ pub fn control(what: &str, value: Option<u8>, page: Option<&str>) -> Result<Outc
                 on
             )))
         }
+        "dnd_on" | "dnd_off" => set_dnd(what == "dnd_on"),
         "lock" => {
             powershell("rundll32.exe user32.dll,LockWorkStation", &[])?;
             msg("Locked")
@@ -538,6 +612,14 @@ pub fn empty_recycle_bin() -> Result<Outcome, ActionError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reads_dnd_answers() {
+        assert_eq!(parse_dnd("noise\n#ok on\n"), Ok((true, false)));
+        assert_eq!(parse_dnd("#already off"), Ok((false, true)));
+        assert_eq!(parse_dnd("#error not found"), Err("not found".to_owned()));
+        assert!(parse_dnd("").is_err());
+    }
+
     use super::*;
 
     #[test]

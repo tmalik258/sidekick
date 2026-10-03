@@ -70,6 +70,8 @@ const SAFE: &[&str] = &[
     "open_system_page",
     "launch_app",
     "open_app",
+    "dnd_on",
+    "dnd_off",
     "create_env",
     "launch_project",
     "restore_layout",
@@ -244,6 +246,12 @@ impl Executor {
                     .map_err(fail)?
             }
             "sleep_pc" => pc::sleep_pc(),
+            "dnd_on" | "dnd_off" => {
+                let on = action == "dnd_on";
+                tokio::task::spawn_blocking(move || pc::set_dnd(on))
+                    .await
+                    .map_err(fail)?
+            }
             "install_app" | "update_app" => {
                 let id = arg(args, "id")?.to_owned();
                 let upgrade = action == "update_app";

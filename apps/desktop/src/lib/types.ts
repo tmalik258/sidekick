@@ -60,6 +60,7 @@ export interface Settings {
   notifications: NotificationSettings;
   recipes: Recipe[];
   memory: string[];
+  agent: AgentSettings;
 }
 
 export interface CalendarToday {
@@ -334,6 +335,7 @@ export const DEFAULT_SETTINGS: Settings = {
   notifications: { enabled: true, apps: {}, vip: [] },
   recipes: [],
   memory: [],
+  agent: { ask: "outward", places: {} },
   voice: {
     enabled: true,
     wakeWord: true,
@@ -621,4 +623,13 @@ export interface Recipe {
   /** Start without asking first; sending still waits for a tap. */
   auto: boolean;
   enabled: boolean;
+}
+
+/** When an agent step waits for a tap. */
+export type AgentAsk = "each" | "outward" | "irreversible";
+export type PlaceRule = "allow" | "ask" | "never";
+export interface AgentSettings {
+  ask: AgentAsk;
+  /** Per app or site ("whatsapp", "mail.google.com"). */
+  places: Record<string, PlaceRule>;
 }

@@ -446,7 +446,7 @@ const LEVEL_TONE: Record<NotifyLevel, string> = {
 function NotificationInbox({ onError }: { onError: (e: string) => void }) {
   const notifications = useSidekick((s) => s.settings.notifications);
   const [status, setStatus] = useState<InboxStatus | null>(null);
-  const [silenced, setSilenced] = useState(false);
+  const [silenced, setSilenced] = useState<string | null>(null);
   const refresh = useCallback(() => void api.notificationsStatus().then(setStatus), []);
   useEffect(() => {
     refresh();
@@ -483,16 +483,14 @@ function NotificationInbox({ onError }: { onError: (e: string) => void }) {
               onClick={() =>
                 void api
                   .notificationsSilence()
-                  .then(() => setSilenced(true))
+                  .then(setSilenced)
                   .catch((e) => onError(String(e)))
               }
             >
-              Silence Windows pop-ups
+              Turn on Do Not Disturb
             </Button>
             <span className="text-(--muted)">
-              {silenced
-                ? "Turn on Do not disturb there. Notifications still reach Sidekick."
-                : "One time, in Windows settings"}
+              {silenced ?? "Stops Windows pop-ups. Notifications still reach Sidekick."}
             </span>
           </div>
           <p className="text-[13px] font-medium">

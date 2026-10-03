@@ -346,12 +346,11 @@ pub fn defs() -> Vec<ToolDef> {
             name: PC.into(),
             description: "Change an everyday Windows setting right away: volume_up, volume_down, \
                 mute, set_volume {level}, brightness {level}, dark_mode_on, dark_mode_off, \
-                bluetooth_on, bluetooth_off, wifi_on, wifi_off, lock, \
+                bluetooth_on, bluetooth_off, wifi_on, wifi_off, dnd_on, dnd_off (Do Not Disturb), lock, \
                 open_settings {page} (no page opens Windows Settings itself). Pages: home, display, nightlight, sound, notifications, focus \
                 (Do Not Disturb), bluetooth, wifi, network, battery, power, storage, apps, \
                 default_apps, startup_apps, colors, background, mouse, keyboard, printers, updates, \
-                privacy, accounts, time, language, about. Night light and Do Not Disturb have no \
-                switch: open their page."
+                privacy, accounts, time, language, about. Night light has no switch: open its page."
                 .into(),
             parameters: json!({
                 "type": "object",
@@ -359,7 +358,7 @@ pub fn defs() -> Vec<ToolDef> {
                     "what": { "type": "string", "enum": [
                         "volume_up", "volume_down", "mute", "set_volume", "brightness",
                         "dark_mode_on", "dark_mode_off", "bluetooth_on", "bluetooth_off",
-                        "wifi_on", "wifi_off", "lock", "open_settings"
+                        "wifi_on", "wifi_off", "dnd_on", "dnd_off", "lock", "open_settings"
                     ] },
                     "level": { "type": "integer", "minimum": 0, "maximum": 100 },
                     "page": { "type": "string" }
