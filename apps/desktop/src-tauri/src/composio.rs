@@ -940,27 +940,6 @@ pub async fn connect_app(app: &AppHandle, slug: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Check {
-    pub tools: usize,
-    pub reads: usize,
-    pub sample: Vec<String>,
-}
-
-pub async fn test(settings: &ComposioSettings) -> Result<Check, String> {
-    let mut on = settings.clone();
-    on.enabled = true;
-    forget_client();
-    let cl = client(&on).await?;
-    let found = cl.list_tools().await.map_err(|e| friendly(e.to_string()))?;
-    Ok(Check {
-        tools: found.len(),
-        reads: found.iter().filter(|t| !is_write(&t.name)).count(),
-        sample: found.iter().take(6).map(|t| t.name.clone()).collect(),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
