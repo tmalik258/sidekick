@@ -21,6 +21,8 @@ pub fn tracked(skill_id: &str) -> bool {
     !skill_id.starts_with("learn.")
         && !skill_id.starts_with("mcp.")
         && !skill_id.starts_with("debug.")
+        // Notifications learn per app instead (inbox.rs).
+        && !skill_id.starts_with("notify.")
 }
 
 /// Skills never offered as automatic: each time needs its own choice.

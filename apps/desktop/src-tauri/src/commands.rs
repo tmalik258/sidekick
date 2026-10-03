@@ -1035,6 +1035,35 @@ pub fn codex_add_notify(app: AppHandle) -> CmdResult<Option<String>> {
     crate::codex_config::add_notify(&dir).map(|b| b.map(|p| p.display().to_string()))
 }
 
+/// The notification inbox: whether reading works, recent items, apps seen.
+#[tauri::command]
+pub fn notifications_status(app: AppHandle) -> crate::inbox::Status {
+    crate::inbox::status(&app)
+}
+
+/// One app's level from Settings (auto, now, soon, digest or never).
+#[tauri::command]
+pub fn notifications_set_level(app: AppHandle, from: String, level: String) -> CmdResult<String> {
+    if level == "auto" {
+        return crate::inbox::clear_level(&app, &from);
+    }
+    let level =
+        crate::inbox::Level::parse(&level).ok_or("pick auto, now, soon, digest or never")?;
+    crate::inbox::set_level(&app, &from, level)
+}
+
+/// Opens Windows' notification settings, where Do Not Disturb is turned on.
+#[tauri::command]
+pub async fn notifications_silence() -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(|| {
+        sidekick_actions::pc::control("open_settings", None, Some("notifications"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
 /// How many buttons the guide card shows; they get Alt+1..N (0 drops them).
 #[tauri::command]
 pub fn guide_keys(app: AppHandle, buttons: usize) {

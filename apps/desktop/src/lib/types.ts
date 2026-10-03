@@ -57,6 +57,7 @@ export interface Settings {
   routinesAuto: boolean;
   /** Fade the island while a fullscreen app is in front. */
   hideInFullscreen: boolean;
+  notifications: NotificationSettings;
 }
 
 export interface CalendarToday {
@@ -326,6 +327,7 @@ export const DEFAULT_SETTINGS: Settings = {
   routines: true,
   routinesAuto: false,
   hideInFullscreen: false,
+  notifications: { enabled: true, apps: {}, vip: [] },
   voice: {
     enabled: true,
     wakeWord: true,
@@ -561,4 +563,36 @@ export interface Agents {
   codex: boolean;
   /** "Claude Code" or "Codex", or null when neither is installed. */
   handoff: string | null;
+}
+
+/** How much a notification interrupts. */
+export type NotifyLevel = "now" | "soon" | "digest" | "never";
+
+export interface NotificationSettings {
+  enabled: boolean;
+  /** The user's level per app; missing means Sidekick decides. */
+  apps: Record<string, NotifyLevel>;
+  /** People whose messages always come through right away. */
+  vip: string[];
+}
+
+/** One notification Sidekick read, and where it put it. */
+export interface InboxItem {
+  id: number;
+  app: string;
+  title: string;
+  body: string;
+  ts: string;
+  level: NotifyLevel;
+  why: string;
+  code?: string | null;
+}
+
+export interface InboxStatus {
+  /** Reading works (Windows only). */
+  readable: boolean;
+  error?: string | null;
+  items: InboxItem[];
+  /** Apps seen so far, newest first, with Sidekick's level for each. */
+  apps: { app: string; level: NotifyLevel | null; count: number }[];
 }

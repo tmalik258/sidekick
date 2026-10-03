@@ -19,6 +19,7 @@ mod idle;
 mod ports;
 pub mod repos;
 mod system;
+pub mod toasts;
 mod window;
 
 pub use browser::{BrowserBridge, BrowserSensor};

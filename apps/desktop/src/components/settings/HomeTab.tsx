@@ -17,14 +17,16 @@ import {
   type Folder,
   type Found,
   formatDuration,
+  type InboxStatus,
   MASCOT_STATES,
+  type NotifyLevel,
   SHORTCUT_ACTIONS,
   type StoredEvent,
   THEMES,
 } from "@/lib/types";
 import { Orb, THEME_STYLES } from "../Orb";
 import { SetupChecklist, usePendingByTab } from "../SetupChecklist";
-import { Button, Field, FolderPicker, Section, Select, ShortcutRecorder, Slider, Toggle } from "./ui";
+import { Button, ChipList, Field, FolderPicker, Section, Select, ShortcutRecorder, Slider, Toggle } from "./ui";
 
 const COLLAPSE_OPTIONS: [string, string][] = [
   ["4", "4 seconds"],
@@ -54,6 +56,13 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
       <Section title="Setup" keywords="install checklist get started tools">
         <LeftElsewhere onOpenTab={onOpenTab} />
         <SetupChecklist groups={["tools"]} onOpenTab={onOpenTab} />
+      </Section>
+      <Section
+        title="Notifications"
+        hint="Windows stays quiet. Only what matters comes up on the island."
+        keywords="notifications inbox do not disturb silence important digest vip whatsapp slack"
+      >
+        <NotificationInbox onError={onError} />
       </Section>
       <Section title="Today" keywords="time tracking hours apps">
         <TimeToday />
@@ -416,5 +425,126 @@ function Backup({ onError }: { onError: (e: string) => void }) {
       </div>
       {note && <p className="text-[12px] break-all text-(--muted)">{note}</p>}
     </div>
+  );
+}
+
+const LEVELS: [NotifyLevel | "auto", string][] = [
+  ["auto", "Sidekick decides"],
+  ["now", "Right away"],
+  ["soon", "Gather for later"],
+  ["digest", "Digest only"],
+  ["never", "Mute"],
+];
+const LEVEL_TONE: Record<NotifyLevel, string> = {
+  now: "bg-[#ff453a]/20 text-[#ff9f97]",
+  soon: "bg-[#0a84ff]/20 text-[#8cc3ff]",
+  digest: "bg-white/10 text-(--muted)",
+  never: "bg-white/5 text-(--muted)",
+};
+
+/** Read Windows notifications and only bring up what matters. */
+function NotificationInbox({ onError }: { onError: (e: string) => void }) {
+  const notifications = useSidekick((s) => s.settings.notifications);
+  const [status, setStatus] = useState<InboxStatus | null>(null);
+  const [silenced, setSilenced] = useState(false);
+  const refresh = useCallback(() => void api.notificationsStatus().then(setStatus), []);
+  useEffect(() => {
+    refresh();
+    if (!notifications.enabled) return;
+    const id = setInterval(refresh, 5000);
+    return () => clearInterval(id);
+  }, [refresh, notifications.enabled]);
+  const save = (patch: Partial<typeof notifications>) =>
+    void updateSettings({ notifications: { ...notifications, ...patch } })
+      .then(refresh)
+      .catch((e) => onError(String(e)));
+  const today = (status?.items ?? []).filter((i) => new Date(i.ts).toDateString() === new Date().toDateString());
+  const important = today.filter((i) => i.level === "now" || i.level === "soon").length;
+
+  return (
+    <>
+      <Toggle
+        label="Sort my notifications"
+        hint={
+          !notifications.enabled
+            ? "Codes, VIPs and urgent ones come up at once. Messages wait for a quiet moment. The rest goes to a digest."
+            : status && !status.readable
+              ? (status.error ?? "Could not read notifications yet.")
+              : `${today.length} today, ${important} worth a look`
+        }
+        checked={notifications.enabled}
+        onChange={(enabled) => save({ enabled })}
+      />
+      {notifications.enabled && (
+        <>
+          <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
+            <Button
+              small
+              onClick={() =>
+                void api
+                  .notificationsSilence()
+                  .then(() => setSilenced(true))
+                  .catch((e) => onError(String(e)))
+              }
+            >
+              Silence Windows pop-ups
+            </Button>
+            <span className="text-(--muted)">
+              {silenced
+                ? "Turn on Do not disturb there. Notifications still reach Sidekick."
+                : "One time, in Windows settings"}
+            </span>
+          </div>
+          <p className="text-[13px] font-medium">
+            Always come through <span className="font-normal text-(--muted)">people, by name</span>
+          </p>
+          <ChipList
+            label="Always come through"
+            items={notifications.vip}
+            suggestions={[]}
+            placeholder="Add a name, e.g. Ali"
+            format={(v) => v.replace(/\b\w/g, (c) => c.toUpperCase())}
+            onChange={(vip) => save({ vip })}
+          />
+          {status && status.apps.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {status.apps.map((a) => (
+                <Field key={a.app} label={a.app} hint={a.count ? `${a.count} recently` : undefined}>
+                  <Select
+                    label={`${a.app} notifications`}
+                    value={a.level ?? "auto"}
+                    options={LEVELS}
+                    onChange={(level) =>
+                      void api
+                        .notificationsSetLevel(a.app, level as NotifyLevel | "auto")
+                        .then(refresh)
+                        .catch((e) => onError(String(e)))
+                    }
+                  />
+                </Field>
+              ))}
+            </div>
+          )}
+          {today.length > 0 && (
+            <details className="text-[12.5px]">
+              <summary className="cursor-pointer text-(--muted)">Latest</summary>
+              <ul className="mt-2 flex flex-col gap-1.5">
+                {today.slice(0, 8).map((i) => (
+                  <li key={i.id} className="flex items-center gap-2">
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${LEVEL_TONE[i.level]}`}>
+                      {i.level}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">
+                      <span className="font-medium">{i.app}</span> {i.title}:{" "}
+                      <span className="text-(--muted)">{i.body}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </>
+      )}
+    </>
   );
 }

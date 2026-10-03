@@ -1,0 +1,12 @@
+id: notify.soon
+name: Messages waiting
+description: Messages and mentions gathered into one card at a quiet moment, at most every 10 minutes.
+priority: 50
+trigger:
+  event: notification.soon
+suggestion:
+  title: "{{count_text}}"
+  detail: "{{summary}}"
+  options:
+    - { label: "Open {{first_app}}", action: open_app, args: { name: "{{first_app}}" } }
+    - { label: "What did I miss?", action: ask_ai, args: { prompt: "What did I miss in my notifications? Group them by person and say which need a reply.", clipboard: "false" } }
