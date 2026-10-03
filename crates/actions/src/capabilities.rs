@@ -18,6 +18,7 @@ impl Browser {
             "firefox" => "Firefox",
             "zen" => "Zen",
             "brave" => "Brave",
+            "samsung" => "Samsung Internet",
             other => other,
         }
     }
@@ -25,17 +26,8 @@ impl Browser {
     /// Chromium browsers show their profile picker when started without a
     /// profile, and the link is lost. Open in the profile used last instead.
     pub fn profile_arg(&self) -> Option<String> {
-        let data = dirs::data_local_dir()?.join(self.user_data_dir()?);
+        let data = crate::passwords::user_data_dir(&self.id)?;
         last_profile(&data).map(|p| format!("--profile-directory={p}"))
-    }
-
-    fn user_data_dir(&self) -> Option<&'static str> {
-        match self.id.as_str() {
-            "chrome" => Some("Google/Chrome/User Data"),
-            "edge" => Some("Microsoft/Edge/User Data"),
-            "brave" => Some("BraveSoftware/Brave-Browser/User Data"),
-            _ => None,
-        }
     }
 
     pub fn private_flag(&self) -> &'static str {
@@ -58,6 +50,7 @@ pub fn browser_for_prog_id(prog_id: &str) -> Option<&'static str> {
         ("brave", "brave"),
         ("firefox", "firefox"),
         ("zen", "zen"),
+        ("samsung", "samsung"),
     ]
     .iter()
     .find(|(key, _)| p.starts_with(key))
@@ -119,10 +112,6 @@ pub struct Capabilities {
     pub code: Option<PathBuf>,
     /// Its name, e.g. "Cursor".
     pub code_name: Option<String>,
-    /// 1Password CLI.
-    pub op: Option<PathBuf>,
-    /// Bitwarden CLI.
-    pub bw: Option<PathBuf>,
     /// Tesseract, for text in screenshots.
     pub tesseract: Option<PathBuf>,
     /// Poppler's pdftotext, for summarizing PDFs.
@@ -133,7 +122,7 @@ impl Capabilities {
     /// Looks for browsers and tools. Takes a few milliseconds; call it at
     /// start and when the user asks to rescan.
     pub fn detect() -> Self {
-        let browsers = ["chrome", "edge", "firefox", "zen", "brave"]
+        let browsers = ["chrome", "edge", "firefox", "zen", "brave", "samsung"]
             .into_iter()
             .filter_map(|id| {
                 find_browser(id).map(|path| Browser {
@@ -154,8 +143,6 @@ impl Capabilities {
             tar: which::which("tar").ok(),
             code: editor.as_ref().map(|e| e.1.clone()),
             code_name: editor.map(|e| e.0.to_owned()),
-            op: which::which("op").ok(),
-            bw: which::which("bw").ok(),
             tesseract: which::which("tesseract").ok().or_else(find_tesseract),
             pdftotext: which::which("pdftotext").ok(),
         }
@@ -176,8 +163,10 @@ impl Capabilities {
             Some(("tool", "pandoc")) => self.pandoc.is_some(),
             Some(("tool", "tar")) => self.tar.is_some(),
             Some(("tool", "code")) => self.code.is_some(),
-            Some(("tool", "op")) => self.op.is_some(),
-            Some(("tool", "bw")) => self.bw.is_some(),
+            Some(("tool", "browser_passwords")) => self
+                .browsers
+                .iter()
+                .any(|b| crate::passwords::user_data_dir(&b.id).is_some()),
             Some(("tool", "tesseract")) => self.tesseract.is_some(),
             _ => false,
         }
@@ -200,8 +189,6 @@ impl Capabilities {
                 self.code_name.as_deref().unwrap_or("Code editor"),
                 self.code.is_some(),
             ),
-            ("1Password CLI", self.op.is_some()),
-            ("Bitwarden CLI", self.bw.is_some()),
             ("Tesseract OCR", self.tesseract.is_some()),
         ] {
             if found {
@@ -351,6 +338,20 @@ fn find_browser(id: &str) -> Option<PathBuf> {
                 r"BraveSoftware\Brave-Browser\Application\brave.exe",
             ),
         ],
+        "samsung" => vec![
+            (
+                "LOCALAPPDATA",
+                r"Samsung\SamsungInternet\Application\samsung_internet.exe",
+            ),
+            (
+                "LOCALAPPDATA",
+                r"SamsungInternet\Application\samsung_internet.exe",
+            ),
+            (
+                "ProgramFiles",
+                r"Samsung\SamsungInternet\Application\samsung_internet.exe",
+            ),
+        ],
         _ => vec![],
     };
     let paths: Vec<PathBuf> = candidates
@@ -481,10 +482,30 @@ mod tests {
         assert!(!caps.has("browser:chrome"));
         assert!(caps.has("tool:image"));
         assert!(!caps.has("tool:magick"));
+        assert!(!caps.has("tool:op"));
+        assert!(!caps.has("tool:bw"));
         assert!(!caps.has("nonsense"));
         assert_eq!(
             caps.browser("zen").unwrap().private_flag(),
             "--private-window"
         );
+    }
+
+    #[test]
+    fn browser_passwords_needs_a_chromium_store() {
+        let with_store = Capabilities {
+            browsers: vec![Browser {
+                id: "chrome".into(),
+                path: "/x/chrome".into(),
+            }],
+            ..Capabilities::default()
+        };
+        // chrome path may or may not exist on the machine; capability is about
+        // user_data_dir presence, not the exe. Without a real profile, false.
+        let _ = with_store.has("tool:browser_passwords");
+        let empty = Capabilities::default();
+        assert!(!empty.has("tool:browser_passwords"));
+        assert!(!empty.has("tool:op"));
+        assert!(!empty.has("tool:bw"));
     }
 }

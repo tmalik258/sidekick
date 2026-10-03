@@ -27,6 +27,11 @@ import type {
   MascotState,
   McpInfo,
   NotifyLevel,
+  PasswordBrowserInfo,
+  PasswordEditDraft,
+  PasswordMirrorStatus,
+  PasswordPrompt,
+  PasswordSaved,
   ProviderStatus,
   Recipe,
   RoutineItem,
@@ -67,6 +72,8 @@ export const EVENTS = {
   composioChanged: "composio://changed",
   guideKey: "guide://key",
   voiceWelcome: "voice://welcome",
+  passwordSaved: "password://saved",
+  passwordMirror: "password://mirror",
 } as const;
 
 export interface EventPayloads {
@@ -88,6 +95,8 @@ export interface EventPayloads {
   [EVENTS.voiceHeard]: VoiceHeard;
   [EVENTS.voiceDownload]: VoiceDownload;
   [EVENTS.suggestionLater]: number;
+  [EVENTS.passwordSaved]: PasswordSaved;
+  [EVENTS.passwordMirror]: PasswordMirrorStatus;
   [EVENTS.composioChanged]: { ok: boolean; message: string };
   [EVENTS.guideKey]: number;
   [EVENTS.voiceWelcome]: WelcomeSpeech;
@@ -155,6 +164,22 @@ export const api = {
   aiCancel: (id: string) => invoke<void>("ai_cancel", { id }),
   askClose: () => invoke<void>("ask_close"),
   browserInfo: () => invoke<BrowserInfo>("browser_info"),
+  passwordSaveStatus: (id: string, displayed = false) =>
+    invoke<PasswordPrompt>("password_save_status", { id, displayed }),
+  passwordSaveDraft: (id: string) => invoke<PasswordEditDraft>("password_save_draft", { id }),
+  passwordSaveCommit: (id: string, overrideExisting: boolean, username?: string, password?: string, source?: string) =>
+    invoke<string>("password_save_commit", {
+      id,
+      overrideExisting,
+      username: username ?? null,
+      password: password ?? null,
+      source: source ?? null,
+    }),
+  passwordSaveCancel: (id: string) => invoke<void>("password_save_cancel", { id }),
+  passwordsMirror: () => invoke<string>("passwords_mirror"),
+  passwordsMirrorStatus: () => invoke<PasswordMirrorStatus>("passwords_mirror_status"),
+  passwordsMirrorCancel: () => invoke<void>("passwords_mirror_cancel"),
+  passwordBrowsers: () => invoke<PasswordBrowserInfo[]>("password_browsers"),
   timeToday: () => invoke<AppTime[]>("time_today"),
   skillInstall: (yaml: string) => invoke<string>("skill_install", { yaml }),
   search: (query: string) => invoke<SearchHit[]>("search", { query }),
