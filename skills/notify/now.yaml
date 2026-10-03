@@ -6,7 +6,7 @@ dedupe: "{{id}}"
 trigger:
   event: notification.now
 suggestion:
-  title: "{{app}}: {{title}}"
+  title: "{{source}}: {{title}}"
   detail: "{{body}}"
   options:
     - { label: "Copy {{code}}", action: copy_text, args: { text: "{{code}}" }, when: { code: { exists: true } } }
