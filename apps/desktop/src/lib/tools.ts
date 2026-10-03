@@ -17,6 +17,8 @@ export const LOCAL_TOOLS: Record<string, string> = {
   sidekick_desktop: "Working in the app...",
   apps: "Looking up apps...",
   sidekick_apps: "Looking up apps...",
+  office: "Working in Office...",
+  sidekick_office: "Working in Office...",
   notifications: "Checking your notifications...",
   sidekick_notifications: "Checking your notifications...",
   pc_status: "Checking your PC...",
