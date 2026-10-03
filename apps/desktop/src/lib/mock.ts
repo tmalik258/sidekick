@@ -265,9 +265,10 @@ function mockChat(a: Record<string, unknown>) {
   emit("ai://tool", { id, name: "search" });
   // A task with several steps shows them one by one.
   if (/ and /i.test(last)) {
-    ["notifications", "browser", "browser"].forEach((name, n) =>
-      later(250 * (n + 1), () => emit("ai://tool", { id, name })),
-    );
+    const steps = ["notifications", "browser", "browser"];
+    for (const [n, name] of steps.entries()) {
+      later(250 * (n + 1), () => emit("ai://tool", { id, name }));
+    }
   }
   later(1200, () => emit("ai://proposal", { chatId: id, id: `p-${id}`, label: "Move invoice-sept.pdf to Invoices" }));
   setTimeout(tick, 900);
