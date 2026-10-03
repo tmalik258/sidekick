@@ -26,6 +26,8 @@ const WINDOWS: &str = "windows";
 const WEB_SEARCH: &str = "web_search";
 const READ_PAGE: &str = "read_page";
 const NOTIFS: &str = "notifications";
+const BROWSER: &str = "browser";
+const APP_ACTION: &str = "app_action";
 
 /// The Ask chat answering right now, so tools called through Sidekick's
 /// MCP server (by Claude Code or Codex) put their buttons in it.
@@ -203,6 +205,43 @@ pub fn defs() -> Vec<ToolDef> {
             }),
         },
         ToolDef {
+            name: BROWSER.into(),
+            description: "Use the user's own browser (signed in to their sites): tabs lists open \
+                pages, open {url} opens one, read shows a page's text and its buttons and fields \
+                as numbered elements, act {ref, do: click|type|select|press|scroll, text} acts on \
+                one, extract {what: tables|links|text} pulls data out. Read before acting, and read \
+                again after. Sending, submitting or paying becomes a button the user taps."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["tabs", "open", "read", "act", "extract", "switch", "close", "back"] },
+                    "url": { "type": "string" },
+                    "tab": { "type": "integer", "description": "Tab number; the active tab when left out" },
+                    "ref": { "type": "string", "description": "Element number from read" },
+                    "do": { "type": "string", "enum": ["click", "type", "select", "press", "scroll"] },
+                    "text": { "type": "string", "description": "What to type or pick, the key to press, or up/down to scroll" },
+                    "what": { "type": "string", "enum": ["tables", "links", "text"] }
+                },
+                "required": ["action"],
+            }),
+        },
+        ToolDef {
+            name: APP_ACTION.into(),
+            description: "Change something in a connected app (send an email, post to Slack, \
+                create an event or ticket) by Composio tool name and arguments. It becomes a \
+                button with a preview that the user taps; nothing runs before that."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "tool": { "type": "string", "description": "Composio tool slug, e.g. GMAIL_SEND_EMAIL" },
+                    "arguments": { "type": "object" }
+                },
+                "required": ["tool", "arguments"],
+            }),
+        },
+        ToolDef {
             name: NOTIFS.into(),
             description: "The user's recent Windows notifications, sorted by importance (now, \
                 soon, digest). Use for \"what did I miss\", \"anything from Ali\" or messages \
@@ -277,9 +316,9 @@ pub fn defs() -> Vec<ToolDef> {
     ]
 }
 
-/// Tools that reach the internet, left out for "This PC only".
+/// Tools that reach the internet or other apps, left out for "This PC only".
 pub fn is_web(name: &str) -> bool {
-    name == WEB_SEARCH || name == READ_PAGE
+    matches!(name, WEB_SEARCH | READ_PAGE | BROWSER | APP_ACTION)
 }
 
 /// Runs a local tool, or `None` when `name` is not one of them.
@@ -290,6 +329,15 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
         REVEAL => reveal(app, args["path"].as_str().unwrap_or_default()).await,
         SEARCH => search(app, args["query"].as_str().unwrap_or_default()).await,
         TODAY => today(app).await,
+        BROWSER => crate::act::browser(app, chat_id, args).await,
+        APP_ACTION => {
+            let tool = args["tool"].as_str().unwrap_or_default();
+            if tool.is_empty() {
+                "Error: name the app tool, e.g. GMAIL_SEND_EMAIL.".into()
+            } else {
+                crate::act::offer_app_change(app, chat_id, tool, &args["arguments"])
+            }
+        }
         NOTIFS => crate::inbox::describe(
             args["level"].as_str(),
             args["from"].as_str().filter(|s| !s.is_empty()),
@@ -396,6 +444,14 @@ fn propose(app: &AppHandle, chat_id: &str, args: &Value) -> String {
     if action == "open_path" && action_args["path"].as_str().is_some_and(runs_code) {
         return "Refused: that file runs a program. Tell the user to open it themselves.".into();
     }
+    offer(app, chat_id, action, action_args, &label);
+    format!("Shown to the user as a button \"{label}\". Say in one short sentence what it will do.")
+}
+
+/// A button under the answer that runs `action` when tapped. Sidekick's own
+/// code uses this for steps that need the user's yes (send, post, pay).
+pub fn offer(app: &AppHandle, chat_id: &str, action: &str, action_args: Value, label: &str) {
+    let label: String = label.chars().take(60).collect();
     let id = ulid::Ulid::new().to_string();
     lock(&app.state::<AppState>().ask_proposals).insert(
         id.clone(),
@@ -413,7 +469,6 @@ fn propose(app: &AppHandle, chat_id: &str, args: &Value) -> String {
             label: &label,
         },
     );
-    format!("Shown to the user as a button \"{label}\". Say in one short sentence what it will do.")
 }
 
 /// Runs a proposal the user tapped, logs it, and keeps Undo for files it
@@ -422,8 +477,15 @@ pub async fn run_proposal(app: &AppHandle, id: &str) -> Result<Ran, String> {
     let proposed = lock(&app.state::<AppState>().ask_proposals)
         .remove(id)
         .ok_or("That button has expired; ask again")?;
-    let exec = executor(&app.state::<AppState>());
-    let result = exec.run(&proposed.action, &proposed.args).await;
+    let result = match crate::act::run(app, &proposed.action, &proposed.args).await {
+        Some(r) => r,
+        None => {
+            let exec = executor(&app.state::<AppState>());
+            exec.run(&proposed.action, &proposed.args)
+                .await
+                .map_err(|e| e.to_string())
+        }
+    };
     let (ok, message, path) = match &result {
         Ok(o) => (true, o.message.clone(), o.path.clone()),
         Err(e) => (false, e.to_string(), None),
@@ -711,7 +773,7 @@ mod tests {
             names,
             [
                 SEARCH, FIND, REVEAL, TODAY, RECENT, SCREEN, PROPOSE, WEB_SEARCH, READ_PAGE,
-                NOTIFS, PC_STATUS, PC, WINDOWS, OPEN
+                BROWSER, APP_ACTION, NOTIFS, PC_STATUS, PC, WINDOWS, OPEN
             ]
         );
     }

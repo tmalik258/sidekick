@@ -52,6 +52,8 @@ pub struct BrowserBridge {
     queue: Arc<Mutex<VecDeque<serde_json::Value>>>,
     ready: Arc<Notify>,
     seen: Arc<Mutex<HashMap<String, i64>>>,
+    /// Requests waiting for the extension's answer, by id.
+    pending: Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<serde_json::Value>>>>,
 }
 
 impl BrowserBridge {
@@ -81,6 +83,51 @@ impl BrowserBridge {
             q.push_back(command);
         }
         self.ready.notify_waiters();
+    }
+
+    /// Sends a command that the extension answers (read a page, click),
+    /// and waits for the answer.
+    pub async fn request(
+        &self,
+        mut command: serde_json::Value,
+        wait: Duration,
+    ) -> Result<serde_json::Value, String> {
+        let id = ulid::Ulid::new().to_string();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        if let Ok(mut p) = self.pending.lock() {
+            p.insert(id.clone(), tx);
+        }
+        command["id"] = id.clone().into();
+        self.send(command);
+        let answer = tokio::time::timeout(wait, rx).await;
+        if let Ok(mut p) = self.pending.lock() {
+            p.remove(&id);
+        }
+        match answer {
+            Ok(Ok(v)) => match v["error"].as_str() {
+                Some(e) if !e.is_empty() => Err(e.to_owned()),
+                _ => Ok(v),
+            },
+            _ => Err(
+                "the browser did not answer. Is the Sidekick extension installed and the browser open?"
+                    .into(),
+            ),
+        }
+    }
+
+    /// The extension's answer to a request.
+    fn resolve(&self, answer: serde_json::Value) -> bool {
+        let Some(id) = answer["id"].as_str() else {
+            return false;
+        };
+        let tx = self.pending.lock().ok().and_then(|mut p| p.remove(id));
+        tx.is_some_and(|tx| tx.send(answer["result"].clone()).is_ok())
+    }
+
+    /// Whether any browser's extension checked in during the last minute.
+    pub fn connected(&self) -> bool {
+        let now = chrono::Utc::now().timestamp();
+        self.seen().iter().any(|(_, t)| now - t < 60)
     }
 
     fn take(&self) -> Option<serde_json::Value> {
@@ -297,6 +344,19 @@ async fn serve(mut sock: TcpStream, ctx: &Ctx, publish: impl Fn(Event)) {
                 None => http::respond(&mut sock, "400 Bad Request", &cors, None).await,
             }
         }
+        ("POST", "/browser/result") => {
+            let parsed = req
+                .is_json()
+                .then(|| serde_json::from_slice::<serde_json::Value>(&req.body).ok())
+                .flatten();
+            let ok = parsed.is_some_and(|v| bridge.resolve(v));
+            let status = if ok {
+                "204 No Content"
+            } else {
+                "404 Not Found"
+            };
+            http::respond(&mut sock, status, &cors, None).await;
+        }
         ("GET", "/browser/next") => match bridge.next().await {
             Some(cmd) => http::respond(&mut sock, "200 OK", &cors, Some(&cmd)).await,
             None => http::respond(&mut sock, "204 No Content", &cors, None).await,
@@ -355,6 +415,43 @@ pub fn page_event(input: &serde_json::Value) -> Option<Event> {
 
 #[cfg(test)]
 mod tests {
+
+    #[tokio::test]
+    async fn requests_get_their_answer() {
+        let bridge = BrowserBridge::default();
+        let b = bridge.clone();
+        let waiting = tokio::spawn(async move {
+            b.request(
+                serde_json::json!({ "type": "read" }),
+                Duration::from_secs(2),
+            )
+            .await
+        });
+        // The extension picks the command up, runs it and answers by id.
+        let mut cmd = None;
+        for _ in 0..50 {
+            cmd = bridge.take();
+            if cmd.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let cmd = cmd.expect("command queued");
+        assert_eq!(cmd["type"], "read");
+        assert!(
+            bridge.resolve(serde_json::json!({ "id": cmd["id"], "result": { "title": "Inbox" } }))
+        );
+        assert_eq!(waiting.await.unwrap().unwrap()["title"], "Inbox");
+        assert!(!bridge.resolve(serde_json::json!({ "id": "nope", "result": {} })));
+        let err = bridge
+            .request(
+                serde_json::json!({ "type": "read" }),
+                Duration::from_millis(20),
+            )
+            .await;
+        assert!(err.unwrap_err().contains("did not answer"));
+    }
+
     use super::*;
     use crate::GateState;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};

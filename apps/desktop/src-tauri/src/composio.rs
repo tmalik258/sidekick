@@ -397,10 +397,11 @@ fn handoff_tool() -> ToolDef {
 pub const TOOLS_SYSTEM: &str = "\n\nTools: search finds the user's files and history on this \
 PC, today gives meetings and time, recent shows what just happened, open opens a file, folder \
 or page, propose offers an action (move, zip, convert, open) as a button the user taps; \
-never say you did something you only proposed. Other tools read the user's apps; you cannot send, create, change or delete there. \
-Look things up before answering. When the request needs a change in an app or more than you \
-can do, call continue_in_claude_code with a short reason, then say in one sentence that Claude \
-Code can finish it. Never invent data you did not read with a tool.";
+never say you did something you only proposed. Other tools read and change the user's apps; a change (send, create, update, delete) is \
+prepared as a button the user taps, so call the tool as usual and say it waits for their tap. \
+browser reads and acts on web pages in their browser. Look things up before answering. When \
+the request needs more than you can do, call continue_in_claude_code with a short reason. \
+Never invent data you did not read with a tool.";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -441,12 +442,12 @@ impl ToolRunner for Runner {
                 .into();
         }
         if let Some(what) = blocked(name, arguments) {
-            *lock(&self.handoff) = Some(format!("needs a change ({what})"));
-            log_call(&self.app, name, false, "refused: changes something");
-            return format!(
-                "Refused: {what} would change something, and you may only read. Tell the user \
-                 Claude Code can do it."
-            );
+            // A change in an app: prepared as a button, run on the user's tap.
+            log_call(&self.app, name, true, "prepared for a tap");
+            if what.contains("without a named tool") {
+                return format!("Error: {what}; name the tool to run.");
+            }
+            return crate::act::offer_app_change(&self.app, &self.chat_id, name, arguments);
         }
         if let Some(out) = crate::ask_tools::run(&self.app, &self.chat_id, name, arguments).await {
             return out;
@@ -465,6 +466,26 @@ impl ToolRunner for Runner {
             }
         }
     }
+}
+
+/// Runs one Composio tool now (after the user tapped its button).
+pub async fn run_tapped(app: &AppHandle, name: &str, arguments: &Value) -> Result<String, String> {
+    let settings = lock(&app.state::<AppState>().settings).composio.clone();
+    let (url, headers) = server(&settings)
+        .await
+        .ok_or("Composio is not connected (Settings > Apps)")?;
+    let client = McpClient::connect(&url, headers)
+        .await
+        .map_err(|e| e.to_string())?;
+    let text = client
+        .call_tool(name, arguments)
+        .await
+        .map_err(|e| e.to_string())?;
+    log_call(app, name, !text.starts_with("Error:"), &text);
+    if text.starts_with("Error:") {
+        return Err(text);
+    }
+    Ok(text)
 }
 
 fn log_call(app: &AppHandle, name: &str, ok: bool, message: &str) {

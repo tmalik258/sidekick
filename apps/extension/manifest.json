@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Sidekick",
-  "version": "0.2.0",
-  "description": "Connects your browser to the Sidekick desktop companion: login fill from your password manager, long reads, Upwork jobs, and tab cleanup.",
+  "version": "0.3.0",
+  "description": "Connects your browser to the Sidekick desktop companion: it reads and acts on pages when you ask, fills logins from your password manager, and tidies tabs.",
   "icons": { "32": "icons/32.png", "128": "icons/128.png" },
-  "permissions": ["tabs", "storage", "bookmarks", "alarms"],
+  "permissions": ["tabs", "storage", "bookmarks", "alarms", "scripting"],
   "host_permissions": ["http://127.0.0.1/*"],
   "background": { "service_worker": "background.js", "scripts": ["background.js"] },
   "content_scripts": [{ "matches": ["http://*/*", "https://*/*"], "js": ["content.js"], "run_at": "document_idle" }],
