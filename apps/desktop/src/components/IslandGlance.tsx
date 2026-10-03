@@ -29,7 +29,7 @@ export function Glance({ paused }: { paused: boolean }) {
           <p className="truncate font-display text-[15px] leading-5 font-semibold tracking-[-0.015em] text-white">
             {head.title}
           </p>
-          <p className="mt-0.5 line-clamp-2 text-[13px] leading-4.5 tracking-[-0.005em] text-[rgb(235_235_245/0.6)]">
+          <p className="mt-0.5 line-clamp-2 text-[13px] leading-4.5 tracking-[-0.005em] text-[rgb(235_235_245/0.6)] tabular-nums">
             {head.detail}
           </p>
         </div>
@@ -166,12 +166,13 @@ function LaterList() {
         </span>
       </div>
       <div className={`flex flex-col gap-1.5 ${all ? "max-h-[260px] overflow-y-auto overscroll-contain" : ""}`}>
-        {shown.map((l) => (
+        {shown.map((l, n) => (
           <button
             key={l.id}
             type="button"
+            style={{ animationDelay: `${Math.min(n, 6) * 40}ms` }}
             onClick={() => void api.laterOpen(l.id)}
-            className="chip flex w-full shrink-0 items-center gap-3 rounded-xl bg-white/[0.07] px-3 py-1.5 text-left hover:bg-white/12"
+            className="chip rise-in flex w-full shrink-0 items-center gap-3 rounded-xl bg-white/[0.07] px-3 py-1.5 text-left hover:bg-white/12"
           >
             <span className="min-w-0 flex-1 overflow-hidden">
               <span className="block truncate text-[13px] font-medium text-white">{l.title}</span>
