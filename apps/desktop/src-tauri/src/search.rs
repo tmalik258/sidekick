@@ -190,6 +190,10 @@ pub fn start_embedder(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         loop {
+            if crate::state::is_paused(&app) {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                continue;
+            }
             let pause = match embed_batch(&app).await {
                 Ok(true) => Duration::from_secs(1),
                 Ok(false) => Duration::from_secs(60),
