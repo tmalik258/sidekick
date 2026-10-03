@@ -248,7 +248,7 @@ function picksFrom(f: SetupFound, off: Set<string>): Pick[] {
     list.push({ id: "mcp", label: "Claude Code: let it use Sidekick's tools" });
   }
   for (const item of f.installable.filter((i) => i.recommended && !i.done && i.runnable)) {
-    list.push({ id: `install:${item.id}`, label: `Install ${item.title}`, hint: item.why });
+    list.push({ id: `install:${item.id}`, label: `${item.action} ${item.title}`, hint: item.why });
   }
   return list.map((p) => ({ ...p, on: !off.has(p.id) }));
 }

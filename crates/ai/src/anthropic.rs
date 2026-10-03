@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 
 use crate::{AiError, AiProvider, CancellationToken, ChatRequest, Sink, sse};
 
-pub const DEFAULT_MODEL: &str = "claude-opus-5-5";
+pub const DEFAULT_MODEL: &str = "claude-haiku-4-5-20251001";
 const URL: &str = "https://api.anthropic.com/v1/messages";
 
 /// T2 with an Anthropic API key, for people without Claude Code. The key is

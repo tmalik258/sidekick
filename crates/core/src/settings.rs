@@ -350,7 +350,7 @@ pub struct ClaudeCodePref {
     pub enabled: bool,
     /// Path to `claude`; empty means look it up on PATH.
     pub path: String,
-    /// Empty means Claude Code's own default.
+    /// Explicit model; legacy empty selections use the fast Haiku model.
     pub model: String,
 }
 
@@ -361,7 +361,7 @@ pub struct CodexPref {
     pub enabled: bool,
     /// Path to `codex`; empty means look it up on PATH.
     pub path: String,
-    /// Empty means Codex's own default.
+    /// Explicit model; legacy empty selections use the fast Luna model.
     pub model: String,
 }
 
@@ -370,10 +370,14 @@ impl Default for CodexPref {
         Self {
             enabled: true,
             path: String::new(),
-            model: String::new(),
+            model: FAST_CODEX_MODEL.into(),
         }
     }
 }
+
+/// Explicit fast models, matching the versioned choices shown in settings.
+pub const FAST_CODEX_MODEL: &str = "gpt-6-luna";
+pub const FAST_CLAUDE_MODEL: &str = "claude-haiku-4-5-20251001";
 
 pub const CODING_AGENTS: [&str; 3] = ["auto", "claude_code", "codex"];
 
@@ -434,7 +438,7 @@ impl Default for ClaudeCodePref {
         Self {
             enabled: true,
             path: String::new(),
-            model: String::new(),
+            model: FAST_CLAUDE_MODEL.into(),
         }
     }
 }
@@ -454,7 +458,7 @@ impl Default for AnthropicPref {
     fn default() -> Self {
         Self {
             enabled: true,
-            model: String::new(),
+            model: FAST_CLAUDE_MODEL.into(),
         }
     }
 }
@@ -497,6 +501,18 @@ impl AiSettings {
             order.insert(c + 1, codex);
         }
         self.order = order;
+        for (model, fallback) in [
+            (&mut self.codex.model, FAST_CODEX_MODEL),
+            (&mut self.claude_code.model, FAST_CLAUDE_MODEL),
+            (&mut self.anthropic.model, FAST_CLAUDE_MODEL),
+        ] {
+            let selected = model.trim();
+            *model = if selected.is_empty() || selected == "default" {
+                fallback.to_owned()
+            } else {
+                selected.to_owned()
+            };
+        }
         if !CODING_AGENTS.contains(&self.coding_agent.as_str()) {
             self.coding_agent = "auto".into();
         }
@@ -744,6 +760,27 @@ mod tests {
         assert_eq!(s.ai.coding_agent, "auto");
         assert_eq!(s.ai.semif.mode, "direct");
         assert_eq!(s.palette_hotkey, DEFAULT_PALETTE_HOTKEY);
+    }
+
+    #[test]
+    fn legacy_ai_defaults_become_explicit_fast_models_and_keep_saved_choices() {
+        let legacy: Settings = serde_json::from_str(r#"{"ai":{"codex":{"model":""},"claudeCode":{"model":"default"},"anthropic":{"model":"  "}}}"#).unwrap();
+        let migrated = legacy.sanitized();
+        assert_eq!(migrated.ai.codex.model, FAST_CODEX_MODEL);
+        assert_eq!(migrated.ai.claude_code.model, FAST_CLAUDE_MODEL);
+        assert_eq!(migrated.ai.anthropic.model, FAST_CLAUDE_MODEL);
+        let persisted = serde_json::to_string(&migrated).unwrap();
+        let restored: Settings = serde_json::from_str(&persisted).unwrap();
+        assert_eq!(restored.sanitized().ai, migrated.ai);
+        let custom: Settings = serde_json::from_str(r#"{"ai":{"codex":{"model":"gpt-6-astra"},"claudeCode":{"model":"sonnet"},"anthropic":{"model":"claude-opus-5-5"}}}"#).unwrap();
+        let custom = custom.sanitized();
+        assert_eq!(custom.ai.codex.model, "gpt-6-astra");
+        assert_eq!(custom.ai.claude_code.model, "sonnet");
+        assert_eq!(custom.ai.anthropic.model, "claude-opus-5-5");
+        let defaults = AiSettings::default();
+        assert_eq!(defaults.codex.model, FAST_CODEX_MODEL);
+        assert_eq!(defaults.claude_code.model, FAST_CLAUDE_MODEL);
+        assert_eq!(defaults.anthropic.model, FAST_CLAUDE_MODEL);
     }
 
     #[test]

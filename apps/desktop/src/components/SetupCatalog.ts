@@ -225,6 +225,8 @@ export function skeletonItem(entry: (typeof SETUP_CATALOG)[number]): SetupItem {
     status: "",
     command: null,
     runnable: false,
+    action: "Install",
+    opensApp: false,
     tab: null,
     recommended: entry.recommended,
   };
