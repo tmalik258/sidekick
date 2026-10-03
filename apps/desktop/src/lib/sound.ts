@@ -31,8 +31,6 @@ const CUE_SOUND: Record<Cue, SndSound> = {
   settle: "button", // unused: settle is synthesized, see powerUp
 };
 
-export const SOUND_KITS = [{ id: "01", label: "Kit 1" }] as const;
-
 interface Kit {
   buffer: AudioBuffer;
   map: Record<string, { start: number; end: number }>;

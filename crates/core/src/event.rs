@@ -63,11 +63,6 @@ impl Event {
         }
     }
 
-    pub fn with_context(mut self, context: Context) -> Self {
-        self.context = context;
-        self
-    }
-
     pub fn with_sensitivity(mut self, sensitivity: Sensitivity) -> Self {
         self.sensitivity = sensitivity;
         self
