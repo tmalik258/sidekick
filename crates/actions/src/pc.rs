@@ -138,7 +138,7 @@ pub fn describe(s: &PcState) -> String {
 
 /// Runs a hidden PowerShell script and returns what it printed.
 #[cfg(windows)]
-fn powershell(script: &str, env: &[(&str, &str)]) -> Result<String, ActionError> {
+pub(crate) fn powershell(script: &str, env: &[(&str, &str)]) -> Result<String, ActionError> {
     use std::os::windows::process::CommandExt;
     let mut cmd = std::process::Command::new("powershell.exe");
     cmd.args([
@@ -162,7 +162,7 @@ fn powershell(script: &str, env: &[(&str, &str)]) -> Result<String, ActionError>
 }
 
 #[cfg(not(windows))]
-fn powershell(_script: &str, _env: &[(&str, &str)]) -> Result<String, ActionError> {
+pub(crate) fn powershell(_script: &str, _env: &[(&str, &str)]) -> Result<String, ActionError> {
     Err(ActionError::Failed("this works on Windows only".into()))
 }
 
@@ -171,6 +171,119 @@ pub fn read_state() -> PcState {
     powershell(STATUS_SCRIPT, &[])
         .map(|t| parse_state(&t))
         .unwrap_or_default()
+}
+
+/// Switches a radio (Bluetooth or Wi-Fi) through Windows' Radio API.
+const RADIO: &str = r#"$ErrorActionPreference='Stop'
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$asTask=([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
+function Await($op,$type){ $t=$asTask.MakeGenericMethod($type).Invoke($null,@($op)); $t.Wait(-1) | Out-Null; $t.Result }
+[Windows.Devices.Radios.Radio,Windows.System.Devices,ContentType=WindowsRuntime] | Out-Null
+[Windows.Devices.Radios.RadioAccessStatus,Windows.System.Devices,ContentType=WindowsRuntime] | Out-Null
+[Windows.Devices.Radios.RadioState,Windows.System.Devices,ContentType=WindowsRuntime] | Out-Null
+Await ([Windows.Devices.Radios.Radio]::RequestAccessAsync()) ([Windows.Devices.Radios.RadioAccessStatus]) | Out-Null
+$radios=Await ([Windows.Devices.Radios.Radio]::GetRadiosAsync()) ([System.Collections.Generic.IReadOnlyList[Windows.Devices.Radios.Radio]])
+$r=$radios | Where-Object { $_.Kind -eq $env:SK_KIND } | Select-Object -First 1
+if(-not $r){ Write-Output "none"; exit }
+Await ($r.SetStateAsync($env:SK_STATE)) ([Windows.Devices.Radios.RadioAccessStatus])
+"#;
+
+/// Wi-Fi networks in range, strongest first.
+pub fn wifi_networks() -> Result<Vec<String>, ActionError> {
+    let out = powershell("netsh wlan show networks mode=bssid", &[])?;
+    Ok(parse_networks(&out))
+}
+
+pub fn parse_networks(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in text.lines() {
+        let t = line.trim();
+        // "SSID 1 : Home"; BSSID lines start with a B.
+        if t.starts_with("SSID ")
+            && let Some((_, name)) = t.split_once(':')
+        {
+            let name = name.trim();
+            if !name.is_empty() && !out.iter().any(|n| n == name) {
+                out.push(name.to_owned());
+            }
+        }
+    }
+    out
+}
+
+/// Connects to a Wi-Fi network this PC already knows.
+pub fn wifi_connect(name: &str) -> Result<Outcome, ActionError> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(ActionError::Invalid("which network?".into()));
+    }
+    let out = powershell(
+        "netsh wlan connect name=\"$env:SK_NET\"",
+        &[("SK_NET", name)],
+    )?;
+    if out.to_lowercase().contains("success") {
+        Ok(Outcome::msg(format!("Connecting to {name}")))
+    } else {
+        Err(ActionError::Failed(format!(
+            "{name} is not a saved network; connect once from the Wi-Fi menu ({})",
+            out.trim()
+        )))
+    }
+}
+
+/// Apps winget can install, by name: "Name<TAB>Id<TAB>Version".
+pub fn app_search(q: &str) -> Result<String, ActionError> {
+    let q = q.trim();
+    if q.is_empty() {
+        return Err(ActionError::Invalid("search for what?".into()));
+    }
+    let out = powershell(
+        "winget search --name \"$env:SK_Q\" --accept-source-agreements --count 8 | Out-String -Width 200",
+        &[("SK_Q", q)],
+    )?;
+    Ok(out.trim().to_owned())
+}
+
+/// A winget id is letters, digits, dots, dashes and plus signs.
+pub fn valid_app_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 120
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+'))
+}
+
+/// Installs or updates an app with winget (after the user's tap).
+pub fn app_install(id: &str, upgrade: bool) -> Result<Outcome, ActionError> {
+    if !valid_app_id(id) {
+        return Err(ActionError::Invalid(format!("{id} is not a winget id")));
+    }
+    let verb = if upgrade { "upgrade" } else { "install" };
+    let out = powershell(
+        &format!(
+            "winget {verb} --id \"$env:SK_ID\" -e --silent --accept-source-agreements --accept-package-agreements | Out-String -Width 200"
+        ),
+        &[("SK_ID", id)],
+    )?;
+    let lower = out.to_lowercase();
+    if lower.contains("successfully")
+        || lower.contains("no applicable upgrade")
+        || lower.contains("already installed")
+    {
+        Ok(Outcome::msg(format!(
+            "{} {id}",
+            if upgrade { "Updated" } else { "Installed" }
+        )))
+    } else {
+        Err(ActionError::Failed(
+            out.lines()
+                .rev()
+                .find(|l| !l.trim().is_empty())
+                .unwrap_or("winget failed")
+                .trim()
+                .to_owned(),
+        ))
+    }
 }
 
 /// Settings pages by name; nothing else can be opened through here.
@@ -276,6 +389,23 @@ pub fn control(what: &str, value: Option<u8>, page: Option<&str>) -> Result<Outc
             } else {
                 "Light mode on"
             })
+        }
+        "bluetooth_on" | "bluetooth_off" | "wifi_on" | "wifi_off" => {
+            let (kind, on) = what.split_once('_').unwrap_or_default();
+            let kind = if kind == "wifi" { "WiFi" } else { "Bluetooth" };
+            let state = if on == "on" { "On" } else { "Off" };
+            let out = powershell(RADIO, &[("SK_KIND", kind), ("SK_STATE", state)])?;
+            if !out.contains("Allowed") {
+                return Err(ActionError::Failed(format!(
+                    "Windows did not allow switching {kind} ({})",
+                    out.trim()
+                )));
+            }
+            Ok(Outcome::msg(format!(
+                "{} {}",
+                if kind == "WiFi" { "Wi-Fi" } else { kind },
+                on
+            )))
         }
         "lock" => {
             powershell("rundll32.exe user32.dll,LockWorkStation", &[])?;
@@ -449,6 +579,15 @@ mod tests {
         assert_eq!(settings_uri("home"), Some("ms-settings:"));
         assert!(query("**").is_err());
         assert_eq!(query(" chr*ome ").unwrap(), "chrome");
+    }
+
+    #[test]
+    fn reads_wifi_networks() {
+        let text = "Interface name : Wi-Fi\nThere are 2 networks currently visible.\n\nSSID 1 : Home 5G\n    Network type : Infrastructure\n    BSSID 1 : aa:bb\nSSID 2 : Cafe\n";
+        assert_eq!(parse_networks(text), ["Home 5G", "Cafe"]);
+        assert!(valid_app_id("Spotify.Spotify"));
+        assert!(!valid_app_id("x; rm -rf"));
+        assert!(control("bluetooth_maybe", None, None).is_err());
     }
 
     #[test]
