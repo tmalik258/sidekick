@@ -169,24 +169,21 @@ impl OpenAiCompat {
             })
             .collect();
         let mut calls = Vec::new();
+        let mut shown = String::new();
         for step in 0..=MAX_TOOL_STEPS {
             let last = step == MAX_TOOL_STEPS;
-            let mut body = json!({ "model": model, "stream": false, "messages": messages });
+            let mut body = json!({ "model": model, "stream": true, "messages": messages });
             // On the last round the model has to answer, not call more tools.
             if !last && !tool_json.is_empty() {
                 body["tools"] = Value::Array(tool_json.clone());
             }
-            let send = self
-                .client
-                .post(format!("{}/chat/completions", self.base_url))
-                .json(&body)
-                .send();
-            let resp = tokio::select! {
-                _ = cancel.cancelled() => return Err(AiError::Cancelled),
-                resp = send => resp?,
-            };
-            let v: Value = sse::check(resp).await?.json().await?;
-            let msg = &v["choices"][0]["message"];
+            // Words reach the user as they are written; a round that turns
+            // out to call tools just carries on below what it said.
+            let gap = if shown.is_empty() { "" } else { "\n\n" };
+            let round = self.stream_round(&body, sink, gap, cancel).await?;
+            shown.push_str(&round.text);
+            let msg = json!({ "content": round.raw, "tool_calls": round.calls });
+            let msg = &msg;
             let wanted = msg["tool_calls"].as_array().filter(|c| !c.is_empty());
             if let (Some(wanted), false) = (wanted, last) {
                 messages.push(json!({
@@ -200,7 +197,7 @@ impl OpenAiCompat {
                     let id = call["id"]
                         .as_str()
                         .map_or_else(|| format!("call_{step}_{i}"), str::to_owned);
-                    runner.started(name);
+                    runner.started(name, &args);
                     calls.push(name.to_owned());
                     let result = tokio::select! {
                         _ = cancel.cancelled() => return Err(AiError::Cancelled),
@@ -213,8 +210,7 @@ impl OpenAiCompat {
                 }
                 continue;
             }
-            let text = strip_thinking(msg["content"].as_str().unwrap_or_default());
-            sink.send(&text);
+            let text = shown.trim().to_owned();
             return Ok(ToolChatEnd {
                 text,
                 out_of_steps: last,
@@ -236,6 +232,143 @@ fn parse_arguments(raw: &Value) -> Value {
 }
 
 /// Removes a `<think>...</think>` block some models (Qwen3) put first.
+/// What one streamed round produced.
+struct Round {
+    /// Everything the model wrote, thinking included (for the history).
+    raw: String,
+    /// What the user saw.
+    text: String,
+    /// Tool calls, pieced together from their streamed parts.
+    calls: Vec<Value>,
+}
+
+impl OpenAiCompat {
+    async fn stream_round(
+        &self,
+        body: &Value,
+        sink: &Sink,
+        gap: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Round, AiError> {
+        let send = self
+            .client
+            .post(format!("{}/chat/completions", self.base_url))
+            .json(body)
+            .send();
+        let resp = tokio::select! {
+            _ = cancel.cancelled() => return Err(AiError::Cancelled),
+            resp = send => resp?,
+        };
+        let resp = sse::check(resp).await?;
+        let mut raw = String::new();
+        let mut text = String::new();
+        let mut think = Thinking::default();
+        let mut parts: Vec<(String, String, String)> = Vec::new();
+        let mut started = false;
+        sse::each_data(resp, cancel, |data| {
+            let Ok(v) = serde_json::from_str::<Value>(data) else {
+                return Ok(true);
+            };
+            let d = &v["choices"][0]["delta"];
+            if let Some(piece) = d["content"].as_str() {
+                raw.push_str(piece);
+                let visible = think.push(piece);
+                if !visible.is_empty() {
+                    if !started {
+                        sink.send(gap);
+                        started = true;
+                    }
+                    sink.send(&visible);
+                    text.push_str(&visible);
+                }
+            }
+            for call in d["tool_calls"].as_array().into_iter().flatten() {
+                let i = call["index"].as_u64().unwrap_or(parts.len() as u64) as usize;
+                while parts.len() <= i {
+                    parts.push(Default::default());
+                }
+                let part = &mut parts[i];
+                if let Some(id) = call["id"].as_str() {
+                    part.0 = id.to_owned();
+                }
+                if let Some(name) = call["function"]["name"].as_str() {
+                    part.1.push_str(name);
+                }
+                if let Some(args) = call["function"]["arguments"].as_str() {
+                    part.2.push_str(args);
+                }
+            }
+            Ok(true)
+        })
+        .await?;
+        let calls = parts
+            .into_iter()
+            .filter(|(_, name, _)| !name.is_empty())
+            .map(|(id, name, args)| {
+                json!({ "id": id, "type": "function",
+                        "function": { "name": name, "arguments": if args.is_empty() { "{}".into() } else { args } } })
+            })
+            .collect();
+        Ok(Round { raw, text, calls })
+    }
+}
+
+/// Hides a leading `<think>...</think>` block while it streams in.
+#[derive(Default)]
+pub struct Thinking {
+    state: ThinkState,
+    buf: String,
+}
+
+#[derive(Default, PartialEq)]
+enum ThinkState {
+    #[default]
+    Start,
+    Inside,
+    Out,
+}
+
+impl Thinking {
+    /// The part of `piece` the user should see.
+    pub fn push(&mut self, piece: &str) -> String {
+        const OPEN: &str = "<think>";
+        const CLOSE: &str = "</think>";
+        match self.state {
+            ThinkState::Out => piece.to_owned(),
+            ThinkState::Start => {
+                self.buf.push_str(piece);
+                let t = self.buf.trim_start();
+                if t.is_empty() || (t.len() < OPEN.len() && OPEN.starts_with(t)) {
+                    return String::new();
+                }
+                if let Some(rest) = t.strip_prefix(OPEN) {
+                    self.buf = rest.to_owned();
+                    self.state = ThinkState::Inside;
+                    return self.push("");
+                }
+                self.state = ThinkState::Out;
+                std::mem::take(&mut self.buf).trim_start().to_owned()
+            }
+            ThinkState::Inside => {
+                self.buf.push_str(piece);
+                match self.buf.find(CLOSE) {
+                    Some(end) => {
+                        let rest = self.buf[end + CLOSE.len()..].trim_start().to_owned();
+                        self.buf.clear();
+                        self.state = if rest.is_empty() {
+                            ThinkState::Start
+                        } else {
+                            ThinkState::Out
+                        };
+                        rest
+                    }
+                    None => String::new(),
+                }
+            }
+        }
+    }
+}
+
 pub fn strip_thinking(text: &str) -> String {
     let t = text.trim_start();
     if let Some(rest) = t.strip_prefix("<think>") {
@@ -367,6 +500,25 @@ mod tests {
     use async_trait::async_trait;
 
     #[test]
+    fn hides_thinking_while_it_streams() {
+        let mut t = Thinking::default();
+        let seen: String = [
+            "<thi",
+            "nk>planning the",
+            " answer</th",
+            "ink>\n\nHello",
+            " there",
+        ]
+        .iter()
+        .map(|p| t.push(p))
+        .collect();
+        assert_eq!(seen, "Hello there");
+        let mut plain = Thinking::default();
+        let seen: String = ["He", "llo"].iter().map(|p| plain.push(p)).collect();
+        assert_eq!(seen, "Hello");
+    }
+
+    #[test]
     fn reads_stream_deltas() {
         assert_eq!(
             delta(r#"{"choices":[{"delta":{"content":"Hi"}}]}"#),
@@ -475,17 +627,31 @@ mod tests {
                     let has_result = body["messages"]
                         .as_array()
                         .is_some_and(|m| m.iter().any(|m| m["role"] == "tool"));
-                    let message = if body.get("tools").is_some() && (stubborn || !has_result) {
-                        json!({ "role": "assistant", "content": "", "tool_calls": [
-                            { "id": "c1", "type": "function", "function": { "name": "LIST", "arguments": "{\"state\":\"open\"}" } }
-                        ]})
+                    // Streamed like a real server, in pieces.
+                    let deltas: Vec<Value> = if body.get("tools").is_some()
+                        && (stubborn || !has_result)
+                    {
+                        vec![
+                            json!({ "tool_calls": [{ "index": 0, "id": "c1", "type": "function", "function": { "name": "LIST", "arguments": "{\"state\":" } }] }),
+                            json!({ "tool_calls": [{ "index": 0, "function": { "arguments": "\"open\"}" } }] }),
+                        ]
                     } else {
-                        json!({ "role": "assistant", "content": "<think>ok</think>You have 3 open issues." })
+                        ["<think>o", "k</think>You have ", "3 open issues."]
+                            .iter()
+                            .map(|c| json!({ "content": c }))
+                            .collect()
                     };
-                    let payload = json!({ "choices": [{ "message": message }] }).to_string();
+                    let mut events = String::new();
+                    for d in deltas {
+                        events.push_str(&format!(
+                            "data: {}\n\n",
+                            json!({ "choices": [{ "delta": d }] })
+                        ));
+                    }
+                    events.push_str("data: [DONE]\n\n");
                     let resp = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
-                        payload.len()
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{events}",
+                        events.len()
                     );
                     let _ = sock.write_all(resp.as_bytes()).await;
                 });
@@ -538,7 +704,12 @@ mod tests {
         assert_eq!(end.text, "You have 3 open issues.");
         assert!(!end.out_of_steps);
         assert_eq!(end.calls, vec!["LIST"]);
-        assert_eq!(rx.recv().await.as_deref(), Some("You have 3 open issues."));
+        // Streamed in pieces, thinking hidden.
+        let mut streamed = String::new();
+        while let Ok(piece) = rx.try_recv() {
+            streamed.push_str(&piece);
+        }
+        assert_eq!(streamed, "You have 3 open issues.");
         let ran = runner.0.lock().unwrap().clone();
         assert_eq!(ran, vec![("LIST".to_owned(), json!({ "state": "open" }))]);
         let seen = seen.lock().unwrap();

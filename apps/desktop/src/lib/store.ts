@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api, EVENTS, listen } from "./bridge";
 import { cueVolume, playCue, preloadSounds } from "./sound";
+import { toolStatus } from "./tools";
 import {
   type ActionResult,
   type AskContext,
@@ -593,9 +594,11 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           if (!useSidekick.getState().ask) void api.askOpen();
         }
       }),
-      listen(EVENTS.aiTool, ({ id, name }) =>
-        updateLastTurn(id, (t) => ({ ...t, tool: name, steps: [...(t.steps ?? []), name] })),
-      ),
+      listen(EVENTS.aiTool, ({ id, name, label }) => {
+        // Steps read as what they do ("Searching the web for ..."), in words.
+        const step = label || toolStatus(name).replace(/\.\.\.$/, "");
+        updateLastTurn(id, (t) => ({ ...t, tool: step, steps: [...(t.steps ?? []), step] }));
+      }),
       listen(EVENTS.aiProposal, ({ chatId, id, label }) =>
         updateLastTurn(chatId, (t) => ({ ...t, proposals: [...(t.proposals ?? []), { id, label }] })),
       ),

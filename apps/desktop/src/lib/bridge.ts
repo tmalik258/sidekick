@@ -89,7 +89,7 @@ export interface EventPayloads {
   [EVENTS.inboxChanged]: null;
   [EVENTS.aiDelta]: { id: string; text: string };
   [EVENTS.aiDone]: { id: string; provider: string | null; error: string | null; handoff: string | null };
-  [EVENTS.aiTool]: { id: string; name: string };
+  [EVENTS.aiTool]: { id: string; name: string; label?: string };
   [EVENTS.aiProposal]: { chatId: string; id: string; label: string };
   [EVENTS.askOpen]: AskOpen;
   [EVENTS.askClose]: { reason: "close" | "defer" };

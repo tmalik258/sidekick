@@ -232,7 +232,15 @@ pub fn speakable(text: &str) -> String {
             in_code = !in_code;
             continue;
         }
-        if in_code {
+        // Option chips ("OPTION: Open invoice.pdf") are for the screen, and
+        // table rules are noise.
+        if in_code
+            || line.trim_start().to_uppercase().starts_with("OPTION:")
+            || line
+                .trim()
+                .chars()
+                .all(|c| matches!(c, '|' | '-' | ':' | ' '))
+        {
             continue;
         }
         let line = line.trim_start_matches(|c: char| c == '#' || c == '>' || c.is_whitespace());
@@ -342,6 +350,14 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn options_are_not_read_aloud() {
+        assert_eq!(
+            speakable("Done, it is on.\nOPTION: Turn it off\noption: Open Settings"),
+            "Done, it is on."
+        );
+    }
 
     #[test]
     fn finds_the_wake_phrase_mid_sentence() {

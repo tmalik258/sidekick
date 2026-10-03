@@ -400,3 +400,25 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Ask's live step ("Searching the web for ..."): the same light sweep. */
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    rgb(235 235 245 / 0.45) 0%,
+    rgb(255 255 255 / 0.95) 50%,
+    rgb(235 235 245 / 0.45) 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: thinking-shimmer 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text {
+    animation: none;
+    color: rgb(235 235 245 / 0.6);
+  }
+}
