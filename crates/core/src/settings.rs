@@ -106,6 +106,10 @@ pub struct Settings {
     /// The notification inbox: Sidekick reads Windows notifications and only
     /// brings up what matters.
     pub notifications: NotificationSettings,
+    /// Browser ids used for password fill and save-through (chrome, zen, …).
+    /// None means all detected stores; Some(empty) explicitly disables all.
+    pub password_browsers: Option<Vec<String>>,
+    pub password_selection_version: u8,
 }
 
 /// How much a notification interrupts.
@@ -483,6 +487,8 @@ impl Default for Settings {
             routines_auto: false,
             hide_in_fullscreen: false,
             notifications: NotificationSettings::default(),
+            password_browsers: None,
+            password_selection_version: 1,
         }
     }
 }
@@ -505,7 +511,19 @@ impl Settings {
     /// app start.
     pub fn load(path: &Path) -> Self {
         match fs::read_to_string(path) {
-            Ok(raw) => serde_json::from_str::<Settings>(&raw)
+            Ok(raw) => serde_json::from_str::<serde_json::Value>(&raw)
+                .and_then(|mut value| {
+                    if value.is_object() && value.get("passwordSelectionVersion").is_none() {
+                        if value["passwordBrowsers"]
+                            .as_array()
+                            .is_some_and(Vec::is_empty)
+                        {
+                            value["passwordBrowsers"] = serde_json::Value::Null;
+                        }
+                        value["passwordSelectionVersion"] = 1.into();
+                    }
+                    serde_json::from_value::<Settings>(value)
+                })
                 .map(Settings::sanitized)
                 .unwrap_or_else(|err| {
                     log::warn!(
@@ -579,6 +597,12 @@ impl Settings {
         self.deny_apps.retain(|a| !a.trim().is_empty());
         self.deny_sites.retain(|s| !s.trim().is_empty());
         self.index_folders.retain(|f| !f.trim().is_empty());
+        if let Some(ids) = &mut self.password_browsers {
+            ids.retain(|id| matches!(id.as_str(), "chrome" | "edge" | "brave" | "zen" | "samsung"));
+            ids.sort();
+            ids.dedup();
+        }
+        self.password_selection_version = 1;
         self
     }
 
@@ -593,6 +617,29 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn password_selection_migrates_once_and_none_stays_disabled() {
+        let dir = std::env::temp_dir().join(format!("sidekick-selection-{}", ulid::Ulid::new()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        std::fs::write(&path, r#"{"passwordBrowsers":[]}"#).unwrap();
+        let legacy = Settings::load(&path);
+        assert_eq!(legacy.password_browsers, None);
+        let explicit = Settings {
+            password_browsers: Some(vec![]),
+            ..Settings::default()
+        };
+        explicit.save(&path).unwrap();
+        assert_eq!(Settings::load(&path).password_browsers, Some(vec![]));
+        std::fs::write(&path, r#"{"passwordBrowsers":["chrome"]}"#).unwrap();
+        assert_eq!(
+            Settings::load(&path).password_browsers,
+            Some(vec!["chrome".into()])
+        );
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+    }
 
     #[test]
     fn moves_older_voices_to_the_new_default_once() {

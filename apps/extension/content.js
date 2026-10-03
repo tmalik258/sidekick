@@ -1,7 +1,7 @@
 // Sidekick extension, page side. Notices a login form, a long article or an
 // Upwork job and tells the background, which tells the desktop app. It never
-// reads what you type, and fills a login only when you pick that on the
-// island.
+// reads keystrokes except on form submit (username + password for a local
+// save prompt), and fills a login only when you pick that on the island.
 
 (() => {
   // Loaded once per page, even when Sidekick injects it again.
@@ -47,6 +47,32 @@
     check();
     if (++looks >= 5) clearInterval(timer);
   }, 2000);
+
+  // After a login submit: offer to mirror into the user's other browsers.
+  // Credentials go only to the local Sidekick bridge, never into the page DOM.
+  document.addEventListener(
+    "submit",
+    (e) => {
+      const form = e.target;
+      if (!(form instanceof HTMLFormElement)) return;
+      const pass = [...form.querySelectorAll('input[type="password"]')].find(visible);
+      if (!pass?.value) return;
+      const user = [
+        ...form.querySelectorAll('input[type="email"], input[type="text"], input[autocomplete="username"]'),
+      ].find(visible);
+      chrome.runtime.sendMessage({
+        type: "sidekick-event",
+        event: {
+          kind: "login_submitted",
+          url: location.href,
+          title: document.title,
+          username: user?.value || "",
+          password: pass.value,
+        },
+      });
+    },
+    true,
+  );
 
   // Fill only on this exact host, and only into what looks like the form.
   chrome.runtime.onMessage.addListener((msg) => {
