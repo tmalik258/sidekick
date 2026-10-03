@@ -28,6 +28,8 @@ const READ_PAGE: &str = "read_page";
 const NOTIFS: &str = "notifications";
 const BROWSER: &str = "browser";
 const APP_ACTION: &str = "app_action";
+const DESKTOP: &str = "desktop";
+const APPS: &str = "apps";
 
 /// The Ask chat answering right now, so tools called through Sidekick's
 /// MCP server (by Claude Code or Codex) put their buttons in it.
@@ -242,6 +244,42 @@ pub fn defs() -> Vec<ToolDef> {
             }),
         },
         ToolDef {
+            name: DESKTOP.into(),
+            description: "Use any Windows app (the one the user was in, or one named by app): \
+                read lists its buttons, fields, menus and lists as numbered controls; act {ref, \
+                do: click|type|select|focus, text} uses one; keys {text} sends shortcuts like ^s \
+                or {TAB} when an app shows no controls; selection reads the selected text; \
+                type_here {text} puts text into the field the user is in (to rewrite a \
+                selection, read it, then type_here the new text). Read before acting and after."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["read", "act", "keys", "selection", "type_here"] },
+                    "app": { "type": "string", "description": "App or window name; the app the user was in when left out" },
+                    "ref": { "type": "string" },
+                    "do": { "type": "string", "enum": ["click", "type", "select", "focus"] },
+                    "text": { "type": "string" }
+                },
+                "required": ["action"],
+            }),
+        },
+        ToolDef {
+            name: APPS.into(),
+            description: "Apps and networks: search {name} finds apps to install (winget), \
+                install or update {name: winget id} becomes a button the user taps, \
+                wifi_networks lists networks in range, wifi_connect {name} joins a saved one."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["search", "install", "update", "wifi_networks", "wifi_connect"] },
+                    "name": { "type": "string" }
+                },
+                "required": ["action"],
+            }),
+        },
+        ToolDef {
             name: NOTIFS.into(),
             description: "The user's recent Windows notifications, sorted by importance (now, \
                 soon, digest). Use for \"what did I miss\", \"anything from Ali\" or messages \
@@ -267,7 +305,8 @@ pub fn defs() -> Vec<ToolDef> {
         ToolDef {
             name: PC.into(),
             description: "Change an everyday Windows setting right away: volume_up, volume_down, \
-                mute, set_volume {level}, brightness {level}, dark_mode_on, dark_mode_off, lock, \
+                mute, set_volume {level}, brightness {level}, dark_mode_on, dark_mode_off, \
+                bluetooth_on, bluetooth_off, wifi_on, wifi_off, lock, \
                 open_settings {page} (no page opens Windows Settings itself). Pages: home, display, nightlight, sound, notifications, focus \
                 (Do Not Disturb), bluetooth, wifi, network, battery, power, storage, apps, \
                 default_apps, startup_apps, colors, background, mouse, keyboard, printers, updates, \
@@ -279,7 +318,8 @@ pub fn defs() -> Vec<ToolDef> {
                 "properties": {
                     "what": { "type": "string", "enum": [
                         "volume_up", "volume_down", "mute", "set_volume", "brightness",
-                        "dark_mode_on", "dark_mode_off", "lock", "open_settings"
+                        "dark_mode_on", "dark_mode_off", "bluetooth_on", "bluetooth_off",
+                        "wifi_on", "wifi_off", "lock", "open_settings"
                     ] },
                     "level": { "type": "integer", "minimum": 0, "maximum": 100 },
                     "page": { "type": "string" }
@@ -318,7 +358,7 @@ pub fn defs() -> Vec<ToolDef> {
 
 /// Tools that reach the internet or other apps, left out for "This PC only".
 pub fn is_web(name: &str) -> bool {
-    matches!(name, WEB_SEARCH | READ_PAGE | BROWSER | APP_ACTION)
+    matches!(name, WEB_SEARCH | READ_PAGE | BROWSER | APP_ACTION | APPS)
 }
 
 /// Runs a local tool, or `None` when `name` is not one of them.
@@ -330,6 +370,8 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
         SEARCH => search(app, args["query"].as_str().unwrap_or_default()).await,
         TODAY => today(app).await,
         BROWSER => crate::act::browser(app, chat_id, args).await,
+        DESKTOP => crate::act::desktop(app, chat_id, args).await,
+        APPS => crate::act::apps(app, chat_id, args).await,
         APP_ACTION => {
             let tool = args["tool"].as_str().unwrap_or_default();
             if tool.is_empty() {
@@ -773,7 +815,7 @@ mod tests {
             names,
             [
                 SEARCH, FIND, REVEAL, TODAY, RECENT, SCREEN, PROPOSE, WEB_SEARCH, READ_PAGE,
-                BROWSER, APP_ACTION, NOTIFS, PC_STATUS, PC, WINDOWS, OPEN
+                BROWSER, APP_ACTION, DESKTOP, APPS, NOTIFS, PC_STATUS, PC, WINDOWS, OPEN
             ]
         );
     }

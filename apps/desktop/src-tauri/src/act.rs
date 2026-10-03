@@ -216,6 +216,151 @@ async fn act(app: &AppHandle, chat_id: &str, args: &Value) -> String {
     }
 }
 
+/// The app the user was in before Sidekick (or one they named).
+fn desktop_target(app: &AppHandle, args: &Value) -> sidekick_actions::uia::Target {
+    let named = args["app"].as_str().filter(|a| !a.trim().is_empty());
+    let pid = lock(&app.state::<AppState>().last_window)
+        .as_ref()
+        .and_then(|w| w["pid"].as_u64())
+        .and_then(|p| u32::try_from(p).ok());
+    sidekick_actions::uia::Target {
+        pid: if named.is_some() { None } else { pid },
+        app: named.map(str::to_owned),
+    }
+}
+
+/// Controls seen in the last desktop read: number to (kind, name).
+static DESKTOP: LazyLock<Mutex<Elements>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, sidekick_actions::ActionError> + Send + 'static,
+) -> Result<T, String> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+/// The `desktop` tool: read and act inside any Windows app.
+pub async fn desktop(app: &AppHandle, chat_id: &str, args: &Value) -> String {
+    use sidekick_actions::uia;
+    let target = desktop_target(app, args);
+    let action = args["action"].as_str().unwrap_or("read");
+    let out = match action {
+        "read" => {
+            let t = target.clone();
+            blocking(move || uia::snapshot(&t)).await.map(|s| {
+                if let Ok(mut m) = DESKTOP.lock() {
+                    *m = s
+                        .controls
+                        .iter()
+                        .map(|c| (c.n.to_string(), (c.kind.to_lowercase(), c.name.clone())))
+                        .collect();
+                }
+                s.describe()
+            })
+        }
+        "act" => {
+            let r = args["ref"]
+                .as_str()
+                .map(str::to_owned)
+                .or_else(|| args["ref"].as_i64().map(|n| n.to_string()))
+                .unwrap_or_default();
+            let what = args["do"].as_str().unwrap_or("click").to_owned();
+            let text = args["text"].as_str().unwrap_or_default().to_owned();
+            let (kind, name) = DESKTOP
+                .lock()
+                .ok()
+                .and_then(|m| m.get(&r).cloned())
+                .unwrap_or_default();
+            let Ok(n) = r.parse::<usize>() else {
+                return "Error: say which control (its number from read).".into();
+            };
+            if needs_tap(&what, &kind, &name, "") {
+                let cmd = json!({ "pid": target.pid, "app": target.app, "ref": n, "name": name, "do": what, "text": text });
+                let label = format!("Click {}", if name.is_empty() { "it" } else { &name });
+                crate::ask_tools::offer(app, chat_id, "desktop_act", cmd, &label);
+                return format!(
+                    "Not done yet: \"{name}\" sends or changes something, so it is a button the \
+                     user taps. Tell them in one sentence what it will do."
+                );
+            }
+            let t = target.clone();
+            blocking(move || uia::act(&t, n, &name, &what, &text))
+                .await
+                .map(|o| format!("{}. Read the window again to see the result.", o.message))
+        }
+        "keys" => {
+            let keys = args["text"].as_str().unwrap_or_default().to_owned();
+            if uia::keys_send(&keys) {
+                let cmd = json!({ "pid": target.pid, "app": target.app, "keys": keys });
+                crate::ask_tools::offer(
+                    app,
+                    chat_id,
+                    "desktop_keys",
+                    cmd,
+                    &format!("Press {keys}"),
+                );
+                return "Not done yet: those keys may send something, so it is a button the user \
+                        taps."
+                    .into();
+            }
+            let t = target.clone();
+            blocking(move || uia::keys(&t, &keys))
+                .await
+                .map(|o| o.message)
+        }
+        "selection" => {
+            let t = target.clone();
+            blocking(move || uia::selection(&t))
+                .await
+                .map(|s| format!("Selected text:\n{s}"))
+        }
+        "type_here" => {
+            let text = args["text"].as_str().unwrap_or_default().to_owned();
+            let t = target.clone();
+            blocking(move || uia::type_here(&t, &text))
+                .await
+                .map(|o| o.message)
+        }
+        other => Err(format!("unknown desktop action {other}")),
+    };
+    out.unwrap_or_else(|e| format!("Error: {e}"))
+}
+
+/// The `apps` tool: find and install apps with winget, Wi-Fi networks.
+pub async fn apps(app: &AppHandle, chat_id: &str, args: &Value) -> String {
+    use sidekick_actions::pc;
+    let name = args["name"].as_str().unwrap_or_default().to_owned();
+    let out = match args["action"].as_str().unwrap_or("search") {
+        "search" => blocking(move || pc::app_search(&name)).await,
+        "install" | "update" => {
+            let update = args["action"] == "update";
+            if !pc::valid_app_id(&name) {
+                return "Error: pass the winget id from search, e.g. Spotify.Spotify.".into();
+            }
+            let action = if update { "update_app" } else { "install_app" };
+            let label = format!("{} {name}", if update { "Update" } else { "Install" });
+            crate::ask_tools::offer(app, chat_id, action, json!({ "id": name }), &label);
+            Ok(format!(
+                "\"{label}\" is a button the user taps; installs need their yes."
+            ))
+        }
+        "wifi_networks" => blocking(pc::wifi_networks).await.map(|n| {
+            if n.is_empty() {
+                "No Wi-Fi networks found.".into()
+            } else {
+                n.join("\n")
+            }
+        }),
+        "wifi_connect" => blocking(move || pc::wifi_connect(&name))
+            .await
+            .map(|o| o.message),
+        other => Err(format!("unknown apps action {other}")),
+    };
+    out.unwrap_or_else(|e| format!("Error: {e}"))
+}
+
 /// A short, human preview of an app change: "Gmail send email to ali@x.com:
 /// Invoice".
 pub fn preview(tool: &str, args: &Value) -> String {
@@ -289,6 +434,25 @@ pub async fn run(app: &AppHandle, action: &str, args: &Value) -> Option<Result<O
                 v["title"].as_str().unwrap_or("the page")
             ))
         }),
+        "desktop_act" => {
+            let target = sidekick_actions::uia::Target {
+                pid: args["pid"].as_u64().and_then(|p| u32::try_from(p).ok()),
+                app: args["app"].as_str().map(str::to_owned),
+            };
+            let n = args["ref"].as_u64().unwrap_or_default() as usize;
+            let name = args["name"].as_str().unwrap_or_default().to_owned();
+            let what = args["do"].as_str().unwrap_or("click").to_owned();
+            let text = args["text"].as_str().unwrap_or_default().to_owned();
+            blocking(move || sidekick_actions::uia::act(&target, n, &name, &what, &text)).await
+        }
+        "desktop_keys" => {
+            let target = sidekick_actions::uia::Target {
+                pid: args["pid"].as_u64().and_then(|p| u32::try_from(p).ok()),
+                app: args["app"].as_str().map(str::to_owned),
+            };
+            let keys = args["keys"].as_str().unwrap_or_default().to_owned();
+            blocking(move || sidekick_actions::uia::keys(&target, &keys)).await
+        }
         "app_action" => {
             let tool = args["tool"].as_str().unwrap_or_default();
             crate::composio::run_tapped(app, tool, &args["arguments"])
