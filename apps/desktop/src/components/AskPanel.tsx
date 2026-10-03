@@ -1105,8 +1105,52 @@ function Proposals({ items, keys }: { items: Proposal[]; keys: boolean }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [keys, undoable]);
+  // Do all: one tap runs every waiting action in order, stopping at the
+  // first that fails so later steps never run on a broken one.
+  const [busy, setBusy] = useState(false);
+  const doAll = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      for (const p of pending) {
+        await runProposal(p.id);
+        const ran = useSidekick
+          .getState()
+          .turns.flatMap((t) => t.proposals ?? [])
+          .find((x) => x.id === p.id)?.ran;
+        if (!ran?.ok) break;
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+  const allRef = useRef(doAll);
+  allRef.current = doAll;
+  const many = pending.length >= 2;
+  useEffect(() => {
+    if (!keys || !many) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.altKey && !e.ctrlKey && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        void allRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [keys, many]);
   return (
     <div className="mt-2 flex flex-col gap-1.5">
+      {many && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void doAll()}
+          className="chip flex min-h-8 items-center gap-2 self-start rounded-full bg-[#0a84ff] px-3.5 py-1.5 text-[13px] font-medium text-white hover:bg-[#0a84ff]/90 disabled:opacity-60"
+        >
+          {busy ? "Working..." : `Do all ${pending.length}`}
+          {keys && !busy && <kbd className="shrink-0 font-sans text-[11px] text-white/60">Alt A</kbd>}
+        </button>
+      )}
       {items.map((p) =>
         p.ran ? (
           <div key={p.id} className="flex items-center gap-2 text-[12.5px]">

@@ -103,6 +103,27 @@ if($env:SK_NAME -and (-not $e -or $e.Current.Name -ne $env:SK_NAME)){
 if(-not $e){ Write-Output "#error`tThat control is not there now; read the window again"; exit }
 $c=$e.Current
 if($c.IsPassword -and $env:SK_DO -eq 'type'){ Write-Output "#error`tSidekick never types into password fields"; exit }
+# Show where: a short outline around the control, without taking focus.
+if($env:SK_HIGHLIGHT -eq '1'){ try {
+  Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+  if(-not ('Sk.Hi' -as [type])){ Add-Type -Namespace Sk -Name Hi -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int c); [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h,IntPtr a,int x,int y,int w,int ht,uint f);' }
+  [void][Sk.Hi]::SetProcessDPIAware()
+  $r=$c.BoundingRectangle
+  if(-not $r.IsEmpty -and $r.Width -gt 2){
+    $b=3; $x=[int]$r.X-$b; $y=[int]$r.Y-$b; $w=[int]$r.Width+2*$b; $h=[int]$r.Height+2*$b
+    $f=New-Object System.Windows.Forms.Form
+    $f.FormBorderStyle='None'; $f.ShowInTaskbar=$false; $f.TopMost=$true
+    $f.BackColor=[System.Drawing.Color]::FromArgb(10,132,255)
+    $f.StartPosition='Manual'; $f.Bounds=New-Object System.Drawing.Rectangle($x,$y,$w,$h)
+    $g=New-Object System.Drawing.Region(New-Object System.Drawing.Rectangle(0,0,$w,$h))
+    $g.Exclude((New-Object System.Drawing.Rectangle($b,$b,($w-2*$b),($h-2*$b))))
+    $f.Region=$g
+    [void][Sk.Hi]::ShowWindow($f.Handle,4)
+    [void][Sk.Hi]::SetWindowPos($f.Handle,[IntPtr](-1),$x,$y,$w,$h,0x10)
+    for($i=0;$i -lt 6;$i++){ [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 70 }
+    $f.Close(); $f.Dispose()
+  }
+} catch {} }
 $p=$null
 $sh=New-Object -ComObject WScript.Shell
 switch($env:SK_DO){
@@ -235,6 +256,9 @@ pub fn act(
     env.push(("SK_NAME", name.to_owned()));
     env.push(("SK_DO", what.to_owned()));
     env.push(("SK_TEXT", text.to_owned()));
+    // Clicks and typing show where they land first.
+    let highlight = matches!(what, "click" | "type" | "select");
+    env.push(("SK_HIGHLIGHT", if highlight { "1" } else { "0" }.to_owned()));
     let out = run(&format!("{FIND}{ACT}"), &env)?;
     if let Some(e) = error_of(&out) {
         return Err(fail(e));
