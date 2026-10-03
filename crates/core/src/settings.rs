@@ -106,10 +106,62 @@ pub struct Settings {
     /// The notification inbox: Sidekick reads Windows notifications and only
     /// brings up what matters.
     pub notifications: NotificationSettings,
+    /// Saved tasks that run again on a trigger (or on request).
+    pub recipes: Vec<Recipe>,
+    /// Things Sidekick knows about the user ("My manager is Sara"), given to
+    /// every model. Edited in Settings or learned when the user says so.
+    pub memory: Vec<String>,
     /// Browser ids used for password fill and save-through (chrome, zen, …).
     /// None means all detected stores; Some(empty) explicitly disables all.
     pub password_browsers: Option<Vec<String>>,
     pub password_selection_version: u8,
+}
+
+/// A saved task: what to do (in the user's words) and when.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Recipe {
+    pub id: String,
+    pub name: String,
+    /// The instruction, as it would be typed in Ask.
+    pub prompt: String,
+    pub trigger: Trigger,
+    /// Start without asking first. Sending, posting and paying still wait
+    /// for a tap.
+    pub auto: bool,
+    pub enabled: bool,
+}
+
+impl Default for Recipe {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            prompt: String::new(),
+            trigger: Trigger::default(),
+            auto: false,
+            enabled: true,
+        }
+    }
+}
+
+/// When a recipe runs.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(tag = "when", rename_all = "snake_case")]
+pub enum Trigger {
+    /// Only when asked (by name in Ask, or Run in Settings).
+    #[default]
+    Manual,
+    /// At a local time ("17:00") on some days ("mon".."sun"; empty is daily).
+    Time { time: String, days: Vec<String> },
+    /// A notification from an app, optionally only when its text has a word.
+    Notification { app: String, contains: String },
+    /// A download finished, optionally only of one kind (pdf, image...).
+    Download { kind: String },
+    /// A calendar meeting ended.
+    MeetingEnded,
+    /// An app came to the front (once a day at most).
+    AppOpened { app: String },
 }
 
 /// How much a notification interrupts.
@@ -487,6 +539,8 @@ impl Default for Settings {
             routines_auto: false,
             hide_in_fullscreen: false,
             notifications: NotificationSettings::default(),
+            recipes: Vec::new(),
+            memory: Vec::new(),
             password_browsers: None,
             password_selection_version: 1,
         }

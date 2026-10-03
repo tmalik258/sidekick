@@ -651,6 +651,27 @@ async fn execute(
                 path: None,
             });
         }
+        "recipe_run" => {
+            let message = crate::recipes::run_by_id(app, arg("id").unwrap_or_default())?;
+            return Ok(sidekick_actions::Outcome {
+                message,
+                path: None,
+            });
+        }
+        "recipe_save" => {
+            let message = crate::recipes::save(
+                app,
+                sidekick_core::Recipe {
+                    name: arg("name").unwrap_or_default().to_owned(),
+                    prompt: arg("prompt").unwrap_or_default().to_owned(),
+                    ..Default::default()
+                },
+            )?;
+            return Ok(sidekick_actions::Outcome {
+                message,
+                path: None,
+            });
+        }
         "notify_level" => {
             let level = arg("level")
                 .and_then(crate::inbox::Level::parse)

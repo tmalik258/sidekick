@@ -228,6 +228,14 @@ const BUILTIN: &[(&str, &str)] = &[
         "notify/soon.yaml",
         include_str!("../../../skills/notify/soon.yaml"),
     ),
+    (
+        "recipes/due.yaml",
+        include_str!("../../../skills/recipes/due.yaml"),
+    ),
+    (
+        "recipes/offer.yaml",
+        include_str!("../../../skills/recipes/offer.yaml"),
+    ),
 ];
 
 /// Every action a skill may name. Keep in sync with the executor and the
@@ -245,6 +253,8 @@ pub const ACTIONS: &[&str] = &[
     "launch_app",
     "open_app",
     "notify_level",
+    "recipe_run",
+    "recipe_save",
     "close_app",
     "sleep_pc",
     "install_app",

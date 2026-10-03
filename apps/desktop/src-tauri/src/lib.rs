@@ -30,6 +30,7 @@ mod password_save;
 mod pipeline;
 mod privacy;
 mod projects;
+mod recipes;
 mod routines;
 mod screen;
 mod search;
@@ -130,6 +131,10 @@ pub fn run() {
             commands::codex_add_notify,
             commands::codex_add_mcp,
             commands::guide_keys,
+            commands::recipe_save,
+            commands::recipe_delete,
+            commands::recipe_run,
+            commands::know_how_clear,
             commands::notifications_status,
             commands::notifications_set_level,
             commands::notifications_silence,
@@ -272,6 +277,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     timetrack::start(app);
     moments::start(app);
     inbox::start(app);
+    recipes::start(app);
     // Prefer bundled models; only then network. Welcome opens from the island
     // once it listens (ask_ensure_welcome), or after models become ready.
     voice::seed_from_bundle(app);

@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
 import type { SkillInfo } from "@/lib/types";
+import { Recipes } from "./Recipes";
 import { Button, Section, Segmented } from "./ui";
 
 export function SkillsTab({ onError }: { onError: (e: string) => void }) {
@@ -31,6 +32,13 @@ export function SkillsTab({ onError }: { onError: (e: string) => void }) {
 
   return (
     <>
+      <Section
+        title="Recipes"
+        hint="Saved tasks. Run one by its name in Ask, or let a trigger start it."
+        keywords="recipe routine schedule trigger every repeat saved task automation"
+      >
+        <Recipes onError={onError} />
+      </Section>
       <Section title="Automations" hint="These act without asking, with Undo." keywords="auto always automatic rules">
         {automations.length === 0 ? (
           <p className="text-[13px] text-(--muted)">Nothing runs on its own yet.</p>
