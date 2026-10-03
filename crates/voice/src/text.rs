@@ -108,6 +108,117 @@ fn loose_name(words: &[(String, usize)]) -> Option<usize> {
     Some(if split { 3 } else { 2 })
 }
 
+/// Words a spoken request usually starts with.
+const STARTERS: &[&str] = &[
+    "what",
+    "what's",
+    "whats",
+    "how",
+    "why",
+    "when",
+    "where",
+    "who",
+    "which",
+    "is",
+    "are",
+    "can",
+    "could",
+    "would",
+    "will",
+    "do",
+    "does",
+    "did",
+    "should",
+    "open",
+    "close",
+    "start",
+    "stop",
+    "turn",
+    "set",
+    "play",
+    "pause",
+    "mute",
+    "unmute",
+    "find",
+    "search",
+    "show",
+    "tell",
+    "read",
+    "send",
+    "reply",
+    "email",
+    "message",
+    "call",
+    "remind",
+    "create",
+    "make",
+    "add",
+    "remove",
+    "delete",
+    "move",
+    "copy",
+    "save",
+    "take",
+    "check",
+    "switch",
+    "go",
+    "launch",
+    "lock",
+    "sleep",
+    "summarize",
+    "summarise",
+    "translate",
+    "explain",
+    "write",
+    "draft",
+    "book",
+    "schedule",
+    "help",
+    "give",
+    "put",
+    "run",
+    "install",
+    "update",
+    "connect",
+    "join",
+    "silence",
+    "volume",
+    "louder",
+    "quieter",
+    "brightness",
+    "dark",
+    "light",
+    "please",
+    "hello",
+    "hi",
+    "hey",
+    "thanks",
+    "thank",
+    "yes",
+    "no",
+    "next",
+    "cancel",
+    "never",
+];
+
+/// Whether a short transcript is a request rather than noise or a stray
+/// sound the speech model turned into words ("byzant mixed"). Four words
+/// or more always count.
+pub fn looks_like_request(text: &str) -> bool {
+    let words: Vec<String> = text
+        .split_whitespace()
+        .map(|w| {
+            w.trim_matches(|c: char| !c.is_alphanumeric() && c != '\'')
+                .to_lowercase()
+        })
+        .filter(|w| !w.is_empty())
+        .collect();
+    match words.first() {
+        None => false,
+        Some(first) => words.len() >= 4 || STARTERS.contains(&first.as_str()),
+    }
+}
+
 /// Removes what sounds wrong when read aloud: markdown marks, link targets
 /// and code blocks.
 pub fn speakable(text: &str) -> String {
@@ -219,6 +330,17 @@ impl Sentences {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn tells_requests_from_noise() {
+        assert!(!looks_like_request("Byzant mixed."));
+        assert!(!looks_like_request("the"));
+        assert!(!looks_like_request(""));
+        assert!(looks_like_request("Open Slack"));
+        assert!(looks_like_request("what's the time"));
+        assert!(looks_like_request("mute"));
+        assert!(looks_like_request("my battery is low right now"));
+    }
+
     use super::*;
 
     #[test]

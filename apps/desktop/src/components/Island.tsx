@@ -496,7 +496,9 @@ function ExpandedContent({
             </p>
           )}
           <p
-            className={`${passwordSave ? "" : "mt-0.5"} line-clamp-2 text-[13px] leading-4.5 tracking-[-0.005em] text-[rgb(235_235_245/0.6)]`}
+            className={`${passwordSave ? "" : "mt-0.5"} ${
+              suggestion?.skillId.startsWith("notify.") ? "line-clamp-4 whitespace-pre-line" : "line-clamp-2"
+            } text-[13px] leading-4.5 tracking-[-0.005em] text-[rgb(235_235_245/0.6)]`}
           >
             {passwordSaved && !suggestion ? passwordSaved.domain : detail}
           </p>
