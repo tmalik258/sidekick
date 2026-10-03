@@ -1,7 +1,7 @@
 {
   "name": "sidekick",
   "private": true,
-  "packageManager": "pnpm@10.18.0",
+  "packageManager": "pnpm@12.8.1",
   "scripts": {
     "dev": "pnpm --filter desktop tauri dev -- --release",
     "build": "pnpm --filter desktop tauri build --config src-tauri/tauri.release.conf.json",

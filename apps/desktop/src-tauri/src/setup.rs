@@ -607,7 +607,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             .run(winget("Microsoft.VisualStudioCode")),
     });
 
-    let tools: [(&str, &str, &str, bool, &str, bool); 9] = [
+    let tools: [(&str, &str, &str, bool, &str, bool); 8] = [
         (
             "git",
             "Git",
@@ -672,14 +672,6 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             "TheDocumentFoundation.LibreOffice",
             false,
         ),
-        (
-            "passwords",
-            "Password manager CLI",
-            "Fill logins from Bitwarden (or 1Password with op).",
-            caps.bw.is_some() || caps.op.is_some(),
-            "Bitwarden.CLI",
-            false,
-        ),
     ];
     for (id, title, why, ok, package, recommended) in tools {
         let mut item = SetupItem::new(id, Group::Tools, title, why)
@@ -690,6 +682,33 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         }
         items.push(item);
     }
+
+    let password_browsers: Vec<_> = caps
+        .browsers
+        .iter()
+        .filter(|b| sidekick_actions::passwords::user_data_dir(&b.id).is_some())
+        .collect();
+    let passwords_ok = !password_browsers.is_empty();
+    let passwords_status = if passwords_ok {
+        password_browsers
+            .iter()
+            .map(|b| b.label())
+            .collect::<Vec<_>>()
+            .join(", ")
+    } else {
+        "No browser password store found".into()
+    };
+    items.push(
+        SetupItem::new(
+            "passwords",
+            Group::Tools,
+            "Browser passwords",
+            "Fill and save locally in the last-used Chrome, Edge, Brave or Samsung Internet profile. Unsupported encryption is reported.",
+        )
+        .done(passwords_ok, &passwords_status, "Not found")
+        .tab("connections")
+        .recommended(),
+    );
     items
 }
 
