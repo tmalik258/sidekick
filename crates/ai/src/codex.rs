@@ -306,14 +306,14 @@ mod tests {
     fn runs_read_only_with_the_prompt_on_stdin() {
         let c = Codex {
             path: None,
-            model: Some("gpt-5-codex".into()),
+            model: Some("gpt-6-luna".into()),
             workdir: PathBuf::from("."),
             mcp: Some(("http://127.0.0.1:47823/mcp".into(), "secret".into())),
         };
         let args = c.args(true);
         let joined = args.join(" ");
         assert!(joined.contains("--sandbox read-only"));
-        assert!(joined.contains("--model gpt-5-codex"));
+        assert!(joined.contains("--model gpt-6-luna"));
         assert!(joined.contains("--image screen.png"));
         assert!(joined.contains("default_tools_approval_mode=\"approve\""));
         assert!(

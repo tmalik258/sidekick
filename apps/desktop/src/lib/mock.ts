@@ -378,7 +378,14 @@ commands.setup_status = () => {
     why: string,
     done: boolean,
     status: string,
-    extra: { command?: string; runnable?: boolean; tab?: string; recommended?: boolean } = {},
+    extra: {
+      command?: string;
+      runnable?: boolean;
+      action?: string;
+      opensApp?: boolean;
+      tab?: string;
+      recommended?: boolean;
+    } = {},
   ) => ({
     id,
     group,
@@ -388,6 +395,8 @@ commands.setup_status = () => {
     status,
     command: extra.command ?? null,
     runnable: extra.runnable ?? false,
+    action: extra.action ?? "Install",
+    opensApp: extra.opensApp ?? false,
     tab: extra.tab ?? null,
     recommended: extra.recommended ?? false,
   });
@@ -402,6 +411,7 @@ commands.setup_status = () => {
       item("ollama_embed", "ai", "Search model", "Finds things by meaning. About 270 MB.", false, "Not downloaded", {
         command: "ollama pull nomic-embed-text",
         runnable: true,
+        action: "Download",
         recommended: true,
       }),
       item("anthropic", "ai", "Anthropic API key", "Pay as you go instead of a Claude plan.", false, "Not set", {

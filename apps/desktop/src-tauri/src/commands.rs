@@ -1093,8 +1093,7 @@ pub async fn setup_apply(app: AppHandle, plan: Plan) -> CmdResult<Vec<String>> {
         done.push("Sidekick tools added to Claude Code".to_owned());
     }
     if !plan.install.is_empty() {
-        crate::setup::run_many(&app, &plan.install).await?;
-        done.push("Installing in PowerShell".to_owned());
+        done.extend(crate::setup::run_many(&app, &plan.install).await?);
     }
     crate::search::reindex_folders(&app);
     Ok(done)
