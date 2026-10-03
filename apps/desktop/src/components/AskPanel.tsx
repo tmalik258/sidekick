@@ -563,13 +563,6 @@ function ContextChips() {
         )
       )}
       <Chip
-        on={ask.attachScreen}
-        onClick={() => setAsk({ attachScreen: !ask.attachScreen })}
-        title={`Send a screenshot of ${context.app ?? "the screen"} with the next question`}
-      >
-        Screenshot
-      </Chip>
-      <Chip
         on={ask.localOnly}
         onClick={() => setAsk({ localOnly: !ask.localOnly })}
         title="Only use a model on this PC"

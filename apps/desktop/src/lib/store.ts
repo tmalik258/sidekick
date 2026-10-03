@@ -104,8 +104,6 @@ export interface AskState {
   seq: number;
   attachWindow: boolean;
   attachClip: boolean;
-  /** Send a screenshot with the next question only. */
-  attachScreen: boolean;
   localOnly: boolean;
   /** Settings tab to show, when something asked for a particular one. */
   settingsTab?: string;
@@ -323,13 +321,12 @@ export function sendChat(prompt: string, attach?: { clipboard?: boolean; screen?
     ...turns.filter((t) => !t.error).map(({ role, content }) => ({ role, content })),
     { role: "user", content: q },
   ];
-  const screen = attach?.screen ?? ask?.attachScreen ?? false;
+  const screen = attach?.screen ?? false;
   const auto = autoContext(q, ask);
   useSidekick.setState({
     chatId: id,
     turns: [...turns, { role: "user", content: q, screen }, { role: "assistant", content: "", streaming: true }],
   });
-  if (ask?.attachScreen) setAsk({ attachScreen: false });
   void api.aiChat(
     id,
     history,
@@ -496,7 +493,6 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
             seq,
             attachWindow: false,
             attachClip: clip,
-            attachScreen: false,
             localOnly: false,
             tool: open.tool ?? null,
             settingsTab,
