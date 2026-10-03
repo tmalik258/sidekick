@@ -327,7 +327,7 @@ export const DEFAULT_SETTINGS: Settings = {
   routines: true,
   routinesAuto: false,
   hideInFullscreen: false,
-  notifications: { enabled: false, apps: {}, vip: [] },
+  notifications: { enabled: true, apps: {}, vip: [] },
   voice: {
     enabled: true,
     wakeWord: true,
