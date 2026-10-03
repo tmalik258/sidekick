@@ -96,7 +96,7 @@ export function AskPanel() {
   const escRef = useRef<() => void>(() => undefined);
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented || e.target === inputRef.current) return;
+      if (e.key !== "Escape" || e.repeat || e.defaultPrevented || e.target === inputRef.current) return;
       e.preventDefault();
       escRef.current();
     };
@@ -191,6 +191,18 @@ export function AskPanel() {
       }),
     [ask?.context, chatPage, calendar],
   );
+  const resetChat = useCallback(() => {
+    if (useSidekick.getState().hearing !== null) stopListening();
+    newChat();
+    setText("");
+    setSelected(0);
+    setClips(null);
+    setHits(null);
+    setPick(0);
+    nearBottom.current = true;
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, []);
+
   const commands = useMemo<Command[]>(() => {
     const all: Command[] = [
       paused
@@ -229,8 +241,8 @@ export function AskPanel() {
               id: "new",
               label: "New chat",
               hint: "Clears this conversation",
-              icon: "close" as const,
-              run: newChat,
+              icon: "plus" as const,
+              run: resetChat,
               stay: true,
             },
           ]
@@ -260,7 +272,7 @@ export function AskPanel() {
       }));
     const pickUp = recent.filter((c) => c.label.toLowerCase().includes(q)).slice(0, 3);
     return [...all.filter((c) => c.label.toLowerCase().includes(q)), ...launch, ...pickUp];
-  }, [paused, settings.muted, turns.length, text, projects, chats, starters]);
+  }, [paused, settings.muted, turns.length, text, projects, chats, starters, resetChat]);
 
   if (!ask) return null;
 
@@ -321,10 +333,13 @@ export function AskPanel() {
   };
 
   escRef.current = () => {
-    inputRef.current?.focus();
-    if (hearing !== null) stopListening();
-    else if (streaming) cancelChat();
-    else void api.askClose();
+    const current = useSidekick.getState();
+    if (current.turns.length > 0 || current.chatId !== null) {
+      resetChat();
+    } else {
+      if (current.hearing !== null) stopListening();
+      void api.askClose();
+    }
   };
 
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -365,12 +380,7 @@ export function AskPanel() {
       else if (rows) runRow(selected);
     } else if (e.key === "Escape") {
       e.preventDefault();
-      if (hearing !== null) stopListening();
-      else if (streaming) cancelChat();
-      else if (text) setText("");
-      else if (clips) setClips(null);
-      else if (hits) setHits(null);
-      else void api.askClose();
+      if (!e.repeat) escRef.current();
     }
   };
 
@@ -419,14 +429,15 @@ export function AskPanel() {
               <Pill onClick={cancelChat}>Stop</Pill>
             ) : (
               turns.length > 0 && (
-                <Pill
-                  onClick={() => {
-                    newChat();
-                    inputRef.current?.focus();
-                  }}
+                <button
+                  type="button"
+                  aria-label="New chat"
+                  title="New chat (Esc)"
+                  onClick={resetChat}
+                  className="chip grid size-7 shrink-0 place-items-center rounded-full bg-white/[0.12] text-white/85 hover:bg-white/[0.2]"
                 >
-                  New
-                </Pill>
+                  <Icon name="plus" size={16} />
+                </button>
               )
             )}
           </>
@@ -564,7 +575,7 @@ export function AskPanel() {
             </span>
           )}
           <span>
-            <Kbd>Esc</Kbd> {streaming ? "stop" : "close"}
+            <Kbd>Esc</Kbd> {inChat || streaming ? "new chat" : "close"}
           </span>
         </span>
       </div>
