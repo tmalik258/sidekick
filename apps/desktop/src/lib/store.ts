@@ -316,10 +316,11 @@ export const setAsk = (patch: Partial<AskState>) => {
 };
 
 /** Sends a message in the Ask conversation; answers stream into the last turn. */
-export function sendChat(prompt: string, attach?: { clipboard?: boolean; screen?: boolean; speak?: boolean }) {
+/** Sends a question; false when it could not start (empty, or one running). */
+export function sendChat(prompt: string, attach?: { clipboard?: boolean; screen?: boolean; speak?: boolean }): boolean {
   const { ask, turns, chatId, chatPage, chatSkill } = useSidekick.getState();
   const q = prompt.trim();
-  if (!q || chatId) return;
+  if (!q || chatId) return false;
   const id = crypto.randomUUID();
   const history: ChatMessage[] = [
     ...turns.filter((t) => !t.error).map(({ role, content }) => ({ role, content })),
@@ -345,6 +346,7 @@ export function sendChat(prompt: string, attach?: { clipboard?: boolean; screen?
     },
     ask?.localOnly ?? false,
   );
+  return true;
 }
 
 /**
@@ -399,6 +401,29 @@ export function startListening() {
     const { turns } = useSidekick.getState();
     useSidekick.setState({ hearing: null, turns: [...turns, { role: "assistant", content: "", error: String(e) }] });
   });
+}
+
+/** How long the voice pill may sit unchanged before it is cleared. */
+const VOICE_STUCK_MS = { hearing: 30_000, question: 120_000 };
+let voiceTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * A safety net under the voice pill: if what is heard, or the question
+ * waiting for an answer, stays the same too long, the pill clears and
+ * listening stops, so the island never stays stuck.
+ */
+function watchVoice() {
+  if (voiceTimer) clearTimeout(voiceTimer);
+  const { hearing, voiceQuestion } = useSidekick.getState();
+  const ms = voiceQuestion !== null ? VOICE_STUCK_MS.question : VOICE_STUCK_MS.hearing;
+  voiceTimer = setTimeout(() => {
+    voiceTimer = null;
+    const now = useSidekick.getState();
+    if (now.hearing !== null && now.hearing === hearing) stopListening();
+    if (now.voiceQuestion !== null && now.voiceQuestion === voiceQuestion) {
+      useSidekick.setState({ voiceQuestion: null });
+    }
+  }, ms);
 }
 
 export function stopListening() {
@@ -524,6 +549,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       listen(EVENTS.voiceHeard, ({ text, final, byVoice }) => {
         if (!final) {
           useSidekick.setState({ hearing: text });
+          watchVoice();
           return;
         }
         useSidekick.setState({ hearing: null });
@@ -532,8 +558,11 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         if (ask?.view === "welcome" && welcomeHeard(text)) return;
         if (text.trim()) {
           // Asked with Ask closed: stay compact until the answer comes.
-          if (!ask) useSidekick.setState({ voiceQuestion: text.trim() });
-          sendChat(text, { speak: settings.voice.speakAnswers });
+          const started = sendChat(text, { speak: settings.voice.speakAnswers });
+          if (started && !ask) {
+            useSidekick.setState({ voiceQuestion: text.trim() });
+            watchVoice();
+          }
         } else if (byVoice && turns.length === 0 && ask) {
           void api.askClose();
         }
