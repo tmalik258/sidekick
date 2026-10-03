@@ -15,6 +15,8 @@ mod decide;
 #[cfg(test)]
 mod decisions_test;
 mod detect;
+#[cfg(test)]
+mod drift_test;
 mod extension;
 mod fathom;
 mod files;
@@ -142,7 +144,6 @@ pub fn run() {
             commands::notifications_status,
             commands::notifications_set_level,
             commands::notifications_silence,
-            commands::composio_test,
             commands::setup_run,
             commands::backup_export,
             commands::backup_import,
@@ -193,7 +194,6 @@ pub fn run() {
             commands::search_status,
             commands::search_reindex,
             commands::open_reference,
-            commands::mcp_info,
             commands::action_undo,
         ])
         .run(tauri::generate_context!())

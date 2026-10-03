@@ -717,15 +717,6 @@ impl Storage {
         Ok(self.conn.execute("DELETE FROM choices", [])?)
     }
 
-    /// When a sensor last reported anything, as stored (RFC 3339).
-    pub fn last_event_from(&self, source: &str) -> Result<Option<String>, StorageError> {
-        Ok(self.conn.query_row(
-            "SELECT MAX(ts) FROM events WHERE source = ?1",
-            [source],
-            |r| r.get(0),
-        )?)
-    }
-
     /// Saves a conversation (turns as the UI keeps them); the oldest go once
     /// there are too many.
     pub fn save_chat(&self, id: &str, title: &str, turns_json: &str) -> Result<(), StorageError> {
