@@ -16,7 +16,8 @@ const TAB_LABELS: Record<string, string> = {
   search: "Search",
   today: "Today",
   voice: "Voice",
-  connections: "Connections",
+  connections: "Apps",
+  privacy: "Privacy",
 };
 
 const ONE_CLICK = new Set([
@@ -218,11 +219,6 @@ export const SetupRow = memo(function SetupRow({
             {showOpenTab && isDirect && onOpenTab && item.tab && (
               <SmallButton onClick={() => onOpenTab(item.tab as string)}>
                 {TAB_LABELS[item.tab] ? `Open ${TAB_LABELS[item.tab]}` : "Open"}
-              </SmallButton>
-            )}
-            {!showInline && !isDirect && needsGuide && item.id === "browser" && onOpenTab && (
-              <SmallButton primary onClick={() => onOpenTab("browser")}>
-                Open Browser
               </SmallButton>
             )}
           </div>

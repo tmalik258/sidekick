@@ -18,6 +18,7 @@ import {
   type VoiceDownload,
   type VoiceSettings,
 } from "@/lib/types";
+import { SetupItems } from "../SetupChecklist";
 import { Button, Field, Section, Select, StatusDot, Switch, TextField, Toggle } from "./ui";
 
 export function AiTab({ onError }: { onError: (e: string) => void }) {
@@ -26,22 +27,23 @@ export function AiTab({ onError }: { onError: (e: string) => void }) {
   return (
     <>
       <Section
-        title="AI"
-        hint="Sidekick works fully without AI. Chat tries these top to bottom and falls back when one is not reachable."
-        keywords="claude ollama anthropic local model provider order qwen"
+        title="Models"
+        hint="Ask tries them top to bottom. Drag to reorder."
+        keywords="ai claude codex ollama anthropic local model provider order qwen hooks mcp coding agent"
       >
         <Providers ai={ai} onError={onError} />
       </Section>
       <Section
         title="Voice"
-        hint="Speech runs on this PC. Audio is never saved or sent anywhere; only the words you say go to your AI, like a typed question."
+        hint="Runs on this PC. Audio is never saved or sent."
         keywords="microphone speak talk wake word hey sidekick supertonic conversation"
       >
         <VoiceSection voice={voice} onError={onError} />
       </Section>
       <Section
+        collapsible
+        summary={ai.decisions ? "Best option first" : "Off"}
         title="Ranking"
-        hint="SemIf or the local model guesses which option you want and puts it first. Your past picks always win."
         keywords="semif decisions t1 order options"
       >
         <Ranking ai={ai} onError={onError} />
@@ -51,10 +53,18 @@ export function AiTab({ onError }: { onError: (e: string) => void }) {
 }
 
 const PROVIDER_HINTS: Record<AiProviderId, string> = {
-  claude_code: "Your own Claude subscription through the claude CLI. Sidekick never reads its sign-in files.",
-  codex: "Your own ChatGPT plan through OpenAI's codex CLI, read-only. Sidekick never reads its sign-in files.",
-  anthropic: "Uses ANTHROPIC_API_KEY from your environment. The key is never stored.",
-  local: "Ollama or any OpenAI-compatible server. Nothing leaves this PC.",
+  claude_code: "Your Claude plan, through the claude CLI.",
+  codex: "Your ChatGPT plan, through the codex CLI.",
+  anthropic: "Pay as you go with ANTHROPIC_API_KEY.",
+  local: "Ollama on this PC. Nothing leaves it.",
+};
+
+/** Setup steps shown inside each provider's card, until they are done. */
+const PROVIDER_SETUP: Record<AiProviderId, string[]> = {
+  claude_code: ["claude_code", "claude_hooks", "claude_mcp"],
+  codex: ["codex", "codex_notify", "codex_mcp"],
+  anthropic: ["anthropic"],
+  local: ["ollama", "ollama_chat", "ollama_embed"],
 };
 
 const CODEX_MODELS: [string, string][] = [
@@ -154,6 +164,7 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
                   </div>
                   <Switch checked={enabled(id)} onChange={(on) => setEnabled(id, on)} label={PROVIDER_LABELS[id]} />
                 </div>
+                <SetupItems ids={PROVIDER_SETUP[id]} />
                 {id === "claude_code" && (
                   <>
                     <Field label="Model">
@@ -237,10 +248,7 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
                         onChange={(model) => void save({ local: { ...ai.local, model } })}
                       />
                     </Field>
-                    <Field
-                      label="Vision model"
-                      hint="For pictures without text, e.g. moondream (about 1.7 GB). Off reads the screen as text, which is faster."
-                    >
+                    <Field label="Vision model" hint="For pictures without text">
                       <Select
                         label="Vision model"
                         value={ai.local.visionModel}
@@ -272,10 +280,7 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
           </DragRow>
         ))}
       </Reorder.Group>
-      <Field
-        label="Coding agent"
-        hint="Gets Continue in... from Ask mode when the local model needs help or a change has to be made."
-      >
+      <Field label="Coding agent" hint="Makes changes for Ask">
         <Select
           label="Coding agent"
           value={ai.codingAgent}
@@ -319,7 +324,6 @@ function Ranking({ ai, onError }: { ai: AiSettings; onError: (e: string) => void
       />
       <Toggle
         label="Use SemIf"
-        hint="Scores options from a small model's logits. Runs semif-score natively or inside WSL."
         checked={ai.semif.enabled}
         onChange={(enabled) => void save({ semif: { ...ai.semif, enabled } })}
       />
@@ -395,7 +399,7 @@ function VoiceSection({ voice, onError }: { voice: VoiceSettings; onError: (e: s
     <>
       <Toggle
         label="Talk to Sidekick"
-        hint={voice.wakeWord ? 'Say "Hey Sidekick", then your question.' : "Use the mic button or the Talk shortcut."}
+        hint={voice.wakeWord ? 'Say "Hey Sidekick"' : "Use the mic button or the Talk shortcut"}
         checked={voice.enabled}
         onChange={(enabled) => {
           void set({ enabled });
@@ -440,25 +444,24 @@ function VoiceSection({ voice, onError }: { voice: VoiceSettings; onError: (e: s
       {status?.error && <p className="text-[12px] text-red-400">{status.error}</p>}
       <Toggle
         label="Wake word"
-        hint="Listens for Hey Sidekick on this PC. Off pauses the microphone until you press the mic button."
+        hint="Off: only the mic button listens"
         checked={voice.wakeWord}
         onChange={(wakeWord) => void set({ wakeWord })}
       />
       <Toggle
         label="Read answers aloud"
-        hint="When you asked by voice."
         checked={voice.speakAnswers}
         onChange={(speakAnswers) => void set({ speakAnswers })}
       />
       <Toggle
         label="Keep the conversation going"
-        hint="After an answer is read out, listen for your reply. No need to say Hey Sidekick again."
+        hint="Listen for your reply after an answer"
         checked={voice.conversation}
         onChange={(conversation) => void set({ conversation })}
       />
       <Toggle
         label="Read suggestions aloud"
-        hint='Hear what Sidekick noticed and answer by voice: "open", "the second one", or "not now".'
+        hint='Answer with "open" or "not now"'
         checked={voice.speakSuggestions}
         onChange={(speakSuggestions) => void set({ speakSuggestions })}
       />

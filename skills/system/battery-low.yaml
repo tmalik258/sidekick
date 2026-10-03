@@ -9,5 +9,5 @@ suggestion:
   title: "Battery at {{percent}}%"
   detail: "Not plugged in."
   options:
-    - { label: Battery saver, action: open_system_page, args: { page: battery } }
+    - { label: Battery saver, action: open_system_page, args: { page: battery }, when: { saver: { not_one_of: [on] } } }
     - { label: What uses power, action: open_system_page, args: { page: taskmgr } }
