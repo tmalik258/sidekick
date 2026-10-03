@@ -54,6 +54,14 @@ const PRIME: usize = MIC_RATE as usize * 3 / 2;
 /// audio has passed, an utterance that is only the wake phrase does not end
 /// listening; it waits for the question instead.
 const QUESTION_GRACE: usize = MIC_RATE as usize * 8;
+/// Longest a question may run: past this, what was heard is taken as said,
+/// so steady background noise can never keep it listening.
+const MAX_LISTEN: usize = MIC_RATE as usize * 20;
+/// No audio this long while listening: the microphone stalled; finish.
+const STALL: Duration = Duration::from_secs(3);
+/// No audio this long at all: the microphone is gone; report it so the app
+/// starts it again.
+const DEAD: Duration = Duration::from_secs(10);
 
 /// Owns the keyword spotter and the streaming recognizer.
 pub struct Engine {
@@ -195,6 +203,21 @@ impl Engine {
         self.last.clear();
     }
 
+    /// Ends listening now with what was heard so far (maybe nothing).
+    pub fn finish(&mut self) -> Option<Heard> {
+        if !self.listening {
+            return None;
+        }
+        let text = self.current_text();
+        self.recognizer.reset(&self.stream);
+        self.fresh_spotter();
+        self.listening = false;
+        self.last.clear();
+        self.recent.clear();
+        self.heard = 0;
+        Some(Heard::Final(text))
+    }
+
     fn start_listening(&mut self) {
         self.fresh_spotter();
         self.listening = true;
@@ -241,6 +264,10 @@ impl Engine {
         } else {
             self.decode(chunk);
             self.heard += chunk.len();
+            if self.heard > MAX_LISTEN {
+                out.extend(self.finish());
+                return out;
+            }
         }
         let text = self.current_text();
         if text != self.last {
@@ -354,6 +381,7 @@ impl Listener {
                     }
                 };
                 let _ = ready_tx.send(Ok(()));
+                let mut last_chunk = std::time::Instant::now();
                 while !stopped.load(Ordering::Relaxed) {
                     while let Ok(c) = control_rx.try_recv() {
                         match c {
@@ -366,11 +394,23 @@ impl Listener {
                     }
                     match chunks.recv_timeout(Duration::from_millis(100)) {
                         Ok(chunk) => {
+                            last_chunk = std::time::Instant::now();
                             for heard in engine.feed(&chunk) {
                                 on(heard);
                             }
                         }
-                        Err(RecvTimeoutError::Timeout) => {}
+                        Err(RecvTimeoutError::Timeout) => {
+                            let quiet = last_chunk.elapsed();
+                            if quiet > STALL
+                                && let Some(heard) = engine.finish()
+                            {
+                                on(heard);
+                            }
+                            if quiet > DEAD {
+                                on(Heard::Error("the microphone stopped responding".into()));
+                                break;
+                            }
+                        }
                         Err(RecvTimeoutError::Disconnected) => {
                             on(Heard::Error("the microphone stopped".into()));
                             break;

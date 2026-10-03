@@ -373,25 +373,61 @@ fn flush_soon(app: &AppHandle, settings: &sidekick_core::Settings) {
         i.last_soon = Some(Instant::now());
         std::mem::take(&mut i.pending)
     };
-    let mut by_sender: Vec<String> = Vec::new();
-    for it in &pending {
-        let who = format!("{} ({})", it.title, it.app);
-        if !by_sender.contains(&who) {
-            by_sender.push(who);
-        }
-    }
+    let (count_text, summary) = digest(&pending);
     let first_app = pending.first().map(|i| i.app.clone()).unwrap_or_default();
-    let count = pending.len();
     app.state::<AppState>().bus.publish(Event::new(
         SOON_EVENT,
         "notifications",
         json!({
-            "count": count,
-            "count_text": if count == 1 { "1 message waiting".to_owned() } else { format!("{count} messages waiting") },
-            "summary": by_sender.iter().take(3).cloned().collect::<Vec<_>>().join(", "),
+            "count": pending.len(),
+            "count_text": count_text,
+            "summary": summary,
             "first_app": first_app,
         }),
     ));
+}
+
+/// The waiting card's title and text: one message reads as itself ("Ali
+/// Khan on WhatsApp" / what he wrote); several show each sender's latest
+/// message, one per line.
+fn digest(pending: &[Item]) -> (String, String) {
+    if let [only] = pending {
+        let title = if only.title.is_empty() {
+            only.app.clone()
+        } else {
+            format!("{} on {}", only.title, only.app)
+        };
+        return (title, clip(&only.body, 200));
+    }
+    let mut latest: Vec<(String, String)> = Vec::new();
+    for it in pending.iter().rev() {
+        let who = if it.title.is_empty() {
+            it.app.clone()
+        } else {
+            format!("{} ({})", it.title, it.app)
+        };
+        if !latest.iter().any(|(w, _)| *w == who) {
+            latest.push((who, it.body.clone()));
+        }
+    }
+    let mut lines: Vec<String> = latest
+        .iter()
+        .take(3)
+        .map(|(who, body)| {
+            if body.trim().is_empty() {
+                who.clone()
+            } else {
+                format!("{who}: {}", clip(body.trim(), 70))
+            }
+        })
+        .collect();
+    if latest.len() > 3 {
+        lines.push(format!("and {} more", latest.len() - 3));
+    }
+    (
+        format!("{} messages waiting", pending.len()),
+        lines.join("\n"),
+    )
 }
 
 fn clip(s: &str, n: usize) -> String {
@@ -551,6 +587,43 @@ pub fn describe(level: Option<&str>, from: Option<&str>, minutes: Option<u64>) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn item(app: &str, title: &str, body: &str) -> Item {
+        Item {
+            id: 0,
+            app: app.into(),
+            title: title.into(),
+            body: body.into(),
+            ts: String::new(),
+            level: Level::Soon,
+            why: String::new(),
+            code: None,
+        }
+    }
+
+    #[test]
+    fn waiting_card_shows_the_messages() {
+        let one = [item("WhatsApp", "Ali Khan", "Can you send the invoice?")];
+        assert_eq!(
+            digest(&one),
+            (
+                "Ali Khan on WhatsApp".into(),
+                "Can you send the invoice?".into()
+            )
+        );
+        let many = [
+            item("WhatsApp", "Ali Khan", "Hi"),
+            item("Slack", "#dev", "Build failed on main"),
+            item("WhatsApp", "Ali Khan", "Can you send the invoice?"),
+        ];
+        let (title, text) = digest(&many);
+        assert_eq!(title, "3 messages waiting");
+        assert_eq!(
+            text,
+            "Ali Khan (WhatsApp): Can you send the invoice?\n#dev (Slack): Build failed on main",
+            "each sender's latest message, newest first"
+        );
+    }
 
     fn s() -> NotificationSettings {
         NotificationSettings::default()
