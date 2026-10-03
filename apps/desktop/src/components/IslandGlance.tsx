@@ -4,16 +4,18 @@
 // next meeting or how the day is going, and suggestions you missed. Cached
 // data shows at once and refreshes behind it.
 
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { useNow } from "@/lib/hooks";
-import { useSidekick } from "@/lib/store";
+import { updateSettings, useSidekick } from "@/lib/store";
 import { type AppTime, type CalendarToday, formatDuration, type LaterItem } from "@/lib/types";
 import { Icon } from "./Icon";
 
 /** A meeting this close (or already on) takes the headline. */
 const MEETING_SOON_MIN = 60;
+/** Missed items shown before "Show N more". */
+const LATER_SHOWN = 3;
 
 export function Glance({ paused }: { paused: boolean }) {
   const now = useNow(30_000);
@@ -40,8 +42,43 @@ export function Glance({ paused }: { paused: boolean }) {
           <QuickActions paused={paused} />
         </div>
       </div>
+      <FullscreenSwitch />
       <LaterList />
     </div>
+  );
+}
+
+/** Only while a fullscreen app is in front: keep the island out of it. */
+function FullscreenSwitch() {
+  const fullscreen = useSidekick((s) => s.fullscreen);
+  const hide = useSidekick((s) => s.settings.hideInFullscreen);
+  if (!fullscreen) return null;
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={hide}
+      onClick={() => void updateSettings({ hideInFullscreen: !hide })}
+      style={{ marginLeft: "calc(var(--orb-indent, 0px) * -1)", width: "calc(100% + var(--orb-indent, 0px))" }}
+      className="chip mt-3 flex items-center gap-3 rounded-xl bg-white/[0.07] px-3 py-2 text-left hover:bg-white/12"
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] font-medium text-white">Hide while fullscreen</span>
+        <span className="block text-[12px] text-[rgb(235_235_245/0.55)]">
+          {hide ? "Hidden; hover the top edge to bring it back" : "The island stays on top of this app"}
+        </span>
+      </span>
+      <span
+        aria-hidden="true"
+        className={`relative h-[22px] w-9 shrink-0 rounded-full transition-colors duration-200 ${hide ? "bg-[#30d158]" : "bg-white/20"}`}
+      >
+        <span
+          className={`absolute top-[2px] left-[2px] size-[18px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${
+            hide ? "translate-x-[14px]" : ""
+          }`}
+        />
+      </span>
+    </button>
   );
 }
 
@@ -104,6 +141,7 @@ function topFocus(time: AppTime[]): string | null {
 function LaterList() {
   const count = useSidekick((s) => s.later);
   const { data, refresh } = useCached<LaterItem[]>("later-list", api.laterList);
+  const [all, setAll] = useState(false);
   // The count changes when one is added, opened or cleared.
   useEffect(() => {
     if (count > 0) void refresh().catch(() => undefined);
@@ -111,29 +149,47 @@ function LaterList() {
   const items = count > 0 ? (data ?? []) : [];
   if (items.length === 0) return null;
   const missed = items.some((l) => l.missed);
+  const shown = all ? items : items.slice(0, LATER_SHOWN);
   return (
     <div className="mt-3 flex flex-col gap-1.5" style={{ marginLeft: "calc(var(--orb-indent, 0px) * -1)" }}>
       <div className="flex items-center justify-between text-[12px] text-[rgb(235_235_245/0.6)]">
         <span>{missed ? "You missed" : "Saved for later"}</span>
-        <button type="button" onClick={() => void api.laterClear()} className="chip hover:text-white">
-          Clear
-        </button>
+        <span className="flex items-center gap-3">
+          {all && (
+            <button type="button" onClick={() => setAll(false)} className="chip hover:text-white">
+              Show less
+            </button>
+          )}
+          <button type="button" onClick={() => void api.laterClear()} className="chip hover:text-white">
+            Clear
+          </button>
+        </span>
       </div>
-      {items.slice(0, 3).map((l) => (
+      <div className={`flex flex-col gap-1.5 ${all ? "max-h-[260px] overflow-y-auto overscroll-contain" : ""}`}>
+        {shown.map((l) => (
+          <button
+            key={l.id}
+            type="button"
+            onClick={() => void api.laterOpen(l.id)}
+            className="chip flex w-full shrink-0 items-center gap-3 rounded-xl bg-white/[0.07] px-3 py-1.5 text-left hover:bg-white/12"
+          >
+            <span className="min-w-0 flex-1 overflow-hidden">
+              <span className="block truncate text-[13px] font-medium text-white">{l.title}</span>
+              <span className="block truncate text-[12px] text-[rgb(235_235_245/0.55)]">{l.detail}</span>
+            </span>
+            <span className="shrink-0 text-[11px] text-white/40 tabular-nums">{ago(l.minutesAgo)}</span>
+          </button>
+        ))}
+      </div>
+      {!all && items.length > LATER_SHOWN && (
         <button
-          key={l.id}
           type="button"
-          onClick={() => void api.laterOpen(l.id)}
-          className="chip flex w-full items-center gap-3 rounded-xl bg-white/[0.07] px-3 py-1.5 text-left hover:bg-white/12"
+          onClick={() => setAll(true)}
+          className="chip self-start text-[12px] text-white/50 hover:text-white"
         >
-          <span className="min-w-0 flex-1 overflow-hidden">
-            <span className="block truncate text-[13px] font-medium text-white">{l.title}</span>
-            <span className="block truncate text-[12px] text-[rgb(235_235_245/0.55)]">{l.detail}</span>
-          </span>
-          <span className="shrink-0 text-[11px] text-white/40">{ago(l.minutesAgo)}</span>
+          Show {items.length - LATER_SHOWN} more
         </button>
-      ))}
-      {items.length > 3 && <span className="text-[12px] text-white/40">and {items.length - 3} more</span>}
+      )}
     </div>
   );
 }

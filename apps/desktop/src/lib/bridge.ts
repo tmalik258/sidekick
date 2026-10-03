@@ -57,6 +57,7 @@ export const EVENTS = {
   islandHover: "island://hover",
   islandCursor: "island://cursor",
   islandVisible: "island://visible",
+  islandFullscreen: "island://fullscreen",
   aiDelta: "ai://delta",
   aiDone: "ai://done",
   aiTool: "ai://tool",
@@ -83,6 +84,7 @@ export interface EventPayloads {
   [EVENTS.islandHover]: boolean;
   [EVENTS.islandCursor]: { x: number; y: number };
   [EVENTS.islandVisible]: boolean;
+  [EVENTS.islandFullscreen]: boolean;
   [EVENTS.aiDelta]: { id: string; text: string };
   [EVENTS.aiDone]: { id: string; provider: string | null; error: string | null; handoff: string | null };
   [EVENTS.aiTool]: { id: string; name: string };

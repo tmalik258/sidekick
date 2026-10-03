@@ -160,6 +160,14 @@ pub fn executor(state: &AppState) -> Arc<Executor> {
         .clone()
 }
 
+/// Whether the user paused Sidekick: nothing shows or runs on its own.
+pub fn is_paused(app: &tauri::AppHandle) -> bool {
+    use tauri::Manager;
+    lock(&app.state::<AppState>().settings)
+        .pause
+        .is_active(Utc::now())
+}
+
 pub fn gate_state(settings: &Settings, now: DateTime<Utc>) -> GateState {
     GateState {
         paused: settings.pause.is_active(now),

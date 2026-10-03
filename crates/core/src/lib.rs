@@ -20,5 +20,6 @@ pub use settings::{
     Pause, Recipe, SHORTCUTS, Settings, SkillPref, Trigger,
 };
 pub use storage::{
-    ActionRecord, AppTime, ChatRow, ChatSummary, Habit, RoutineOpen, SearchHit, Storage, StoredEvent,
+    ActionRecord, AppTime, ChatRow, ChatSummary, Habit, RoutineOpen, SearchHit, Storage,
+    StoredEvent,
 };
