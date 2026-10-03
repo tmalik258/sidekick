@@ -7,8 +7,15 @@ import { useCallback, useEffect, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { installExtension, startWaiting, updateSettings, useSidekick } from "@/lib/store";
-import type { BrowserInfo, BrowserStatus, CalendarToday, ComposioStatus, ExtensionGuide } from "@/lib/types";
-import { Button, CopyButton, Field, Section, Select, TextField, Toggle } from "./ui";
+import type {
+  BrowserInfo,
+  BrowserStatus,
+  CalendarToday,
+  ComposioStatus,
+  ExtensionGuide,
+  PasswordBrowserInfo,
+} from "@/lib/types";
+import { Button, CopyButton, Field, Section, Select, Switch, TextField, Toggle } from "./ui";
 
 export function ConnectionsTab({ onError }: { onError: (e: string) => void }) {
   return (
@@ -25,6 +32,13 @@ export function ConnectionsTab({ onError }: { onError: (e: string) => void }) {
         keywords="extension chrome edge firefox zen brave pairing code tabs"
       >
         <BrowserCard />
+      </Section>
+      <Section
+        title="Browser passwords"
+        hint="Fill and save logins from Chromium stores on this PC. Sidekick never uploads them."
+        keywords="password chrome zen edge brave samsung login save sync fill"
+      >
+        <PasswordBrowsersCard onError={onError} />
       </Section>
     </>
   );
@@ -403,5 +417,110 @@ function PairingCode() {
       </div>
       <p className="mt-1 text-(--muted)">Paste it in the extension&apos;s options.</p>
     </details>
+  );
+}
+
+function PasswordBrowsersCard({ onError }: { onError: (e: string) => void }) {
+  const selected = useSidekick((s) => s.settings.passwordBrowsers);
+  const [list, setList] = useState<PasswordBrowserInfo[] | null>(null);
+  const [mirroring, setMirroring] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const reload = useCallback(() => {
+    void api
+      .passwordBrowsers()
+      .then(setList)
+      .catch(() => setList([]));
+  }, []);
+  useEffect(() => {
+    if (selected === null || Array.isArray(selected)) reload();
+  }, [reload, selected]);
+
+  useEffect(() => {
+    let active = true;
+    const update = (status: { running: boolean; message: string }) => {
+      if (active) {
+        setMirroring(status.running);
+        if (status.message) setNote(status.message);
+      }
+    };
+    void api
+      .passwordsMirrorStatus()
+      .then(update)
+      .catch(() => undefined);
+    const off = listen(EVENTS.passwordMirror, update);
+    return () => {
+      active = false;
+      void off.then((f) => f());
+    };
+  }, []);
+
+  if (!list) return <div className="h-12" aria-busy="true" />;
+  if (list.length === 0) {
+    return (
+      <p className="text-[13px] text-(--muted)">
+        No Chromium password store found. Install Chrome, Edge, Brave or Samsung Internet.
+      </p>
+    );
+  }
+
+  const setEnabled = (id: string, on: boolean) => {
+    const all = list.map((b) => b.id);
+    // Null means all detected; an explicit empty list disables all stores.
+    const current = selected ?? all;
+    const next = on ? [...new Set([...current, id])] : current.filter((x) => x !== id);
+    void updateSettings({ passwordBrowsers: next }).catch((err) => onError(String(err)));
+  };
+
+  return (
+    <div className="flex flex-col gap-2.5 text-[13px]">
+      <p className="text-[12.5px] text-(--muted)">
+        Save locally in each browser’s last-used profile. Different passwords require Override within five seconds;
+        otherwise they are skipped. Cloud sync is not guaranteed.
+      </p>
+      {list.map((b) => (
+        <div key={b.id} className="flex items-center gap-3 rounded-xl border border-(--border) px-3 py-2.5">
+          <span className="min-w-0 flex-1 font-medium">{b.name}</span>
+          <Switch checked={b.enabled} onChange={(on) => setEnabled(b.id, on)} label={b.name} />
+        </div>
+      ))}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          small
+          disabled={mirroring || list.filter((b) => b.enabled).length < 2}
+          onClick={() => {
+            setMirroring(true);
+            setNote(null);
+            void api
+              .passwordsMirror()
+              .then((msg) => setNote(msg))
+              .catch((e) => onError(String(e)))
+              .finally(
+                () =>
+                  void api
+                    .passwordsMirrorStatus()
+                    .then((s) => setMirroring(s.running))
+                    .catch(() => setMirroring(false)),
+              );
+          }}
+        >
+          {mirroring ? "Mirroring…" : "Mirror existing passwords"}
+        </Button>
+        {mirroring && (
+          <Button small onClick={() => void api.passwordsMirrorCancel().catch((err) => onError(String(err)))}>
+            Cancel mirroring
+          </Button>
+        )}
+        <Button
+          small
+          onClick={() => void updateSettings({ passwordBrowsers: null }).catch((err) => onError(String(err)))}
+        >
+          Use all detected
+        </Button>
+      </div>
+      {note && <p className="text-[12px] text-(--muted)">{note}</p>}
+      <p className="text-[12px] text-(--muted)">
+        Close a browser if a write is skipped while its password database is open.
+      </p>
+    </div>
   );
 }

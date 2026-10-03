@@ -86,6 +86,8 @@ pub struct AppState {
     pub calendar: sidekick_sensors::Calendar,
     /// Claude Code permission requests waiting on the island (FR-DEV-06).
     pub approvals: sidekick_sensors::Approvals,
+    /// Submitted login waiting for auto-save / edit (password only in memory).
+    pub pending_password: Mutex<crate::password_save::PasswordBook>,
 }
 
 /// The interactive part of the island window, in logical pixels relative to
@@ -181,6 +183,13 @@ impl Env for AppEnv<'_> {
     fn has(&self, requirement: &str) -> bool {
         match requirement {
             "ai" => self.ai_ready,
+            "tool:browser_passwords" => self.caps.browsers.iter().any(|b| {
+                self.settings
+                    .password_browsers
+                    .as_ref()
+                    .is_none_or(|ids| ids.contains(&b.id))
+                    && sidekick_actions::passwords::user_data_dir(&b.id).is_some()
+            }),
             r if r.starts_with("app:") => crate::composio::app_connected(&r[4..]),
             _ => self.caps.has(requirement),
         }
@@ -217,6 +226,29 @@ impl Env for AppEnv<'_> {
 mod tests {
     use super::*;
     use sidekick_core::Pause;
+
+    #[test]
+    fn disabled_password_targets_do_not_offer_fill() {
+        let storage = Mutex::new(Storage::open_in_memory().unwrap());
+        let caps = Capabilities {
+            browsers: vec![sidekick_actions::Browser {
+                id: "chrome".into(),
+                path: "fixture".into(),
+            }],
+            ..Capabilities::default()
+        };
+        let settings = Settings {
+            password_browsers: Some(vec![]),
+            ..Settings::default()
+        };
+        let env = AppEnv {
+            settings: &settings,
+            caps: &caps,
+            ai_ready: false,
+            storage: &storage,
+        };
+        assert!(!env.has("tool:browser_passwords"));
+    }
 
     #[test]
     fn hit_rect_contains_edges() {

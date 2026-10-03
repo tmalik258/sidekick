@@ -50,7 +50,7 @@ gh auth login
 | ImageMagick (optional) | `ImageMagick.ImageMagick` | Convert and resize images |
 | Docker Desktop (optional) | `Docker.DockerDesktop` | Start Docker when a project needs it |
 | LibreOffice (optional) | `TheDocumentFoundation.LibreOffice` | Convert Office files to PDF |
-| Bitwarden CLI (optional) | `Bitwarden.CLI` (or 1Password's `op`) | Fill logins from your password manager |
+| Browser passwords | Chrome / Edge / Brave / Samsung Internet | Fill and save locally in the last-used profile; explicit approval for different passwords |
 
 Install any of them with `winget install -e --id <package>`. Sidekick picks up new tools without a restart.
 
@@ -72,3 +72,9 @@ Sidekick works with OpenAI's Codex CLI the same way as Claude Code, for people w
 - **Continue in...**: Settings > AI > Coding agent picks who gets handoffs from Ask mode. Auto takes Claude Code when it is installed, else Codex.
 - **Notifications and tools**: Settings > Connections > Codex > Add for me adds a `notify` script and Sidekick's MCP server to `~/.codex/config.toml` (backed up first), so the island tells you when a Codex turn is done.
 
+
+### Local browser passwords
+
+In Settings > Connections > Browser passwords, select which detected browser stores participate. All supported stores are selected by default; switching every browser off disables fill and saving. Use all detected restores the default selection. Firefox and Zen password stores use NSS and are not supported.
+
+New submitted passwords save after five seconds. Different existing passwords require Override within five seconds, or they are skipped. Edit stops the countdown; changing an existing entry requires Save and override existing passwords. Mirror existing passwords snapshots all selected profiles before writing and prompts for a source browser for every conflicting site/account. Cancel mirroring stops remaining work. Locked, unsupported, and failed stores are reported separately. Local writes do not guarantee cloud synchronization.

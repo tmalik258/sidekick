@@ -10,7 +10,7 @@ Spec: the SRS linked in README.md. Requirement IDs (FR-UI-01, NFR-SEC-05, ...) i
 - Skills are YAML in `skills/` (compiled in via `crates/skills/src/lib.rs`). Actions live in `crates/actions`; add new ones there and to `SAFE` only if they are non-destructive.
 - Suggestions go through `suggestions::offer`, which queues while the island is busy and expires ignored ones in Rust.
 - Mascot transitions only through `mascot::dispatch` (or `force` for debug). Delayed follow-ups use `mascot::after`, which is cancelled by any newer transition.
-- Never read browser password stores, cookies, or Claude credential files. Never pass event data to a shell as a string.
+- Never read cookies or Claude credential files. Browser password stores (`Login Data`) may be read/written only for local fill/save/mirror on this PC: new entries after a cancellable five-second countdown, differing entries only with explicit Override approval; never log passwords, never send them to AI, never upload them. Never pass event data to a shell as a string.
 - Destructive or outward-facing actions can never run at Auto trust level.
 - All AI goes through `crates/ai` (`AiProvider` for chat, `Decider` for T1). Prompts reach Claude Code on stdin, never as arguments. T1 decisions only use SemIf or a local model, never a cloud provider. A clipboard classified as a secret is never attached to a prompt.
 - The Claude Code hook endpoint binds to 127.0.0.1 only. Sidekick never reads Claude transcripts or credentials. User-initiated "Add for me" may merge Sidekick's hook URLs into `~/.claude/settings.json` after writing a dated backup; other keys are left alone. Browsers cannot silent-install unpacked extensions: Sidekick only stages the folder, copies the path, and opens the extensions page.
