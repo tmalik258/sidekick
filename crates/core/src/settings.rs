@@ -103,6 +103,24 @@ pub struct Settings {
     /// Fade the island out while a fullscreen app is in front. Off: the
     /// island stays on top of everything, fullscreen apps included.
     pub hide_in_fullscreen: bool,
+    /// The notification inbox: Sidekick reads Windows notifications and only
+    /// brings up what matters.
+    pub notifications: NotificationSettings,
+}
+
+/// How much a notification interrupts.
+pub const NOTIFY_LEVELS: &[&str] = &["now", "soon", "digest", "never"];
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct NotificationSettings {
+    /// Read and sort Windows notifications.
+    pub enabled: bool,
+    /// The user's level per app ("WhatsApp" -> "soon"), from [`NOTIFY_LEVELS`].
+    /// Missing means Sidekick decides.
+    pub apps: BTreeMap<String, String>,
+    /// People whose messages always come through right away.
+    pub vip: Vec<String>,
 }
 
 /// Password managers are ignored from the start (FR-RAG-08).
@@ -452,6 +470,7 @@ impl Default for Settings {
             routines: true,
             routines_auto: false,
             hide_in_fullscreen: false,
+            notifications: NotificationSettings::default(),
         }
     }
 }

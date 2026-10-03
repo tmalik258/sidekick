@@ -25,6 +25,7 @@ const PC: &str = "pc_control";
 const WINDOWS: &str = "windows";
 const WEB_SEARCH: &str = "web_search";
 const READ_PAGE: &str = "read_page";
+const NOTIFS: &str = "notifications";
 
 /// The Ask chat answering right now, so tools called through Sidekick's
 /// MCP server (by Claude Code or Codex) put their buttons in it.
@@ -202,6 +203,21 @@ pub fn defs() -> Vec<ToolDef> {
             }),
         },
         ToolDef {
+            name: NOTIFS.into(),
+            description: "The user's recent Windows notifications, sorted by importance (now, \
+                soon, digest). Use for \"what did I miss\", \"anything from Ali\" or messages \
+                waiting. level important skips the digest."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "level": { "type": "string", "enum": ["important", "all"] },
+                    "from": { "type": "string", "description": "An app or a person" },
+                    "minutes": { "type": "integer", "description": "Only the last N minutes" }
+                },
+            }),
+        },
+        ToolDef {
             name: PC_STATUS.into(),
             description: "What is on right now on this Windows PC: night light, Do Not Disturb, \
                 dark mode, battery, brightness, Wi-Fi. Check this before suggesting a change, and \
@@ -274,6 +290,11 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
         REVEAL => reveal(app, args["path"].as_str().unwrap_or_default()).await,
         SEARCH => search(app, args["query"].as_str().unwrap_or_default()).await,
         TODAY => today(app).await,
+        NOTIFS => crate::inbox::describe(
+            args["level"].as_str(),
+            args["from"].as_str().filter(|s| !s.is_empty()),
+            args["minutes"].as_u64(),
+        ),
         WEB_SEARCH => crate::web::search(args["query"].as_str().unwrap_or_default())
             .await
             .unwrap_or_else(|e| format!("Error: {e}")),
@@ -690,7 +711,7 @@ mod tests {
             names,
             [
                 SEARCH, FIND, REVEAL, TODAY, RECENT, SCREEN, PROPOSE, WEB_SEARCH, READ_PAGE,
-                PC_STATUS, PC, WINDOWS, OPEN
+                NOTIFS, PC_STATUS, PC, WINDOWS, OPEN
             ]
         );
     }

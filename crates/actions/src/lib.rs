@@ -68,6 +68,7 @@ const SAFE: &[&str] = &[
     "zip",
     "open_system_page",
     "launch_app",
+    "open_app",
     "create_env",
     "launch_project",
     "restore_layout",
@@ -226,6 +227,12 @@ impl Executor {
             "launch_app" => {
                 let name = arg(args, "name")?.to_owned();
                 tokio::task::spawn_blocking(move || pc::launch_app(&name))
+                    .await
+                    .map_err(fail)?
+            }
+            "open_app" => {
+                let name = arg(args, "name")?.to_owned();
+                tokio::task::spawn_blocking(move || pc::open_app(&name))
                     .await
                     .map_err(fail)?
             }

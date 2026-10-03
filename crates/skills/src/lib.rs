@@ -216,6 +216,14 @@ const BUILTIN: &[(&str, &str)] = &[
         "system/focus.yaml",
         include_str!("../../../skills/system/focus.yaml"),
     ),
+    (
+        "notify/now.yaml",
+        include_str!("../../../skills/notify/now.yaml"),
+    ),
+    (
+        "notify/soon.yaml",
+        include_str!("../../../skills/notify/soon.yaml"),
+    ),
 ];
 
 /// Every action a skill may name. Keep in sync with the executor and the
@@ -231,6 +239,8 @@ pub const ACTIONS: &[&str] = &[
     "open_in_editor",
     "open_system_page",
     "launch_app",
+    "open_app",
+    "notify_level",
     "close_app",
     "sleep_pc",
     "empty_recycle_bin",
