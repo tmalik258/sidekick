@@ -35,6 +35,11 @@ mode; switch to or start an app. Check pc_status before suggesting a Windows set
 offer to turn on what is already on. Do not use a shell or your own file access for this, and never \
 tell the user to do something a tool can do. Say you cannot only after a tool failed.
 - Look things up with tools instead of guessing. Never invent files, dates or facts.
+- Tasks with several steps (reply and attach, find then send, fill a form): say the plan in one \
+short line, then do one step at a time and check its result (read the page or window again) \
+before the next. If something unexpected shows up (a login, a popup, a different page), deal with \
+it or stop and ask. Stop after 12 steps and say where you got to. Anything that sends, posts, \
+pays or deletes waits for the user's tap; prepare it and say so.
 - Paths and links: write them as markdown links, [name](C:\\full\\path) or [name](https://...), \
 so the user can click them.
 - When there is a clear next step, end with up to three lines, each \"OPTION: \" and a short \
@@ -389,7 +394,14 @@ pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach,
             image,
         };
         let handoff = Arc::new(std::sync::Mutex::new(None));
-        let router = chat_router(&app, &id, &handoff, local_only, attach.prefer.as_deref()).await;
+        // A task with several steps goes to the strongest agent in Auto.
+        let prefer = attach.prefer.clone().or_else(|| {
+            let q = question.as_deref().unwrap_or_default();
+            (!local_only && looks_multistep(q))
+                .then(|| strongest_agent(&app))
+                .flatten()
+        });
+        let router = chat_router(&app, &id, &handoff, local_only, prefer.as_deref()).await;
         let speak = attach.speak && crate::voice::begin_answer(&app, &id);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
         let forward = {
@@ -459,6 +471,31 @@ fn no_provider_hint(local_only: bool) -> String {
 pub fn cancel(app: &AppHandle, id: &str) {
     if let Some(token) = lock(&app.state::<AppState>().chats).remove(id) {
         token.cancel();
+    }
+}
+
+/// "Reply to Ali and attach the invoice", "find X then email it": a request
+/// to do several things, not a question.
+pub fn looks_multistep(q: &str) -> bool {
+    let q = q.to_lowercase();
+    let doing = [
+        "send", "reply", "email", "book", "schedule", "fill", "post", "attach", "invite", "create",
+        "move", "rename", "install", "order", "apply", "message", "forward",
+    ];
+    let joins = [" and ", " then ", " after that", ", then"];
+    let acts = doing.iter().filter(|w| q.contains(*w)).count();
+    acts >= 2 || (acts >= 1 && joins.iter().any(|j| q.contains(j)))
+}
+
+/// Claude Code, else Codex, when one is turned on.
+fn strongest_agent(app: &AppHandle) -> Option<String> {
+    let ai = lock(&app.state::<AppState>().settings).ai.clone();
+    if ai.claude_code.enabled {
+        Some("claude_code".into())
+    } else if ai.codex.enabled {
+        Some("codex".into())
+    } else {
+        None
     }
 }
 

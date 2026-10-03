@@ -11,6 +11,7 @@ import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
 import { playSound } from "@/lib/sound";
 import { connect, setHovered, uiVolume, useSidekick, watchWaiting } from "@/lib/store";
+import { toolStatus } from "@/lib/tools";
 import { isPaused, type MascotState, type Suggestion } from "@/lib/types";
 import { ASK_ORB, AskPanel } from "./AskPanel";
 import { Icon } from "./Icon";
@@ -83,6 +84,12 @@ export function Island() {
   const chatting = useSidekick((s) => s.chatId !== null);
   const voiceStatus = useSidekick((s) => s.voiceStatus);
   const waiting = useSidekick((s) => (s.ask ? null : s.waiting));
+  // A task still running after Ask closed: its current step, small.
+  const working = useSidekick((s) => {
+    const last = s.turns[s.turns.length - 1];
+    if (!s.chatId || !last?.streaming) return null;
+    return last.tool ? toolStatus(last.tool) : "Working...";
+  });
   const guide = useGuide(waiting);
   // Voice with Ask closed: a compact pill while listening and thinking; the
   // island opens only when the answer starts.
@@ -110,13 +117,15 @@ export function Island() {
     !settings.onboarded && !asking && !(voiceStatus?.models.some((m) => m.id === "voice" && m.installed) ?? false);
   // A guide stays open while Sidekick waits on something you finish elsewhere.
   const guiding = !!waiting && !waiting.minimized && (waiting.steps?.length ?? 0) > 0;
-  const voicePill: { text: string; thinking: boolean } | null = asking
+  const voicePill: { text: string; thinking: boolean; working?: boolean } | null = asking
     ? null
     : voiceQuestion !== null
       ? { text: voiceQuestion, thinking: true }
       : hearing !== null || mascot === "listening"
         ? { text: hearing ?? "", thinking: false }
-        : null;
+        : working !== null
+          ? { text: working, thinking: true, working: true }
+          : null;
   const expanded =
     asking ||
     preparingVoice ||
@@ -189,7 +198,7 @@ export function Island() {
         ? GUIDE_WIDTH
         : EXPANDED.width
       : voicePill
-        ? voiceShellWidth(voicePill.text, voicePill.thinking)
+        ? voiceShellWidth(voicePill.text, voicePill.thinking, voicePill.working)
         : waiting
           ? COMPACT.waitWidth
           : busy
@@ -338,14 +347,15 @@ function tail(text: string): string {
   return text.length > 38 ? `...${text.slice(-38).replace(/^\S*\s/, "")}` : text;
 }
 
-function voiceLabel(text: string, thinking: boolean): string {
+function voiceLabel(text: string, thinking: boolean, working?: boolean): string {
+  if (working) return text;
   if (thinking) return `Thinking: ${text}`;
   return text.trim() ? tail(text) : "Listening...";
 }
 
 /** Compact listening shell: tight when empty, grows with speech up to voiceWidth. */
-function voiceShellWidth(text: string, thinking: boolean): number {
-  const label = voiceLabel(text, thinking);
+function voiceShellWidth(text: string, thinking: boolean, working?: boolean): number {
+  const label = voiceLabel(text, thinking, working);
   // Orb column, gaps, green bars, right pad.
   const chrome = COMPACT.height + 4 + 10 + 20 + 14;
   const textPx = Math.ceil([...label].length * 7.4);
@@ -354,8 +364,8 @@ function voiceShellWidth(text: string, thinking: boolean): number {
 
 /** Voice in the compact island: green bars and the words as they come
  * while listening, then "Thinking" with the question until the answer. */
-function VoicePill({ text, thinking }: { text: string; thinking: boolean }) {
-  const label = voiceLabel(text, thinking);
+function VoicePill({ text, thinking, working }: { text: string; thinking: boolean; working?: boolean }) {
+  const label = voiceLabel(text, thinking, working);
   return (
     <motion.div
       className="absolute top-0 right-0 flex h-9 items-center gap-2.5 pr-3.5"

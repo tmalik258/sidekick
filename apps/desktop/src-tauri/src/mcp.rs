@@ -9,7 +9,7 @@
 use serde_json::{Value, json};
 use sidekick_sensors::http;
 use sidekick_skills::{Proposal, ProposedOption, Trust};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::search::SHAREABLE;
@@ -269,6 +269,13 @@ async fn call(app: &AppHandle, name: &str, args: &Value) -> Value {
         .filter(|n| SHARED.contains(n))
     {
         let chat = crate::ask_tools::current_chat();
+        // Claude Code and Codex steps show in Ask like the local model's.
+        if !chat.is_empty() {
+            let _ = app.emit(
+                crate::composio::TOOL_EVENT,
+                serde_json::json!({ "id": chat, "name": shared }),
+            );
+        }
         // Boxed: Ask's own tools call back into this server for today's time.
         return match Box::pin(crate::ask_tools::run(app, &chat, shared, args)).await {
             Some(out) if out.starts_with("Error") => tool_error(out),
