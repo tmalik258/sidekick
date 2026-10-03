@@ -168,14 +168,9 @@ pub fn kill_port(port: u16) -> Result<Outcome, ActionError> {
 /// Opens a Windows settings page or tool from a fixed list; skills can
 /// never pass an arbitrary URI or program here.
 pub fn open_system_page(page: &str) -> Result<Outcome, ActionError> {
+    // Every Settings page lives in one table (`pc::SETTINGS_PAGES`); only
+    // Task Manager, which is a program, is handled here.
     let uri = match page {
-        "storage" => "ms-settings:storagesense",
-        "apps" => "ms-settings:appsfeatures",
-        "power" => "ms-settings:powersleep",
-        "battery" => "ms-settings:batterysaver",
-        // Focus and Do Not Disturb (Windows 11; Focus assist on Windows 10).
-        "focus" => "ms-settings:quiethours",
-        "nightlight" => "ms-settings:nightlight",
         "taskmgr" => {
             if !cfg!(windows) {
                 return Err(ActionError::Failed("Task Manager is a Windows tool".into()));
