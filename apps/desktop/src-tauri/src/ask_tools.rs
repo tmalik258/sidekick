@@ -429,6 +429,102 @@ pub fn defs() -> Vec<ToolDef> {
 }
 
 /// Tools that reach the internet or other apps, left out for "This PC only".
+/// What a tool call is doing, in a few words for the steps list: "Searching
+/// the web for flight prices", "Reading WhatsApp", "Clicking Send".
+pub fn step_label(name: &str, args: &Value) -> String {
+    let arg = |k: &str| {
+        args[k]
+            .as_str()
+            .map(|s| s.trim().chars().take(48).collect::<String>())
+            .filter(|s| !s.is_empty())
+    };
+    let host = |url: String| {
+        url.split("://")
+            .nth(1)
+            .unwrap_or(&url)
+            .split('/')
+            .next()
+            .unwrap_or_default()
+            .trim_start_matches("www.")
+            .to_owned()
+    };
+    let quoted = |verb: &str, what: Option<String>| match what {
+        Some(w) => format!("{verb} \u{201c}{w}\u{201d}"),
+        None => verb.to_owned(),
+    };
+    match name {
+        WEB_SEARCH => quoted("Searching the web for", arg("query")),
+        READ_PAGE => match arg("url") {
+            Some(u) => format!("Reading {}", host(u)),
+            None => "Reading the page".into(),
+        },
+        SEARCH => quoted("Searching your PC for", arg("query")),
+        FIND => quoted("Looking for", arg("query").or_else(|| arg("name"))),
+        SCREEN => "Reading your screen".into(),
+        NOTIFS => "Checking your notifications".into(),
+        PC_STATUS => "Checking your PC".into(),
+        PC => {
+            let what = arg("what").unwrap_or_default();
+            let thing = |k: &str| match k {
+                "dnd" => "Do Not Disturb".to_owned(),
+                "wifi" => "Wi-Fi".to_owned(),
+                "bluetooth" => "Bluetooth".to_owned(),
+                other => other.replace('_', " "),
+            };
+            if let Some(k) = what.strip_suffix("_on") {
+                format!("Turning on {}", thing(k))
+            } else if let Some(k) = what.strip_suffix("_off") {
+                format!("Turning off {}", thing(k))
+            } else if what == "open_settings" {
+                "Opening Settings".into()
+            } else if what.is_empty() {
+                "Changing a setting".into()
+            } else {
+                format!("Changing {}", thing(&what))
+            }
+        }
+        WINDOWS => "Looking at your windows".into(),
+        OPEN => quoted("Opening", arg("target")),
+        REVEAL => "Showing it in its folder".into(),
+        DESKTOP => {
+            let app = arg("app").unwrap_or_else(|| "the app".into());
+            match args["action"].as_str().unwrap_or("read") {
+                "read" => format!("Reading {app}"),
+                "keys" => format!("Pressing keys in {app}"),
+                "type_here" => "Typing".into(),
+                "click_text" => quoted("Clicking", arg("text")),
+                _ => match args["do"].as_str() {
+                    Some("type") => format!("Typing in {app}"),
+                    _ => format!("Working in {app}"),
+                },
+            }
+        }
+        BROWSER => match args["action"].as_str().unwrap_or("read") {
+            "open" => match arg("url") {
+                Some(u) => format!("Opening {}", host(u)),
+                None => "Opening a page".into(),
+            },
+            "read" | "tabs" => "Reading the page".into(),
+            _ => "Working in your browser".into(),
+        },
+        APP_ACTION => "Preparing the change".into(),
+        APPS => quoted("Looking up", arg("name")),
+        OFFICE => match args["action"].as_str().unwrap_or_default() {
+            "email_draft" => "Drafting the email".into(),
+            "excel_read" => "Reading the spreadsheet".into(),
+            "excel_write" => "Filling the spreadsheet".into(),
+            "word_create" | "to_pdf" => "Making the document".into(),
+            _ => "Working in Office".into(),
+        },
+        RECIPES => "Updating recipes".into(),
+        REMEMBER => "Remembering that".into(),
+        TODAY => "Checking your day".into(),
+        RECENT => "Looking at what just happened".into(),
+        PROPOSE => "Preparing an action".into(),
+        _ => String::new(),
+    }
+}
+
 pub fn is_web(name: &str) -> bool {
     matches!(name, WEB_SEARCH | READ_PAGE | BROWSER | APP_ACTION | APPS)
 }
@@ -856,6 +952,31 @@ fn runs_code(target: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn steps_say_what_they_do() {
+        assert_eq!(
+            step_label(WEB_SEARCH, &json!({ "query": "flight prices to Dubai" })),
+            "Searching the web for \u{201c}flight prices to Dubai\u{201d}"
+        );
+        assert_eq!(
+            step_label(READ_PAGE, &json!({ "url": "https://www.bbc.com/news/x" })),
+            "Reading bbc.com"
+        );
+        assert_eq!(
+            step_label(DESKTOP, &json!({ "action": "read", "app": "WhatsApp" })),
+            "Reading WhatsApp"
+        );
+        assert_eq!(
+            step_label(PC, &json!({ "what": "dnd_on" })),
+            "Turning on Do Not Disturb"
+        );
+        assert_eq!(
+            step_label(PC, &json!({ "what": "dark_mode_off" })),
+            "Turning off dark mode"
+        );
+        assert_eq!(step_label("SOME_COMPOSIO_TOOL", &json!({})), "");
+    }
 
     #[test]
     fn briefs_keep_only_useful_fields() {

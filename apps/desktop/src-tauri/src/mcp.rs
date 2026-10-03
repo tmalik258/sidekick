@@ -276,7 +276,11 @@ async fn call(app: &AppHandle, name: &str, args: &Value) -> Value {
         if !chat.is_empty() {
             let _ = app.emit(
                 crate::composio::TOOL_EVENT,
-                serde_json::json!({ "id": chat, "name": shared }),
+                serde_json::json!({
+                    "id": chat,
+                    "name": shared,
+                    "label": crate::ask_tools::step_label(shared, args),
+                }),
             );
         }
         // Boxed: Ask's own tools call back into this server for today's time.
