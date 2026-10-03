@@ -48,19 +48,11 @@ export function Glance({ paused }: { paused: boolean }) {
   );
 }
 
-/**
- * Keeps the island out of fullscreen apps. Offered while one is in front,
- * and shown whenever it is on, so it can be turned off from anywhere.
- */
+/** Only while a fullscreen app is in front: keep the island out of it. */
 function FullscreenSwitch() {
   const fullscreen = useSidekick((s) => s.fullscreen);
   const hide = useSidekick((s) => s.settings.hideInFullscreen);
-  if (!fullscreen && !hide) return null;
-  const note = !hide
-    ? "The island stays on top of this app"
-    : fullscreen
-      ? "Hidden; hover the top edge to bring it back"
-      : "Hides when a fullscreen app is in front";
+  if (!fullscreen) return null;
   return (
     <button
       type="button"
@@ -72,7 +64,9 @@ function FullscreenSwitch() {
     >
       <span className="min-w-0 flex-1">
         <span className="block text-[13px] font-medium text-white">Hide while fullscreen</span>
-        <span className="block text-[12px] text-[rgb(235_235_245/0.55)]">{note}</span>
+        <span className="block text-[12px] text-[rgb(235_235_245/0.55)]">
+          {hide ? "Hidden; hover the top edge to bring it back" : "The island stays on top of this app"}
+        </span>
       </span>
       <span
         aria-hidden="true"
