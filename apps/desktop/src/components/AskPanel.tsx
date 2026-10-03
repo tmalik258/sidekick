@@ -87,10 +87,11 @@ export function AskPanel() {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [hits, setHits] = useState<{ query: string; items: SearchHit[] } | null>(null);
   const [clips, setClips] = useState<{ text: string; ts: string }[] | null>(null);
-  // The highlighted clip or search result, moved with the arrow keys.
+  const [historyOpen, setHistoryOpen] = useState(false);
+  // The highlighted clip, search result, or history row, moved with the arrow keys.
   const [pick, setPick] = useState(0);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new list starts at its top
-  useEffect(() => setPick(0), [clips, hits]);
+  useEffect(() => setPick(0), [clips, hits, historyOpen]);
   // Esc works wherever focus is in Ask (after clicking a button or chip);
   // the input handles it itself.
   const escRef = useRef<() => void>(() => undefined);
@@ -124,6 +125,7 @@ export function AskPanel() {
     setText(useSidekick.getState().ask?.prompt ?? "");
     setSelected(0);
     setClips(null);
+    setHistoryOpen(false);
     void api.aiStatus().then(setProviders);
     void api.projectsList().then(setProjects);
     void api
@@ -198,10 +200,35 @@ export function AskPanel() {
     setSelected(0);
     setClips(null);
     setHits(null);
+    setHistoryOpen(false);
     setPick(0);
     nearBottom.current = true;
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
+
+  const openHistory = useCallback(() => {
+    setHistoryOpen((open) => {
+      if (open) return false;
+      setClips(null);
+      setHits(null);
+      setPick(0);
+      void api
+        .chatsList()
+        .then(setChats)
+        .catch(() => setChats([]));
+      return true;
+    });
+  }, []);
+
+  const removeChat = useCallback(
+    (id: string) => {
+      void api.chatDelete(id).then(() => {
+        setChats((list) => list.filter((c) => c.id !== id));
+        if (useSidekick.getState().conversation === id) resetChat();
+      });
+    },
+    [resetChat],
+  );
 
   const commands = useMemo<Command[]>(() => {
     const all: Command[] = [
@@ -231,7 +258,10 @@ export function AskPanel() {
         label: "Clipboard history",
         hint: "Copy something again",
         icon: "undo",
-        run: () => void api.clipboardHistory().then(setClips),
+        run: () => {
+          setHistoryOpen(false);
+          void api.clipboardHistory().then(setClips);
+        },
         stay: true,
       },
       { id: "settings", label: "Open settings", icon: "settings", run: () => setAsk({ view: "settings" }), stay: true },
@@ -248,17 +278,8 @@ export function AskPanel() {
           ]
         : []),
     ];
-    // Recent conversations to pick up again.
-    const recent: Command[] = chats.slice(0, 20).map((c) => ({
-      id: `chat:${c.id}`,
-      label: c.title,
-      hint: `Continue · ${ago(c.updated)}`,
-      icon: "ask",
-      run: () => void openChat(c.id),
-      stay: true,
-    }));
     const q = text.trim().toLowerCase();
-    if (!q) return turns.length ? all : [...starters, ...all, ...recent.slice(0, 3)];
+    if (!q) return turns.length ? all : [...starters, ...all];
     // Typing a project's name offers to open it (FR-DEV-10).
     const launch: Command[] = projects
       .filter((p) => p.name.toLowerCase().includes(q.replace(/^open\s+/, "")))
@@ -270,27 +291,33 @@ export function AskPanel() {
         icon: "folder",
         run: () => void api.projectLaunch(p.path),
       }));
-    const pickUp = recent.filter((c) => c.label.toLowerCase().includes(q)).slice(0, 3);
-    return [...all.filter((c) => c.label.toLowerCase().includes(q)), ...launch, ...pickUp];
-  }, [paused, settings.muted, turns.length, text, projects, chats, starters, resetChat]);
+    return [...all.filter((c) => c.label.toLowerCase().includes(q)), ...launch];
+  }, [paused, settings.muted, turns.length, text, projects, starters, resetChat]);
 
   if (!ask) return null;
 
   const streaming = chatId !== null;
-  // While the clipboard history is open, typing filters it instead of asking.
+  // While clipboard or chat history is open, typing filters it instead of asking.
   const clipFilter = clips !== null ? text.trim().toLowerCase() : "";
-  const asking = text.trim().length > 0 && clips === null;
+  const historyFilter = historyOpen ? text.trim().toLowerCase() : "";
+  const asking = text.trim().length > 0 && clips === null && !historyOpen;
   const shownClips = clips?.filter((c) => !clipFilter || c.text.toLowerCase().includes(clipFilter)) ?? [];
+  const shownChats = chats.filter((c) => !historyFilter || c.title.toLowerCase().includes(historyFilter));
   // With a conversation going, the body keeps showing it while you type
   // the next question; commands show only before the first one.
   const inChat = turns.length > 0;
   const showClips = clips !== null;
-  const showHits = hits !== null && !asking && !showClips;
-  const showChat = inChat && !showHits && !showClips;
+  const showHistory = historyOpen && !showClips;
+  const showHits = hits !== null && !asking && !showClips && !showHistory;
+  const showChat = inChat && !showHits && !showClips && !showHistory;
   // While typing, the first rows are "Ask", "Search" and "Teach a skill".
   const lead = asking ? 3 : 0;
   const rows =
-    hearing !== null || showChat || showHits || showClips ? 0 : asking ? commands.length + lead : commands.length;
+    hearing !== null || showChat || showHits || showClips || showHistory
+      ? 0
+      : asking
+        ? commands.length + lead
+        : commands.length;
   // Models that can answer now; the picked one (if still there) goes first.
   const choices = providers.filter((p) => p.available && (!ask.localOnly || p.local) && p.id !== "semif");
   const pickedModel = choices.find((p) => p.id === askModel) ?? null;
@@ -320,12 +347,25 @@ export function AskPanel() {
     if (!cmd.stay) void api.askClose();
   };
 
-  // Clipboard history and search results: arrows move, Enter uses it.
-  const listLen = showClips ? shownClips.length : showHits && hits ? hits.items.length : 0;
+  // Clipboard, search results, and chat history: arrows move, Enter uses it.
+  const listLen = showClips
+    ? shownClips.length
+    : showHistory
+      ? shownChats.length
+      : showHits && hits
+        ? hits.items.length
+        : 0;
   const openListItem = (i: number) => {
     if (showClips) {
       const c = shownClips[i];
       if (c) void api.clipboardCopy(c.text).then(() => api.askClose());
+    } else if (showHistory) {
+      const c = shownChats[i];
+      if (c) {
+        setHistoryOpen(false);
+        setText("");
+        void openChat(c.id);
+      }
     } else if (showHits && hits) {
       const h = hits.items[i];
       if (h) void api.openReference(h.source, h.reference);
@@ -333,6 +373,11 @@ export function AskPanel() {
   };
 
   escRef.current = () => {
+    if (historyOpen) {
+      setHistoryOpen(false);
+      setText("");
+      return;
+    }
     const current = useSidekick.getState();
     if (current.turns.length > 0 || current.chatId !== null) {
       resetChat();
@@ -405,7 +450,9 @@ export function AskPanel() {
               setPick(0);
             }}
             onKeyDown={onKey}
-            placeholder={turns.length ? "Ask a follow-up" : "Ask Sidekick or type a command"}
+            placeholder={
+              historyOpen ? "Filter chats" : turns.length ? "Ask a follow-up" : "Ask Sidekick or type a command"
+            }
             spellCheck={false}
             className="min-w-0 flex-1 bg-transparent font-display text-[17px] tracking-[-0.015em] text-white outline-none placeholder:text-[rgb(235_235_245/0.4)]"
           />
@@ -423,6 +470,20 @@ export function AskPanel() {
                 className="chip grid size-7 shrink-0 place-items-center rounded-full bg-white/[0.12] text-white/85 hover:bg-white/[0.2]"
               >
                 <Icon name="mic" size={14} />
+              </button>
+            )}
+            {!streaming && (
+              <button
+                type="button"
+                aria-label="Chat history"
+                title="Chat history"
+                aria-pressed={historyOpen}
+                onClick={openHistory}
+                className={`chip grid size-7 shrink-0 place-items-center rounded-full text-white/85 ${
+                  historyOpen ? "bg-white/[0.22]" : "bg-white/[0.12] hover:bg-white/[0.2]"
+                }`}
+              >
+                <Icon name="history" size={14} />
               </button>
             )}
             {streaming ? (
@@ -461,6 +522,28 @@ export function AskPanel() {
               filtered={clipFilter.length > 0}
               active={Math.min(pick, shownClips.length - 1)}
               onHover={setPick}
+            />
+          </motion.div>
+        ) : showHistory ? (
+          <motion.div
+            key="history"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.08 } }}
+            className="ask-scroll mt-2 overflow-y-auto pr-1"
+            style={{ maxHeight: scrollMax }}
+          >
+            <ChatHistory
+              items={shownChats}
+              filtered={historyFilter.length > 0}
+              active={Math.min(pick, Math.max(shownChats.length - 1, 0))}
+              onHover={setPick}
+              onOpen={(id) => {
+                setHistoryOpen(false);
+                setText("");
+                void openChat(id);
+              }}
+              onDelete={removeChat}
             />
           </motion.div>
         ) : showHits && hits ? (
@@ -745,6 +828,67 @@ function scrollIfActive(active: boolean) {
   return (el: HTMLElement | null) => {
     if (active && el) el.scrollIntoView({ block: "nearest" });
   };
+}
+
+/** Past Ask chats: arrows or the mouse pick, Enter or a click opens one.
+ * The delete button removes it. Typing filters by title. */
+function ChatHistory({
+  items,
+  filtered,
+  active,
+  onHover,
+  onOpen,
+  onDelete,
+}: {
+  items: ChatSummary[];
+  filtered: boolean;
+  active: number;
+  onHover: (i: number) => void;
+  onOpen: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  if (items.length === 0)
+    return (
+      <p className="py-2 text-[13px] text-[rgb(235_235_245/0.6)]">
+        {filtered ? "No chats match." : "No past chats yet."}
+      </p>
+    );
+  return (
+    <ul className="py-1" aria-label="Chat history">
+      {items.map((c, i) => (
+        <li key={c.id} ref={scrollIfActive(i === active)} className="flex items-center gap-0.5">
+          <button
+            type="button"
+            aria-current={i === active}
+            onMouseMove={() => onHover(i)}
+            onClick={() => onOpen(c.id)}
+            className={`flex min-w-0 flex-1 items-center gap-2 rounded-[14px] px-1.5 py-1.5 text-left transition-colors duration-100 ${
+              i === active ? "bg-white/[0.14] ring-1 ring-inset ring-white/25" : "hover:bg-white/[0.08]"
+            }`}
+          >
+            <span className="grid size-6 shrink-0 place-items-center rounded-full bg-white/[0.12] text-white/85">
+              <Icon name="ask" size={13} />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[13px] text-white/90">{c.title}</span>
+            <span className="shrink-0 text-[11px] text-[rgb(235_235_245/0.4)]">{ago(c.updated)}</span>
+            {i === active && <Kbd>Enter</Kbd>}
+          </button>
+          <button
+            type="button"
+            aria-label={`Delete ${c.title}`}
+            title="Delete"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(c.id);
+            }}
+            className="chip grid size-7 shrink-0 place-items-center rounded-full text-white/55 hover:bg-white/[0.12] hover:text-white/90"
+          >
+            <Icon name="close" size={14} />
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 /** Clipboard history: arrows or the mouse pick, Enter or a click copies
