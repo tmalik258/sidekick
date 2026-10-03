@@ -43,6 +43,16 @@ const QUERY: &str = "SELECT n.Id, h.PrimaryId, n.Payload, n.ArrivalTime \
      FROM Notification n JOIN NotificationHandler h ON h.RecordId = n.HandlerId \
      WHERE n.Type = 'toast' AND n.Id > ?1 ORDER BY n.Id LIMIT 200";
 
+/// When the database (and its write-ahead log) last changed. Reading it
+/// again is only worth it when this moves.
+pub fn stamp(path: &Path) -> Option<(std::time::SystemTime, Option<std::time::SystemTime>)> {
+    let db = std::fs::metadata(path).and_then(|m| m.modified()).ok()?;
+    let wal = std::fs::metadata(path.with_extension("db-wal"))
+        .and_then(|m| m.modified())
+        .ok();
+    Some((db, wal))
+}
+
 /// The newest toast id, so a fresh start does not replay old ones.
 pub fn latest_id(path: &Path) -> Result<i64, String> {
     with_db(path, |c| {

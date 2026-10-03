@@ -3,7 +3,7 @@
 // HTML is ever injected; everything renders as React text. Links to files,
 // folders and pages open through Sidekick, never in this window.
 
-import { type ReactNode, useState } from "react";
+import { memo, type ReactNode, useState } from "react";
 import { api } from "./bridge";
 
 type Block = { kind: "code"; lang: string; text: string } | { kind: "text"; text: string };
@@ -118,18 +118,23 @@ function CodeBlock({ lang, text }: { lang: string; text: string }) {
   );
 }
 
+/** One block; while an answer streams, finished blocks keep their text and
+ * so skip re-rendering, and only the last one updates. */
+const TextBlock = memo(function TextBlock({ text }: { text: string }) {
+  return <p className="my-1.5 whitespace-pre-wrap">{inline(text)}</p>;
+});
+const Code = memo(CodeBlock);
+
 export function Markdown({ text }: { text: string }) {
   return (
     <>
       {splitBlocks(text).map((b, i) =>
         b.kind === "code" ? (
           // biome-ignore lint/suspicious/noArrayIndexKey: blocks have no identity beyond order
-          <CodeBlock key={i} lang={b.lang} text={b.text} />
+          <Code key={i} lang={b.lang} text={b.text} />
         ) : (
           // biome-ignore lint/suspicious/noArrayIndexKey: blocks have no identity beyond order
-          <p key={i} className="my-1.5 whitespace-pre-wrap">
-            {inline(b.text)}
-          </p>
+          <TextBlock key={i} text={b.text} />
         ),
       )}
     </>
