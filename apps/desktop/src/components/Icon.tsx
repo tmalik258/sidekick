@@ -22,6 +22,8 @@ const BODIES = {
   // Drawn for Sidekick (not from Solar), in the same 1.5 stroke style.
   history:
     '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></g>',
+  // Drawn for Sidekick (not from Solar), in the same 1.5 stroke style.
+  file: '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M14 2.5H7.5a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7L14 2.5Z"/><path d="M14 2.5V7h4.5M9 12.5h6M9 16h4"/></g>',
 } as const;
 
 export type IconName = keyof typeof BODIES;

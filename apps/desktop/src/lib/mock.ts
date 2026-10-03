@@ -257,15 +257,19 @@ function mockChat(a: Record<string, unknown>) {
   const id = a.id as string;
   const messages = a.messages as { content: string }[];
   const last = messages[messages.length - 1]?.content ?? "";
-  const answer: string = /sidekick/i.test(last)
-    ? "Found it: [Sidekick's app folder](/C:/Users/you/AppData/Roaming/dev.sidekick.app), changed today. Its settings are in [settings.json](C:\\Users\\you\\AppData\\Roaming\\dev.sidekick.app\\settings.json).\nOPTION: Open the folder\nOPTION: Show settings.json"
-    : `Found invoice-sept.pdf in Downloads, from Ali on Tuesday (preview, you asked "${last}").\nOPTION: Open invoice-sept.pdf\nOPTION: Show the folder\nOPTION: Find other invoices`;
-  const words = answer.split(/(?<=\s)/);
+  const formatted = /plan|compare|steps/i.test(last);
+  const answer: string = formatted
+    ? "Here is the plan for **Friday**:\n\n1. Send the invoice to **Ali** by 10:00\n2. Review the *Upwork* proposal\n3. Book the dentist\n\nCosts so far:\n\n| Item | Amount |\n| --- | --- |\n| Hosting | **$24** |\n| Domain | $12 |\n\n- Invoice is in [invoice-sept.pdf](C:\\Users\\you\\Downloads\\invoice-sept.pdf)\n- Notes are in [Projects](C:\\Users\\you\\Projects\\)\nOPTION: Draft the email to Ali"
+    : /sidekick/i.test(last)
+      ? "Found it: [Sidekick's app folder](/C:/Users/you/AppData/Roaming/dev.sidekick.app), changed today. Its settings are in [settings.json](C:\\Users\\you\\AppData\\Roaming\\dev.sidekick.app\\settings.json).\nOPTION: Open the folder\nOPTION: Show settings.json"
+      : `Found invoice-sept.pdf in Downloads, from Ali on Tuesday (preview, you asked "${last}").\nOPTION: Open invoice-sept.pdf\nOPTION: Show the folder\nOPTION: Find other invoices`;
+  // Formatted answers arrive in bursts, like Claude Code's whole sentences.
+  const words = formatted ? (answer.match(/[\s\S]{1,90}/g) ?? [answer]) : answer.split(/(?<=\s)/);
   let i = 0;
   const tick = () => {
     if (i < words.length) {
       emit("ai://delta", { id, text: words[i++] });
-      setTimeout(tick, 28);
+      setTimeout(tick, formatted ? 450 : 28);
     } else {
       const change = /\b(move|send|create|update|delete)\b/i.test(last);
       emit("ai://done", {
@@ -276,7 +280,7 @@ function mockChat(a: Record<string, unknown>) {
       });
     }
   };
-  emit("ai://tool", { id, name: "search" });
+  emit("ai://tool", { id, name: "search", label: `Searching your PC for \u201c${last.slice(0, 30)}\u201d` });
   // A task with several steps shows them one by one.
   if (/ and /i.test(last)) {
     const steps = ["notifications", "browser", "browser"];

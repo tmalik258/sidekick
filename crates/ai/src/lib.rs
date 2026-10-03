@@ -129,7 +129,7 @@ pub struct ToolDef {
 pub trait ToolRunner: Send + Sync {
     async fn run(&self, name: &str, arguments: &serde_json::Value) -> String;
     /// Called once per tool call, before it runs, for progress text.
-    fn started(&self, _name: &str) {}
+    fn started(&self, _name: &str, _arguments: &serde_json::Value) {}
 }
 
 #[async_trait]

@@ -408,6 +408,8 @@ Never invent data you did not read with a tool.";
 struct ToolNote<'a> {
     id: &'a str,
     name: &'a str,
+    /// What the step does, in words ("Searching the web for flights").
+    label: String,
 }
 
 /// Runs Composio tools for one chat.
@@ -420,12 +422,13 @@ pub struct Runner {
 
 #[async_trait]
 impl ToolRunner for Runner {
-    fn started(&self, name: &str) {
+    fn started(&self, name: &str, arguments: &Value) {
         let _ = self.app.emit(
             TOOL_EVENT,
             ToolNote {
                 id: &self.chat_id,
                 name,
+                label: crate::ask_tools::step_label(name, arguments),
             },
         );
     }
