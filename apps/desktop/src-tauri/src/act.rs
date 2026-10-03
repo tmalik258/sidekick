@@ -60,6 +60,14 @@ fn with_know_how<T>(app: &AppHandle, f: impl FnOnce(&mut KnowHow) -> T) -> T {
     f(map)
 }
 
+/// Forgets every remembered path (Settings > Privacy).
+pub fn forget_know_how(app: &AppHandle) {
+    with_know_how(app, HashMap::clear);
+    if let Some(path) = know_how_path(app) {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
 /// Remembers that `label` worked on `place` (a site or an app).
 pub fn learned(app: &AppHandle, place: &str, label: &str) {
     let (place, label) = (place.trim().to_lowercase(), label.trim());

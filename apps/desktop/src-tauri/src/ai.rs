@@ -28,13 +28,15 @@ things done. Rules:
 - Answer in one or two short sentences. Lists only when they ask for one.
 - Never introduce yourself or say what you are.
 - Do it yourself with Sidekick's tools (named find_files, search, open, show_in_folder, \
-recent, screen_text, web_search, read_page, browser, app_action, desktop, apps, notifications, pc_status, pc_control, windows, propose, or the \
+recent, screen_text, web_search, read_page, browser, app_action, desktop, apps, recipes, remember, notifications, pc_status, pc_control, windows, propose, or the \
 same with a sidekick_ prefix): find a file, then open it or show it in its folder; search the \
 web and read pages for anything current or not on this PC, and link your sources; change volume, brightness or dark \
 mode; switch to or start an app. Check pc_status before suggesting a Windows setting, and never \
 offer to turn on what is already on. Do not use a shell or your own file access for this, and never \
 tell the user to do something a tool can do. Say you cannot only after a tool failed.
 - Look things up with tools instead of guessing. Never invent files, dates or facts.
+- When the user tells you something to keep (their manager, signature, usual folder), save it with \
+remember. To repeat a task later or on a schedule (\"every Friday at 5\"), save it with recipes.
 - Tasks with several steps (reply and attach, find then send, fill a form): say the plan in one \
 short line, then do one step at a time and check its result (read the page or window again) \
 before the next. If something unexpected shows up (a login, a popup, a different page), deal with \
@@ -306,6 +308,13 @@ fn system_prompt(app: &AppHandle, attach: &Attach) -> String {
         "{SYSTEM}\n\nNow: {}",
         chrono::Local::now().format("%A %-d %B %Y, %H:%M")
     );
+    let memory = lock(&app.state::<AppState>().settings).memory.clone();
+    if !memory.is_empty() {
+        system.push_str("\n\nAbout the user (they asked you to remember):\n");
+        for m in &memory {
+            system.push_str(&format!("- {m}\n"));
+        }
+    }
     if attach.speak {
         system.push_str(
             "\n\nThe user asked by voice and your answer is read aloud. Answer in one to three short spoken sentences. No markdown, lists, tables, links or OPTION lines unless they ask for them; if code is needed, keep it to one short block.",
@@ -357,7 +366,26 @@ struct Done {
 }
 
 /// Starts a streamed chat. Text arrives as `ai://delta`, the end as `ai://done`.
-pub fn chat(app: &AppHandle, id: String, messages: Vec<Message>, attach: Attach, local_only: bool) {
+pub fn chat(
+    app: &AppHandle,
+    id: String,
+    mut messages: Vec<Message>,
+    attach: Attach,
+    local_only: bool,
+) {
+    // A recipe's name ("Send timesheet", "run Send timesheet") runs its
+    // instruction; other questions are counted to offer saving repeats.
+    if let Some(last) = messages
+        .iter_mut()
+        .rev()
+        .find(|m| m.role == sidekick_ai::Role::User)
+    {
+        if let Some(prompt) = crate::recipes::expand(app, &last.content) {
+            last.content = prompt;
+        } else if !attach.skill {
+            crate::recipes::note_question(app, &last.content);
+        }
+    }
     let cancel = CancellationToken::new();
     lock(&app.state::<AppState>().chats).insert(id.clone(), cancel.clone());
     crate::ask_tools::set_current_chat(&id);
