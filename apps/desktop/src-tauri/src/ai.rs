@@ -28,7 +28,7 @@ things done. Rules:
 - Answer in one or two short sentences. Lists only when they ask for one.
 - Never introduce yourself or say what you are.
 - Do it yourself with Sidekick's tools (named find_files, search, open, show_in_folder, \
-recent, screen_text, web_search, read_page, notifications, pc_status, pc_control, windows, propose, or the \
+recent, screen_text, web_search, read_page, browser, app_action, notifications, pc_status, pc_control, windows, propose, or the \
 same with a sidekick_ prefix): find a file, then open it or show it in its folder; search the \
 web and read pages for anything current or not on this PC, and link your sources; change volume, brightness or dark \
 mode; switch to or start an app. Check pc_status before suggesting a Windows setting, and never \
@@ -460,6 +460,18 @@ pub fn cancel(app: &AppHandle, id: &str) {
     if let Some(token) = lock(&app.state::<AppState>().chats).remove(id) {
         token.cancel();
     }
+}
+
+/// Stops every answer in progress (the global Stop). True when one was running.
+pub fn cancel_all(app: &AppHandle) -> bool {
+    let tokens: Vec<_> = lock(&app.state::<AppState>().chats)
+        .drain()
+        .map(|(_, t)| t)
+        .collect();
+    for t in &tokens {
+        t.cancel();
+    }
+    !tokens.is_empty()
 }
 
 const READY_CHECK_EVERY: Duration = Duration::from_secs(60);

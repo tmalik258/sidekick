@@ -533,7 +533,7 @@ export interface ChatSummary {
 export const SHORTCUT_ACTIONS: { id: string; label: string }[] = [
   { id: "talk", label: "Talk" },
   { id: "accept", label: "Accept the suggestion" },
-  { id: "dismiss", label: "Not now" },
+  { id: "dismiss", label: "Stop or Not now" },
   { id: "screen", label: "Ask about the screen" },
   { id: "clipboard", label: "Clipboard history" },
   { id: "pause", label: "Pause or resume" },
