@@ -393,3 +393,58 @@ fn when_recipes_fire() {
     );
     report("recipes", wrong);
 }
+
+#[test]
+fn which_notifications_are_the_same_thing() {
+    use crate::inbox::overlap;
+    let rows: &[(&str, &str, bool)] = &[
+        (
+            "New job: Junior Coder for Next.js dashboard, fixed price $300",
+            "Upwork Notification New job alert: Junior Coder for Next.js dashboard. Budget: fixed price $300. View job",
+            true,
+        ),
+        (
+            "Ali Khan: Can you send the invoice for September?",
+            "Ali Khan Can you send the invoice for September?",
+            true,
+        ),
+        (
+            "New job: Junior Coder for Next.js dashboard",
+            "New job: Senior Rust engineer for trading engine",
+            false,
+        ),
+        (
+            "Ali Khan: lunch tomorrow?",
+            "Sara: the build failed on main",
+            false,
+        ),
+        (
+            "You may have new messages",
+            "You may have new messages",
+            false,
+        ),
+    ];
+    let wrong = rows
+        .iter()
+        .filter_map(|(a, b, want)| {
+            let score = overlap(a, b);
+            ((score >= 0.5) != *want)
+                .then(|| format!("  {a:?} vs {b:?}: overlap {score:.2}, expected same={want}"))
+        })
+        .collect();
+    report("repeats", wrong);
+}
+
+#[test]
+fn reads_the_models_verdict() {
+    use crate::inbox::{Level, parse_verdict};
+    let v = parse_verdict(
+        r#"Sure. {"level":"skip","same_as":42,"why":"same job as the Upwork alert"}"#,
+    )
+    .unwrap();
+    assert_eq!((v.level, v.same_as), (Level::Never, Some(42)));
+    let v = parse_verdict(r#"{"level":"Now","same_as":null,"why":"Sara is waiting"}"#).unwrap();
+    assert_eq!((v.level, v.same_as), (Level::Now, None));
+    assert!(parse_verdict("now").is_none());
+    assert!(parse_verdict(r#"{"level":"urgent"}"#).is_none());
+}

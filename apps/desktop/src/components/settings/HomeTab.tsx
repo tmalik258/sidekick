@@ -528,8 +528,14 @@ function NotificationInbox({ onError }: { onError: (e: string) => void }) {
                       {i.level}
                     </span>
                     <span className="min-w-0 flex-1 truncate">
-                      <span className="font-medium">{i.app}</span> {i.title}:{" "}
-                      <span className="text-(--muted)">{i.body}</span>
+                      <span className="font-medium">
+                        {i.app}
+                        {i.phone ? " (phone)" : ""}
+                      </span>{" "}
+                      {i.title}: <span className="text-(--muted)">{i.body}</span>
+                      {(i.also?.length ?? 0) > 0 && (
+                        <span className="text-(--muted)"> (also via {i.also?.join(", ")})</span>
+                      )}
                     </span>
                   </li>
                 ))}

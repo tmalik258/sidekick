@@ -24,6 +24,8 @@ pub struct Toast {
     pub title: String,
     pub body: String,
     pub arrived: DateTime<Utc>,
+    /// Mirrored from the phone by Phone Link; `app` is then the phone app.
+    pub phone: bool,
 }
 
 pub fn db_path() -> Option<PathBuf> {
@@ -74,13 +76,15 @@ pub fn read_since(path: &Path, after: i64) -> Result<Vec<Toast>, String> {
                 if title.is_empty() && body.is_empty() {
                     return None;
                 }
+                let (app, title, body, phone) = unwrap_phone(&app_id, title, body);
                 Some(Toast {
                     id,
-                    app: app_name(&app_id),
+                    app,
                     app_id,
                     title,
                     body,
                     arrived: from_filetime(arrived),
+                    phone,
                 })
             })
             .collect())
@@ -158,9 +162,37 @@ pub fn parse_payload(xml: &str) -> (String, String) {
     }
 }
 
+/// Phone Link shows every phone notification as its own ("YourPhone"),
+/// with the phone app's name as the first line. Puts the real app back:
+/// "Gmail" / "Upwork Notification" / "New job alert..." becomes app Gmail,
+/// title "Upwork Notification", on the phone.
+pub fn unwrap_phone(app_id: &str, title: String, body: String) -> (String, String, String, bool) {
+    let id = app_id.to_lowercase();
+    let wrapped = id.contains("yourphone") || id.contains("phonelink") || id.contains("phone link");
+    if !wrapped {
+        return (app_name(app_id), title, body, false);
+    }
+    let named = title.trim();
+    // The first line names the app when it is short; otherwise Phone Link
+    // left it out and the title is the message's own.
+    if named.is_empty() || named.split_whitespace().count() > 3 || body.trim().is_empty() {
+        return ("Phone".to_owned(), title, body, true);
+    }
+    let app = KNOWN
+        .iter()
+        .find(|(k, _)| named.to_lowercase().contains(k))
+        .map_or_else(|| named.to_owned(), |(_, n)| (*n).to_owned());
+    let mut lines = body.splitn(2, '\n');
+    let new_title = lines.next().unwrap_or_default().trim().to_owned();
+    let rest = lines.next().unwrap_or_default().trim().to_owned();
+    (app, new_title, rest, true)
+}
+
 /// Known senders by a piece of their id, then a best guess from the id.
 const KNOWN: &[(&str, &str)] = &[
     ("whatsapp", "WhatsApp"),
+    ("gmail", "Gmail"),
+    ("upwork", "Upwork"),
     ("slack", "Slack"),
     ("teams", "Teams"),
     ("outlook", "Outlook"),
@@ -216,6 +248,36 @@ pub fn app_name(app_id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unwraps_phone_link() {
+        let (app, title, body, phone) = unwrap_phone(
+            "Microsoft.YourPhone_8wekyb3d8bbwe!App",
+            "Gmail".into(),
+            "Upwork Notification\nNew job alert: Junior Coder".into(),
+        );
+        assert_eq!(
+            (app.as_str(), title.as_str(), body.as_str(), phone),
+            (
+                "Gmail",
+                "Upwork Notification",
+                "New job alert: Junior Coder",
+                true
+            )
+        );
+        let (app, _, _, _) = unwrap_phone(
+            "Microsoft.YourPhone!App",
+            "WhatsApp".into(),
+            "Ali\nHi".into(),
+        );
+        assert_eq!(app, "WhatsApp");
+        let (app, title, _, phone) =
+            unwrap_phone("5319275A.WhatsAppDesktop!App", "Ali".into(), "Hi".into());
+        assert_eq!(
+            (app.as_str(), title.as_str(), phone),
+            ("WhatsApp", "Ali", false)
+        );
+    }
 
     const WHATSAPP: &str = r#"<toast launch="chat?id=1"><visual><binding template="ToastGeneric"><text hint-maxLines="1">Ali Khan</text><text>Can you send the invoice &amp; the receipt?</text><image src="x.png"/></binding></visual><actions/></toast>"#;
 
