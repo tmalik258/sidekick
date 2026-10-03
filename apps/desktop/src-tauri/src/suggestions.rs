@@ -156,6 +156,31 @@ const MEETING_FROM: i32 = 80;
 const MAX_LATER: usize = 20;
 const LATER_KEEP: chrono::Duration = chrono::Duration::hours(3);
 
+/// How long a missed suggestion is still worth showing. Ones tied to a
+/// moment (what you just copied, a screenshot, the late hour) mean nothing
+/// once it has passed; messages and reminders keep for hours.
+fn later_keep(skill_id: &str) -> chrono::Duration {
+    const MOMENTS: &[&str] = &[
+        "files.screenshot",
+        "browser.many-tabs",
+        "browser.long-read",
+        "dev.explain-error",
+        "dev.stuck",
+        "system.late-night",
+        "system.back",
+        "system.focus",
+        "system.layout",
+        "system.memory-high",
+    ];
+    if skill_id.starts_with("clipboard.") {
+        chrono::Duration::minutes(10)
+    } else if MOMENTS.contains(&skill_id) {
+        chrono::Duration::minutes(30)
+    } else {
+        LATER_KEEP
+    }
+}
+
 /// The user is in a meeting now (one from the calendar, under four hours).
 fn in_meeting(app: &AppHandle) -> bool {
     let now = chrono::Utc::now();
@@ -181,9 +206,12 @@ fn keep_for_later(app: &AppHandle, proposal: Proposal, missed: bool) {
     let state = app.state::<AppState>();
     let now = chrono::Utc::now();
     let mut later = lock(&state.later);
+    // Copying something new makes the last copy's suggestion stale.
+    let copied = proposal.skill_id.starts_with("clipboard.");
     later.retain(|l| {
-        now - l.at < LATER_KEEP
+        now - l.at < later_keep(&l.proposal.skill_id)
             && !(l.proposal.skill_id == proposal.skill_id && l.proposal.title == proposal.title)
+            && !(copied && l.proposal.skill_id.starts_with("clipboard."))
     });
     if later.len() >= MAX_LATER {
         later.remove(0);
@@ -213,7 +241,7 @@ pub fn later_list(app: &AppHandle) -> Vec<LaterItem> {
     let now = chrono::Utc::now();
     let state = app.state::<AppState>();
     let mut later = lock(&state.later);
-    later.retain(|l| now - l.at < LATER_KEEP);
+    later.retain(|l| now - l.at < later_keep(&l.proposal.skill_id));
     later
         .iter()
         .rev()
@@ -252,6 +280,16 @@ pub fn later_clear(app: &AppHandle) {
 /// Shows a proposal now, keeps a minor one (or one during a meeting) in the
 /// quiet list, or queues it while the island is busy.
 pub fn offer(app: &AppHandle, proposal: Proposal) {
+    // Paused: nothing appears on its own. Notifications wait in "Saved for
+    // later"; everything else (a moment that has passed) is dropped.
+    if crate::state::is_paused(app) && !shows_while_paused(&proposal.skill_id) {
+        if proposal.skill_id.starts_with("notify.") {
+            keep_for_later(app, proposal, false);
+        } else {
+            log::debug!("paused: dropped {}", proposal.skill_id);
+        }
+        return;
+    }
     if proposal.trust != Trust::Auto
         && should_wait(&proposal.skill_id, proposal.priority, in_meeting(app))
     {
@@ -259,6 +297,12 @@ pub fn offer(app: &AppHandle, proposal: Proposal) {
         return;
     }
     show_or_queue(app, proposal);
+}
+
+/// What the user started themselves still answers while paused: a coding
+/// agent's message and saving a password they just typed.
+fn shows_while_paused(skill_id: &str) -> bool {
+    skill_id == "mcp.notify" || skill_id == crate::password_save::SKILL_ID
 }
 
 fn show_or_queue(app: &AppHandle, proposal: Proposal) {
@@ -913,6 +957,21 @@ pub fn demo(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn moments_leave_the_missed_list_sooner() {
+        assert_eq!(
+            later_keep("clipboard.long-text"),
+            chrono::Duration::minutes(10)
+        );
+        assert_eq!(
+            later_keep("files.screenshot"),
+            chrono::Duration::minutes(30)
+        );
+        assert_eq!(later_keep("notify.now"), LATER_KEEP);
+        assert!(shows_while_paused("mcp.notify"));
+        assert!(!shows_while_paused("system.late-night"));
+    }
 
     #[test]
     fn minor_suggestions_wait_but_what_you_just_did_does_not() {

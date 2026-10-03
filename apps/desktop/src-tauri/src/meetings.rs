@@ -23,7 +23,9 @@ pub fn start(app: &AppHandle) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(FIRST_AFTER).await;
         loop {
-            refresh(&app).await;
+            if !crate::state::is_paused(&app) {
+                refresh(&app).await;
+            }
             tokio::select! {
                 _ = tokio::time::sleep(EVERY) => {}
                 _ = rx.recv() => {}
