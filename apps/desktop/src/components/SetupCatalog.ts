@@ -209,9 +209,9 @@ export const SETUP_CATALOG: Array<{
   {
     id: "passwords",
     group: "tools",
-    title: "Password manager CLI",
-    why: "Fill logins from Bitwarden (or 1Password with op).",
-    recommended: false,
+    title: "Browser passwords",
+    why: "Fill and save locally in the last-used Chrome, Edge, Brave or Samsung Internet profile. Unsupported encryption is reported.",
+    recommended: true,
   },
 ];
 

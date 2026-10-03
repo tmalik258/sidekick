@@ -8,6 +8,7 @@ import {
   DEFAULT_SETTINGS,
   type ExtensionGuide,
   type MascotState,
+  type PasswordSaved,
   type Proposal,
   type Settings,
   type Suggestion,
@@ -20,6 +21,8 @@ interface SidekickState {
   mascot: MascotState;
   settings: Settings;
   suggestion: Suggestion | null;
+  /** Brief chip after mirroring a password into browser stores. */
+  passwordSaved: PasswordSaved | null;
   /** Cursor is over the island's interactive area (reported by Rust). */
   hovered: boolean;
   /** False while a fullscreen app is in front; the island fades away. */
@@ -136,6 +139,7 @@ export const useSidekick = create<SidekickState>(() => ({
   mascot: "idle",
   settings: DEFAULT_SETTINGS,
   suggestion: null,
+  passwordSaved: null,
   hovered: false,
   visible: true,
   ready: false,
@@ -460,6 +464,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       listen(EVENTS.suggestionClear, (id) => {
         if (useSidekick.getState().suggestion?.id === id) useSidekick.setState({ suggestion: null });
       }),
+      listen(EVENTS.passwordSaved, (passwordSaved) => useSidekick.setState({ passwordSaved })),
       listen(EVENTS.suggestionLater, (later) => useSidekick.setState({ later })),
       listen(EVENTS.islandHover, setHovered),
       listen(EVENTS.islandVisible, (visible) => useSidekick.setState({ visible })),
