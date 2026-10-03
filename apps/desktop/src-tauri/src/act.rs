@@ -31,6 +31,85 @@ pub fn risky(label: &str) -> bool {
 
 const WAIT: Duration = Duration::from_secs(25);
 
+/// What worked where: per site or app, the controls used successfully
+/// before, newest first. Shown with the next read, so a repeat task finds
+/// its way faster. Kept in the app's data folder.
+/// Site or app to the controls used there.
+type KnowHow = HashMap<String, Vec<String>>;
+
+static KNOW_HOW: LazyLock<Mutex<Option<KnowHow>>> = LazyLock::new(|| Mutex::new(None));
+const KNOW_HOW_KEEP: usize = 12;
+
+fn know_how_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join("know-how.json"))
+}
+
+fn with_know_how<T>(app: &AppHandle, f: impl FnOnce(&mut KnowHow) -> T) -> T {
+    let mut guard = KNOW_HOW
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let map = guard.get_or_insert_with(|| {
+        know_how_path(app)
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default()
+    });
+    f(map)
+}
+
+/// Remembers that `label` worked on `place` (a site or an app).
+pub fn learned(app: &AppHandle, place: &str, label: &str) {
+    let (place, label) = (place.trim().to_lowercase(), label.trim());
+    if place.is_empty() || label.is_empty() {
+        return;
+    }
+    let snapshot = with_know_how(app, |m| {
+        let list = m.entry(place).or_default();
+        list.retain(|l| l != label);
+        list.insert(0, label.to_owned());
+        list.truncate(KNOW_HOW_KEEP);
+        m.clone()
+    });
+    if let (Some(path), Ok(text)) = (know_how_path(app), serde_json::to_string(&snapshot)) {
+        let _ = std::fs::write(path, text);
+    }
+}
+
+fn know_how(app: &AppHandle, place: &str) -> String {
+    let used =
+        with_know_how(app, |m| m.get(&place.trim().to_lowercase()).cloned()).unwrap_or_default();
+    if used.is_empty() {
+        String::new()
+    } else {
+        format!("\nWorked here before: {}", used.join(", "))
+    }
+}
+
+fn host(url: &str) -> String {
+    reqwest::Url::parse(url)
+        .ok()
+        .and_then(|u| {
+            u.host_str()
+                .map(|h| h.trim_start_matches("www.").to_owned())
+        })
+        .unwrap_or_default()
+}
+
+/// "Inbox - name@x.com - Outlook" is Outlook.
+fn app_of(window: &str) -> String {
+    window
+        .rsplit(" - ")
+        .next()
+        .unwrap_or(window)
+        .trim()
+        .to_owned()
+}
+
+static LAST_WINDOW: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new(String::new()));
+
 /// What each element number on a page was, from the last read, so a click
 /// on "12" can be checked against its label. Keyed by tab.
 /// Element number to (kind, label).
@@ -131,11 +210,13 @@ pub async fn browser(app: &AppHandle, chat_id: &str, args: &Value) -> String {
         "read" => ask(app, json!({ "type": "read", "tab": tab })).await.map(|v| {
             let elements = v["elements"].as_str().unwrap_or_default();
             remember(tab_of(&v), elements);
+            let url = v["url"].as_str().unwrap_or_default();
             format!(
-                "Tab {}: {}\n{}\n\nElements (act on them by number):\n{}\n\nPage text:\n{}",
+                "Tab {}: {}\n{}{}\n\nElements (act on them by number):\n{}\n\nPage text:\n{}",
                 v["tab"],
                 v["title"].as_str().unwrap_or_default(),
-                v["url"].as_str().unwrap_or_default(),
+                url,
+                know_how(app, &host(url)),
                 elements,
                 v["text"].as_str().unwrap_or_default()
             )
@@ -206,6 +287,15 @@ async fn act(app: &AppHandle, chat_id: &str, args: &Value) -> String {
         );
     }
     match ask(app, cmd).await {
+        Ok(v) if what == "click" || what == "type" || what == "select" => {
+            learned(app, &host(v["url"].as_str().unwrap_or_default()), &label);
+            format!(
+                "{}. Now on: {} ({}). Read the page again to see the result.",
+                v["note"].as_str().unwrap_or("Done"),
+                v["title"].as_str().unwrap_or_default(),
+                v["url"].as_str().unwrap_or_default()
+            )
+        }
         Ok(v) => format!(
             "{}. Now on: {} ({}). Read the page again to see the result.",
             v["note"].as_str().unwrap_or("Done"),
@@ -257,7 +347,11 @@ pub async fn desktop(app: &AppHandle, chat_id: &str, args: &Value) -> String {
                         .map(|c| (c.n.to_string(), (c.kind.to_lowercase(), c.name.clone())))
                         .collect();
                 }
-                s.describe()
+                let place = app_of(&s.window);
+                if let Ok(mut w) = LAST_WINDOW.lock() {
+                    *w = place.clone();
+                }
+                format!("{}{}", s.describe(), know_how(app, &place))
             })
         }
         "act" => {
@@ -286,9 +380,13 @@ pub async fn desktop(app: &AppHandle, chat_id: &str, args: &Value) -> String {
                 );
             }
             let t = target.clone();
-            blocking(move || uia::act(&t, n, &name, &what, &text))
-                .await
-                .map(|o| format!("{}. Read the window again to see the result.", o.message))
+            let label = name.clone();
+            let done = blocking(move || uia::act(&t, n, &name, &what, &text)).await;
+            if done.is_ok() {
+                let place = LAST_WINDOW.lock().map(|w| w.clone()).unwrap_or_default();
+                learned(app, &place, &label);
+            }
+            done.map(|o| format!("{}. Read the window again to see the result.", o.message))
         }
         "keys" => {
             let keys = args["text"].as_str().unwrap_or_default().to_owned();
@@ -500,6 +598,17 @@ mod tests {
         assert_eq!(element(7, "2"), Some(("button".into(), "Send".into())));
         assert_eq!(element(7, "3").unwrap().0, "textbox(email)");
         assert_eq!(element(7, "9"), None);
+    }
+
+    #[test]
+    fn names_places() {
+        assert_eq!(app_of("Inbox - ali@x.com - Outlook"), "Outlook");
+        assert_eq!(app_of("Files"), "Files");
+        assert_eq!(host("https://www.upwork.com/jobs/1"), "upwork.com");
+        assert!(super::super::ai::looks_multistep(
+            "reply to Ali and attach the invoice"
+        ));
+        assert!(!super::super::ai::looks_multistep("what is on my screen"));
     }
 
     #[test]
