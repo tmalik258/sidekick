@@ -144,6 +144,7 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   agents_status: () => ({ claudeCode: true, codex: true, handoff: "Claude Code" }),
   codex_add_notify: () => "C:\\Users\\you\\.codex\\config.toml.sidekick-backup-20261002",
   codex_add_mcp: () => null,
+  guide_keys: () => null,
   actions_recent: () => [],
   reveal_path: () => undefined,
   open_settings: () => commands.ask_open?.({ view: "settings" }),
@@ -469,7 +470,7 @@ commands.extension_install = (a) => {
     steps: [
       "If the extensions page is not showing, paste its address into the address bar and press Enter (it is copied).",
       "Turn on Developer mode (top right), then click Load unpacked.",
-      "Click Copy folder path below, paste it into the folder box and press Enter, then Select Folder.",
+      "Copy folder path below (or its Alt key), paste it into the folder box and press Enter, then Select Folder.",
       "Press Allow on Sidekick's island when it asks.",
     ],
   };

@@ -1035,6 +1035,12 @@ pub fn codex_add_notify(app: AppHandle) -> CmdResult<Option<String>> {
     crate::codex_config::add_notify(&dir).map(|b| b.map(|p| p.display().to_string()))
 }
 
+/// How many buttons the guide card shows; they get Alt+1..N (0 drops them).
+#[tauri::command]
+pub fn guide_keys(app: AppHandle, buttons: usize) {
+    crate::suggestions::set_guide_keys(&app, buttons);
+}
+
 /// Adds Sidekick's MCP server to Codex's settings.
 #[tauri::command]
 pub fn codex_add_mcp(state: State<'_, AppState>) -> CmdResult<Option<String>> {

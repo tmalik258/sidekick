@@ -6,7 +6,16 @@
 // the morph, this owns the content.
 
 import { AnimatePresence, motion } from "motion/react";
-import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { Markdown } from "@/lib/markdown";
@@ -890,8 +899,10 @@ function Chat({ turns }: { turns: Turn[] }) {
                   {PROVIDER_LABELS[t.provider] ?? t.provider}
                 </p>
               )}
-              {t.proposals && t.proposals.length > 0 && <Proposals items={t.proposals} />}
-              {i === turns.length - 1 && options.length > 0 && <AnswerOptions options={options} />}
+              {t.proposals && t.proposals.length > 0 && <Proposals items={t.proposals} keys={i === turns.length - 1} />}
+              {i === turns.length - 1 && options.length > 0 && (
+                <AnswerOptions options={options} start={pendingCount(t.proposals)} />
+              )}
               {/* Offered when the local model gives up; Ctrl Enter works any time. */}
               {!t.streaming && i === turns.length - 1 && (t.handoff || t.error) && (
                 <Handoff turns={turns} reason={t.handoff ?? null} />
@@ -985,8 +996,48 @@ function contextStarters({
   return out.slice(0, 3);
 }
 
+/** Buttons still waiting for a tap; they take Alt 1, Alt 2... first. */
+function pendingCount(items: Proposal[] | undefined): number {
+  return (items ?? []).filter((p) => !p.ran).length;
+}
+
+/** Alt + a digit, from the island's own keys (it has focus in Ask). */
+function useAltDigits(count: number, start: number, run: (n: number) => void) {
+  const runRef = useRef(run);
+  runRef.current = run;
+  useEffect(() => {
+    if (count === 0) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      const n = Number(e.key) - start;
+      if (Number.isInteger(n) && n >= 1 && n <= count) {
+        e.preventDefault();
+        runRef.current(n - 1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [count, start]);
+}
+
 /** Actions the answer offers: nothing runs until a tap, and Undo follows. */
-function Proposals({ items }: { items: Proposal[] }) {
+function Proposals({ items, keys }: { items: Proposal[]; keys: boolean }) {
+  const pending = items.filter((p) => !p.ran);
+  useAltDigits(keys ? Math.min(pending.length, 9) : 0, 0, (n) => void runProposal(pending[n].id));
+  // Alt U undoes the newest action that can be undone.
+  const undoable = [...items].reverse().find((p) => p.ran?.ok && p.ran.undoId != null && !p.ran.undone);
+  const undoRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (!keys || !undoable) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.altKey && !e.ctrlKey && e.key.toLowerCase() === "u") {
+        e.preventDefault();
+        undoRef.current?.click();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [keys, undoable]);
   return (
     <div className="mt-2 flex flex-col gap-1.5">
       {items.map((p) =>
@@ -994,7 +1045,9 @@ function Proposals({ items }: { items: Proposal[] }) {
           <div key={p.id} className="flex items-center gap-2 text-[12.5px]">
             <span className={`size-1.5 shrink-0 rounded-full ${p.ran.ok ? "bg-[#30d158]" : "bg-[#ff453a]"}`} />
             <span className="min-w-0 flex-1 truncate text-[rgb(235_235_245/0.75)]">{p.ran.message}</span>
-            {p.ran.ok && p.ran.undoId != null && !p.ran.undone && <UndoProposal proposal={p} />}
+            {p.ran.ok && p.ran.undoId != null && !p.ran.undone && (
+              <UndoProposal proposal={p} buttonRef={p === undoable && keys ? undoRef : undefined} />
+            )}
             {p.ran.ok && p.ran.path && (
               <button
                 type="button"
@@ -1013,6 +1066,9 @@ function Proposals({ items }: { items: Proposal[] }) {
             className="chip flex min-h-8 items-center gap-2 self-start rounded-full bg-white px-3.5 py-1.5 text-[13px] font-medium text-black hover:bg-white/90"
           >
             {p.label}
+            {keys && pending.indexOf(p) < 9 && (
+              <kbd className="shrink-0 font-sans text-[11px] text-black/40">Alt {pending.indexOf(p) + 1}</kbd>
+            )}
           </button>
         ),
       )}
@@ -1020,11 +1076,18 @@ function Proposals({ items }: { items: Proposal[] }) {
   );
 }
 
-function UndoProposal({ proposal }: { proposal: Proposal }) {
+function UndoProposal({
+  proposal,
+  buttonRef,
+}: {
+  proposal: Proposal;
+  buttonRef?: RefObject<HTMLButtonElement | null>;
+}) {
   const [state, setState] = useState<string | null>(null);
   if (state) return <span className="shrink-0 text-[12px] text-[rgb(235_235_245/0.55)]">{state}</span>;
   return (
     <button
+      ref={buttonRef}
       type="button"
       onClick={() =>
         void api
@@ -1035,24 +1098,15 @@ function UndoProposal({ proposal }: { proposal: Proposal }) {
       className="chip shrink-0 rounded-full bg-white/[0.12] px-2.5 py-1 text-[12px] text-white/90 hover:bg-white/[0.2]"
     >
       Undo
+      {buttonRef && <kbd className="ml-1.5 font-sans text-[11px] text-white/35">Alt U</kbd>}
     </button>
   );
 }
 
-/** Next steps the answer offers: click one or press Alt 1-3 to ask it. */
-function AnswerOptions({ options }: { options: string[] }) {
-  useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (!e.altKey) return;
-      const n = Number(e.key);
-      if (n >= 1 && n <= options.length) {
-        e.preventDefault();
-        sendChat(options[n - 1]);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [options]);
+/** Next steps the answer offers: click one or press its Alt number to ask it. */
+function AnswerOptions({ options, start }: { options: string[]; start: number }) {
+  const shown = Math.max(0, Math.min(options.length, 9 - start));
+  useAltDigits(shown, start, (n) => sendChat(options[n]));
   return (
     <div className="mt-2 flex flex-wrap gap-1.5">
       {options.map((o, i) => (
@@ -1066,7 +1120,7 @@ function AnswerOptions({ options }: { options: string[] }) {
         >
           <span className="leading-snug">{o}</span>
           <kbd className={`shrink-0 font-sans text-[11px] ${i === 0 ? "text-black/40" : "text-white/35"}`}>
-            Alt {i + 1}
+            {i < shown ? `Alt ${start + i + 1}` : ""}
           </kbd>
         </button>
       ))}
@@ -1077,6 +1131,12 @@ function AnswerOptions({ options }: { options: string[] }) {
 /** What a tool call looks like while it runs. Sidekick's own tools by name. */
 const LOCAL_TOOLS: Record<string, string> = {
   search: "Searching your PC...",
+  web_search: "Searching the web...",
+  sidekick_web_search: "Searching the web...",
+  read_page: "Reading the page...",
+  sidekick_read_page: "Reading the page...",
+  WebSearch: "Searching the web...",
+  WebFetch: "Reading the page...",
   today: "Checking your day...",
   recent: "Looking at what just happened...",
   open: "Opening...",
