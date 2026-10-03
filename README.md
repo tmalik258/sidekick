@@ -4,7 +4,7 @@ A proactive desktop companion for Windows. Sidekick lives in a small "island" at
 
 Local-first: events, history, and settings stay on your machine. AI runs in tiers: rules first, a local decision model (SemIf) next, and Claude Code for real work.
 
-> Status: **P2**. Rule-based skills (T0), SemIf or a local model for ranking (T1), and chat through Claude Code, the Anthropic API or a local model (T2) work end to end. Browser extension and password manager fill come in P3.
+> Status: **P2**. Rule-based skills (T0), SemIf or a local model for ranking (T1), and chat through Claude Code, the Anthropic API or a local model (T2) work end to end. Browser extension fill/save from local browser password stores is in progress for P3.
 
 Full spec: [Desktop AI Assistant SRS](https://claude.ai/code/artifact/2f76a151-4e3f-4d9b-ab0c-bd1239d8ff69)
 
@@ -74,7 +74,7 @@ In the browser preview, `window.sidekickMock.go("success")` switches mascot stat
 - **Undo**: files Sidekick creates (conversions, extracted folders) can be sent to the Recycle Bin from the island or Settings > History for 24 hours.
 - **Low disk or memory**: the island warns once and offers Storage settings or Task Manager.
 - **Step away** for 5 minutes and suggestions wait for you instead of expiring unseen.
-- **Browser**: press Install next to your browser in Settings > Connections; Sidekick opens the extensions page with the folder path copied, and the extension pairs on its own. Sign-in pages offer a fill from 1Password or Bitwarden, too many tabs offer cleanup, Upwork jobs offer a proposal draft.
+- **Browser**: press Install next to your browser in Settings > Connections; Sidekick opens the extensions page with the folder path copied, and the extension pairs on its own. Sign-in pages offer fill from supported local Chromium password stores in each browser’s last-used profile. New entries have a five-second save countdown; different passwords require an explicit Override click within five seconds or are skipped. Local saving does not guarantee cloud sync. Too many tabs offer cleanup, Upwork jobs offer a proposal draft.
 - **Screenshots** (Win+PrtScn): Copy, Copy text (with Tesseract), Show in folder.
 - **Search my stuff**: type in Ask mode and pick Search. Pick folders under Settings > Privacy and data. With Ollama running, `ollama pull nomic-embed-text` adds search by meaning (embeddings stay on this PC).
 - **Claude Code can use Sidekick** through MCP: press Add for me in Settings > Connections.

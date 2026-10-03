@@ -1,6 +1,6 @@
 id: browser.login
-name: Fill logins from your password manager
-description: On a sign-in page, offer to fill the login from 1Password or Bitwarden, matched by site (FR-BRW-01). Needs the Sidekick browser extension.
+name: Fill logins from your browsers
+description: On a sign-in page, offer to fill the login from passwords saved in your browsers on this PC (FR-BRW-01). Needs the Sidekick browser extension.
 priority: 70
 cooldown_secs: 60
 dedupe: "{{domain}}"
@@ -8,13 +8,9 @@ trigger:
   event: browser.login_form
 suggestion:
   title: "Sign in to {{domain}}"
-  detail: "Fill from your password manager."
+  detail: "Fill from your browser passwords."
   options:
-    - label: Fill from 1Password
+    - label: Fill
       action: browser_fill
-      args: { domain: "{{domain}}", tab: "{{tab}}", manager: op }
-      requires: ["tool:op"]
-    - label: Fill from Bitwarden
-      action: browser_fill
-      args: { domain: "{{domain}}", tab: "{{tab}}", manager: bw }
-      requires: ["tool:bw"]
+      args: { domain: "{{domain}}", tab: "{{tab}}", browser: "{{browser}}" }
+      requires: ["tool:browser_passwords"]
