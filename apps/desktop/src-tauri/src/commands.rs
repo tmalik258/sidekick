@@ -587,22 +587,6 @@ pub async fn open_reference(app: AppHandle, source: String, reference: String) -
         .map_err(|e| e.to_string())
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct McpInfo {
-    url: String,
-    token: String,
-}
-
-/// How to add Sidekick to Claude Code as an MCP server.
-#[tauri::command]
-pub fn mcp_info(state: State<'_, AppState>) -> McpInfo {
-    McpInfo {
-        url: format!("http://127.0.0.1:{}/mcp", crate::mcp::PORT),
-        token: state.mcp_token.clone(),
-    }
-}
-
 #[tauri::command]
 pub fn voice_status(app: AppHandle) -> crate::voice::VoiceStatus {
     crate::voice::status(&app)
@@ -979,13 +963,6 @@ pub fn composio_import(app: AppHandle) -> CmdResult<Settings> {
     settings.composio.headers = headers;
     settings.composio.enabled = true;
     apply_settings(&app, settings)
-}
-
-/// Connects to Composio and counts its tools.
-#[tauri::command]
-pub async fn composio_test(app: AppHandle) -> CmdResult<crate::composio::Check> {
-    let settings = lock(&app.state::<AppState>().settings).composio.clone();
-    crate::composio::test(&settings).await
 }
 
 #[derive(Serialize)]

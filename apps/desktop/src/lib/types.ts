@@ -160,7 +160,6 @@ export const PROVIDER_LABELS: Record<string, string> = {
 };
 
 /** Where Sidekick listens for Claude Code hooks (ClaudeCodeSensor::DEFAULT_PORT). */
-export const CLAUDE_HOOK_URL = "http://127.0.0.1:47821/claude-code";
 
 export interface ProviderStatus {
   id: string;
@@ -225,11 +224,6 @@ export interface SearchHit {
   title: string;
   snippet: string;
   ts: string;
-}
-
-export interface McpInfo {
-  url: string;
-  token: string;
 }
 
 export interface AppTime {
@@ -558,7 +552,6 @@ export interface Found {
 }
 
 /** Older names used by the welcome and setup guides. */
-export type DetectedFolder = Folder;
 export type SetupFound = Found;
 
 export interface SetupPlan {
@@ -603,12 +596,6 @@ export const SHORTCUT_ACTIONS: { id: string; label: string }[] = [
   { id: "pause", label: "Pause or resume" },
   { id: "settings", label: "Settings" },
 ];
-
-export interface ComposioCheck {
-  tools: number;
-  reads: number;
-  sample: string[];
-}
 
 /** Something opened early on most mornings (see Settings > Privacy). */
 export interface RoutineItem {

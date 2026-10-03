@@ -25,7 +25,7 @@ static RISKY: LazyLock<Regex> = LazyLock::new(|| {
         .expect("risky words")
 });
 
-pub fn risky(label: &str) -> bool {
+fn risky(label: &str) -> bool {
     RISKY.is_match(label)
 }
 
@@ -244,7 +244,7 @@ fn element(tab: i64, r: &str) -> Option<(String, String)> {
 }
 
 /// Whether this step needs the user's tap first.
-pub fn needs_tap(action: &str, kind: &str, label: &str, key: &str) -> bool {
+fn needs_tap(action: &str, kind: &str, label: &str, key: &str) -> bool {
     match action {
         "click" => risky(label) || kind == "button" && label.is_empty(),
         // Enter in a message box sends it; in a search box it only searches.
