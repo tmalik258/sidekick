@@ -14,6 +14,9 @@ pub const LABEL: &str = "island";
 pub const HOVER_EVENT: &str = "island://hover";
 pub const CURSOR_EVENT: &str = "island://cursor";
 pub const VISIBLE_EVENT: &str = "island://visible";
+/// Whether a fullscreen app is in front on the island's screen, so the glance
+/// can offer "Hide while fullscreen" right there.
+pub const FULLSCREEN_EVENT: &str = "island://fullscreen";
 
 /// About 40 Hz. The UI smooths it with springs, so this reads as continuous.
 const CURSOR_POLL: Duration = Duration::from_millis(24);
@@ -152,9 +155,8 @@ pub fn follow_fullscreen(app: &AppHandle, payload: &serde_json::Value) {
     keep_on_top(&window);
     let wanted = lock(&app.state::<AppState>().settings).hide_in_fullscreen;
     // The sensor decides what is fullscreen (an exact monitor match, so
-    // maximized windows never count). Only hide for the island's own monitor.
-    let fullscreen = wanted
-        && payload["fullscreen"].as_bool().unwrap_or(false)
+    // maximized windows never count). Only for the island's own monitor.
+    let here = payload["fullscreen"].as_bool().unwrap_or(false)
         && window
             .current_monitor()
             .ok()
@@ -167,6 +169,11 @@ pub fn follow_fullscreen(app: &AppHandle, payload: &serde_json::Value) {
                     && m["width"].as_i64() == Some(i64::from(size.width))
                     && m["height"].as_i64() == Some(i64::from(size.height))
             });
+    static LAST_HERE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if LAST_HERE.swap(here, std::sync::atomic::Ordering::Relaxed) != here {
+        let _ = app.emit_to(LABEL, FULLSCREEN_EVENT, here);
+    }
+    let fullscreen = wanted && here;
     let state = app.state::<AppState>();
     let mut hidden = lock(&state.island_hidden);
     if fullscreen == *hidden {
@@ -211,14 +218,16 @@ fn spawn_hover_tracker(app: AppHandle, window: WebviewWindow) {
             // usable even while Ask or the welcome is open. While a panel is
             // open its rect can lag a growing animation, hence the margin.
             let pad = if asking { ASK_MARGIN } else { 0.0 };
-            let now_through = hidden || !rect.contains_within(pos.x, pos.y, pad);
+            // Hidden in fullscreen, the island still comes back under the
+            // cursor (so its switch is reachable); elsewhere it lets clicks by.
+            let now_through = !rect.contains_within(pos.x, pos.y, pad);
             if applied != Some((now_through, asking, hidden)) {
                 applied = Some((now_through, asking, hidden));
                 if let Err(err) = window.set_ignore_cursor_events(now_through) {
                     log::warn!("could not toggle click-through: {err}");
                 }
             }
-            let now_inside = !hidden && rect.contains(pos.x, pos.y);
+            let now_inside = rect.contains(pos.x, pos.y);
             if now_inside == inside {
                 continue;
             }

@@ -243,16 +243,16 @@ export function Island() {
   const orbScale = asking ? ASK_ORB / ORB : expanded ? 1 : COMPACT.orb / ORB;
   const orbX = expanded ? EXPANDED.pad : (COMPACT.height - COMPACT.orb) / 2 + 1;
   const orbY = expanded ? EXPANDED.pad : (COMPACT.height - COMPACT.orb) / 2;
+  // Hidden for a fullscreen app, the island still comes back under the cursor.
+  const shown = visible || rawHover;
 
   return (
     <motion.div
       className="flex h-screen w-screen justify-center select-none"
       style={{ paddingTop: TOP, originY: 0 }}
       initial={false}
-      animate={
-        visible ? { opacity: 1, scale: 1, filter: "blur(0px)" } : { opacity: 0, scale: 0.92, filter: "blur(4px)" }
-      }
-      transition={reduced ? { duration: 0 } : { duration: visible ? 0.32 : 0.2, ease: [0.23, 1, 0.32, 1] }}
+      animate={shown ? { opacity: 1, scale: 1, filter: "blur(0px)" } : { opacity: 0, scale: 0.92, filter: "blur(4px)" }}
+      transition={reduced ? { duration: 0 } : { duration: shown ? 0.32 : 0.2, ease: [0.23, 1, 0.32, 1] }}
     >
       <motion.div
         className="island-shell relative overflow-hidden text-white"

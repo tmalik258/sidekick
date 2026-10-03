@@ -441,7 +441,10 @@ pub fn start(app: &AppHandle, marker: PathBuf, roots: Vec<PathBuf>) {
             tokio::time::sleep(CHECK_EVERY).await;
             let now = Local::now();
             let today = now.format("%Y-%m-%d").to_string();
-            if now.hour() < EARLIEST_HOUR || last_day(&marker) == today {
+            if now.hour() < EARLIEST_HOUR
+                || last_day(&marker) == today
+                || crate::state::is_paused(&app)
+            {
                 continue;
             }
             let state = app.state::<AppState>();

@@ -57,7 +57,16 @@ pub async fn run(app: &AppHandle) {
         let keep = if deciders.is_empty() {
             keep_without_model(user_turns)
         } else {
-            match judge(&deciders, &row.id, &row.title, &row.updated, user_turns, &excerpt).await {
+            match judge(
+                &deciders,
+                &row.id,
+                &row.title,
+                &row.updated,
+                user_turns,
+                &excerpt,
+            )
+            .await
+            {
                 Some(keep) => keep,
                 None => keep_without_model(user_turns),
             }
@@ -114,13 +123,7 @@ fn user_turns_and_excerpt(turns_json: &str) -> (usize, String) {
     (users.len(), excerpt)
 }
 
-fn decision(
-    id: &str,
-    title: &str,
-    updated: &str,
-    user_turns: usize,
-    excerpt: &str,
-) -> Decision {
+fn decision(id: &str, title: &str, updated: &str, user_turns: usize, excerpt: &str) -> Decision {
     let age = ago_label(updated);
     let clip = if excerpt.is_empty() {
         "No user message saved.".to_owned()
@@ -178,9 +181,7 @@ fn ago_label(iso: &str) -> String {
     let Ok(then) = chrono::DateTime::parse_from_rfc3339(iso) else {
         return iso.to_owned();
     };
-    let hours = (Utc::now() - then.with_timezone(&Utc))
-        .num_hours()
-        .max(0);
+    let hours = (Utc::now() - then.with_timezone(&Utc)).num_hours().max(0);
     if hours < 48 {
         format!("{hours} hours ago")
     } else {
@@ -208,9 +209,8 @@ mod tests {
         assert_eq!(n, 2);
         assert_eq!(ex, "(redacted)");
 
-        let (n2, ex2) = user_turns_and_excerpt(
-            r#"[{"role":"user","content":"What is on my calendar?"}]"#,
-        );
+        let (n2, ex2) =
+            user_turns_and_excerpt(r#"[{"role":"user","content":"What is on my calendar?"}]"#);
         assert_eq!(n2, 1);
         assert!(ex2.contains("calendar"));
     }
