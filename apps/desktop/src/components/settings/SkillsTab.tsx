@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
 import type { SkillInfo } from "@/lib/types";
+import { Agent } from "./Agent";
 import { Recipes } from "./Recipes";
 import { Button, Section, Segmented } from "./ui";
 
@@ -38,6 +39,13 @@ export function SkillsTab({ onError }: { onError: (e: string) => void }) {
         keywords="recipe routine schedule trigger every repeat saved task automation"
       >
         <Recipes onError={onError} />
+      </Section>
+      <Section
+        title="Agent"
+        hint="When Sidekick acts in apps and on sites for you."
+        keywords="agent autonomy allow ask never permission trust confirm tap sites apps"
+      >
+        <Agent onError={onError} />
       </Section>
       <Section title="Automations" hint="These act without asking, with Undo." keywords="auto always automatic rules">
         {automations.length === 0 ? (

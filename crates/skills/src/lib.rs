@@ -257,6 +257,8 @@ pub const ACTIONS: &[&str] = &[
     "recipe_save",
     "close_app",
     "sleep_pc",
+    "dnd_on",
+    "dnd_off",
     "install_app",
     "update_app",
     "empty_recycle_bin",
