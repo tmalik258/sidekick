@@ -1,8 +1,9 @@
 //! Setup checklist: what is installed, connected and configured, and the
 //! exact command or Settings tab for each item that is not. Status checks are
 //! read-only. "Run" opens a visible PowerShell window with an allowlisted
-//! command from this file. "Add for me" (hooks/MCP) and the browser helper
-//! live in other modules and run only when the user presses the button.
+//! command from this file, except starting Ollama, which opens the Ollama
+//! app like its Start menu shortcut. "Add for me" (hooks/MCP) and the browser
+//! helper live in other modules and run only when the user presses the button.
 
 use std::path::Path;
 use std::time::Duration;
@@ -36,6 +37,10 @@ pub struct SetupItem {
     pub command: Option<String>,
     /// The command can be run from Sidekick in a new terminal window.
     pub runnable: bool,
+    /// Button label for running it: "Install", "Download", "Sign in", "Run".
+    pub action: &'static str,
+    /// "Run" opens the installed app instead of a terminal window.
+    pub opens_app: bool,
     /// Settings tab where this is set up.
     pub tab: Option<&'static str>,
     /// Part of the recommended setup; the rest is optional.
@@ -53,6 +58,8 @@ impl SetupItem {
             status: String::new(),
             command: None,
             runnable: false,
+            action: "Install",
+            opens_app: false,
             tab: None,
             recommended: false,
         }
@@ -66,6 +73,17 @@ impl SetupItem {
         self.command = Some(command.into());
         self.runnable = true;
         self
+    }
+    fn action(mut self, action: &'static str) -> Self {
+        self.action = action;
+        self
+    }
+    /// "Run" opens the app through [`open_app`]; there is no command.
+    fn opens_app(mut self) -> Self {
+        self.command = None;
+        self.runnable = true;
+        self.opens_app = true;
+        self.action("Run")
     }
     fn copy(mut self, command: impl Into<String>) -> Self {
         self.command = Some(command.into());
@@ -284,9 +302,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     items.push(
         match (&models, ollama_installed) {
             (Some(_), _) => ollama.done(true, "Running", ""),
-            (None, true) => ollama
-                .done(false, "", "Installed, not running")
-                .run("ollama serve"),
+            (None, true) => ollama.done(false, "", "Installed, not running").opens_app(),
             (None, false) => ollama
                 .done(false, "", "Not installed")
                 .run(winget("Ollama.Ollama")),
@@ -322,7 +338,9 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         },
     );
     if models.is_some() {
-        chat = chat.run(format!("ollama pull {chat_model}"));
+        chat = chat
+            .run(format!("ollama pull {chat_model}"))
+            .action("Download");
     }
     items.push(chat);
 
@@ -345,7 +363,9 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     )
     .recommended();
     if models.is_some() {
-        embed = embed.run(format!("ollama pull {embed_model}"));
+        embed = embed
+            .run(format!("ollama pull {embed_model}"))
+            .action("Download");
     }
     items.push(embed);
 
@@ -374,7 +394,9 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         },
     );
     if models.is_some() {
-        vision_item = vision_item.run(format!("ollama pull {vision_model}"));
+        vision_item = vision_item
+            .run(format!("ollama pull {vision_model}"))
+            .action("Download");
     }
     items.push(vision_item);
 
@@ -588,6 +610,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         gh_item
             .done(false, "", "Not signed in")
             .run("gh auth login")
+            .action("Sign in")
     };
     items.push(gh_item);
 
@@ -742,9 +765,50 @@ pub async fn run(app: &AppHandle, id: &str) -> Result<(), String> {
         if !item.runnable {
             return Err("Copy this one instead".into());
         }
+        if item.opens_app {
+            return open_app(item.id);
+        }
         item.command.clone().ok_or("Nothing to run")?
     };
     open_terminal(&command)
+}
+
+/// Opens an installed app the way its Start menu shortcut does.
+fn open_app(id: &str) -> Result<(), String> {
+    match id {
+        "ollama" => open_ollama(),
+        _ => Err(format!("{id} has no app to open")),
+    }
+}
+
+/// The Ollama app (`ollama app.exe`, next to `ollama.exe`) starts the server
+/// and keeps it running from the tray.
+#[cfg(windows)]
+fn open_ollama() -> Result<(), String> {
+    use std::process::Stdio;
+    let exe = which::which("ollama").map_err(|e| format!("Ollama was not found on PATH: {e}"))?;
+    let app = exe.with_file_name("ollama app.exe");
+    if !app.is_file() {
+        return Err(format!(
+            "The Ollama app was not found next to {}. Open Ollama from the Start menu.",
+            exe.display()
+        ));
+    }
+    std::process::Command::new(&app)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("could not open {}: {e}", app.display()))
+}
+
+#[cfg(not(windows))]
+fn open_ollama() -> Result<(), String> {
+    Err(
+        "Opening Ollama from Sidekick is only available on Windows; open the Ollama app instead"
+            .into(),
+    )
 }
 
 /// After an installer runs, PowerShell still has the old PATH; read it again
@@ -756,14 +820,20 @@ pub fn chain(commands: &[String]) -> String {
     commands.join(&format!("; {REFRESH_PATH}; "))
 }
 
-/// Runs several setup steps one after another in one PowerShell window:
-/// installs first, then model downloads and sign-ins.
-pub async fn run_many(app: &AppHandle, ids: &[String]) -> Result<(), String> {
+/// Opens apps first, then runs the rest one after another in one
+/// PowerShell window: installs first, then model downloads and sign-ins.
+/// Returns what it did, for the welcome screen.
+pub async fn run_many(app: &AppHandle, ids: &[String]) -> Result<Vec<String>, String> {
     let items = status(app).await;
-    let mut steps: Vec<&SetupItem> = items
+    let chosen = items
         .iter()
-        .filter(|i| ids.contains(&i.id.to_owned()) && i.runnable && !i.done)
-        .collect();
+        .filter(|i| ids.contains(&i.id.to_owned()) && i.runnable && !i.done);
+    let (apps, mut steps): (Vec<&SetupItem>, Vec<&SetupItem>) = chosen.partition(|i| i.opens_app);
+    let mut done = Vec::new();
+    for item in apps {
+        open_app(item.id)?;
+        done.push(format!("Opened {}", item.title));
+    }
     // Installers before anything that needs what they install.
     steps.sort_by_key(|i| {
         !i.command
@@ -771,10 +841,11 @@ pub async fn run_many(app: &AppHandle, ids: &[String]) -> Result<(), String> {
             .is_some_and(|c| c.starts_with("winget "))
     });
     let commands: Vec<String> = steps.iter().filter_map(|i| i.command.clone()).collect();
-    if commands.is_empty() {
-        return Ok(());
+    if !commands.is_empty() {
+        open_terminal(&chain(&commands))?;
+        done.push("Installing in PowerShell".to_owned());
     }
-    open_terminal(&chain(&commands))
+    Ok(done)
 }
 
 #[cfg(windows)]
@@ -943,6 +1014,15 @@ mod tests {
         assert!(script.starts_with("winget install"));
         assert!(script.ends_with("ollama pull qwen3:1.7b"));
         assert!(script.contains("GetEnvironmentVariable('Path','User')"));
+    }
+
+    #[test]
+    fn running_ollama_opens_the_app_not_a_terminal() {
+        let item = SetupItem::new("ollama", Group::Ai, "Ollama", "w").opens_app();
+        assert!(item.runnable && item.opens_app);
+        assert_eq!(item.command, None);
+        assert_eq!(item.action, "Run");
+        assert_eq!(install_all(&[item]), None);
     }
 
     #[test]

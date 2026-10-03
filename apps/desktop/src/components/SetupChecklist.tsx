@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
-import { useSidekick } from "@/lib/store";
+import { stopWaiting, useSidekick } from "@/lib/store";
 import type { SetupGroup, SetupItem } from "@/lib/types";
 import { SETUP_CATALOG, skeletonItem } from "./SetupCatalog";
 import { SetupRow, SmallButton } from "./SetupChecklistRow";
@@ -103,7 +103,10 @@ export function SetupChecklist({
       api
         .setupRun(id)
         .then(watchForChanges)
-        .catch((e) => setError(String(e)));
+        .catch((e) => {
+          stopWaiting();
+          setError(String(e));
+        });
     },
     [watchForChanges],
   );
@@ -233,7 +236,10 @@ export function SetupItems({ ids }: { ids: string[] }) {
       api
         .setupRun(id)
         .then(watchForChanges)
-        .catch((e) => setError(String(e)));
+        .catch((e) => {
+          stopWaiting();
+          setError(String(e));
+        });
     },
     [watchForChanges],
   );

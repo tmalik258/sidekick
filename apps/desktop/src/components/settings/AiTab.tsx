@@ -1,10 +1,10 @@
 "use client";
 
-// AI: which providers answer and in what order, their models (picked from
-// what is installed), SemIf ranking, and voice.
+// AI: provider order, explicit model choices, local model discovery, SemIf, and voice.
 
 import { Reorder, useDragControls } from "motion/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { CLAUDE_MODELS, CODEX_MODELS, explicitModel, FAST_CLAUDE_MODEL, FAST_CODEX_MODEL } from "@/lib/ai-models";
 import { api, EVENTS, listen } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { updateSettings, useSidekick } from "@/lib/store";
@@ -67,30 +67,10 @@ const PROVIDER_SETUP: Record<AiProviderId, string[]> = {
   local: ["ollama", "ollama_chat", "ollama_embed"],
 };
 
-const CODEX_MODELS: [string, string][] = [
-  ["", "Codex's default"],
-  ["gpt-5-codex", "GPT-5 Codex"],
-  ["gpt-5", "GPT-5"],
-];
-
 const CODING_AGENTS: [string, string][] = [
   ["auto", "Whichever is installed (Claude Code first)"],
   ["claude_code", "Claude Code"],
   ["codex", "Codex"],
-];
-
-const CLAUDE_CODE_MODELS: [string, string][] = [
-  ["", "Claude Code's default"],
-  ["sonnet", "Sonnet"],
-  ["opus", "Opus"],
-  ["haiku", "Haiku"],
-];
-
-const ANTHROPIC_MODELS: [string, string][] = [
-  ["claude-opus-5-5", "Opus 5.5"],
-  ["claude-sonnet-5-5", "Sonnet 5.5"],
-  ["claude-fable-5-1", "Fable 5.1"],
-  ["claude-haiku-4-5-20251001", "Haiku 4.5"],
 ];
 
 function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => void }) {
@@ -167,11 +147,11 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
                 <SetupItems ids={PROVIDER_SETUP[id]} />
                 {id === "claude_code" && (
                   <>
-                    <Field label="Model">
+                    <Field label="Model" hint="Availability depends on your plan and CLI version.">
                       <Select
                         label="Claude Code model"
-                        value={ai.claudeCode.model}
-                        options={CLAUDE_CODE_MODELS}
+                        value={explicitModel(ai.claudeCode.model, FAST_CLAUDE_MODEL)}
+                        options={CLAUDE_MODELS}
                         onChange={(model) => void save({ claudeCode: { ...ai.claudeCode, model } })}
                       />
                     </Field>
@@ -194,10 +174,10 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
                 )}
                 {id === "codex" && (
                   <>
-                    <Field label="Model">
+                    <Field label="Model" hint="Availability depends on your plan and CLI version.">
                       <Select
                         label="Codex model"
-                        value={ai.codex.model}
+                        value={explicitModel(ai.codex.model, FAST_CODEX_MODEL)}
                         options={CODEX_MODELS}
                         onChange={(model) => void save({ codex: { ...ai.codex, model } })}
                       />
@@ -223,8 +203,8 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
                   <Field label="Model">
                     <Select
                       label="Anthropic model"
-                      value={ai.anthropic.model}
-                      options={[["", "Default"], ...ANTHROPIC_MODELS]}
+                      value={explicitModel(ai.anthropic.model, FAST_CLAUDE_MODEL)}
+                      options={CLAUDE_MODELS}
                       onChange={(model) => void save({ anthropic: { ...ai.anthropic, model } })}
                     />
                   </Field>

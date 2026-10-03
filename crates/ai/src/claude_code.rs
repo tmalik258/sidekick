@@ -270,6 +270,21 @@ mod tests {
     }
 
     #[test]
+    fn selected_model_is_passed_explicitly_to_the_cli() {
+        let provider = ClaudeCode {
+            path: None,
+            model: Some("claude-haiku-4-5-20251001".into()),
+            workdir: PathBuf::new(),
+            mcp_config: None,
+        };
+        let args = provider.args();
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["--model", "claude-haiku-4-5-20251001"])
+        );
+    }
+
+    #[test]
     fn model_names_are_checked() {
         assert!(valid_model("opus"));
         assert!(valid_model("claude-opus-5-5"));

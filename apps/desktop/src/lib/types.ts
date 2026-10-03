@@ -1,3 +1,5 @@
+import { FAST_CLAUDE_MODEL, FAST_CODEX_MODEL } from "./ai-models";
+
 // Mirrors the Rust types in crates/core and src-tauri. Keep in sync.
 
 export const MASCOT_STATES = [
@@ -353,11 +355,11 @@ export const DEFAULT_SETTINGS: Settings = {
   endOfDayHour: 18,
   ai: {
     order: ["claude_code", "codex", "anthropic", "local"],
-    claudeCode: { enabled: true, path: "", model: "" },
-    codex: { enabled: true, path: "", model: "" },
+    claudeCode: { enabled: true, path: "", model: FAST_CLAUDE_MODEL },
+    codex: { enabled: true, path: "", model: FAST_CODEX_MODEL },
     codingAgent: "auto",
     local: { enabled: true, baseUrl: "http://localhost:11434/v1", model: "", visionModel: "" },
-    anthropic: { enabled: true, model: "" },
+    anthropic: { enabled: true, model: FAST_CLAUDE_MODEL },
     semif: {
       enabled: true,
       command: ["semif-score"],
@@ -484,6 +486,10 @@ export interface SetupItem {
   status: string;
   command: string | null;
   runnable: boolean;
+  /** Button label for running it: "Install", "Download", "Sign in", "Run". */
+  action: string;
+  /** "Run" opens the installed app instead of a terminal window. */
+  opensApp: boolean;
   tab: string | null;
   recommended: boolean;
 }

@@ -83,6 +83,8 @@ export interface Waiting {
   background?: boolean;
   /** Browser id when waiting on a specific extension (chrome, edge, zen, …). */
   target?: string;
+  /** Said when it finishes, instead of "… is installed" or "… is connected". */
+  doneLine?: string;
 }
 
 export interface WaitOptions {
@@ -95,6 +97,7 @@ export interface WaitOptions {
   target?: string;
   /** When false, the guide starts expanded. Default is minimized. */
   minimized?: boolean;
+  doneLine?: string;
 }
 
 export interface AskState {
@@ -174,10 +177,10 @@ let resumeSettingsTab: string | null = null;
 export function startWaiting(
   id: string,
   label: string,
-  { shrink = true, resumeTab, steps, copies, again, target, minimized = true }: WaitOptions = {},
+  { shrink = true, resumeTab, steps, copies, again, target, minimized = true, doneLine }: WaitOptions = {},
 ) {
   useSidekick.setState({
-    waiting: { id, label, since: Date.now(), resumeTab, steps, copies, again, target, minimized },
+    waiting: { id, label, since: Date.now(), resumeTab, steps, copies, again, target, minimized, doneLine },
   });
   // ask_defer_welcome parks welcome, or closes Settings/Ask when already onboarded.
   if (shrink) void api.askDeferWelcome();
@@ -279,7 +282,8 @@ export function watchWaiting(): () => void {
         if (item?.done) {
           finishWaiting(
             waiting,
-            item.group === "connect" ? `Done. ${name} is connected.` : `All set. ${name} is installed.`,
+            waiting.doneLine ??
+              (item.group === "connect" ? `Done. ${name} is connected.` : `All set. ${name} is installed.`),
           );
         }
       })

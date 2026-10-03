@@ -117,16 +117,19 @@ export const SetupRow = memo(function SetupRow({
   };
   const run = () => {
     onRun(item.id);
-    // Install runs in PowerShell: the island keeps the steps until setup status flips.
+    // The island keeps the steps until setup status flips.
     startWaiting(item.id, item.title, {
       resumeTab: item.tab ?? "home",
-      steps: [
-        `A PowerShell window is installing ${item.title}.`,
-        "Leave it open and answer any prompts there.",
-        "This finishes by itself when it is ready.",
-      ],
+      steps: item.opensApp
+        ? [`Sidekick opened the ${item.title} app.`, "This finishes by itself when it is running."]
+        : [
+            `A PowerShell window is running: ${item.action} ${item.title}.`,
+            "Leave it open and answer any prompts there.",
+            "This finishes by itself when it is ready.",
+          ],
       copies: item.command ? [{ label: "Copy the command", text: item.command }] : undefined,
       again: () => onRun(item.id),
+      doneLine: item.opensApp ? `All set. ${item.title} is running.` : undefined,
     });
   };
   const isWaiting = waiting?.id === item.id && !item.done;
@@ -191,7 +194,7 @@ export const SetupRow = memo(function SetupRow({
             )}
             {showRun && (
               <SmallButton primary={!showInline && !isDirect} onClick={run}>
-                Install
+                {item.action}
               </SmallButton>
             )}
             {showInline && (

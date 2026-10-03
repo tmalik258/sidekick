@@ -123,7 +123,7 @@ pub async fn fix(app: &AppHandle, what: &str) -> Result<String, String> {
     match what {
         "ollama" => crate::setup::run(app, "ollama")
             .await
-            .map(|()| "Starting Ollama".into()),
+            .map(|()| "Opening Ollama".into()),
         "composio" => crate::composio::sign_in(app)
             .await
             .map(|_| "Sign in to Composio in the browser".into()),
