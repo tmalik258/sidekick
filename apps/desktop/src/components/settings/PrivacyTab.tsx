@@ -35,7 +35,7 @@ export function PrivacyTab({ onError }: { onError: (e: string) => void }) {
 
   return (
     <>
-      <Section title="Pause" hint="Paused sensors do not run at all." keywords="stop privacy break">
+      <Section title="Pause" keywords="stop privacy break">
         <PauseStatus pause={settings.pause} />
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => run(api.sensorsPause(15))}>15 min</Button>
@@ -50,7 +50,7 @@ export function PrivacyTab({ onError }: { onError: (e: string) => void }) {
       </Section>
       <Section
         title="Ignored apps and sites"
-        hint="Sidekick drops everything from these: windows, copies made in them, and pages. Password managers are on the list from the start."
+        hint="Nothing from these is seen or kept."
         keywords="deny block private password manager bank"
       >
         <p className="text-[13px] font-medium">Apps</p>
@@ -73,19 +73,19 @@ export function PrivacyTab({ onError }: { onError: (e: string) => void }) {
       </Section>
       <Section
         title="Routines"
-        hint="What you open in the first hour of most mornings, offered back as one Open all. Only app names and site domains are kept, on this PC."
+        hint="Your usual morning apps and sites, offered as one Open all."
         keywords="routine morning start my day usual open all habits"
       >
         <Routines onError={onError} />
       </Section>
       <Section
         title="Search"
-        hint="Text files in these folders become searchable in Ask mode and for Claude Code through MCP. Everything stays on this PC."
+        hint="Files here are searchable from Ask. Stays on this PC."
         keywords="index folders notes documents semantic meaning embedding"
       >
         <SearchSettings onError={onError} />
       </Section>
-      <Section title="What Sidekick notices" hint="Each one can be switched off on its own." keywords="sensors">
+      <Section collapsible summary="Switch each one on or off" title="What Sidekick notices" keywords="sensors">
         {SENSOR_IDS.map(({ id, label, hint }) => (
           <Toggle
             key={id}
@@ -97,8 +97,9 @@ export function PrivacyTab({ onError }: { onError: (e: string) => void }) {
         ))}
       </Section>
       <Section
+        collapsible
+        summary="Tools skills can use"
         title="Found on this PC"
-        hint="Skills only offer what is installed. Install ffmpeg, ImageMagick, LibreOffice or pandoc for more conversions."
         keywords="capabilities tools ffmpeg rescan learned choices"
       >
         <Capabilities onError={onError} />
@@ -130,14 +131,14 @@ function Routines({ onError }: { onError: (e: string) => void }) {
     <div className="flex flex-col gap-3 text-[13px]">
       <Toggle
         label="Learn my routines"
-        hint="Apps you focus and sites in your active tab (with the browser extension), first hour of the day only."
+        hint="First hour of the day only"
         checked={on}
         onChange={(routines) => void save({ routines })}
       />
       {on && (
         <Toggle
           label="Open them without asking"
-          hint="Each morning your usual setup opens by itself. The card offers this after five Open alls."
+          hint="Your usual setup opens by itself"
           checked={auto}
           onChange={(routinesAuto) => void save({ routinesAuto })}
         />
@@ -240,14 +241,14 @@ function SearchSettings({ onError }: { onError: (e: string) => void }) {
       </div>
       <Toggle
         label="Search by meaning"
-        hint="Finds notes that match what you mean, not just the words. Uses a model on this PC."
+        hint="Not just the exact words"
         checked={semantic.enabled}
         onChange={(enabled) => void setSemantic({ enabled })}
       />
       {semantic.enabled && (
         <Field
           label="Embedding model"
-          hint={embed.length ? "Found in Ollama" : "None found. In Settings > Home > Setup, install nomic-embed-text."}
+          hint={embed.length ? "Found in Ollama" : "None found. Install the search model in AI > Local."}
         >
           <Select
             label="Embedding model"

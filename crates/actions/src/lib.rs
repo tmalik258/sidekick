@@ -10,6 +10,7 @@ mod convert;
 pub mod dev;
 mod files;
 pub mod passwords;
+pub mod pc;
 mod system;
 
 use std::path::{Path, PathBuf};
@@ -66,6 +67,7 @@ const SAFE: &[&str] = &[
     "extract_text",
     "zip",
     "open_system_page",
+    "launch_app",
     "create_env",
     "launch_project",
     "restore_layout",
@@ -221,6 +223,22 @@ impl Executor {
                 )))
             }
             "open_system_page" => system::open_system_page(arg(args, "page")?),
+            "launch_app" => {
+                let name = arg(args, "name")?.to_owned();
+                tokio::task::spawn_blocking(move || pc::launch_app(&name))
+                    .await
+                    .map_err(fail)?
+            }
+            "close_app" => {
+                let name = arg(args, "name")?.to_owned();
+                tokio::task::spawn_blocking(move || pc::close_window(&name))
+                    .await
+                    .map_err(fail)?
+            }
+            "sleep_pc" => pc::sleep_pc(),
+            "empty_recycle_bin" => tokio::task::spawn_blocking(pc::empty_recycle_bin)
+                .await
+                .map_err(fail)?,
             "git_pull" => {
                 let path = existing_path(args)?;
                 tokio::task::spawn_blocking(move || dev::pull(&path))

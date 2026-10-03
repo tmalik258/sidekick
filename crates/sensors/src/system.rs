@@ -94,13 +94,16 @@ impl Sensor for SystemSensor {
                 }
 
                 match battery() {
-                    Some((percent, false)) if percent < BATTERY_LOW_PCT => {
+                    Some((percent, false, saver)) if percent < BATTERY_LOW_PCT => {
                         if !battery_reported {
                             battery_reported = true;
                             bus.publish(Event::new(
                                 Self::BATTERY_LOW,
                                 Self::ID,
-                                serde_json::json!({ "percent": percent }),
+                                serde_json::json!({
+                                    "percent": percent,
+                                    "saver": if saver { "on" } else { "off" },
+                                }),
                             ));
                         }
                     }
@@ -140,9 +143,10 @@ impl Sensor for SystemSensor {
 /// Below this, on battery, power saving is offered (FR-SYS-03).
 const BATTERY_LOW_PCT: u8 = 20;
 
-/// Battery percent and whether it is on mains power; None without a battery.
+/// Battery percent, whether it is on mains power and whether Battery
+/// saver is on; None without a battery.
 #[cfg(windows)]
-fn battery() -> Option<(u8, bool)> {
+fn battery() -> Option<(u8, bool, bool)> {
     use windows_sys::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
     let mut s: SYSTEM_POWER_STATUS = unsafe { std::mem::zeroed() };
     // SAFETY: a valid out pointer to a zeroed struct.
@@ -153,11 +157,15 @@ fn battery() -> Option<(u8, bool)> {
     if s.BatteryFlag & 128 != 0 || s.BatteryLifePercent > 100 {
         return None;
     }
-    Some((s.BatteryLifePercent, s.ACLineStatus == 1))
+    Some((
+        s.BatteryLifePercent,
+        s.ACLineStatus == 1,
+        s.SystemStatusFlag == 1,
+    ))
 }
 
 #[cfg(not(windows))]
-fn battery() -> Option<(u8, bool)> {
+fn battery() -> Option<(u8, bool, bool)> {
     None
 }
 

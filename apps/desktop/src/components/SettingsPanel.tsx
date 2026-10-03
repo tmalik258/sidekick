@@ -13,8 +13,8 @@ import { SettingsQuery } from "./settings/ui";
 export const SETTINGS_TABS = [
   { id: "home", label: "Home" },
   { id: "ai", label: "AI" },
-  { id: "connections", label: "Connections" },
-  { id: "privacy", label: "Privacy and data" },
+  { id: "connections", label: "Apps" },
+  { id: "privacy", label: "Privacy" },
   { id: "skills", label: "Skills" },
 ] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number]["id"];
@@ -27,6 +27,8 @@ const MOVED: Record<string, SettingsTab> = {
   about: "home",
   voice: "ai",
   browser: "connections",
+  apps: "connections",
+  calendar: "connections",
   search: "privacy",
   sensors: "privacy",
 };

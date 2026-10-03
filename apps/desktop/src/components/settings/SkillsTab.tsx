@@ -31,11 +31,7 @@ export function SkillsTab({ onError }: { onError: (e: string) => void }) {
 
   return (
     <>
-      <Section
-        title="Automations"
-        hint="These run their first safe option without asking. Set more to Auto below, or press Always on a suggestion."
-        keywords="auto always automatic rules"
-      >
+      <Section title="Automations" hint="These act without asking, with Undo." keywords="auto always automatic rules">
         {automations.length === 0 ? (
           <p className="text-[13px] text-(--muted)">Nothing runs on its own yet.</p>
         ) : (
@@ -55,11 +51,7 @@ export function SkillsTab({ onError }: { onError: (e: string) => void }) {
         )}
       </Section>
       {quiet.length > 0 && (
-        <Section
-          title="Gone quiet"
-          hint="You said Not now to these three times in a row, so they rest for a while."
-          keywords="muted snoozed not now"
-        >
+        <Section title="Gone quiet" hint="Not now three times in a row, so they rest." keywords="muted snoozed not now">
           <ul className="flex flex-col divide-y divide-(--border)">
             {quiet.map((s) => (
               <li key={s.id} className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
@@ -79,7 +71,7 @@ export function SkillsTab({ onError }: { onError: (e: string) => void }) {
       )}
       <Section
         title="All skills"
-        hint="Off: never shows. Ask: suggests and waits. Auto: does it and shows Undo. Deleting files, installers and stopping processes always ask."
+        hint="Ask suggests and waits. Auto acts and shows Undo."
         keywords="skills enable disable"
       >
         <ul className="flex flex-col divide-y divide-(--border)">
