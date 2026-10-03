@@ -71,7 +71,9 @@ const HOVER_IN_MS = 140;
 /** Grace period before collapsing after the cursor leaves. */
 const HOVER_OUT_MS = 320;
 
-const morphOpen = { type: "spring", bounce: 0.3, duration: 0.55 } as const;
+/** Opening settles rather than wobbles: overshoot belongs after a fling,
+ * not a hover. */
+const morphOpen = { type: "spring", bounce: 0.15, duration: 0.45 } as const;
 const morphClose = { type: "spring", bounce: 0.12, duration: 0.42 } as const;
 /** Growing or shrinking while already open (an answer streaming in, New):
  * no bounce, so the panel never overshoots and settles back. */

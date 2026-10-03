@@ -146,7 +146,7 @@ export const SetupRow = memo(function SetupRow({
   return (
     <div
       ref={rowRef}
-      className={`flex flex-col gap-1.5 rounded-2xl bg-white/[0.06] px-3.5 py-2.5 ring-1 ring-inset transition-shadow duration-700 ${
+      className={`flex flex-col gap-1.5 rounded-2xl bg-white/[0.06] px-3.5 py-2.5 ring-1 ring-inset transition-shadow duration-[250ms] ease-out ${
         justDone ? "ring-[#30d158]/70" : "ring-transparent"
       }`}
     >
