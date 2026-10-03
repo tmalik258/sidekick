@@ -101,6 +101,15 @@ pub struct ChatSummary {
     pub updated: String,
 }
 
+/// A saved chat with its turns, for age-based pruning.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChatRow {
+    pub id: String,
+    pub title: String,
+    pub updated: String,
+    pub turns_json: String,
+}
+
 const MAX_CHATS: i64 = 200;
 
 /// Cosine similarity; vectors of different lengths score 0.
@@ -763,6 +772,32 @@ impl Storage {
         Ok(())
     }
 
+    /// Chats last saved before `cutoff` (RFC 3339), oldest first, capped.
+    pub fn chats_older_than(&self, cutoff: &str, limit: u32) -> Result<Vec<ChatRow>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, updated, turns_json FROM chats
+             WHERE updated < ?1 ORDER BY updated ASC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![cutoff, limit], |r| {
+            Ok(ChatRow {
+                id: r.get(0)?,
+                title: r.get(1)?,
+                updated: r.get(2)?,
+                turns_json: r.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    #[cfg(test)]
+    fn set_chat_updated(&self, id: &str, updated: &str) -> Result<(), StorageError> {
+        self.conn.execute(
+            "UPDATE chats SET updated = ?1 WHERE id = ?2",
+            params![updated, id],
+        )?;
+        Ok(())
+    }
+
     /// Records the first time `key` was opened on `o.day`; later opens that
     /// day change nothing.
     pub fn record_open(&self, o: &RoutineOpen) -> Result<bool, StorageError> {
@@ -849,6 +884,19 @@ mod tests {
         assert_eq!(s.chat_turns("a").unwrap().as_deref(), Some("[1,3]"));
         s.delete_chat("a").unwrap();
         assert!(s.chat_turns("a").unwrap().is_none());
+    }
+
+    #[test]
+    fn lists_only_chats_older_than_cutoff() {
+        let s = Storage::open_in_memory().unwrap();
+        s.save_chat("old", "Old", "[]").unwrap();
+        s.save_chat("new", "New", "[]").unwrap();
+        s.set_chat_updated("old", "2020-01-01T00:00:00Z").unwrap();
+        s.set_chat_updated("new", "2099-01-01T00:00:00Z").unwrap();
+        let old = s.chats_older_than("2025-01-01T00:00:00Z", 10).unwrap();
+        assert_eq!(old.len(), 1);
+        assert_eq!(old[0].id, "old");
+        assert!(s.chats_older_than("2010-01-01T00:00:00Z", 10).unwrap().is_empty());
     }
 
     use super::*;

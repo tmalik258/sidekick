@@ -5,6 +5,7 @@ mod ask;
 mod ask_tools;
 mod brief;
 mod browser;
+mod chat_prune;
 mod claude_config;
 mod codex_config;
 mod commands;
