@@ -1,0 +1,128 @@
+"use client";
+
+// Small pieces shared across Ask mode: chips, rows, key hints.
+
+import type { ReactNode } from "react";
+
+export const ease = [0.23, 1, 0.32, 1] as const;
+
+export function Chip({
+  on,
+  onClick,
+  title,
+  children,
+}: {
+  on: boolean;
+  onClick: () => void;
+  title?: string | null;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      title={title ?? undefined}
+      onClick={onClick}
+      className={`chip max-w-[200px] truncate rounded-full px-2.5 py-1 text-[11.5px] font-medium ${
+        on ? "bg-white text-black" : "bg-white/[0.1] text-[rgb(235_235_245/0.7)] hover:bg-white/[0.16]"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function Pill({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="chip h-7 shrink-0 rounded-full bg-white/[0.12] px-3 text-[12px] font-medium text-white/85 hover:bg-white/[0.2]"
+    >
+      {children}
+    </button>
+  );
+}
+
+export function Row({
+  active,
+  onHover,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onHover: () => void;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onMouseMove={onHover}
+        onClick={onClick}
+        className={`flex w-full items-center gap-2.5 rounded-[14px] px-1.5 py-1.5 text-left text-[13.5px] tracking-[-0.01em] transition-colors duration-100 ${
+          active ? "bg-white/[0.14] text-white ring-1 ring-inset ring-white/25" : "text-white/80"
+        }`}
+      >
+        {children}
+      </button>
+    </li>
+  );
+}
+
+export const SOURCE_LABELS: Record<string, string> = {
+  file: "File",
+  download: "Download",
+  screenshot: "Screenshot",
+  clipboard: "Copied",
+  page: "Web page",
+  claude: "Claude Code",
+  action: "Action",
+  chat: "Ask",
+};
+
+/** Matches come back between [ and ]; show them bold. */
+export function Snippet({ text }: { text: string }) {
+  const parts = text.split(/(\[[^\]]*\])/g);
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.startsWith("[") && p.endsWith("]") ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: parts have no identity beyond order
+          <strong key={i} className="font-semibold text-white">
+            {p.slice(1, -1)}
+          </strong>
+        ) : (
+          p
+        ),
+      )}
+    </>
+  );
+}
+
+/** Keeps the highlighted row of a list in view as the arrows move it. */
+export function scrollIfActive(active: boolean) {
+  return (el: HTMLElement | null) => {
+    if (active && el) el.scrollIntoView({ block: "nearest" });
+  };
+}
+
+/** "5 min ago", "yesterday", or a date. */
+export function ago(iso: string): string {
+  const mins = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  if (!Number.isFinite(mins)) return "";
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  if (mins < 24 * 60) return `${Math.round(mins / 60)} h ago`;
+  if (mins < 48 * 60) return "yesterday";
+  return new Date(iso).toLocaleDateString();
+}
+
+export function Kbd({ children }: { children: ReactNode }) {
+  return (
+    <kbd className="rounded-[5px] bg-white/[0.1] px-1.5 py-px font-sans text-[10px] text-[rgb(235_235_245/0.6)]">
+      {children}
+    </kbd>
+  );
+}
