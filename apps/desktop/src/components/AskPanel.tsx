@@ -20,6 +20,7 @@ import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { Markdown } from "@/lib/markdown";
 import { splitOptions } from "@/lib/options";
+import { useReveal } from "@/lib/reveal";
 import {
   cancelChat,
   newChat,
@@ -35,7 +36,6 @@ import {
   updateSettings,
   useSidekick,
 } from "@/lib/store";
-import { toolStatus } from "@/lib/tools";
 import {
   type Agents,
   type AskContext,
@@ -1049,17 +1049,21 @@ function Chat({ turns }: { turns: Turn[] }) {
               )}
             </div>
           ) : (
-            <div className="text-[13.5px] leading-relaxed text-white/90">
+            <div className="group text-[13.5px] leading-relaxed text-white/90">
               {t.content ? (
-                <Markdown text={splitOptions(t.content, t.streaming).body} />
+                <Answer
+                  text={splitOptions(t.content, t.streaming).body}
+                  live={i === turns.length - 1 && !!t.streaming}
+                />
               ) : t.streaming ? (
-                <Thinking />
+                <LiveStep step={t.tool ?? null} />
               ) : null}
               {(t.steps?.length ?? 0) > 1 ? (
                 <Steps steps={t.steps ?? []} running={!!t.streaming} />
               ) : (
                 t.streaming &&
-                t.tool && <p className="mt-0.5 text-[11.5px] text-[rgb(235_235_245/0.5)]">{toolStatus(t.tool)}</p>
+                t.content &&
+                t.tool && <p className="mt-0.5 text-[11.5px] text-[rgb(235_235_245/0.5)]">{t.tool}...</p>
               )}
               {t.error && (
                 <p className="mt-1 rounded-xl bg-[#ff453a]/15 px-3 py-2 text-[12.5px] text-[#ffb4ae]">{t.error}</p>
@@ -1067,7 +1071,7 @@ function Chat({ turns }: { turns: Turn[] }) {
               {t.error && !t.streaming && i === turns.length - 1 && <Retry />}
               {skillMode && !t.streaming && yamlBlock(t.content) && <AddSkill yaml={yamlBlock(t.content) ?? ""} />}
               {!t.streaming && t.provider && (
-                <p className="mt-0.5 flex items-center gap-2 text-[11px] text-[rgb(235_235_245/0.35)]">
+                <p className="mt-0.5 flex items-center gap-2 text-[11px] text-[rgb(235_235_245/0.35)] opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
                   {PROVIDER_LABELS[t.provider] ?? t.provider}
                   {i === turns.length - 1 && i > 0 && !skillMode && <SaveRecipe prompt={turns[i - 1]?.content ?? ""} />}
                 </p>
@@ -1223,7 +1227,7 @@ function Steps({ steps, running }: { steps: string[]; running: boolean }) {
             >
               {live ? "" : "✓"}
             </span>
-            {toolStatus(s).replace(/\.\.\.$/, "")}
+            {s}
           </li>
         );
       })}
@@ -1549,6 +1553,22 @@ function Handoff({ turns, reason }: { turns: Turn[]; reason: string | null }) {
       </button>
       {state !== "idle" && state !== "opening" && <p className="text-[12px] text-[#ffb4ae]">{state}</p>}
     </div>
+  );
+}
+
+/** An answer as it arrives: word by word at a reading pace. */
+function Answer({ text, live }: { text: string; live: boolean }) {
+  const shown = useReveal(text, live);
+  return <Markdown text={shown} />;
+}
+
+/** Before the first words: what Sidekick is doing, or "Thinking". */
+function LiveStep({ step }: { step: string | null }) {
+  if (!step) return <Thinking />;
+  return (
+    <p className="shimmer-text py-1.5 text-[13px] text-[rgb(235_235_245/0.6)]" role="status">
+      {step}...
+    </p>
   );
 }
 
