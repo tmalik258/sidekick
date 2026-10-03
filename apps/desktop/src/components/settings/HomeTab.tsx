@@ -4,7 +4,7 @@
 // itself. Everything here is picked or recorded; nothing needs typing.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "@/lib/bridge";
+import { api, EVENTS, listen } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { checkKit, cueVolume, playCue } from "@/lib/sound";
 import { updateSettings, useSidekick } from "@/lib/store";
@@ -446,8 +446,9 @@ function NotificationInbox({ onError }: { onError: (e: string) => void }) {
   useEffect(() => {
     refresh();
     if (!notifications.enabled) return;
-    const id = setInterval(refresh, 5000);
-    return () => clearInterval(id);
+    // Refreshed when a notification arrives, not on a timer.
+    const off = listen(EVENTS.inboxChanged, refresh);
+    return () => void off.then((f) => f());
   }, [refresh, notifications.enabled]);
   const save = (patch: Partial<typeof notifications>) =>
     void updateSettings({ notifications: { ...notifications, ...patch } })

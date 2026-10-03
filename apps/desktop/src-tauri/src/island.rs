@@ -20,6 +20,11 @@ pub const FULLSCREEN_EVENT: &str = "island://fullscreen";
 
 /// About 40 Hz. The UI smooths it with springs, so this reads as continuous.
 const CURSOR_POLL: Duration = Duration::from_millis(24);
+/// Away from the island the pointer is checked less often: the eyes still
+/// follow (they ease towards it), and hover needs no precision out there.
+const CURSOR_POLL_FAR: Duration = Duration::from_millis(90);
+/// "Near" the island, in logical pixels around its interactive area.
+const NEAR: f64 = 320.0;
 /// Movements smaller than this (logical px) are not sent.
 const CURSOR_MIN_DELTA: f64 = 1.0;
 /// Extra room around an open panel that still takes clicks (logical px).
@@ -200,20 +205,24 @@ fn spawn_hover_tracker(app: AppHandle, window: WebviewWindow) {
         // re-applied whenever any of them changes.
         let mut applied: Option<(bool, bool, bool)> = None;
         let mut last: Option<CursorPos> = None;
+        let mut wait = CURSOR_POLL;
         loop {
-            tokio::time::sleep(CURSOR_POLL).await;
+            tokio::time::sleep(wait).await;
             let Some(pos) = cursor_in_window(&app, &window) else {
                 continue;
             };
-            if last.is_none_or(|l| l.moved_from(pos)) {
-                last = Some(pos);
-                let _ = app.emit_to(LABEL, CURSOR_EVENT, pos);
-            }
-
             let state = app.state::<AppState>();
             let asking = crate::ask::is_open(&app);
             let hidden = *lock(&state.island_hidden);
             let rect = *lock(&state.hit_rect);
+            let near = asking || rect.contains_within(pos.x, pos.y, NEAR);
+            wait = if near { CURSOR_POLL } else { CURSOR_POLL_FAR };
+            // Faded out for a fullscreen app: no eyes to move.
+            if !hidden && last.is_none_or(|l| l.moved_from(pos)) {
+                last = Some(pos);
+                let _ = app.emit_to(LABEL, CURSOR_EVENT, pos);
+            }
+
             // Only the panel itself takes clicks, so apps around it stay
             // usable even while Ask or the welcome is open. While a panel is
             // open its rect can lag a growing animation, hence the margin.
