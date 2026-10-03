@@ -541,7 +541,9 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           if (!useSidekick.getState().ask) void api.askOpen();
         }
       }),
-      listen(EVENTS.aiTool, ({ id, name }) => updateLastTurn(id, (t) => ({ ...t, tool: name }))),
+      listen(EVENTS.aiTool, ({ id, name }) =>
+        updateLastTurn(id, (t) => ({ ...t, tool: name, steps: [...(t.steps ?? []), name] })),
+      ),
       listen(EVENTS.aiProposal, ({ chatId, id, label }) =>
         updateLastTurn(chatId, (t) => ({ ...t, proposals: [...(t.proposals ?? []), { id, label }] })),
       ),
