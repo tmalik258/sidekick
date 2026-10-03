@@ -111,10 +111,34 @@ pub struct Settings {
     /// Things Sidekick knows about the user ("My manager is Sara"), given to
     /// every model. Edited in Settings or learned when the user says so.
     pub memory: Vec<String>,
+    /// How much Sidekick asks before acting in apps and pages.
+    pub agent: AgentSettings,
     /// Browser ids used for password fill and save-through (chrome, zen, …).
     /// None means all detected stores; Some(empty) explicitly disables all.
     pub password_browsers: Option<Vec<String>>,
     pub password_selection_version: u8,
+}
+
+/// When an agent step waits for the user's tap.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AgentSettings {
+    /// "each": every step; "outward": anything that sends, posts, pays or
+    /// deletes (the default); "irreversible": only paying and deleting.
+    pub ask: String,
+    /// Per app or site ("whatsapp", "mail.google.com"): "allow", "ask" or
+    /// "never". Allow skips the tap except for paying and deleting; never
+    /// keeps Sidekick out entirely.
+    pub places: BTreeMap<String, String>,
+}
+
+impl Default for AgentSettings {
+    fn default() -> Self {
+        Self {
+            ask: "outward".into(),
+            places: BTreeMap::new(),
+        }
+    }
 }
 
 /// A saved task: what to do (in the user's words) and when.
@@ -541,6 +565,7 @@ impl Default for Settings {
             notifications: NotificationSettings::default(),
             recipes: Vec::new(),
             memory: Vec::new(),
+            agent: AgentSettings::default(),
             password_browsers: None,
             password_selection_version: 1,
         }

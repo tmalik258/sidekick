@@ -11,4 +11,4 @@ suggestion:
   title: "Deep in {{app}}"
   detail: "20 minutes of focus. Silence notifications for a while?"
   options:
-    - { label: Do Not Disturb settings, action: open_system_page, args: { page: focus } }
+    - { label: Do Not Disturb, action: dnd_on }

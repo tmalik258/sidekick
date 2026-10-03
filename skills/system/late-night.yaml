@@ -10,4 +10,4 @@ suggestion:
   detail: "Winding down?"
   options:
     - { label: Night light, action: open_system_page, args: { page: nightlight }, when: { night_light: { not_one_of: [on] } } }
-    - { label: Do Not Disturb, action: open_system_page, args: { page: focus }, when: { dnd: { not_one_of: [on] } } }
+    - { label: Do Not Disturb, action: dnd_on, when: { dnd: { not_one_of: [on] } } }

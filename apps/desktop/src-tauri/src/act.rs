@@ -29,6 +29,105 @@ pub fn risky(label: &str) -> bool {
     RISKY.is_match(label)
 }
 
+/// Money leaving or something gone for good: always asks, whatever the
+/// settings say.
+static IRREVERSIBLE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(pay|buy|purchase|checkout|check out|place order|order now|delete|remove|discard|transfer|withdraw|donate|uninstall|empty)\b")
+        .expect("irreversible words")
+});
+
+/// How risky one step is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Risk {
+    /// Typing, opening, a link, a tab.
+    Step,
+    /// Sends, posts, submits or shares.
+    Outward,
+    /// Pays or deletes.
+    Irreversible,
+}
+
+pub fn risk(action: &str, kind: &str, label: &str, key: &str) -> Risk {
+    if !needs_tap(action, kind, label, key) {
+        return Risk::Step;
+    }
+    if IRREVERSIBLE.is_match(label) {
+        Risk::Irreversible
+    } else {
+        Risk::Outward
+    }
+}
+
+/// What to do with one step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Gate {
+    Run,
+    Tap,
+    Refuse,
+}
+
+/// The user's permission for a place (an app name or a site), matching a
+/// site's subdomains too.
+pub fn place_rule(agent: &sidekick_core::AgentSettings, place: &str) -> Option<String> {
+    let place = place.trim().to_lowercase();
+    if place.is_empty() {
+        return None;
+    }
+    agent
+        .places
+        .iter()
+        .find(|(k, _)| {
+            let k = k.trim().to_lowercase();
+            !k.is_empty() && (place == k || place.ends_with(&format!(".{k}")) || place.contains(&k))
+        })
+        .map(|(_, v)| v.clone())
+}
+
+/// Runs, waits for a tap, or refuses, from the step's risk and the user's
+/// settings. Paying and deleting always wait.
+pub fn decide(agent: &sidekick_core::AgentSettings, place: &str, risk: Risk) -> Gate {
+    match place_rule(agent, place).as_deref() {
+        Some("never") => return Gate::Refuse,
+        Some("allow") => {
+            return if risk == Risk::Irreversible {
+                Gate::Tap
+            } else {
+                Gate::Run
+            };
+        }
+        _ => {}
+    }
+    let tap = match agent.ask.as_str() {
+        "each" => true,
+        "irreversible" => risk == Risk::Irreversible,
+        _ => risk >= Risk::Outward,
+    };
+    if tap { Gate::Tap } else { Gate::Run }
+}
+
+fn agent_settings(app: &AppHandle) -> sidekick_core::AgentSettings {
+    lock(&app.state::<AppState>().settings).agent.clone()
+}
+
+/// Sites the user keeps Sidekick out of: the ignore list and Never.
+fn never_sites(app: &AppHandle) -> Vec<String> {
+    let state = app.state::<AppState>();
+    let s = lock(&state.settings);
+    let mut v = s.deny_sites.clone();
+    v.extend(
+        s.agent
+            .places
+            .iter()
+            .filter(|(k, v)| v.as_str() == "never" && k.contains('.'))
+            .map(|(k, _)| k.clone()),
+    );
+    v
+}
+
+/// The site each tab showed when last read.
+static TAB_HOST: LazyLock<Mutex<HashMap<i64, String>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
 const WAIT: Duration = Duration::from_secs(25);
 
 /// What worked where: per site or app, the controls used successfully
@@ -157,10 +256,6 @@ pub fn needs_tap(action: &str, kind: &str, label: &str, key: &str) -> bool {
     }
 }
 
-fn deny_list(app: &AppHandle) -> Vec<String> {
-    lock(&app.state::<AppState>().settings).deny_sites.clone()
-}
-
 async fn ask(app: &AppHandle, mut cmd: Value) -> Result<Value, String> {
     let bridge = app.state::<AppState>().browser.clone();
     if !bridge.connected() {
@@ -168,7 +263,7 @@ async fn ask(app: &AppHandle, mut cmd: Value) -> Result<Value, String> {
             "the Sidekick browser extension is not connected (Settings > Apps > Browser)".into(),
         );
     }
-    cmd["deny"] = json!(deny_list(app));
+    cmd["deny"] = json!(never_sites(app));
     bridge.request(cmd, WAIT).await
 }
 
@@ -219,6 +314,9 @@ pub async fn browser(app: &AppHandle, chat_id: &str, args: &Value) -> String {
             let elements = v["elements"].as_str().unwrap_or_default();
             remember(tab_of(&v), elements);
             let url = v["url"].as_str().unwrap_or_default();
+            if let Ok(mut m) = TAB_HOST.lock() {
+                m.insert(tab_of(&v), host(url));
+            }
             format!(
                 "Tab {}: {}\n{}{}\n\nElements (act on them by number):\n{}\n\nPage text:\n{}",
                 v["tab"],
@@ -278,7 +376,21 @@ async fn act(app: &AppHandle, chat_id: &str, args: &Value) -> String {
         return "Error: say which element (its number from read).".into();
     }
     let cmd = json!({ "type": "act", "tab": tab, "ref": r, "do": what, "text": text });
-    if needs_tap(what, &kind, &label, text) {
+    let place = tab
+        .or_else(|| TAB_HOST.lock().ok().and_then(|m| m.keys().last().copied()))
+        .and_then(|t| TAB_HOST.lock().ok().and_then(|m| m.get(&t).cloned()))
+        .unwrap_or_default();
+    let gate = decide(
+        &agent_settings(app),
+        &place,
+        risk(what, &kind, &label, text),
+    );
+    if gate == Gate::Refuse {
+        return format!(
+            "Error: the user keeps Sidekick out of {place} (Settings > Skills > Agent)."
+        );
+    }
+    if gate == Gate::Tap {
         let shown = if label.is_empty() {
             "the button".to_owned()
         } else {
@@ -359,6 +471,9 @@ pub async fn desktop(app: &AppHandle, chat_id: &str, args: &Value) -> String {
                 if let Ok(mut w) = LAST_WINDOW.lock() {
                     *w = place.clone();
                 }
+                if place_rule(&agent_settings(app), &place).as_deref() == Some("never") {
+                    return format!("The user keeps Sidekick out of {place}; do not use it.");
+                }
                 format!("{}{}", s.describe(), know_how(app, &place))
             })
         }
@@ -378,7 +493,17 @@ pub async fn desktop(app: &AppHandle, chat_id: &str, args: &Value) -> String {
             let Ok(n) = r.parse::<usize>() else {
                 return "Error: say which control (its number from read).".into();
             };
-            if needs_tap(&what, &kind, &name, "") {
+            let place = target
+                .app
+                .clone()
+                .unwrap_or_else(|| LAST_WINDOW.lock().map(|w| w.clone()).unwrap_or_default());
+            let gate = decide(&agent_settings(app), &place, risk(&what, &kind, &name, ""));
+            if gate == Gate::Refuse {
+                return format!(
+                    "Error: the user keeps Sidekick out of {place} (Settings > Skills > Agent)."
+                );
+            }
+            if gate == Gate::Tap {
                 let cmd = json!({ "pid": target.pid, "app": target.app, "ref": n, "name": name, "do": what, "text": text });
                 let label = format!("Click {}", if name.is_empty() { "it" } else { &name });
                 crate::ask_tools::offer(app, chat_id, "desktop_act", cmd, &label);
@@ -398,7 +523,22 @@ pub async fn desktop(app: &AppHandle, chat_id: &str, args: &Value) -> String {
         }
         "keys" => {
             let keys = args["text"].as_str().unwrap_or_default().to_owned();
-            if uia::keys_send(&keys) {
+            let place = target
+                .app
+                .clone()
+                .unwrap_or_else(|| LAST_WINDOW.lock().map(|w| w.clone()).unwrap_or_default());
+            let level = if uia::keys_send(&keys) {
+                Risk::Outward
+            } else {
+                Risk::Step
+            };
+            let gate = decide(&agent_settings(app), &place, level);
+            if gate == Gate::Refuse {
+                return format!(
+                    "Error: the user keeps Sidekick out of {place} (Settings > Skills > Agent)."
+                );
+            }
+            if gate == Gate::Tap {
                 let cmd = json!({ "pid": target.pid, "app": target.app, "keys": keys });
                 crate::ask_tools::offer(
                     app,
@@ -595,6 +735,32 @@ mod tests {
         assert!(needs_tap("press", "textbox", "Type a message", "Enter"));
         assert!(!needs_tap("press", "searchbox", "Search", "Enter"));
         assert!(!needs_tap("type", "textbox", "To", ""));
+    }
+
+    #[test]
+    fn settings_decide_what_waits() {
+        let mut a = sidekick_core::AgentSettings::default();
+        assert_eq!(risk("click", "button", "Send", ""), Risk::Outward);
+        assert_eq!(
+            risk("click", "button", "Place order", ""),
+            Risk::Irreversible
+        );
+        assert_eq!(risk("type", "textbox", "To", ""), Risk::Step);
+        assert_eq!(decide(&a, "mail.google.com", Risk::Step), Gate::Run);
+        assert_eq!(decide(&a, "mail.google.com", Risk::Outward), Gate::Tap);
+        a.places.insert("google.com".into(), "allow".into());
+        a.places.insert("whatsapp".into(), "never".into());
+        assert_eq!(decide(&a, "mail.google.com", Risk::Outward), Gate::Run);
+        assert_eq!(
+            decide(&a, "mail.google.com", Risk::Irreversible),
+            Gate::Tap,
+            "paying always asks"
+        );
+        assert_eq!(decide(&a, "WhatsApp", Risk::Step), Gate::Refuse);
+        a.ask = "each".into();
+        assert_eq!(decide(&a, "slack", Risk::Step), Gate::Tap);
+        a.ask = "irreversible".into();
+        assert_eq!(decide(&a, "slack", Risk::Outward), Gate::Run);
     }
 
     #[test]
