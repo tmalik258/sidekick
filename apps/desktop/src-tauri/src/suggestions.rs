@@ -486,6 +486,9 @@ fn run_choice(app: &AppHandle, id: &str, index: usize, auto: bool) -> Result<(),
         }
     }
     mascot::dispatch(app, MascotEvent::Picked);
+    if active.proposal.skill_id.starts_with("notify.") && option.action != "notify_level" {
+        crate::inbox::lesson(format!("Acted on: {}", active.proposal.title));
+    }
     let follow_up = crate::learn::on_accept(app, &active.proposal, index, auto);
 
     let app = app.clone();
@@ -805,6 +808,7 @@ pub fn dismiss(app: &AppHandle, id: &str, reason: &str) -> Result<(), String> {
             .find_map(|o| o.args["app"].as_str().or(o.args["name"].as_str()))
             .unwrap_or_default()
             .to_owned();
+        crate::inbox::lesson(format!("Dismissed: {}", active.proposal.title));
         if let Some(note) = crate::inbox::on_dismiss(app, &from) {
             log::info!("notifications: {note}");
         }

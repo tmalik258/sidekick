@@ -650,6 +650,10 @@ export interface InboxItem {
   level: NotifyLevel;
   why: string;
   code?: string | null;
+  /** Mirrored from the phone (Phone Link). */
+  phone?: boolean;
+  /** Other apps that brought the same thing. */
+  also?: string[];
 }
 
 export interface InboxStatus {
