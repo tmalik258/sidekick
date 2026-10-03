@@ -8,6 +8,7 @@
 
 use serde::Serialize;
 
+use crate::script::{FIND_APP, UIA, clean_query};
 use crate::{ActionError, Outcome};
 
 /// On, off, or not readable here (another OS, a missing key).
@@ -60,18 +61,17 @@ if($w){"wifi=$((($w.Line) -split ':',2)[1].Trim())"}
 /// Switches Do Not Disturb from Notification Center, the way a person
 /// would: open it, flip the bell switch, close it. Windows has no API for
 /// it. Prints `#ok on|off`, `#already on|off`, or `#error <why>`.
+/// `{UIA}` is replaced with the shared UI Automation prelude.
 const DND_SCRIPT: &str = r##"$ErrorActionPreference='Stop'
 try {
-Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
-$A=[System.Windows.Automation.AutomationElement]
-$want=$env:SK_ON -eq '1'
+{UIA}$want=$env:SK_ON -eq '1'
 Start-Process 'ms-actioncenter:'
 $btn=$null
 for($i=0;$i -lt 40 -and -not $btn;$i++){
   Start-Sleep -Milliseconds 150
-  foreach($w in $A::RootElement.FindAll('Children',[System.Windows.Automation.Condition]::TrueCondition)){
+  foreach($w in $A::RootElement.FindAll($S::Children,$All)){
     if($w.Current.Name -match 'Notification Center|Action center|Notification centre'){
-      $btn=$w.FindAll('Descendants',[System.Windows.Automation.Condition]::TrueCondition) |
+      $btn=$w.FindAll($S::Descendants,$All) |
         Where-Object { $_.Current.Name -match 'Do not disturb|Focus assist' -and $_.Current.IsEnabled } |
         Select-Object -First 1
       if($btn){break}
@@ -249,7 +249,10 @@ pub fn set_dnd(on: bool) -> Result<Outcome, ActionError> {
     if !cfg!(windows) {
         return Err(ActionError::Failed("Do Not Disturb needs Windows".into()));
     }
-    let out = powershell(DND_SCRIPT, &[("SK_ON", if on { "1" } else { "0" })])?;
+    let out = powershell(
+        &DND_SCRIPT.replace("{UIA}", UIA),
+        &[("SK_ON", if on { "1" } else { "0" })],
+    )?;
     let (now, already) = parse_dnd(&out).map_err(ActionError::Failed)?;
     if now != on {
         return Err(ActionError::Failed(
@@ -718,16 +721,14 @@ pub fn windows() -> Result<Vec<Window>, ActionError> {
     Ok(parse_windows(&out))
 }
 
-/// Finds the first window whose app or title has `query` in it.
-const MATCH_WINDOW: &str = "$q=$env:SIDEKICK_QUERY; $p=Get-Process | Where-Object { $_.MainWindowTitle -and ($_.ProcessName -like \"*$q*\" -or $_.MainWindowTitle -like \"*$q*\") } | Select-Object -First 1;";
+/// Finds the first window whose app or title has the query in it, as `$p`.
+fn match_window(then: &str) -> String {
+    format!("{FIND_APP}$p=Find-App $env:SIDEKICK_QUERY\n{then}")
+}
 
 fn query(q: &str) -> Result<String, ActionError> {
     // Wildcards would match every window.
-    let q: String = q
-        .chars()
-        .filter(|c| !matches!(c, '*' | '?' | '[' | ']' | '`'))
-        .collect();
-    let q = q.trim().to_owned();
+    let q = clean_query(q);
     if q.is_empty() {
         return Err(ActionError::Invalid("name the app or window".into()));
     }
@@ -738,8 +739,8 @@ fn query(q: &str) -> Result<String, ActionError> {
 pub fn focus_window(q: &str) -> Result<Outcome, ActionError> {
     let q = query(q)?;
     let out = powershell(
-        &format!(
-            "{MATCH_WINDOW} if($p){{ (New-Object -ComObject WScript.Shell).AppActivate($p.Id) | Out-Null; $p.MainWindowTitle }}"
+        &match_window(
+            "if($p){ (New-Object -ComObject WScript.Shell).AppActivate($p.Id) | Out-Null; if($p.MainWindowTitle){ $p.MainWindowTitle } else { $p.ProcessName } }",
         ),
         &[("SIDEKICK_QUERY", &q)],
     )?;
@@ -754,8 +755,8 @@ pub fn focus_window(q: &str) -> Result<Outcome, ActionError> {
 pub fn close_window(q: &str) -> Result<Outcome, ActionError> {
     let q = query(q)?;
     let out = powershell(
-        &format!(
-            "{MATCH_WINDOW} if($p){{ $t=$p.MainWindowTitle; $p.CloseMainWindow() | Out-Null; $t }}"
+        &match_window(
+            "if($p){ $t= if($p.MainWindowTitle){ $p.MainWindowTitle } else { $p.ProcessName }; $p.CloseMainWindow() | Out-Null; $t }",
         ),
         &[("SIDEKICK_QUERY", &q)],
     )?;
