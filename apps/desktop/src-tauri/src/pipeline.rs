@@ -185,6 +185,7 @@ fn spawn_pruner(app: AppHandle) {
             {
                 log::info!("pruned {n} old events");
             }
+            crate::chat_prune::run(&app).await;
         }
     });
 }
