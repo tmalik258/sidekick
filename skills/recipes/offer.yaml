@@ -1,0 +1,12 @@
+id: recipes.offer
+name: Save a repeated task
+description: When you ask Sidekick the same thing three times, offer to save it as a recipe you can run by name or on a schedule.
+priority: 30
+dedupe: "{{prompt}}"
+trigger:
+  event: recipe.offer
+suggestion:
+  title: "You ask this often"
+  detail: "Save \"{{name}}\" as a recipe?"
+  options:
+    - { label: Save recipe, action: recipe_save, args: { prompt: "{{prompt}}", name: "{{name}}" } }

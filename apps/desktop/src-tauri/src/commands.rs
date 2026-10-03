@@ -1064,6 +1064,28 @@ pub async fn notifications_silence() -> CmdResult<()> {
     .map_err(|e| e.to_string())
 }
 
+/// Saves a recipe from Settings or Ask's Save as recipe.
+#[tauri::command]
+pub fn recipe_save(app: AppHandle, recipe: sidekick_core::Recipe) -> CmdResult<String> {
+    crate::recipes::save(&app, recipe)
+}
+
+#[tauri::command]
+pub fn recipe_delete(app: AppHandle, id: String) -> CmdResult<String> {
+    crate::recipes::delete(&app, &id)
+}
+
+#[tauri::command]
+pub fn recipe_run(app: AppHandle, id: String) -> CmdResult<String> {
+    crate::recipes::run_by_id(&app, &id)
+}
+
+/// Forgets which controls worked where (Settings > Privacy).
+#[tauri::command]
+pub fn know_how_clear(app: AppHandle) {
+    crate::act::forget_know_how(&app);
+}
+
 /// How many buttons the guide card shows; they get Alt+1..N (0 drops them).
 #[tauri::command]
 pub fn guide_keys(app: AppHandle, buttons: usize) {

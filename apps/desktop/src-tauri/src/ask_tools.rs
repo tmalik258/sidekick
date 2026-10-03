@@ -30,6 +30,8 @@ const BROWSER: &str = "browser";
 const APP_ACTION: &str = "app_action";
 const DESKTOP: &str = "desktop";
 const APPS: &str = "apps";
+const RECIPES: &str = "recipes";
+const REMEMBER: &str = "remember";
 
 /// The Ask chat answering right now, so tools called through Sidekick's
 /// MCP server (by Claude Code or Codex) put their buttons in it.
@@ -280,6 +282,44 @@ pub fn defs() -> Vec<ToolDef> {
             }),
         },
         ToolDef {
+            name: RECIPES.into(),
+            description: "Saved tasks the user can run again: list; create {name, prompt (the \
+                instruction in their words), when: manual|time|notification|download|meeting_ended|\
+                app_opened, time HH:MM, days [mon..sun], app, contains, kind}; run {name}; delete \
+                {name}. \"Every Friday at 5 email my timesheet\" is create with when time, time \
+                17:00, days [fri]."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["list", "create", "run", "delete"] },
+                    "name": { "type": "string" },
+                    "prompt": { "type": "string" },
+                    "when": { "type": "string", "enum": ["manual", "time", "notification", "download", "meeting_ended", "app_opened"] },
+                    "time": { "type": "string", "description": "HH:MM, 24 hour" },
+                    "days": { "type": "array", "items": { "type": "string" } },
+                    "app": { "type": "string" },
+                    "contains": { "type": "string" },
+                    "kind": { "type": "string", "description": "pdf, image, document..." }
+                },
+                "required": ["action"],
+            }),
+        },
+        ToolDef {
+            name: REMEMBER.into(),
+            description: "Keep a fact about the user for every future answer (\"my manager is \
+                Sara\", \"sign emails as Tayyab\"), or forget one. Only what they ask you to keep."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "fact": { "type": "string" },
+                    "forget": { "type": "boolean" }
+                },
+                "required": ["fact"],
+            }),
+        },
+        ToolDef {
             name: NOTIFS.into(),
             description: "The user's recent Windows notifications, sorted by importance (now, \
                 soon, digest). Use for \"what did I miss\", \"anything from Ali\" or messages \
@@ -372,6 +412,13 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
         BROWSER => crate::act::browser(app, chat_id, args).await,
         DESKTOP => crate::act::desktop(app, chat_id, args).await,
         APPS => crate::act::apps(app, chat_id, args).await,
+        RECIPES => crate::recipes::tool(app, args),
+        REMEMBER => crate::recipes::remember(
+            app,
+            args["fact"].as_str().unwrap_or_default(),
+            args["forget"].as_bool().unwrap_or(false),
+        )
+        .unwrap_or_else(|e| format!("Error: {e}")),
         APP_ACTION => {
             let tool = args["tool"].as_str().unwrap_or_default();
             if tool.is_empty() {
@@ -815,7 +862,8 @@ mod tests {
             names,
             [
                 SEARCH, FIND, REVEAL, TODAY, RECENT, SCREEN, PROPOSE, WEB_SEARCH, READ_PAGE,
-                BROWSER, APP_ACTION, DESKTOP, APPS, NOTIFS, PC_STATUS, PC, WINDOWS, OPEN
+                BROWSER, APP_ACTION, DESKTOP, APPS, RECIPES, REMEMBER, NOTIFS, PC_STATUS, PC,
+                WINDOWS, OPEN
             ]
         );
     }
