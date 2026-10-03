@@ -17,6 +17,10 @@ static ADDRESS: LazyLock<Regex> = LazyLock::new(|| {
     )
     .expect("address regex")
 });
+static IPV4: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?::(\d{1,5}))?(?:/(\d{1,2}))?$")
+        .expect("ipv4 regex")
+});
 static PHONE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\+?\(?\d[\d\s().\-]{6,20}\d$").expect("phone regex"));
 static ISO_DATE: LazyLock<Regex> = LazyLock::new(|| {
@@ -133,6 +137,41 @@ pub fn calendar_url(title: &str, date: NaiveDate, time: Option<NaiveTime>) -> St
     )
 }
 
+/// An IPv4 address (with an optional :port or /prefix), and its parts.
+fn ip(t: &str) -> Option<Value> {
+    let c = IPV4.captures(t)?;
+    let octets: Vec<u8> = (1..=4)
+        .map(|i| c[i].parse::<u8>().ok())
+        .collect::<Option<_>>()?;
+    let ip = octets
+        .iter()
+        .map(u8::to_string)
+        .collect::<Vec<_>>()
+        .join(".");
+    let port = c.get(5).map(|p| p.as_str().to_owned());
+    if port.as_deref().and_then(|p| p.parse::<u16>().ok()) == Some(0) {
+        return None;
+    }
+    let private = matches!(
+        octets[..],
+        [10, ..] | [127, ..] | [192, 168, ..] | [169, 254, ..]
+    ) || (octets[0] == 172 && (16..=31).contains(&octets[1]))
+        || (octets[0] == 100 && (64..=127).contains(&octets[1]));
+    let host = match &port {
+        Some(p) => format!("{ip}:{p}"),
+        None => ip.clone(),
+    };
+    Some(json!({
+        "entity": "ip",
+        "ip": ip,
+        "port": port,
+        "private": if private { "yes" } else { "no" },
+        "lookup_url": format!("https://ipinfo.io/{ip}"),
+        "web_url": format!("http://{host}"),
+        "ssh": format!("ssh root@{ip}"),
+    }))
+}
+
 /// What kind of everyday thing `text` is, with the fields its card needs.
 pub fn detect(text: &str, today: NaiveDate) -> Option<Value> {
     let t = text.trim();
@@ -145,6 +184,12 @@ pub fn detect(text: &str, today: NaiveDate) -> Option<Value> {
         .filter(|l| !l.is_empty())
         .collect::<Vec<_>>()
         .join(", ");
+    // Before phones: "37.27.195.216" has enough digits to look like one.
+    if !t.contains('\n')
+        && let Some(v) = ip(t)
+    {
+        return Some(v);
+    }
     if let Some((date, time)) = parse_date(&one_line, today) {
         let when = match time {
             Some(tm) => format!("{} {}", date.format("%a %-d %b %Y"), tm.format("%H:%M")),
@@ -200,6 +245,24 @@ mod tests {
         assert!(parse_date("May I ask", today()).is_none());
         let url = calendar_url("New event", d, t);
         assert!(url.ends_with("dates=20270112T093000/20270112T103000"));
+    }
+
+    #[test]
+    fn finds_ip_addresses() {
+        let v = detect("37.27.195.216", today()).unwrap();
+        assert_eq!(v["entity"], "ip");
+        assert_eq!(v["private"], "no");
+        assert_eq!(v["lookup_url"], "https://ipinfo.io/37.27.195.216");
+        assert_eq!(v["ssh"], "ssh root@37.27.195.216");
+        let local = detect("192.168.1.10:8080", today()).unwrap();
+        assert_eq!(local["private"], "yes");
+        assert_eq!(local["web_url"], "http://192.168.1.10:8080");
+        assert_eq!(detect("10.0.0.0/24", today()).unwrap()["ip"], "10.0.0.0");
+        assert_ne!(
+            detect("999.1.1.1", today()).map(|v| v["entity"].clone()),
+            Some(json!("ip")),
+            "not an address"
+        );
     }
 
     #[test]

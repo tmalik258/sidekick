@@ -81,6 +81,10 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/clipboard/phone.yaml"),
     ),
     (
+        "clipboard/ip.yaml",
+        include_str!("../../../skills/clipboard/ip.yaml"),
+    ),
+    (
         "clipboard/date.yaml",
         include_str!("../../../skills/clipboard/date.yaml"),
     ),
