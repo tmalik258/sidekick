@@ -74,6 +74,11 @@ fn run(app: &AppHandle, action: &str) {
             }
         }
         "dismiss" => {
+            // Stop comes first: a task in progress ends between steps.
+            if crate::ai::cancel_all(app) {
+                log::info!("stopped the running task");
+                return;
+            }
             if let Some(s) = crate::suggestions::current(app) {
                 let _ = crate::suggestions::dismiss(app, &s.id, "shortcut");
             }

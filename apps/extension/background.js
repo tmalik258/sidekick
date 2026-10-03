@@ -72,7 +72,9 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 chrome.runtime.onStartup.addListener(async () => {
   if (!(await token())) pair();
+  poll();
 });
+poll();
 
 async function report(event) {
   try {
@@ -83,17 +85,23 @@ async function report(event) {
   }
 }
 
-// Commands are picked up with a long poll while there is reason to expect
-// one (right after an event). The alarm restarts it if the worker slept.
+// Commands are picked up with a long poll that keeps going while Sidekick
+// answers, so a request (read this page, click Send) runs at once. The
+// alarm restarts it if the browser put the worker to sleep.
 let polling = false;
 async function poll() {
   if (polling) return;
   polling = true;
   try {
-    for (let i = 0; i < 3; i++) {
+    for (;;) {
       const res = await call("/browser/next");
       if (!res) break;
-      if (res.status === 200) await run(await res.json());
+      if (res.status === 200) {
+        const cmd = await res.json();
+        // Requests are answered; the rest just run.
+        if (cmd.id) answer(cmd);
+        else await run(cmd);
+      } else if (res.status !== 204) break;
     }
   } catch {
     // Not running or not paired.
@@ -106,6 +114,112 @@ async function run(cmd) {
   if (cmd.type === "fill") return fill(cmd);
   if (cmd.type === "close_duplicates") return closeDuplicates();
   if (cmd.type === "save_session") return saveSession();
+}
+
+async function answer(cmd) {
+  let result;
+  try {
+    result = await request(cmd);
+  } catch (e) {
+    result = { error: String(e?.message || e) };
+  }
+  try {
+    await call("/browser/result", { method: "POST", body: JSON.stringify({ id: cmd.id, result }) });
+  } catch {
+    // Sidekick went away.
+  }
+}
+
+function denied(url, deny) {
+  const host = hostOf(url);
+  return (deny || []).some((d) => host === d || host.endsWith(`.${d}`));
+}
+
+async function tabFor(cmd) {
+  if (cmd.tab) return chrome.tabs.get(cmd.tab);
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (!tab) throw new Error("No open tab");
+  return tab;
+}
+
+/** Waits until a tab finished loading (or 15 seconds). */
+function loaded(tabId) {
+  return new Promise((resolve) => {
+    const done = () => {
+      chrome.tabs.onUpdated.removeListener(listen);
+      clearTimeout(timer);
+      resolve();
+    };
+    const listen = (id, change) => {
+      if (id === tabId && change.status === "complete") done();
+    };
+    const timer = setTimeout(done, 15000);
+    chrome.tabs.onUpdated.addListener(listen);
+    chrome.tabs.get(tabId).then((t) => {
+      if (t.status === "complete") done();
+    });
+  });
+}
+
+/** Asks the page script; loads it first on pages opened before install. */
+async function page(tabId, msg) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, { ...msg, op: msg.type, type: "sidekick-page" });
+  } catch {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+    return chrome.tabs.sendMessage(tabId, { ...msg, op: msg.type, type: "sidekick-page" });
+  }
+}
+
+const brief = (t) => ({ tab: t.id, title: t.title || "", url: t.url || "", active: !!t.active });
+
+async function request(cmd) {
+  switch (cmd.type) {
+    case "tabs":
+      return { tabs: (await chrome.tabs.query({})).filter((t) => (t.url || "").startsWith("http")).map(brief) };
+    case "open": {
+      if (!/^https?:\/\//.test(cmd.url || "")) throw new Error("Only http and https links");
+      if (denied(cmd.url, cmd.deny)) throw new Error("That site is on your ignore list");
+      const tab =
+        cmd.newTab === false
+          ? await chrome.tabs.update((await tabFor({})).id, { url: cmd.url, active: true })
+          : await chrome.tabs.create({ url: cmd.url, active: true });
+      await loaded(tab.id);
+      return brief(await chrome.tabs.get(tab.id));
+    }
+    case "switch": {
+      const tab = await chrome.tabs.update(cmd.tab, { active: true });
+      await chrome.windows.update(tab.windowId, { focused: true });
+      return brief(tab);
+    }
+    case "close":
+      await chrome.tabs.remove(cmd.tab);
+      return { ok: true };
+    case "back": {
+      const tab = await tabFor(cmd);
+      await chrome.tabs.goBack(tab.id);
+      await loaded(tab.id);
+      return brief(await chrome.tabs.get(tab.id));
+    }
+    case "read":
+    case "act":
+    case "extract": {
+      const tab = await tabFor(cmd);
+      if (!(tab.url || "").startsWith("http")) throw new Error("That tab is not a web page");
+      if (denied(tab.url, cmd.deny)) throw new Error("That site is on your ignore list");
+      const result = await page(tab.id, cmd);
+      if (cmd.type === "act") {
+        // A click may navigate: wait, then report where the tab is now.
+        await new Promise((r) => setTimeout(r, 700));
+        await loaded(tab.id);
+        const now = await chrome.tabs.get(tab.id);
+        return { ...result, tab: now.id, title: now.title, url: now.url };
+      }
+      return { ...result, tab: tab.id };
+    }
+    default:
+      throw new Error(`Unknown request ${cmd.type}`);
+  }
 }
 
 function hostOf(url) {
@@ -204,5 +318,5 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg?.type === "sidekick-event" && sender.tab) report({ ...msg.event, tab: sender.tab.id });
 });
 
-chrome.alarms.create("sidekick-poll", { periodInMinutes: 1 });
+chrome.alarms.create("sidekick-poll", { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener(() => poll());
