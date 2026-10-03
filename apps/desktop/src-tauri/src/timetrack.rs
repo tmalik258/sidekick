@@ -197,6 +197,13 @@ pub fn start(app: &AppHandle) {
             tokio::time::sleep(FLUSH_EVERY).await;
             let now = Instant::now();
             let state = app.state::<AppState>();
+            // Paused: the open span ends here, so paused time is not counted.
+            if crate::state::is_paused(&app) {
+                if let Some(mut span) = lock(&state.tracker.current).take() {
+                    write(&app, &mut span, now);
+                }
+                continue;
+            }
             let mut long_session = None;
             {
                 let mut current = lock(&state.tracker.current);

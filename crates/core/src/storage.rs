@@ -896,7 +896,11 @@ mod tests {
         let old = s.chats_older_than("2025-01-01T00:00:00Z", 10).unwrap();
         assert_eq!(old.len(), 1);
         assert_eq!(old[0].id, "old");
-        assert!(s.chats_older_than("2010-01-01T00:00:00Z", 10).unwrap().is_empty());
+        assert!(
+            s.chats_older_than("2010-01-01T00:00:00Z", 10)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     use super::*;

@@ -27,6 +27,8 @@ interface SidekickState {
   hovered: boolean;
   /** False while a fullscreen app is in front; the island fades away. */
   visible: boolean;
+  /** A fullscreen app is in front on the island's screen. */
+  fullscreen: boolean;
   ready: boolean;
   /** Outcome of the last action, shown while the mascot reports it. */
   lastResult: ActionResult | null;
@@ -145,6 +147,7 @@ export const useSidekick = create<SidekickState>(() => ({
   passwordSaved: null,
   hovered: false,
   visible: true,
+  fullscreen: false,
   ready: false,
   lastResult: null,
   running: null,
@@ -320,6 +323,16 @@ export const setAsk = (patch: Partial<AskState>) => {
 };
 
 /** Sends a message in the Ask conversation; answers stream into the last turn. */
+/** Asks the last question again after an answer failed. */
+export function retryLast(): boolean {
+  const { turns, chatId } = useSidekick.getState();
+  const last = turns[turns.length - 1];
+  const question = turns[turns.length - 2];
+  if (chatId || !last?.error || question?.role !== "user") return false;
+  useSidekick.setState({ turns: turns.slice(0, -2) });
+  return sendChat(question.content);
+}
+
 /** Sends a question; false when it could not start (empty, or one running). */
 export function sendChat(prompt: string, attach?: { clipboard?: boolean; screen?: boolean; speak?: boolean }): boolean {
   const { ask, turns, chatId, chatPage, chatSkill } = useSidekick.getState();
@@ -497,6 +510,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       listen(EVENTS.suggestionLater, (later) => useSidekick.setState({ later })),
       listen(EVENTS.islandHover, setHovered),
       listen(EVENTS.islandVisible, (visible) => useSidekick.setState({ visible })),
+      listen(EVENTS.islandFullscreen, (fullscreen) => useSidekick.setState({ fullscreen })),
       listen(EVENTS.composioChanged, ({ ok, message }) => {
         const waiting = useSidekick.getState().waiting;
         if (!ok || !waiting) return;

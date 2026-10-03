@@ -314,11 +314,12 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
         tauri::async_runtime::spawn(async move { ai::refresh_readiness(&app).await });
     }
     // Without the window sensor nothing would bring a hidden island back.
-    if next.pause.is_active(now)
-        || !next.sensor_enabled("window")
-        || (previous.hide_in_fullscreen && !next.hide_in_fullscreen)
-    {
+    if next.pause.is_active(now) || !next.sensor_enabled("window") {
         island::follow_fullscreen(app, &serde_json::Value::Null);
+    } else if previous.hide_in_fullscreen != next.hide_in_fullscreen {
+        // Switched from the glance: apply it to the window in front now.
+        let front = lock(&state.last_window).clone().unwrap_or_default();
+        island::follow_fullscreen(app, &front);
     }
 
     match (previous.pause.is_active(now), next.pause.is_active(now)) {

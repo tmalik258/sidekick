@@ -92,11 +92,6 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
             onChange={(v) => save({ collapseAfterSecs: Number(v) })}
           />
         </Field>
-        <Toggle
-          label="Hide in fullscreen apps"
-          checked={settings.hideInFullscreen}
-          onChange={(hideInFullscreen) => save({ hideInFullscreen })}
-        />
       </Section>
       <Section
         collapsible
