@@ -11,7 +11,6 @@ import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
 import { playSound } from "@/lib/sound";
 import { connect, setHovered, uiVolume, useSidekick, watchWaiting } from "@/lib/store";
-import { toolStatus } from "@/lib/tools";
 import { isPaused, type MascotState, type Suggestion } from "@/lib/types";
 import { ASK_ORB, AskPanel } from "./AskPanel";
 import { Icon } from "./Icon";
@@ -89,7 +88,7 @@ export function Island() {
   const working = useSidekick((s) => {
     const last = s.turns[s.turns.length - 1];
     if (!s.chatId || !last?.streaming) return null;
-    return last.tool ? toolStatus(last.tool) : "Working...";
+    return last.tool ? `${last.tool}...` : "Working...";
   });
   const guide = useGuide(waiting);
   // Voice with Ask closed: a compact pill while listening and thinking; the
