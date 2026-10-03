@@ -30,6 +30,7 @@ const BROWSER: &str = "browser";
 const APP_ACTION: &str = "app_action";
 const DESKTOP: &str = "desktop";
 const APPS: &str = "apps";
+const OFFICE: &str = "office";
 const RECIPES: &str = "recipes";
 const REMEMBER: &str = "remember";
 
@@ -252,12 +253,14 @@ pub fn defs() -> Vec<ToolDef> {
                 do: click|type|select|focus, text} uses one; keys {text} sends shortcuts like ^s \
                 or {TAB} when an app shows no controls; selection reads the selected text; \
                 type_here {text} puts text into the field the user is in (to rewrite a \
-                selection, read it, then type_here the new text). Read before acting and after."
+                selection, read it, then type_here the new text); click_text {text} finds those \
+                words on the screen and clicks them, for apps whose read shows no controls. \
+                Read before acting and after."
                 .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
-                    "action": { "type": "string", "enum": ["read", "act", "keys", "selection", "type_here"] },
+                    "action": { "type": "string", "enum": ["read", "act", "keys", "selection", "type_here", "click_text"] },
                     "app": { "type": "string", "description": "App or window name; the app the user was in when left out" },
                     "ref": { "type": "string" },
                     "do": { "type": "string", "enum": ["click", "type", "select", "focus"] },
@@ -277,6 +280,33 @@ pub fn defs() -> Vec<ToolDef> {
                 "properties": {
                     "action": { "type": "string", "enum": ["search", "install", "update", "wifi_networks", "wifi_connect"] },
                     "name": { "type": "string" }
+                },
+                "required": ["action"],
+            }),
+        },
+        ToolDef {
+            name: OFFICE.into(),
+            description: "Office on this PC (the desktop apps): email_draft {to, subject, body, \
+                attach [full paths]} opens an Outlook draft for the user to send; excel_read \
+                {path, sheet?, range?} returns cells (all used cells when no range); excel_write \
+                {path, sheet?, range (start cell), values (rows by line, cells by tab)} fills \
+                cells and saves; word_create {path ending .docx or .pdf, text} makes a new \
+                document; to_pdf {path} saves a Word file as PDF next to it. Find files first \
+                with find_files to get full paths."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["email_draft", "excel_read", "excel_write", "word_create", "to_pdf"] },
+                    "path": { "type": "string" },
+                    "to": { "type": "string" },
+                    "subject": { "type": "string" },
+                    "body": { "type": "string" },
+                    "attach": { "type": "array", "items": { "type": "string" } },
+                    "sheet": { "type": "string" },
+                    "range": { "type": "string" },
+                    "values": { "type": "string" },
+                    "text": { "type": "string" }
                 },
                 "required": ["action"],
             }),
@@ -347,6 +377,8 @@ pub fn defs() -> Vec<ToolDef> {
             description: "Change an everyday Windows setting right away: volume_up, volume_down, \
                 mute, set_volume {level}, brightness {level}, dark_mode_on, dark_mode_off, \
                 bluetooth_on, bluetooth_off, wifi_on, wifi_off, dnd_on, dnd_off (Do Not Disturb), lock, \
+                audio_outputs (lists speakers and headphones), audio_output {page: device name} \
+                plays sound there, display {page: internal|clone|extend|external} sets screens, \
                 open_settings {page} (no page opens Windows Settings itself). Pages: home, display, nightlight, sound, notifications, focus \
                 (Do Not Disturb), bluetooth, wifi, network, battery, power, storage, apps, \
                 default_apps, startup_apps, colors, background, mouse, keyboard, printers, updates, \
@@ -358,7 +390,8 @@ pub fn defs() -> Vec<ToolDef> {
                     "what": { "type": "string", "enum": [
                         "volume_up", "volume_down", "mute", "set_volume", "brightness",
                         "dark_mode_on", "dark_mode_off", "bluetooth_on", "bluetooth_off",
-                        "wifi_on", "wifi_off", "dnd_on", "dnd_off", "lock", "open_settings"
+                        "wifi_on", "wifi_off", "dnd_on", "dnd_off", "lock", "open_settings",
+                        "audio_outputs", "audio_output", "display"
                     ] },
                     "level": { "type": "integer", "minimum": 0, "maximum": 100 },
                     "page": { "type": "string" }
@@ -411,6 +444,7 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
         BROWSER => crate::act::browser(app, chat_id, args).await,
         DESKTOP => crate::act::desktop(app, chat_id, args).await,
         APPS => crate::act::apps(app, chat_id, args).await,
+        OFFICE => crate::office::tool(app, chat_id, args).await,
         RECIPES => crate::recipes::tool(app, args),
         REMEMBER => crate::recipes::remember(
             app,
@@ -861,8 +895,8 @@ mod tests {
             names,
             [
                 SEARCH, FIND, REVEAL, TODAY, RECENT, SCREEN, PROPOSE, WEB_SEARCH, READ_PAGE,
-                BROWSER, APP_ACTION, DESKTOP, APPS, RECIPES, REMEMBER, NOTIFS, PC_STATUS, PC,
-                WINDOWS, OPEN
+                BROWSER, APP_ACTION, DESKTOP, APPS, OFFICE, RECIPES, REMEMBER, NOTIFS, PC_STATUS,
+                PC, WINDOWS, OPEN
             ]
         );
     }

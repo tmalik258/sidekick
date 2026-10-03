@@ -96,6 +96,139 @@ finally {
 }
 "##;
 
+/// Active playback devices: `{endpoint}\tName (Driver)`, from the registry
+/// Windows keeps for them.
+const AUDIO_LIST: &str = r##"$ErrorActionPreference='SilentlyContinue'
+$base='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render'
+Get-ChildItem $base | ForEach-Object {
+  if((Get-ItemProperty $_.PSPath).DeviceState -eq 1){
+    $p=Get-ItemProperty (Join-Path $_.PSPath 'Properties')
+    "$($_.PSChildName)`t$($p.'{a45c254e-df1c-4efd-8020-67d146a850e0},2') ($($p.'{b3f8fa53-0004-438e-9003-51a46e139bfc},6'))"
+  }
+}
+"##;
+
+/// Makes an endpoint the default for every role, through the policy
+/// interface the Sound control panel uses.
+const AUDIO_SET: &str = r##"$ErrorActionPreference='Stop'
+try {
+if(-not ('Sk.Audio' -as [type])){ Add-Type -TypeDefinition @'
+using System; using System.Runtime.InteropServices;
+namespace Sk {
+[Guid("f8679f50-850a-41cf-9c72-430f290290c8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown), ComImport]
+interface IPolicyConfig {
+  int A(); int B(); int C(); int D(); int E(); int F(); int G(); int H(); int I(); int J();
+  [PreserveSig] int SetDefaultEndpoint([MarshalAs(UnmanagedType.LPWStr)] string id, int role);
+}
+[ComImport, Guid("870af99c-171d-4f9e-af0d-e63df40c2bc9")] class PolicyConfigClient {}
+public static class Audio {
+  public static int Set(string id) {
+    var p = (IPolicyConfig)new PolicyConfigClient(); int r = 0;
+    for (int role = 0; role < 3; role++) { r |= p.SetDefaultEndpoint(id, role); }
+    return r;
+  }
+}
+}
+'@ }
+$r=[Sk.Audio]::Set('{0.0.0.00000000}.' + $env:SK_ID)
+if($r -eq 0){ '#ok' } else { "#error code $r" }
+} catch { "#error $($_.Exception.Message)" }
+"##;
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct AudioDevice {
+    pub id: String,
+    pub name: String,
+}
+
+pub fn parse_audio(text: &str) -> Vec<AudioDevice> {
+    text.lines()
+        .filter_map(|l| l.split_once('\t'))
+        .filter(|(id, _)| id.starts_with('{') && id.ends_with('}'))
+        .map(|(id, name)| AudioDevice {
+            id: id.trim().to_owned(),
+            name: name.trim().trim_end_matches(" ()").to_owned(),
+        })
+        .collect()
+}
+
+pub fn audio_outputs() -> Result<Vec<AudioDevice>, ActionError> {
+    Ok(parse_audio(&powershell(AUDIO_LIST, &[])?))
+}
+
+/// The device whose name best matches what the user said ("headphones",
+/// "Realtek", "the TV").
+pub fn pick_audio<'a>(devices: &'a [AudioDevice], want: &str) -> Option<&'a AudioDevice> {
+    let want = want.trim().to_lowercase();
+    if want.is_empty() {
+        return None;
+    }
+    devices
+        .iter()
+        .find(|d| d.name.to_lowercase() == want)
+        .or_else(|| {
+            devices
+                .iter()
+                .find(|d| d.name.to_lowercase().contains(&want))
+        })
+        .or_else(|| {
+            const SKIP: &[&str] = &["the", "my", "to", "on", "a", "use", "play"];
+            let words: Vec<&str> = want
+                .split_whitespace()
+                .filter(|w| w.len() >= 2 && !SKIP.contains(w))
+                .collect();
+            devices.iter().find(|d| {
+                let n = d.name.to_lowercase();
+                words.iter().any(|w| n.contains(w))
+            })
+        })
+}
+
+pub fn set_audio_output(want: &str) -> Result<Outcome, ActionError> {
+    let devices = audio_outputs()?;
+    let Some(d) = pick_audio(&devices, want) else {
+        let names: Vec<&str> = devices.iter().map(|d| d.name.as_str()).collect();
+        return Err(ActionError::Invalid(if names.is_empty() {
+            "no playback devices found".into()
+        } else {
+            format!("no device like {want}; these are on: {}", names.join(", "))
+        }));
+    };
+    let out = powershell(AUDIO_SET, &[("SK_ID", &d.id)])?;
+    if !out.contains("#ok") {
+        return Err(ActionError::Failed(
+            out.trim().trim_start_matches("#error ").to_owned(),
+        ));
+    }
+    Ok(Outcome::msg(format!("Sound now plays on {}", d.name)))
+}
+
+/// Which screens show the desktop: this one only, duplicate, extend, or the
+/// second one only.
+pub fn display_mode(mode: &str) -> Result<Outcome, ActionError> {
+    let (flag, said) = match mode.trim().to_lowercase().as_str() {
+        "internal" | "pc" | "pc_only" | "this" => ("/internal", "Only this screen"),
+        "clone" | "duplicate" | "mirror" => ("/clone", "Screens duplicated"),
+        "extend" => ("/extend", "Screens extended"),
+        "external" | "second" | "second_only" | "projector" => {
+            ("/external", "Only the second screen")
+        }
+        other => {
+            return Err(ActionError::Invalid(format!(
+                "unknown display mode {other}; one of internal, clone, extend, external"
+            )));
+        }
+    };
+    if !cfg!(windows) {
+        return Err(ActionError::Failed("display modes need Windows".into()));
+    }
+    std::process::Command::new("DisplaySwitch.exe")
+        .arg(flag)
+        .spawn()
+        .map_err(|e| ActionError::Failed(e.to_string()))?;
+    Ok(Outcome::msg(said))
+}
+
 /// Reads the DND script's answer: the state it ended in, or why it failed.
 pub fn parse_dnd(out: &str) -> Result<(bool, bool), String> {
     let line = out
@@ -481,6 +614,22 @@ pub fn control(what: &str, value: Option<u8>, page: Option<&str>) -> Result<Outc
             )))
         }
         "dnd_on" | "dnd_off" => set_dnd(what == "dnd_on"),
+        "audio_outputs" => {
+            let list = audio_outputs()?;
+            Ok(Outcome::msg(if list.is_empty() {
+                "No playback devices found".to_owned()
+            } else {
+                format!(
+                    "Playback devices: {}",
+                    list.iter()
+                        .map(|d| d.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }))
+        }
+        "audio_output" => set_audio_output(page.unwrap_or_default()),
+        "display" => display_mode(page.unwrap_or_default()),
         "lock" => {
             powershell("rundll32.exe user32.dll,LockWorkStation", &[])?;
             msg("Locked")
@@ -612,6 +761,20 @@ pub fn empty_recycle_bin() -> Result<Outcome, ActionError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn picks_audio_devices() {
+        let list = parse_audio(
+            "{0001}\tSpeakers (Realtek(R) Audio)\n{0002}\tHeadphones (WH-1000XM4)\nnoise\n{0003}\tLG TV (NVIDIA High Definition Audio)\n",
+        );
+        assert_eq!(list.len(), 3);
+        assert_eq!(pick_audio(&list, "headphones").unwrap().id, "{0002}");
+        assert_eq!(pick_audio(&list, "the tv").unwrap().id, "{0003}");
+        assert_eq!(pick_audio(&list, "realtek").unwrap().id, "{0001}");
+        assert!(pick_audio(&list, "projector xyz").is_none());
+        assert!(pick_audio(&list, "").is_none());
+        assert!(display_mode("sideways").is_err());
+    }
+
     #[test]
     fn reads_dnd_answers() {
         assert_eq!(parse_dnd("noise\n#ok on\n"), Ok((true, false)));
