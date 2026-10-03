@@ -145,7 +145,7 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   codex_add_notify: () => "C:\\Users\\you\\.codex\\config.toml.sidekick-backup-20261002",
   codex_add_mcp: () => null,
   guide_keys: () => null,
-  notifications_silence: () => null,
+  notifications_silence: () => "Done. Do Not Disturb is on",
   recipe_save: (args) => {
     const r = args.recipe as Settings["recipes"][number];
     const recipe = { ...r, id: r.id || `r${Date.now()}`, name: r.name || r.prompt.split(" ").slice(0, 6).join(" ") };

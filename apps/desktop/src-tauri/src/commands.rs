@@ -1145,16 +1145,15 @@ pub fn notifications_set_level(app: AppHandle, from: String, level: String) -> C
     crate::inbox::set_level(&app, &from, level)
 }
 
-/// Opens Windows' notification settings, where Do Not Disturb is turned on.
+/// Turns on Windows' Do Not Disturb, so pop-ups stop while every
+/// notification still reaches Notification Center and Sidekick.
 #[tauri::command]
-pub async fn notifications_silence() -> CmdResult<()> {
-    tauri::async_runtime::spawn_blocking(|| {
-        sidekick_actions::pc::control("open_settings", None, Some("notifications"))
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map(|_| ())
-    .map_err(|e| e.to_string())
+pub async fn notifications_silence() -> CmdResult<String> {
+    tauri::async_runtime::spawn_blocking(|| sidekick_actions::pc::set_dnd(true))
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|o| o.message)
+        .map_err(|e| e.to_string())
 }
 
 /// Saves a recipe from Settings or Ask's Save as recipe.

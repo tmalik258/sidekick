@@ -209,7 +209,7 @@ export const api = {
   notificationsStatus: () => invoke<InboxStatus>("notifications_status"),
   notificationsSetLevel: (from: string, level: NotifyLevel | "auto") =>
     invoke<string>("notifications_set_level", { from, level }),
-  notificationsSilence: () => invoke<void>("notifications_silence"),
+  notificationsSilence: () => invoke<string>("notifications_silence"),
   recipeSave: (recipe: Recipe) => invoke<string>("recipe_save", { recipe }),
   recipeDelete: (id: string) => invoke<string>("recipe_delete", { id }),
   recipeRun: (id: string) => invoke<string>("recipe_run", { id }),
