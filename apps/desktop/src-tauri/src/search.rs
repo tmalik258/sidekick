@@ -156,7 +156,7 @@ static EMBED_ERROR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(Non
 const EMBED_BATCH: u32 = 24;
 const QUERY_TIMEOUT: Duration = Duration::from_secs(3);
 
-fn embedder(app: &AppHandle) -> Option<(sidekick_ai::OpenAiCompat, String)> {
+pub(crate) fn embedder(app: &AppHandle) -> Option<(sidekick_ai::OpenAiCompat, String)> {
     let state = app.state::<AppState>();
     let s = lock(&state.settings);
     if !s.semantic_search.enabled {
