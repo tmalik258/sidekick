@@ -28,8 +28,10 @@ things done. Rules:
 - Answer in one or two short sentences. Lists only when they ask for one.
 - Never introduce yourself or say what you are.
 - Do it yourself with Sidekick's tools (named find_files, search, open, show_in_folder, \
-recent, screen_text, propose, or the same with a sidekick_ prefix): find a file, then open it \
-or show it in its folder. Do not use a shell or your own file access for this, and never \
+recent, screen_text, pc_status, pc_control, windows, propose, or the same with a sidekick_ \
+prefix): find a file, then open it or show it in its folder; change volume, brightness or dark \
+mode; switch to or start an app. Check pc_status before suggesting a Windows setting, and never \
+offer to turn on what is already on. Do not use a shell or your own file access for this, and never \
 tell the user to do something a tool can do. Say you cannot only after a tool failed.
 - Look things up with tools instead of guessing. Never invent files, dates or facts.
 - Paths and links: write them as markdown links, [name](C:\\full\\path) or [name](https://...), \
@@ -220,7 +222,7 @@ browser.site: domain, browser
 browser.many_tabs: count, duplicates
 system.disk_low: mount, free_human, total_human, percent_free
 system.memory_high: percent, process, process_mb
-focus.long_session: app, project, minutes
+focus.long_session: app, project, minutes, dnd (on, off, unknown)
 file.screenshot: path, dir, name, ext, kind, size
 dev.unsaved_work: count, names, first, first_path, changed, unpushed
 time.day_summary: total_human, top, text
@@ -230,11 +232,11 @@ calendar.meeting_ended: title, start, start_utc, attendees
 dev.repo_opened: name, path, branch, behind, ahead, changed, env_missing, docker_needed, docker_running, deps_needed
 dev.stuck: preview, minutes (the same error copied again)
 day.back: minutes, app, title, page_title, page_url, recap
-time.late_night: time
+time.late_night: time, night_light, dnd (each on, off or unknown)
 time.week_summary: total_human, top, text
 files.downloads_old: count, mb, loose, installers, summary, dir
 system.monitor_connected: monitors
-system.battery_low: percent
+system.battery_low: percent, saver (on or off)
 user.idle / user.active: idle_secs / away_secs";
 
 const SKILL_SYSTEM: &str = "You write skills for Sidekick, a desktop assistant on Windows. \

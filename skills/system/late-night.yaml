@@ -1,13 +1,13 @@
 id: system.late-night
 name: Late night
-description: Once a night, after 11 pm, offer night light and Do Not Disturb.
+description: Once a night, after 11 pm, offer night light and Do Not Disturb, only the ones not on already.
 priority: 25
 cooldown_secs: 43200
 trigger:
   event: time.late_night
 suggestion:
   title: "It's {{time}}"
-  detail: "Easier on the eyes, and no pings?"
+  detail: "Winding down?"
   options:
-    - { label: Night light, action: open_system_page, args: { page: nightlight } }
-    - { label: Do Not Disturb, action: open_system_page, args: { page: focus } }
+    - { label: Night light, action: open_system_page, args: { page: nightlight }, when: { night_light: { not_one_of: [on] } } }
+    - { label: Do Not Disturb, action: open_system_page, args: { page: focus }, when: { dnd: { not_one_of: [on] } } }

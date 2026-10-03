@@ -217,3 +217,66 @@ export function SetupChecklist({
     </div>
   );
 }
+
+/**
+ * The setup steps for one thing, inside its own card (Claude Code's install,
+ * hooks and tools in its AI card). Only what is left to do; nothing once done.
+ */
+export function SetupItems({ ids }: { ids: string[] }) {
+  const { status, watchForChanges, check } = useSetupStatus();
+  const [error, setError] = useState<string | null>(null);
+  const [openGuide, setOpenGuide] = useState<string | null>(null);
+  const justDone = useSidekick((s) => s.justDone);
+  const run = useCallback(
+    (id: string) => {
+      setError(null);
+      api
+        .setupRun(id)
+        .then(watchForChanges)
+        .catch((e) => setError(String(e)));
+    },
+    [watchForChanges],
+  );
+  const toggleGuide = useCallback((id: string) => setOpenGuide((open) => (open === id ? null : id)), []);
+  const done = useCallback(() => {
+    void check();
+    watchForChanges();
+  }, [check, watchForChanges]);
+  if (!status) return null;
+  const rows = ids
+    .map((id) => status.items.find((i) => i.id === id))
+    .filter((i): i is SetupItem => Boolean(i && (!i.done || i.id === justDone)));
+  if (rows.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-1.5 text-[13px]">
+      {rows.map((item) => (
+        <SetupRow
+          key={item.id}
+          item={item}
+          onRun={run}
+          guideOpen={openGuide === item.id}
+          onToggleGuide={toggleGuide}
+          inlineGuides
+          onDone={done}
+        />
+      ))}
+      {error && (
+        <p role="alert" className="text-[12px] text-red-300">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Recommended steps not done yet, by the Settings tab that has them. */
+export function usePendingByTab(): Record<string, SetupItem[]> {
+  const { status } = useSetupStatus();
+  const out: Record<string, SetupItem[]> = {};
+  for (const i of status?.items ?? []) {
+    const tab = i.tab ?? (i.group === "ai" ? "ai" : null);
+    if (i.done || !i.recommended || i.group === "tools" || !tab || tab === "home") continue;
+    out[tab] = [...(out[tab] ?? []), i];
+  }
+  return out;
+}

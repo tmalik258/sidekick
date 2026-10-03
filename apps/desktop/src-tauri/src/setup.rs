@@ -251,7 +251,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             "claude_code",
             Group::Ai,
             "Claude Code",
-            "Chat, drafts and skills with your Claude plan. Run claude once afterwards to sign in.",
+            "Uses your Claude plan. Run claude once to sign in.",
         )
         .done(claude, "Installed", "Not installed")
         .run("irm https://claude.ai/install.ps1 | iex")
@@ -268,7 +268,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             "codex",
             Group::Ai,
             "Codex",
-            "OpenAI's coding agent, with your ChatGPT plan. Use it instead of Claude Code or next to it. Run codex once afterwards to sign in.",
+            "Uses your ChatGPT plan. Run codex once to sign in.",
         )
         .done(codex, "Installed", "Not installed")
         .run("npm install -g @openai/codex"),
@@ -310,7 +310,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         "ollama_chat",
         Group::Ai,
         "Local chat model",
-        "Answers when Claude is not set up, without anything leaving the PC. About 2.5 GB.",
+        "Private answers on this PC. About 2.5 GB.",
     )
     .done(
         has_chat,
@@ -332,7 +332,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         "ollama_embed",
         Group::Ai,
         "Search model",
-        "Finds things by meaning, not only exact words. About 270 MB.",
+        "Search by meaning. About 270 MB.",
     )
     .done(
         has_embed,
@@ -362,7 +362,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         "ollama_vision",
         Group::Ai,
         "Vision model",
-        "Sees pictures on your screen that have no text. About 1.7 GB, loaded only when needed.",
+        "Reads pictures without text. About 1.7 GB.",
     )
     .done(
         has_vision,
@@ -384,7 +384,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             "anthropic",
             Group::Ai,
             "Anthropic API key",
-            "Pay as you go instead of a Claude plan. Restart Sidekick after setting it.",
+            "Pay as you go. Restart Sidekick after setting it.",
         )
         .done(api_key, "Set", "Not set")
         .copy("setx ANTHROPIC_API_KEY \"your-key\""),
@@ -396,7 +396,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         "claude_hooks",
         Group::Connect,
         "Claude Code hooks",
-        "Know when a session finishes or waits, and allow or deny its requests from the island. Add for me merges into Claude Code settings (backed up first).",
+        "See when it finishes, allow or deny from the island.",
     )
     .copy(hook_snippet())
     .tab("ai");
@@ -415,7 +415,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         "claude_mcp",
         Group::Connect,
         "Sidekick tools in Claude Code",
-        "Lets Claude Code search your history, notify you and open links.",
+        "Lets Claude Code use Sidekick's tools.",
     )
     .done(
         mcp_added(&read(&home.join(".claude.json")), &mcp_url),
@@ -439,10 +439,10 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         "codex_notify",
         Group::Connect,
         "Codex notifications",
-        "Know when a Codex turn is done. Add for me adds Sidekick to Codex settings (backed up first).",
+        "See when a Codex turn is done.",
     )
     .done(codex_notify, "Added", "Not added")
-    .tab("connections");
+    .tab("ai");
     if codex && !claude {
         notify_item = notify_item.recommended();
     }
@@ -452,10 +452,10 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             "codex_mcp",
             Group::Connect,
             "Sidekick tools in Codex",
-            "Lets Codex search your history, notify you and open links.",
+            "Lets Codex use Sidekick's tools.",
         )
         .done(codex_mcp, "Added", "Not added")
-        .tab("connections"),
+        .tab("ai"),
     );
 
     // Match Connections: only count authenticated check-ins, not pair_request
@@ -492,7 +492,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             "composio",
             Group::Connect,
             "Composio",
-            "Connect once in the browser. Your calendar, Gmail, Slack, Jira and more then work in Sidekick.",
+            "One sign-in for your calendar, mail, Slack and more.",
         )
         .done(composio_on, "Connected", "Not connected")
         .tab("connections")
@@ -503,7 +503,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             "calendar",
             Group::Connect,
             "Calendar",
-            "Meeting reminders with Join and Prep. Connect Google Calendar or Outlook on Composio.",
+            "Meeting reminders with Join. Connect it on Composio.",
         )
         .done(
             has_app("googlecalendar") || has_app("outlook"),
@@ -555,7 +555,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             "fathom",
             Group::Connect,
             "Fathom",
-            "Follow-ups drafted from your meeting notes. Connect Fathom on Composio.",
+            "Follow-ups from meeting notes. Connect it on Composio.",
         )
         .done(
             has_app("fathom"),
@@ -619,7 +619,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         (
             "tesseract",
             "Tesseract",
-            "Reads text in screenshots, so Copy text works on a screenshot of an error or a page.",
+            "Copy text out of screenshots.",
             caps.tesseract.is_some(),
             "UB-Mannheim.TesseractOCR",
             true,

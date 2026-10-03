@@ -1,10 +1,12 @@
 id: system.focus
 name: Focus mode
-description: After 20 minutes straight in your editor, offer to turn on Do Not Disturb (FR-SYS-05).
+description: After 20 minutes straight in your editor, offer Do Not Disturb when it is not on already (FR-SYS-05).
 priority: 35
 cooldown_secs: 7200
 trigger:
   event: focus.long_session
+  where:
+    dnd: { not_one_of: [on] }
 suggestion:
   title: "Deep in {{app}}"
   detail: "20 minutes of focus. Silence notifications for a while?"

@@ -23,7 +23,7 @@ import {
   THEMES,
 } from "@/lib/types";
 import { Orb, THEME_STYLES } from "../Orb";
-import { SetupChecklist } from "../SetupChecklist";
+import { SetupChecklist, usePendingByTab } from "../SetupChecklist";
 import { Button, Field, FolderPicker, Section, Select, ShortcutRecorder, Slider, Toggle } from "./ui";
 
 const COLLAPSE_OPTIONS: [string, string][] = [
@@ -51,14 +51,11 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
 
   return (
     <>
-      <Section title="Setup" keywords="install checklist get started ollama claude">
-        <SetupChecklist groups={["ai", "connect", "tools"]} onOpenTab={onOpenTab} />
+      <Section title="Setup" keywords="install checklist get started tools">
+        <LeftElsewhere onOpenTab={onOpenTab} />
+        <SetupChecklist groups={["tools"]} onOpenTab={onOpenTab} />
       </Section>
-      <Section
-        title="Today"
-        hint="Counted from the app in front, paused while you are away. Stored only on this PC."
-        keywords="time tracking hours apps"
-      >
+      <Section title="Today" keywords="time tracking hours apps">
         <TimeToday />
       </Section>
       <Section title="Appearance" keywords="theme orb color look">
@@ -88,7 +85,6 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
         </Field>
         <Toggle
           label="Hide in fullscreen apps"
-          hint="Off: Sidekick stays on top of everything, fullscreen videos and slides included."
           checked={settings.hideInFullscreen}
           onChange={(hideInFullscreen) => save({ hideInFullscreen })}
         />
@@ -97,7 +93,7 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
         collapsible
         summary={`Ask with ${settings.paletteHotkey}`}
         title="Shortcuts"
-        hint="Click a shortcut, then press the keys you want. They work from any app."
+        hint="Click one, then press the keys."
         keywords="hotkey keyboard keys talk accept dismiss screen clipboard pause"
       >
         <Field label="Ask">
@@ -121,11 +117,10 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
         collapsible
         summary="Folders where your projects live"
         title="Your code"
-        hint="For the end of day check on uncommitted work and the project launcher."
         keywords="code folders repos git projects end of day wsl"
       >
         <CodeFolders chosen={settings.codeFolders} onChange={(codeFolders) => save({ codeFolders })} />
-        <Field label="My day ends at" hint="When to check for work you have not pushed">
+        <Field label="My day ends at">
           <Select
             label="My day ends at"
             value={String(settings.endOfDayHour)}
@@ -147,7 +142,6 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
         />
         <Toggle
           label="Tell me about new versions"
-          hint="Checks GitHub once a day. Install is one click, and the download is checked before it runs."
           checked={settings.checkUpdates}
           onChange={(checkUpdates) => save({ checkUpdates })}
         />
@@ -184,22 +178,10 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
           </div>
         </details>
       </Section>
-      <Section
-        collapsible
-        summary="What Sidekick did, with Undo"
-        title="History"
-        hint="Files Sidekick created can be undone for 24 hours; they go to the Recycle Bin."
-        keywords="undo actions recent"
-      >
+      <Section collapsible summary="What Sidekick did, with Undo" title="History" keywords="undo actions recent">
         <RecentActions onError={onError} />
       </Section>
-      <Section
-        collapsible
-        summary="Export or restore your settings"
-        title="Backup"
-        hint="One file with your settings, your own skills and the action history. Keys and sign-ins are left out."
-        keywords="export import restore"
-      >
+      <Section collapsible summary="Export or restore your settings" title="Backup" keywords="export import restore">
         <Backup onError={onError} />
       </Section>
       {info && (
@@ -238,6 +220,31 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
         </Section>
       )}
     </>
+  );
+}
+
+const TAB_NAMES: Record<string, string> = { ai: "AI", connections: "Apps", privacy: "Privacy" };
+
+/** Steps left on other tabs, as one tap each, so Home never repeats them. */
+function LeftElsewhere({ onOpenTab }: { onOpenTab: (tab: string) => void }) {
+  const pending = usePendingByTab();
+  const tabs = Object.keys(TAB_NAMES).filter((t) => pending[t]?.length);
+  if (tabs.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-[12.5px]">
+      <span className="text-(--muted)">Also to set up:</span>
+      {tabs.map((t) => (
+        <button
+          key={t}
+          type="button"
+          onClick={() => onOpenTab(t)}
+          title={pending[t].map((i) => i.title).join(", ")}
+          className="chip rounded-full bg-white/[0.08] px-2.5 py-1 font-medium text-white/90 hover:bg-white/[0.14]"
+        >
+          {TAB_NAMES[t]} ({pending[t].length})
+        </button>
+      ))}
+    </div>
   );
 }
 

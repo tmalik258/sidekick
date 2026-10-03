@@ -212,10 +212,19 @@ pub fn start(app: &AppHandle) {
             };
             if is_late(now.hour()) && late_on != Some(night) {
                 late_on = Some(night);
+                // Only offer what is not on already (night light on a
+                // schedule reads as on at this hour).
+                let pc = tokio::task::spawn_blocking(sidekick_actions::pc::read_state)
+                    .await
+                    .unwrap_or_default();
                 state.bus.publish(Event::new(
                     LATE_NIGHT,
                     "time",
-                    serde_json::json!({ "time": now.format("%H:%M").to_string() }),
+                    serde_json::json!({
+                        "time": now.format("%H:%M").to_string(),
+                        "night_light": pc.night_light.as_str(),
+                        "dnd": pc.do_not_disturb.as_str(),
+                    }),
                 ));
             }
             let today = now.date_naive();
