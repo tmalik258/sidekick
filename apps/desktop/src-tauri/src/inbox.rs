@@ -341,6 +341,9 @@ async fn take(app: &AppHandle, settings: &sidekick_core::Settings, t: Toast) {
             i.pending.push(item.clone());
         }
     }
+    if sorted.level != Level::Never {
+        crate::recipes::on_notification(app, item.id, &item.app, &item.title, &item.body);
+    }
     let paused = settings.pause.is_active(chrono::Utc::now());
     if sorted.level == Level::Now && !paused {
         app.state::<AppState>().bus.publish(Event::new(

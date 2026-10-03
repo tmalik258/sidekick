@@ -33,6 +33,7 @@ import type {
   PasswordPrompt,
   PasswordSaved,
   ProviderStatus,
+  Recipe,
   RoutineItem,
   SearchHit,
   Settings,
@@ -209,6 +210,10 @@ export const api = {
   notificationsSetLevel: (from: string, level: NotifyLevel | "auto") =>
     invoke<string>("notifications_set_level", { from, level }),
   notificationsSilence: () => invoke<void>("notifications_silence"),
+  recipeSave: (recipe: Recipe) => invoke<string>("recipe_save", { recipe }),
+  recipeDelete: (id: string) => invoke<string>("recipe_delete", { id }),
+  recipeRun: (id: string) => invoke<string>("recipe_run", { id }),
+  knowHowClear: () => invoke<void>("know_how_clear"),
   setupDetect: () => invoke<Found>("setup_detect"),
   setupApply: (plan: SetupPlan) => invoke<string[]>("setup_apply", { plan }),
   claudeAddHooks: () => invoke<string | null>("claude_add_hooks"),

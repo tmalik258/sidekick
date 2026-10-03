@@ -72,6 +72,13 @@ export function PrivacyTab({ onError }: { onError: (e: string) => void }) {
         />
       </Section>
       <Section
+        title="What Sidekick remembers"
+        hint='Every model gets these. Say "remember that..." in Ask to add one.'
+        keywords="memory remember facts about me know-how forget"
+      >
+        <Memory onError={onError} />
+      </Section>
+      <Section
         title="Routines"
         hint="Your usual morning apps and sites, offered as one Open all."
         keywords="routine morning start my day usual open all habits"
@@ -341,6 +348,69 @@ function Capabilities({ onError }: { onError: (e: string) => void }) {
           {e}
         </p>
       ))}
+    </div>
+  );
+}
+
+/** Facts about the user, given to every model, plus learned paths. */
+function Memory({ onError }: { onError: (e: string) => void }) {
+  const memory = useSidekick((s) => s.settings.memory);
+  const [draft, setDraft] = useState("");
+  const [cleared, setCleared] = useState(false);
+  const save = (next: string[]) => void updateSettings({ memory: next }).catch((e: unknown) => onError(String(e)));
+  const add = () => {
+    const v = draft.trim();
+    if (v && !memory.includes(v)) save([...memory, v]);
+    setDraft("");
+  };
+  return (
+    <div className="flex flex-col gap-2 text-[13px]">
+      {memory.length === 0 ? (
+        <p className="text-(--muted)">Nothing yet.</p>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {memory.map((m) => (
+            <li key={m} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1">{m}</span>
+              <Button small onClick={() => save(memory.filter((x) => x !== m))}>
+                Forget
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          add();
+        }}
+      >
+        <input
+          aria-label="Something to remember"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Sign my emails as Ali"
+          className="min-w-0 flex-1 rounded-lg border border-(--border) bg-transparent px-2.5 py-1.5 text-[13px] outline-none focus:border-[#0a84ff]"
+        />
+        <Button small primary disabled={!draft.trim()} onClick={add}>
+          Add
+        </Button>
+      </form>
+      <div className="flex items-center gap-2 text-[12px] text-(--muted)">
+        <span className="flex-1">Sidekick also remembers which buttons worked in each app and site.</span>
+        <Button
+          small
+          onClick={() =>
+            void api
+              .knowHowClear()
+              .then(() => setCleared(true))
+              .catch((e) => onError(String(e)))
+          }
+        >
+          {cleared ? "Cleared" : "Clear"}
+        </Button>
+      </div>
     </div>
   );
 }
