@@ -28,6 +28,8 @@ use crate::state::{AppState, lock};
 
 pub const NOW_EVENT: &str = "notification.now";
 pub const SOON_EVENT: &str = "notification.soon";
+/// Tells Settings the inbox changed, so it refreshes without polling.
+pub const CHANGED_EVENT: &str = "inbox://changed";
 const POLL: Duration = Duration::from_secs(2);
 /// Messages wait at most this long before one card gathers them.
 const SOON_EVERY: Duration = Duration::from_secs(10 * 60);
@@ -483,6 +485,7 @@ pub fn start(app: &AppHandle) {
             return;
         };
         let mut last: Option<i64> = None;
+        let mut seen = None;
         loop {
             tokio::time::sleep(POLL).await;
             let settings = lock(&app.state::<AppState>().settings).clone();
@@ -491,6 +494,14 @@ pub fn start(app: &AppHandle) {
                 last = None;
                 continue;
             }
+            // Nothing changed on disk: nothing new to read (and no copy of
+            // a locked database to make).
+            let now_stamp = toasts::stamp(&path);
+            if last.is_some() && now_stamp.is_some() && now_stamp == seen {
+                flush_soon(&app, &settings);
+                continue;
+            }
+            seen = now_stamp;
             let p = path.clone();
             let since = last;
             let read = tokio::task::spawn_blocking(move || match since {
@@ -621,6 +632,7 @@ async fn take(app: &AppHandle, settings: &sidekick_core::Settings, t: Toast, thi
             i.pending.push(item.clone());
         }
     }
+    let _ = tauri::Emitter::emit(app, CHANGED_EVENT, ());
     if sorted.level != Level::Never {
         crate::recipes::on_notification(app, item.id, &item.app, &item.title, &item.body);
     }
