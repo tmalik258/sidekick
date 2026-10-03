@@ -77,7 +77,9 @@ pub fn parse_date(text: &str, today: NaiveDate) -> Option<(NaiveDate, Option<Nai
         };
         return Some((date, time));
     }
-    let c = MONTH_DATE.captures(t)?;
+    let Some(c) = MONTH_DATE.captures(t) else {
+        return relative_date(t, today);
+    };
     let (d, m) = match (c.name("d1"), c.name("m1"), c.name("m2"), c.name("d2")) {
         (Some(d), Some(m), _, _) | (_, _, Some(m), Some(d)) => (d.as_str(), m.as_str()),
         _ => return None,
@@ -110,6 +112,53 @@ pub fn parse_date(text: &str, today: NaiveDate) -> Option<(NaiveDate, Option<Nai
         None => None,
     };
     Some((date, time))
+}
+
+/// "tomorrow 10am", "next Friday 3pm", "on Monday at 9:30": the whole text
+/// is the date, so a sentence that only mentions a day is left alone.
+static RELATIVE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)^(?:(on|next|this)\s+)?(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)\b(?:,?\s*(?:at\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?\s*$",
+    )
+    .expect("relative date")
+});
+
+fn relative_date(t: &str, today: NaiveDate) -> Option<(NaiveDate, Option<NaiveTime>)> {
+    let c = RELATIVE.captures(t)?;
+    let word = c[2].to_lowercase();
+    // A lone "Saturday" or "today" is just a word.
+    if c.get(1).is_none() && c.get(3).is_none() && word != "tomorrow" {
+        return None;
+    }
+    let date = match word.as_str() {
+        "today" => today,
+        "tomorrow" => today.succ_opt()?,
+        day => {
+            const DAYS: [&str; 7] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+            let want = DAYS.iter().position(|d| day.starts_with(d))? as i64;
+            let now = i64::from(today.weekday().num_days_from_monday());
+            let mut ahead = (want - now).rem_euclid(7);
+            let next = c
+                .get(1)
+                .is_some_and(|m| m.as_str().eq_ignore_ascii_case("next"));
+            if ahead == 0 && next {
+                ahead = 7;
+            }
+            today.checked_add_days(chrono::Days::new(ahead as u64))?
+        }
+    };
+    let Some(h) = c.get(3) else {
+        return Some((date, None));
+    };
+    let mut hour: u32 = h.as_str().parse().ok()?;
+    let minute: u32 = c.get(4).map_or(Some(0), |m| m.as_str().parse().ok())?;
+    match c.get(5).map(|a| a.as_str().to_ascii_lowercase()) {
+        Some(ap) if ap == "pm" && hour < 12 => hour += 12,
+        Some(ap) if ap == "am" && hour == 12 => hour = 0,
+        None if c.get(4).is_none() => return Some((date, None)),
+        _ => {}
+    }
+    Some((date, NaiveTime::from_hms_opt(hour, minute, 0)))
 }
 
 /// Google Calendar's "new event" link for a date (an hour long with a
@@ -225,6 +274,32 @@ pub fn detect(text: &str, today: NaiveDate) -> Option<Value> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reads_relative_dates() {
+        // 3 Oct 2026 is a Saturday.
+        let today = NaiveDate::from_ymd_opt(2026, 10, 3).unwrap();
+        let at = |d: u32, h: u32, m: u32| {
+            Some((
+                NaiveDate::from_ymd_opt(2026, 10, d).unwrap(),
+                NaiveTime::from_hms_opt(h, m, 0),
+            ))
+        };
+        assert_eq!(parse_date("next Friday 3pm", today), at(9, 15, 0));
+        assert_eq!(parse_date("tomorrow 10am", today), at(4, 10, 0));
+        assert_eq!(parse_date("on Monday at 9:30", today), at(5, 9, 30));
+        assert_eq!(
+            parse_date("this Saturday", today),
+            Some((today, None)),
+            "this Saturday is today"
+        );
+        assert_eq!(parse_date("Saturday", today), None, "a lone day is a word");
+        assert_eq!(
+            parse_date("next sat", today).map(|d| d.0),
+            NaiveDate::from_ymd_opt(2026, 10, 10)
+        );
+        assert_eq!(parse_date("meet me friday to discuss", today), None);
+    }
+
     use super::*;
 
     fn today() -> NaiveDate {
