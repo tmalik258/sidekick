@@ -2,6 +2,7 @@
 //! monitor, click-through everywhere except the part the UI reports as
 //! interactive (FR-UI-01).
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -32,18 +33,43 @@ const ASK_MARGIN: f64 = 16.0;
 /// How often the island claims the top of the z-order again.
 const TOP_EVERY: Duration = Duration::from_secs(1);
 
+/// Shown yet: the window stays hidden until the page has drawn, so an
+/// empty webview never flashes black.
+static SHOWN: AtomicBool = AtomicBool::new(false);
+/// Set when click-through must be applied again even if nothing changed:
+/// Windows can drop it while the page loads.
+static REAPPLY: AtomicBool = AtomicBool::new(false);
+/// Shown anyway after this, in case the page never says it is ready.
+const SHOW_AT_LATEST: Duration = Duration::from_secs(5);
+/// How often click-through is applied again regardless.
+const REAPPLY_EVERY: Duration = Duration::from_secs(2);
+
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     let window = app
         .get_webview_window(LABEL)
         .ok_or_else(|| tauri::Error::WindowNotFound)?;
     position_top_center(&window)?;
-    // Show first: click-through needs a realized native window (on Linux,
-    // setting it on a hidden window panics inside tao).
-    window.show()?;
-    window.set_ignore_cursor_events(true)?;
     spawn_top_keeper(window.clone());
-    spawn_hover_tracker(app.clone(), window);
+    spawn_hover_tracker(app.clone(), window.clone());
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(SHOW_AT_LATEST).await;
+        reveal(&window);
+    });
     Ok(())
+}
+
+/// Shows the island once its page has drawn (or the wait ran out), then
+/// makes it click-through. Show first: click-through needs a realized
+/// native window (on Linux, setting it on a hidden window panics inside tao).
+pub fn reveal(window: &WebviewWindow) {
+    if SHOWN.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    if let Err(err) = window.show() {
+        log::warn!("could not show the island: {err}");
+    }
+    let _ = window.set_ignore_cursor_events(true);
+    REAPPLY.store(true, Ordering::SeqCst);
 }
 
 fn position_top_center(window: &WebviewWindow) -> tauri::Result<()> {
@@ -188,7 +214,7 @@ pub fn follow_fullscreen(app: &AppHandle, payload: &serde_json::Value) {
     // The native window stays shown: hiding and showing it again on Windows
     // activates it (stealing focus) and can drop it in the z-order. The UI
     // fades out instead, and the hover tracker keeps it click-through.
-    if fullscreen {
+    if fullscreen && SHOWN.load(Ordering::SeqCst) {
         let _ = window.set_ignore_cursor_events(true);
     }
     let _ = app.emit_to(LABEL, VISIBLE_EVENT, !fullscreen);
@@ -206,8 +232,20 @@ fn spawn_hover_tracker(app: AppHandle, window: WebviewWindow) {
         let mut applied: Option<(bool, bool, bool)> = None;
         let mut last: Option<CursorPos> = None;
         let mut wait = CURSOR_POLL;
+        let mut reapplied = std::time::Instant::now();
         loop {
             tokio::time::sleep(wait).await;
+            // Hidden until the page has drawn; nothing to track yet.
+            if !SHOWN.load(Ordering::SeqCst) {
+                continue;
+            }
+            // Windows can drop click-through (while the page loads, after a
+            // display change), and it was only set again on a change, so the
+            // island blocked clicks until hovered. Apply it again regularly.
+            if REAPPLY.swap(false, Ordering::SeqCst) || reapplied.elapsed() >= REAPPLY_EVERY {
+                applied = None;
+                reapplied = std::time::Instant::now();
+            }
             let Some(pos) = cursor_in_window(&app, &window) else {
                 continue;
             };
