@@ -104,7 +104,15 @@ body {
   border-radius: 50%;
 }
 
+/* Layers, bottom to top: the glow, then the body with its face. */
+.orb-halo-pos {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
 .orb-float {
+  z-index: 1;
   transform-origin: 50% 70%;
 }
 
