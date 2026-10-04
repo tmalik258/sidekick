@@ -80,7 +80,7 @@ pub struct AppState {
     pub linger: AtomicBool,
     /// The user stepped away (no input for a while); suggestions wait.
     pub away: AtomicBool,
-    /// T1 picks per skill and app, from earlier decisions.
+    /// Ranking picks per skill and app, from earlier decisions.
     pub decisions: Mutex<crate::decide::Cache>,
     pub voice: crate::voice::Voice,
     pub calendar: sidekick_sensors::Calendar,

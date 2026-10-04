@@ -8,7 +8,7 @@ use crate::{AiError, AiProvider, CancellationToken, ChatRequest, Sink, sse};
 pub const DEFAULT_MODEL: &str = "claude-haiku-4-5-20251001";
 const URL: &str = "https://api.anthropic.com/v1/messages";
 
-/// T2 with an Anthropic API key, for people without Claude Code. The key is
+/// Chat with an Anthropic API key, for people without Claude Code. The key is
 /// read from `ANTHROPIC_API_KEY` at call time and never stored by Sidekick.
 pub struct Anthropic {
     pub model: String,

@@ -328,7 +328,7 @@ impl Default for VoiceSettings {
     }
 }
 
-/// AI tiers (each can be switched off; Sidekick works without any).
+/// AI providers (each can be switched off; Sidekick works without any).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AiSettings {
@@ -342,7 +342,7 @@ pub struct AiSettings {
     pub local: LocalModelPref,
     pub anthropic: AnthropicPref,
     pub semif: SemIfPref,
-    /// Let T1 (SemIf or the local model) rank suggestion options.
+    /// Let SemIf or the local model rank suggestion options.
     pub decisions: bool,
 }
 

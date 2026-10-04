@@ -1,6 +1,6 @@
 [package]
 name = "sidekick-ai"
-description = "AI tiers for Sidekick: Claude Code CLI, local models, the Anthropic API, and SemIf decisions"
+description = "AI for Sidekick: Claude Code CLI, local models, the Anthropic API, and SemIf decisions"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1,4 +1,4 @@
-//! Skills turn events into suggestions without any AI (tier T0).
+//! Skills turn events into suggestions without any AI.
 //!
 //! - [`manifest`]: the YAML skill format.
 //! - [`engine`]: matching, merging, ranking and cooldowns.
