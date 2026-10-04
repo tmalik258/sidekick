@@ -1,7 +1,7 @@
-//! T1 ranking of suggestion options (SRS 5.5, FR-AI-10/11). Before a
-//! suggestion shows, SemIf or the local model guesses which option the user
-//! wants, and that option moves to the front. Options the user has picked
-//! before always win: learned choices are never overridden.
+//! Ranking of suggestion options. Before a suggestion shows, SemIf or the
+//! local model guesses which option the user wants, and that option moves
+//! to the front. Options the user has picked before always win: learned
+//! choices are never overridden.
 //!
 //! Decisions get a short budget so the island never waits on a slow model.
 //! A late answer is cached and used from the next matching suggestion on
@@ -97,7 +97,7 @@ async fn ask(deciders: &[Arc<dyn Decider>], d: &Decision) -> Option<String> {
     None
 }
 
-/// Reorders `p` using a cached or fresh T1 decision, within the budget.
+/// Reorders `p` using a cached or fresh decision, within the budget.
 pub async fn rank(app: &AppHandle, mut p: Proposal) -> Proposal {
     if !wants_decision(app, &p) {
         return p;

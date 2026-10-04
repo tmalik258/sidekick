@@ -11,7 +11,7 @@ pub struct Answer {
     pub text: String,
 }
 
-/// Tries providers in order (FR-AI-02). A provider that is not reachable, or
+/// Tries providers in order. A provider that is not reachable, or
 /// fails before sending any text, hands over to the next one. Once text has
 /// reached the user, a failure is reported instead of starting over.
 #[derive(Default, Clone)]

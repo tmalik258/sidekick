@@ -1,6 +1,6 @@
 id: clipboard.open-url
 name: Open copied links
-description: Offer browsers for a copied link (FR-CLIP-03). Off by default; links are copied often.
+description: Offer browsers for a copied link. Off by default; links are copied often.
 priority: 30
 enabled_by_default: false
 cooldown_secs: 5

@@ -1,6 +1,6 @@
 id: dev.claude-finished
 name: Claude Code finished
-description: Tell you when a Claude Code session finishes its turn (FR-DEV-10). Needs the Claude Code hook from Settings.
+description: Tell you when a Claude Code session finishes its turn. Needs the Claude Code hook from Settings.
 priority: 70
 cooldown_secs: 20
 dedupe: "{{session}}"

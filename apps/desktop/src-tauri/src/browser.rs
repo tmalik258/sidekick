@@ -1,5 +1,5 @@
 //! The browser side of Sidekick: the pairing code the extension needs, and
-//! the actions that send it commands (FR-BRW-01, FR-BRW-04).
+//! the actions that send it commands.
 
 use std::path::Path;
 

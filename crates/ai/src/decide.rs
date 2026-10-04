@@ -1,4 +1,4 @@
-//! T1 decisions: pick one option from a typed list, with a score per option.
+//! Decisions: pick one option from a typed list, with a score per option.
 //! SemIf reads the answer straight off the model's logits; a local chat
 //! model is the fallback when SemIf is not installed.
 

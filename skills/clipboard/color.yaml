@@ -1,6 +1,6 @@
 id: clipboard.color
 name: Copied colors
-description: For a copied color, copy it again as hex, rgb(), hsl() or the nearest Tailwind class (FR-CLIP-03).
+description: For a copied color, copy it again as hex, rgb(), hsl() or the nearest Tailwind class.
 priority: 35
 cooldown_secs: 10
 dedupe: "{{hex}}"

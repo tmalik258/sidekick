@@ -1,4 +1,4 @@
-//! Copied colors (FR-CLIP-03): the same color as hex, rgb(), hsl() and the
+//! Copied colors: the same color as hex, rgb(), hsl() and the
 //! nearest Tailwind class, ready to paste.
 
 /// Tailwind's default palette, shades 50 to 950.

@@ -1,8 +1,8 @@
 //! Core building blocks shared by the Sidekick desktop app and its sensors.
 //!
-//! - [`event`]: the event envelope every sensor emits (SRS 9.2).
+//! - [`event`]: the event envelope every sensor emits.
 //! - [`bus`]: in-process fan-out of events to subscribers.
-//! - [`mascot`]: the mascot and island state machine (SRS 7.1).
+//! - [`mascot`]: the mascot and island state machine.
 //! - [`settings`]: user settings persisted as JSON.
 //! - [`storage`]: SQLite storage for events and history.
 

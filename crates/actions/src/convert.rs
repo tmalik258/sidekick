@@ -1,5 +1,5 @@
 //! File conversion and archive extraction through installed tools
-//! (FR-FILE-02, FR-FILE-03). Output never overwrites an existing file.
+//!. Output never overwrites an existing file.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;

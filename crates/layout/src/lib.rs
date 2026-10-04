@@ -1,4 +1,4 @@
-//! Window layouts (FR-SYS-04): where each app's windows sit, saved per
+//! Window layouts: where each app's windows sit, saved per
 //! monitor setup, so plugging a monitor back in puts things back.
 
 use serde::{Deserialize, Serialize};

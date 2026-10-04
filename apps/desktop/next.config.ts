@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-// Next.js runs only as a static site inside Tauri's WebView (SRS 3.2):
+// Next.js runs only as a static site inside Tauri's WebView:
 // no SSR, API routes, server actions, or middleware.
 const nextConfig: NextConfig = {
   output: "export",

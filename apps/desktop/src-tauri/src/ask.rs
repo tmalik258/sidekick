@@ -1,4 +1,4 @@
-//! Ask mode (FR-UI-07): the island itself grows into a panel for commands
+//! Ask mode: the island itself grows into a panel for commands
 //! and chat. A global shortcut (Ctrl+Space by default) or the island's Ask
 //! button opens it; Esc or clicking anywhere else closes it. Until onboarding
 //! is finished, the island stays locked on welcome: blur, Esc and the Ask

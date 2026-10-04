@@ -1,5 +1,5 @@
 //! File helpers that need the app: document summaries in Ask mode
-//! (FR-FILE-06) and the weekly Downloads check (FR-FILE-07).
+//! and the weekly Downloads check.
 
 use std::path::Path;
 use std::process::{Command, Stdio};

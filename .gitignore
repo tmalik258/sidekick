@@ -6,3 +6,6 @@ node_modules/
 .env.*
 apps/desktop/src-tauri/resources/voice-models/
 !apps/desktop/src-tauri/resources/voice-models/.keep
+
+# Editor and agent files
+.cursor/

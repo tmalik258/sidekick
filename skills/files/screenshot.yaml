@@ -1,6 +1,6 @@
 id: files.screenshot
 name: Screenshots
-description: When you take a screenshot (Win+PrtScn or the Snipping Tool), offer to pull the text out of it, show it, or copy it again (FR-SCR-01). It never becomes automatic, since the screenshot is already on the clipboard.
+description: When you take a screenshot (Win+PrtScn or the Snipping Tool), offer to pull the text out of it, show it, or copy it again. It never becomes automatic, since the screenshot is already on the clipboard.
 priority: 65
 cooldown_secs: 5
 dedupe: "{{path}}"

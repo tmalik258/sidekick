@@ -1,4 +1,4 @@
-//! Projects (FR-DEV-04, 05, 07, 10): when a repo comes to the front in an
+//! Projects: when a repo comes to the front in an
 //! editor, report its branch and how far behind it is, a missing `.env`,
 //! and whether Docker is needed. Also lists repos for the launcher.
 

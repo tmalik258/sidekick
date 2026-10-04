@@ -1,4 +1,4 @@
-//! Morning brief (FR-COMM-01): the first time you are at the computer each
+//! Morning brief: the first time you are at the computer each
 //! morning, one card with yesterday's time, repos with unsaved work and, when
 //! the GitHub CLI is signed in, pull requests waiting on you. Everything is
 //! gathered on this PC; nothing is sent anywhere unless you ask AI to plan

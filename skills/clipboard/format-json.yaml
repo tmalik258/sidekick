@@ -1,6 +1,6 @@
 id: clipboard.format-json
 name: Format copied JSON
-description: Pretty-print JSON on the clipboard (FR-CLIP-03). Off by default.
+description: Pretty-print JSON on the clipboard. Off by default.
 priority: 30
 enabled_by_default: false
 trigger:

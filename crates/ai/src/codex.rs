@@ -7,7 +7,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
 use crate::{AiError, AiProvider, CancellationToken, ChatRequest, Sink, hide_console, transcript};
 
-/// T2 through the user's own Codex CLI (`codex exec`), so answers come from
+/// Chat through the user's own Codex CLI (`codex exec`), so answers come from
 /// their ChatGPT plan or OpenAI key. Like Claude Code, Sidekick never reads
 /// Codex's credentials; it only runs the CLI the user already signed in to.
 /// It runs read-only in an empty folder, so it cannot change anything.

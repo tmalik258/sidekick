@@ -1,6 +1,6 @@
 id: dev.open-in-browser
 name: Open dev servers in a browser
-description: When a dev server starts, open it in the browser you pick. Your choice moves to the front next time (FR-DEV-01, FR-DEV-02).
+description: When a dev server starts, open it in the browser you pick. Your choice moves to the front next time.
 priority: 60
 cooldown_secs: 45
 dedupe: "{{port}}"

@@ -1,6 +1,6 @@
 id: system.focus
 name: Focus mode
-description: After 20 minutes straight in your editor, offer Do Not Disturb when it is not on already (FR-SYS-05).
+description: After 20 minutes straight in your editor, offer Do Not Disturb when it is not on already.
 priority: 35
 cooldown_secs: 7200
 trigger:

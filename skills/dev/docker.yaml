@@ -1,6 +1,6 @@
 id: dev.docker
 name: Start Docker
-description: When a project uses Docker Compose and Docker Desktop is not running, offer to start it (FR-DEV-07).
+description: When a project uses Docker Compose and Docker Desktop is not running, offer to start it.
 priority: 45
 cooldown_secs: 3600
 dedupe: "{{path}}"

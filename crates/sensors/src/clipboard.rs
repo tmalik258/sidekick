@@ -8,8 +8,8 @@ use tokio::task::JoinHandle;
 use crate::classify::{ClipKind, clip_kind};
 use crate::{Sensor, SensorGate};
 
-/// Notices copied text and classifies it (FR-SEN-06). Secrets are flagged
-/// and their text never leaves this sensor (FR-CLIP-02).
+/// Notices copied text and classifies it. Secrets are flagged
+/// and their text never leaves this sensor.
 pub struct ClipboardSensor;
 
 impl ClipboardSensor {

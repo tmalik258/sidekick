@@ -1,4 +1,4 @@
-//! Voice (FR-VOICE): "Hey Sidekick" wakes a listener that transcribes what
+//! Voice: "Hey Sidekick" wakes a listener that transcribes what
 //! you say as you say it, and answers are spoken with Supertonic. Everything runs
 //! on this PC through sherpa-onnx; audio is never stored or sent anywhere,
 //! only the final text goes to the AI you chose.

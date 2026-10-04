@@ -5,7 +5,7 @@ use tokio::task::JoinHandle;
 
 use crate::{Sensor, SensorGate};
 
-/// Notices when the user steps away and comes back (FR-SEN-08), from the
+/// Notices when the user steps away and comes back, from the
 /// time since the last keyboard or mouse input. Suggestions wait while the
 /// user is away instead of popping up to an empty room.
 pub struct IdleSensor {

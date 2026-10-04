@@ -18,7 +18,7 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX events_ts ON events (ts);
     CREATE INDEX events_kind ON events (kind);",
-    // Action log (FR-ACT-06) and learned choices (FR-DEV-02, FR-ACT-07).
+    // Action log and learned choices.
     "CREATE TABLE actions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ts TEXT NOT NULL,
@@ -36,10 +36,10 @@ const MIGRATIONS: &[&str] = &[
         last_ts TEXT NOT NULL,
         PRIMARY KEY (key, label)
     );",
-    // Undo for actions that created a file (FR-ACT-04).
+    // Undo for actions that created a file.
     "ALTER TABLE actions ADD COLUMN undo_path TEXT;
     ALTER TABLE actions ADD COLUMN undone INTEGER NOT NULL DEFAULT 0;",
-    // Time per app and project, per local day (FR-SYS-06). Local only.
+    // Time per app and project, per local day. Local only.
     "CREATE TABLE app_time (
         day TEXT NOT NULL,
         app TEXT NOT NULL,
@@ -47,13 +47,13 @@ const MIGRATIONS: &[&str] = &[
         secs INTEGER NOT NULL,
         PRIMARY KEY (day, app, project)
     );",
-    // Keyword search over history and chosen folders (FR-RAG, P4 part 1).
+    // Keyword search over history and chosen folders.
     // `ref` is the path, URL or id a result opens.
     "CREATE VIRTUAL TABLE search USING fts5(
         source UNINDEXED, ref UNINDEXED, title, body, ts UNINDEXED,
         tokenize = 'porter unicode61'
     );",
-    // How the user treats each skill (FR-ACT-07).
+    // How the user treats each skill.
     "CREATE TABLE skill_habits (
         skill_id TEXT PRIMARY KEY,
         dismiss_streak INTEGER NOT NULL DEFAULT 0,
@@ -301,7 +301,7 @@ impl Storage {
         Ok(usize::try_from(version).unwrap_or(0))
     }
 
-    /// Stores an event. Payloads of secret events are dropped (NFR-PRIV-01).
+    /// Stores an event. Payloads of secret events are dropped.
     pub fn insert_event(&self, event: &Event) -> Result<(), StorageError> {
         let payload = match event.sensitivity {
             Sensitivity::Secret => None,
@@ -635,8 +635,8 @@ impl Storage {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
-    /// Keeps only the newest `keep` items of `source` (FR-CLIP-01 keeps 500
-    /// clipboard items) and drops earlier copies of the same text.
+    /// Keeps only the newest `keep` items of `source` (the clipboard history
+    /// keeps 500) and drops earlier copies of the same text.
     pub fn trim_source(
         &self,
         source: &str,

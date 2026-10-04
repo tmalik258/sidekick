@@ -1,5 +1,5 @@
-//! AI tiers wired to settings: chat in Ask mode (T2 with fallback) and
-//! T1 decisions for ranking suggestions.
+//! AI wired to settings: chat in Ask mode (with fallback) and decisions
+//! for ranking suggestions.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -155,7 +155,7 @@ fn semif(app: &AppHandle, ai: &AiSettings) -> SemIf {
     }
 }
 
-/// T1 deciders in order: SemIf when switched on, then the local model.
+/// Deciders in order: SemIf when switched on, then the local model.
 pub fn deciders(app: &AppHandle, settings: &Settings) -> Vec<Arc<dyn Decider>> {
     let ai = &settings.ai;
     let mut out: Vec<Arc<dyn Decider>> = Vec::new();

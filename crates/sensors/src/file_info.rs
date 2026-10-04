@@ -1,6 +1,6 @@
 //! Extra facts about a finished download, worked out before skills see it:
-//! an identical file already in the folder (FR-FILE-05) and, for
-//! installers, who signed it (FR-FILE-04).
+//! an identical file already in the folder and, for
+//! installers, who signed it.
 
 use std::fs::File;
 use std::io::{BufReader, Read};

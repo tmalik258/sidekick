@@ -1,4 +1,4 @@
-//! Search over what Sidekick has seen (FR-RAG keyword part, FR-FILE-08):
+//! Search over what Sidekick has seen:
 //! downloads, screenshots, clipboard text, web pages from the extension,
 //! Claude Code sessions, actions, Ask answers, and text files in folders
 //! the user opts into. Everything stays in the local SQLite FTS5 index.
@@ -12,7 +12,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, lock};
 
-/// Sources Claude Code may search through MCP (FR-RAG-11): never the
+/// Sources Claude Code may search through MCP: never the
 /// clipboard or page text, which can hold private material.
 pub const SHAREABLE: &[&str] = &["file", "download", "screenshot", "action", "chat", "claude"];
 
@@ -30,7 +30,7 @@ pub const LOCAL: &[&str] = &[
     "meeting",
 ];
 
-/// Clipboard items kept (FR-CLIP-01).
+/// Clipboard items kept.
 const CLIPBOARD_HISTORY: u32 = 500;
 const MAX_FILE_BYTES: u64 = 1_000_000;
 const MAX_FILES: usize = 20_000;
@@ -149,7 +149,7 @@ pub fn search(app: &AppHandle, query: &str, sources: &[&str], limit: u32) -> Vec
         .unwrap_or_default()
 }
 
-// ---------- Semantic search (FR-RAG-03) ----------
+// ---------- Semantic search ----------
 
 /// The last embedding problem, for Settings > Search.
 static EMBED_ERROR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);

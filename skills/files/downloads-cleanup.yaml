@@ -1,6 +1,6 @@
 id: files.downloads-cleanup
 name: Downloads cleanup
-description: When Downloads piles up, offer to sort loose files into folders, clear installers you most likely ran already, and move files older than 30 days to the Recycle Bin (FR-FILE-07). About once a week at most.
+description: When Downloads piles up, offer to sort loose files into folders, clear installers you most likely ran already, and move files older than 30 days to the Recycle Bin. About once a week at most.
 priority: 20
 cooldown_secs: 518400
 trigger:

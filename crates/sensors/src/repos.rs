@@ -1,4 +1,4 @@
-//! End-of-day repos (FR-DEV-09): once a day, in the evening, finds git repos
+//! End-of-day repos: once a day, in the evening, finds git repos
 //! in your code folders with uncommitted or unpushed work, so nothing is
 //! left only on this laptop overnight.
 
@@ -122,7 +122,7 @@ fn fetch(repo: &Path, timeout: Duration) {
 }
 
 /// What a developer wants to know when a project comes to the front
-/// (FR-DEV-04, 05, 07): branch, how far behind and ahead of its upstream,
+///: branch, how far behind and ahead of its upstream,
 /// uncommitted files, a missing `.env`, and whether it needs Docker.
 pub fn status(repo: &Path) -> serde_json::Value {
     fetch(repo, Duration::from_secs(10));

@@ -1,4 +1,4 @@
-//! Update check (P5): once a day, asks GitHub for the latest release and
+//! Update check: once a day, asks GitHub for the latest release and
 //! offers it when it is newer. Install downloads the installer from this
 //! repository's release, checks it against the release's SHA256SUMS.txt,
 //! and runs it (the user clicks through it); Sidekick then quits so it can

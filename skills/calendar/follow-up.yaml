@@ -1,6 +1,6 @@
 id: calendar.follow-up
 name: Meeting follow-up
-description: After a meeting, offer to draft the follow-up, from your Fathom notes when Fathom is connected on Composio (FR-COMM-03).
+description: After a meeting, offer to draft the follow-up, from your Fathom notes when Fathom is connected on Composio.
 priority: 55
 cooldown_secs: 600
 dedupe: "{{title}} {{start}}"

@@ -1,6 +1,6 @@
 # Skills
 
-Built-in skills, one YAML file each (SRS 9.1). They are compiled into the app; skills in `%APPDATA%/dev.sidekick.app/skills` load on top and override built-ins with the same id.
+Built-in skills, one YAML file each. They are compiled into the app; skills in `%APPDATA%/dev.sidekick.app/skills` load on top and override built-ins with the same id.
 
 ```yaml
 id: dev.open-in-browser        # unique

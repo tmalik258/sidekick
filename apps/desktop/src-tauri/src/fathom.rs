@@ -1,4 +1,4 @@
-//! Fathom follow-up (FR-COMM-03): after a meeting, fetch its Fathom summary
+//! Fathom follow-up: after a meeting, fetch its Fathom summary
 //! and action items through Composio (Fathom connected there) and have the
 //! AI draft the follow-up in Ask mode.
 

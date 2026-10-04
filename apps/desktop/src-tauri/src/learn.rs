@@ -1,4 +1,4 @@
-//! Learned preferences (FR-ACT-07). Dismissing a skill's suggestion three
+//! Learned preferences. Dismissing a skill's suggestion three
 //! times in a row quiets that skill for a day. Picking the same first
 //! option five times in a row offers to make the skill automatic, once,
 //! and only when that option is safe to run on its own.

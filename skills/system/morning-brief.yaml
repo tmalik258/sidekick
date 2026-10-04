@@ -1,6 +1,6 @@
 id: system.morning-brief
 name: Start my day
-description: The first time you sit down each morning, one card with today's meetings, reviews and unsaved work, and the apps and sites you usually open first, ready to open in one go (FR-COMM-01).
+description: The first time you sit down each morning, one card with today's meetings, reviews and unsaved work, and the apps and sites you usually open first, ready to open in one go.
 priority: 55
 cooldown_secs: 43200
 trigger:

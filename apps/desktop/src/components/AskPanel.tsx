@@ -1,6 +1,6 @@
 "use client";
 
-// Ask mode (FR-UI-07, FR-AI-06): the island itself becomes the place to run a
+// Ask mode: the island itself becomes the place to run a
 // command or ask Sidekick, with the app you were in and the clipboard
 // attachable on request. Rendered inside the island shell; the island owns
 // the morph, this owns the content.
@@ -250,7 +250,7 @@ export function AskPanel() {
     ];
     const q = text.trim().toLowerCase();
     if (!q) return turns.length ? all : [...starters, ...all];
-    // Typing a project's name offers to open it (FR-DEV-10).
+    // Typing a project's name offers to open it.
     const launch: Command[] = projects
       .filter((p) => p.name.toLowerCase().includes(q.replace(/^open\s+/, "")))
       .slice(0, 4)

@@ -7,7 +7,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
 use crate::{AiError, AiProvider, CancellationToken, ChatRequest, Sink, hide_console, transcript};
 
-/// T2 through the user's own Claude Code install (`claude -p`), so answers
+/// Chat through the user's own Claude Code install (`claude -p`), so answers
 /// come from their subscription. Sidekick never reads Claude Code's
 /// credential files; it only runs the CLI the user already signed in to.
 pub struct ClaudeCode {

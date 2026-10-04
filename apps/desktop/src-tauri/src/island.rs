@@ -1,6 +1,6 @@
 //! The island window: always on top, centered at the top edge of the primary
 //! monitor, click-through everywhere except the part the UI reports as
-//! interactive (FR-UI-01).
+//! interactive.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -98,7 +98,7 @@ fn monitor_at(monitors: &[tauri::Monitor], x: i64, y: i64) -> Option<&tauri::Mon
     })
 }
 
-/// Moves the island to the monitor of the window in front (FR-UI-06). Not
+/// Moves the island to the monitor of the window in front. Not
 /// while Ask mode is open, and not for fullscreen windows (the island stays
 /// put and visible on its own screen).
 pub fn follow_active_monitor(app: &AppHandle, payload: &serde_json::Value) {
@@ -177,7 +177,7 @@ fn spawn_top_keeper(window: WebviewWindow) {
 }
 
 /// Optionally fades the island while a fullscreen app (a game, a video, a
-/// slideshow) is in front (FR-UI-09). Off by default: the island stays on
+/// slideshow) is in front. Off by default: the island stays on
 /// top of everything.
 pub fn follow_fullscreen(app: &AppHandle, payload: &serde_json::Value) {
     let Some(window) = app.get_webview_window(LABEL) else {

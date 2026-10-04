@@ -1,6 +1,6 @@
 id: files.convert-media
 name: Convert video and audio
-description: Convert media with ffmpeg (FR-FILE-02).
+description: Convert media with ffmpeg.
 priority: 40
 trigger:
   event: file.download_completed

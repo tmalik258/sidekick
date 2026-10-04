@@ -1,6 +1,6 @@
 id: dev.env-file
 name: Missing .env
-description: When a project has .env.example but no .env, offer to create it (FR-DEV-05).
+description: When a project has .env.example but no .env, offer to create it.
 priority: 50
 cooldown_secs: 86400
 dedupe: "{{path}}"

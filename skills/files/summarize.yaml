@@ -1,6 +1,6 @@
 id: files.summarize
 name: Summarize documents
-description: For a downloaded PDF, Word or text document, offer a summary with AI (FR-FILE-06). PDFs need pdftotext (Poppler), Word files need pandoc.
+description: For a downloaded PDF, Word or text document, offer a summary with AI. PDFs need pdftotext (Poppler), Word files need pandoc.
 priority: 40
 trigger:
   event: file.download_completed

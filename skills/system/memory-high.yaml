@@ -1,6 +1,6 @@
 id: system.memory-high
 name: Memory running out
-description: Tell you when memory stays above 92 percent and which app uses the most (FR-SYS-02).
+description: Tell you when memory stays above 92 percent and which app uses the most.
 priority: 55
 cooldown_secs: 1800
 trigger:

@@ -1,6 +1,6 @@
 id: files.duplicate
 name: Duplicate downloads
-description: When a download is identical to a file already in the folder, offer to remove the new copy (FR-FILE-05). It goes to the Recycle Bin.
+description: When a download is identical to a file already in the folder, offer to remove the new copy. It goes to the Recycle Bin.
 priority: 80
 trigger:
   event: file.download_completed

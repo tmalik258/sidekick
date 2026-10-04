@@ -1,6 +1,6 @@
 id: browser.login
 name: Fill logins from your browsers
-description: On a sign-in page, offer to fill the login from passwords saved in your browsers on this PC (FR-BRW-01). Needs the Sidekick browser extension.
+description: On a sign-in page, offer to fill the login from passwords saved in your browsers on this PC. Needs the Sidekick browser extension.
 priority: 70
 cooldown_secs: 60
 dedupe: "{{domain}}"

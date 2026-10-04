@@ -5,7 +5,7 @@ use std::path::Path;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
-/// Whether sensors are paused (FR-SET-01).
+/// Whether sensors are paused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(tag = "kind", content = "until", rename_all = "snake_case")]
 pub enum Pause {
@@ -65,19 +65,19 @@ pub struct Settings {
     pub theme: String,
     /// UI sound kit: one of [`SOUND_KITS`].
     pub sound_kit: String,
-    /// Per-skill switches set by the user (FR-SKL-06).
+    /// Per-skill switches set by the user.
     pub skills: BTreeMap<String, SkillPref>,
-    /// Global shortcut that turns the island into Ask mode (FR-UI-07).
+    /// Global shortcut that turns the island into Ask mode.
     pub palette_hotkey: String,
     /// More global shortcuts, by action (talk, accept, dismiss, screen,
     /// clipboard, pause, settings). Empty turns one off.
     pub shortcuts: BTreeMap<String, String>,
-    /// Folders with git repos to check at the end of the day (FR-DEV-09).
+    /// Folders with git repos to check at the end of the day.
     /// Empty means the usual places (code, projects, source/repos, ...).
     pub code_folders: Vec<String>,
     /// Local hour after which unsaved work is reported.
     pub end_of_day_hour: u32,
-    /// Folders whose text files are searchable (opt in, FR-RAG-05).
+    /// Folders whose text files are searchable (opt in).
     pub index_folders: Vec<String>,
     pub ai: AiSettings,
     pub voice: VoiceSettings,
@@ -92,7 +92,7 @@ pub struct Settings {
     pub welcome_step: u32,
     /// Look for a newer release once a day.
     pub check_updates: bool,
-    /// Programs whose windows and copies Sidekick ignores (FR-SET-02).
+    /// Programs whose windows and copies Sidekick ignores.
     pub deny_apps: Vec<String>,
     /// Sites (and their subdomains) Sidekick ignores.
     pub deny_sites: Vec<String>,
@@ -217,7 +217,7 @@ impl Default for NotificationSettings {
     }
 }
 
-/// Password managers are ignored from the start (FR-RAG-08).
+/// Password managers are ignored from the start.
 pub const DEFAULT_DENY_APPS: &[&str] = &[
     "1password.exe",
     "bitwarden.exe",
@@ -229,7 +229,7 @@ pub const DEFAULT_DENY_APPS: &[&str] = &[
     "proton pass.exe",
 ];
 
-/// Search by meaning with an embedding model on this PC (FR-RAG-03).
+/// Search by meaning with an embedding model on this PC.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SemanticSearch {
@@ -247,7 +247,7 @@ impl Default for SemanticSearch {
     }
 }
 
-/// Meeting reminders (FR-COMM-02); meetings come from Composio.
+/// Meeting reminders; meetings come from Composio.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct CalendarSettings {
@@ -280,7 +280,7 @@ pub struct ComposioSettings {
     pub headers: BTreeMap<String, String>,
 }
 
-/// Voice (FR-VOICE): on by default. Speech models download on launch when
+/// Voice: on by default. Speech models download on launch when
 /// missing. The microphone is open only while voice is on and Sidekick is not
 /// paused.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -328,7 +328,7 @@ impl Default for VoiceSettings {
     }
 }
 
-/// AI tiers (FR-AI-09: each can be switched off; Sidekick works without any).
+/// AI providers (each can be switched off; Sidekick works without any).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AiSettings {
@@ -342,7 +342,7 @@ pub struct AiSettings {
     pub local: LocalModelPref,
     pub anthropic: AnthropicPref,
     pub semif: SemIfPref,
-    /// Let T1 (SemIf or the local model) rank suggestion options.
+    /// Let SemIf or the local model rank suggestion options.
     pub decisions: bool,
 }
 

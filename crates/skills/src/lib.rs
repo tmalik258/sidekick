@@ -1,6 +1,6 @@
-//! Skills turn events into suggestions without any AI (tier T0).
+//! Skills turn events into suggestions without any AI.
 //!
-//! - [`manifest`]: the YAML skill format (SRS 9.1).
+//! - [`manifest`]: the YAML skill format.
 //! - [`engine`]: matching, merging, ranking and cooldowns.
 //! - [`template`]: `{{field}}` rendering.
 
@@ -357,7 +357,7 @@ pub fn builtin() -> Vec<Skill> {
         .collect()
 }
 
-/// Built-ins plus the user's own skills (FR-SKL-01). A user skill with the
+/// Built-ins plus the user's own skills. A user skill with the
 /// same id replaces the built-in one. Broken files are skipped and reported.
 pub fn load_all(user_dir: &Path) -> (Vec<Skill>, Vec<String>) {
     let mut by_id: BTreeMap<String, Skill> =

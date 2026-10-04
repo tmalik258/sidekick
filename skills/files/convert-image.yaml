@@ -1,6 +1,6 @@
 id: files.convert-image
 name: Convert images
-description: Convert a downloaded image with ImageMagick or ffmpeg (FR-FILE-02).
+description: Convert a downloaded image with ImageMagick or ffmpeg.
 priority: 40
 trigger:
   event: file.download_completed

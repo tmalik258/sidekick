@@ -475,7 +475,7 @@ export async function openChat(id: string) {
   useSidekick.setState({ turns, chatId: null, chatPage: null, chatSkill: false, conversation: id });
 }
 
-/** Starts a conversation in which AI drafts a new skill (FR-SKL-08). */
+/** Starts a conversation in which AI drafts a new skill. */
 export function startSkill(description: string) {
   newChat();
   useSidekick.setState({ chatSkill: true });
