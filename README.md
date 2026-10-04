@@ -67,7 +67,7 @@ Updates come to the island on their own (Settings > Home > Tell me about new ver
 - **Undo**: files Sidekick creates (conversions, extracted folders) can be sent to the Recycle Bin from the island or Settings > History for 24 hours.
 - **Low disk or memory**: the island warns once and offers Storage settings or Task Manager.
 - **Step away** for 5 minutes and suggestions wait for you instead of expiring unseen.
-- **Browser**: press Install next to your browser in Settings > Connections; Sidekick opens the extensions page with the folder path copied, and the extension pairs on its own. Sign-in pages offer fill from supported local Chromium password stores in each browser’s last-used profile. New entries have a five-second save countdown; different passwords require an explicit Override click within five seconds or are skipped. Local saving does not guarantee cloud sync. Too many tabs offer cleanup, Upwork jobs offer a proposal draft.
+- **Browser**: press Install next to your browser in Settings > Connections; Sidekick opens the extensions page with the folder path copied, and the extension pairs on its own. Too many tabs offer cleanup, Upwork jobs offer a proposal draft.
 - **Screenshots** (Win+PrtScn): Copy, Copy text (with Tesseract), Show in folder.
 - **Search my stuff**: type in Ask mode and pick Search. Pick folders under Settings > Privacy and data. With Ollama running, `ollama pull nomic-embed-text` adds search by meaning (embeddings stay on this PC).
 - **Claude Code can use Sidekick** through MCP: press Add for me in Settings > Connections.

@@ -20,13 +20,11 @@ use crate::windows;
 mod chat;
 mod data;
 mod notify;
-mod passwords;
 mod setup;
 mod voice;
 pub use chat::*;
 pub use data::*;
 pub use notify::*;
-pub use passwords::*;
 pub use setup::*;
 pub use voice::*;
 
@@ -326,9 +324,6 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
         return Err(err);
     }
     state.gate.set(gate_state(&next, now));
-    if next.pause.is_active(now) || !next.sensor_enabled("browser") {
-        crate::password_save::cancel_all(app);
-    }
     if previous.ai != next.ai {
         let app = app.clone();
         tauri::async_runtime::spawn(async move { ai::refresh_readiness(&app).await });

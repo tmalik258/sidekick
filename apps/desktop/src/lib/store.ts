@@ -13,7 +13,6 @@ import {
   DEFAULT_SETTINGS,
   type ExtensionGuide,
   type MascotState,
-  type PasswordSaved,
   type Proposal,
   type Settings,
   type Suggestion,
@@ -27,8 +26,6 @@ interface SidekickState {
   mascot: MascotState;
   settings: Settings;
   suggestion: Suggestion | null;
-  /** Brief chip after mirroring a password into browser stores. */
-  passwordSaved: PasswordSaved | null;
   /** A newer release, until it is installed. */
   update: UpdateInfo | null;
   /** A short-lived face on top of the mascot's state (see mood.ts). */
@@ -160,7 +157,6 @@ export const useSidekick = create<SidekickState>(() => ({
   mascot: "idle",
   settings: DEFAULT_SETTINGS,
   suggestion: null,
-  passwordSaved: null,
   mood: null,
   update: null,
   online: true,
@@ -596,10 +592,6 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       }),
       listen(EVENTS.suggestionClear, (id) => {
         if (useSidekick.getState().suggestion?.id === id) useSidekick.setState({ suggestion: null });
-      }),
-      listen(EVENTS.passwordSaved, (passwordSaved) => {
-        useSidekick.setState({ passwordSaved });
-        setMood("wink", 1800);
       }),
       listen(EVENTS.suggestionLater, (later) => {
         // Everything that was waiting is dealt with: a small celebration.

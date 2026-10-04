@@ -65,9 +65,6 @@ export interface Settings {
   recipes: Recipe[];
   memory: string[];
   agent: AgentSettings;
-  /** Browser ids for password fill/save. Null means all detected stores; [] disables all. */
-  passwordBrowsers: string[] | null;
-  passwordSelectionVersion: number;
 }
 
 export interface CalendarToday {
@@ -258,56 +255,11 @@ export interface Suggestion {
   always?: boolean[];
 }
 
-export interface PasswordEditDraft {
-  id: string;
-  domain: string;
-  username: string;
-  password: string;
-}
-
 /** A newer Sidekick release than the one running. */
 export interface UpdateInfo {
   version: string;
   current: string;
   url: string;
-}
-
-export interface PasswordSaved {
-  id: string;
-  domain: string;
-  expiresAt: number;
-  message: string;
-}
-
-export interface PasswordWriteResult {
-  browser: string;
-  status: "saved" | "unchanged" | "locked" | "conflict" | "unsupported" | "failed" | "disabled" | "cancelled";
-  message: string;
-}
-
-export interface PasswordPrompt {
-  id: string;
-  domain: string;
-  username: string;
-  seconds: number;
-  phase: "queued" | "countdown" | "editing" | "retry" | "writing" | "saved";
-  missing: string[];
-  conflicts: string[];
-  existing: string[];
-  unavailable: PasswordWriteResult[];
-  sources: string[];
-  mirror: boolean;
-}
-
-export interface PasswordMirrorStatus {
-  running: boolean;
-  message: string;
-}
-
-export interface PasswordBrowserInfo {
-  id: string;
-  name: string;
-  enabled: boolean;
 }
 
 export interface StoredEvent {
@@ -390,8 +342,6 @@ export const DEFAULT_SETTINGS: Settings = {
   recipes: [],
   memory: [],
   agent: { ask: "outward", places: {} },
-  passwordBrowsers: null,
-  passwordSelectionVersion: 1,
   voice: {
     enabled: true,
     wakeWord: true,
@@ -418,7 +368,7 @@ export const SENSOR_IDS = [
   {
     id: "browser",
     label: "Browser",
-    hint: "Hears the Sidekick extension: sign-in pages, long reads, Upwork jobs, too many tabs.",
+    hint: "Hears the Sidekick extension: long reads, Upwork jobs, too many tabs.",
   },
   { id: "system", label: "Disk and memory", hint: "Warns when a drive is almost full or memory stays high." },
   {

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Sidekick",
   "version": "0.3.0",
-  "description": "Connects your browser to the Sidekick desktop companion: it reads and acts on pages when you ask, fills and saves logins from your browsers, and tidies tabs.",
+  "description": "Connects your browser to the Sidekick desktop companion: it reads and acts on pages when you ask, and tidies tabs.",
   "icons": { "32": "icons/32.png", "128": "icons/128.png" },
   "permissions": ["tabs", "storage", "bookmarks", "alarms", "scripting"],
   "host_permissions": ["http://127.0.0.1/*"],
