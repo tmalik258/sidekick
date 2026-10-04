@@ -1,7 +1,10 @@
 import { create } from "zustand";
+import type { Expression } from "@/components/orb/expressions";
 import { api, EVENTS, listen } from "./bridge";
+import { firstToday, isThanks, type Mood, moodForSkill, SUGGESTION_MOOD_MS } from "./mood";
 import { type NetNotice, watchNet } from "./net";
-import { cueVolume, playCue, playSound, preloadSounds } from "./sound";
+import { cueVolume, playCue, playMood, playSound, preloadSounds } from "./sound";
+import type { SynthSound } from "./synth";
 import { toolStatus } from "./tools";
 import {
   type ActionResult,
@@ -25,6 +28,8 @@ interface SidekickState {
   suggestion: Suggestion | null;
   /** Brief chip after mirroring a password into browser stores. */
   passwordSaved: PasswordSaved | null;
+  /** A short-lived face on top of the mascot's state (see mood.ts). */
+  mood: Mood | null;
   /** The internet is reachable. */
   online: boolean;
   /** When the connection dropped, while offline. */
@@ -153,6 +158,7 @@ export const useSidekick = create<SidekickState>(() => ({
   settings: DEFAULT_SETTINGS,
   suggestion: null,
   passwordSaved: null,
+  mood: null,
   online: true,
   offlineSince: null,
   netNotice: null,
@@ -345,10 +351,34 @@ export function retryLast(): boolean {
 }
 
 /** Sends a question; false when it could not start (empty, or one running). */
+let moodTimer: ReturnType<typeof setTimeout> | undefined;
+/** Shows a mood on the mascot for `ms`, with its sound when given. */
+export function setMood(id: Expression, ms: number, sound?: SynthSound) {
+  clearTimeout(moodTimer);
+  const until = Date.now() + ms;
+  useSidekick.setState({ mood: { id, until } });
+  moodTimer = setTimeout(() => {
+    if (useSidekick.getState().mood?.until === until) useSidekick.setState({ mood: null });
+  }, ms);
+  if (sound) playMood(sound, uiVolume(), useSidekick.getState().settings.soundKit);
+}
+
+/** "Thanks" in Ask: a little shy, then warm. */
+function thanked() {
+  setMood("shy", 1400, "cooSoft");
+  setTimeout(() => setMood("love", 2400, "mwah"), 1400);
+}
+
+/** The first time Sidekick is seen each day, it says hello. */
+function helloOncePerDay() {
+  if (firstToday()) setTimeout(() => setMood("hello", 2600, "hello"), 900);
+}
+
 export function sendChat(prompt: string, attach?: { clipboard?: boolean; screen?: boolean; speak?: boolean }): boolean {
   const { ask, turns, chatId, chatPage, chatSkill } = useSidekick.getState();
   const q = prompt.trim();
   if (!q || chatId) return false;
+  if (isThanks(q)) thanked();
   const id = crypto.randomUUID();
   const history: ChatMessage[] = [
     ...turns.filter((t) => !t.error).map(({ role, content }) => ({ role, content })),
@@ -506,18 +536,27 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         useSidekick.setState({ mascot: t.state });
         const { settings } = useSidekick.getState();
         if (sounds && t.cue) playCue(t.cue, cueVolume(settings, t.cue), settings.soundKit);
+        if (sounds && t.previous === "sleeping" && t.state === "idle") helloOncePerDay();
       }),
       listen(EVENTS.settingsChanged, (settings) => {
         useSidekick.setState({ settings });
         if (sounds) preloadSounds(settings.soundKit);
         if (!settings.onboarded && !useSidekick.getState().ask) void api.askEnsureWelcome();
       }),
-      listen(EVENTS.suggestionNew, (suggestion) => useSidekick.setState({ suggestion, lastResult: null })),
+      listen(EVENTS.suggestionNew, (suggestion) => {
+        useSidekick.setState({ suggestion, lastResult: null });
+        // The cue already plays for a new suggestion, so the mood is silent.
+        const mood = moodForSkill(suggestion.skillId);
+        if (mood) setMood(mood, SUGGESTION_MOOD_MS);
+      }),
       listen(EVENTS.actionResult, (lastResult) => useSidekick.setState({ lastResult, running: null })),
       listen(EVENTS.suggestionClear, (id) => {
         if (useSidekick.getState().suggestion?.id === id) useSidekick.setState({ suggestion: null });
       }),
-      listen(EVENTS.passwordSaved, (passwordSaved) => useSidekick.setState({ passwordSaved })),
+      listen(EVENTS.passwordSaved, (passwordSaved) => {
+        useSidekick.setState({ passwordSaved });
+        setMood("wink", 1800);
+      }),
       listen(EVENTS.suggestionLater, (later) => useSidekick.setState({ later })),
       listen(EVENTS.islandHover, setHovered),
       listen(EVENTS.islandVisible, (visible) => useSidekick.setState({ visible })),
@@ -641,6 +680,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
     if (disposed) return;
     useSidekick.setState({ settings, mascot, suggestion, voiceStatus, later: later.length, ready: true });
     if (sounds) preloadSounds(settings.soundKit);
+    if (sounds && settings.onboarded) helloOncePerDay();
     // Listeners are live; re-emit welcome if still locked (repairs missed emit).
     if (!settings.onboarded) void api.askEnsureWelcome();
   })();
@@ -649,6 +689,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
     useSidekick.getState,
     (s) => useSidekick.setState(s),
     sounds ? (sound) => playSound(sound, uiVolume(), useSidekick.getState().settings.soundKit) : null,
+    () => setMood("happy", 2500),
   );
 
   return () => {

@@ -103,6 +103,8 @@ pub struct Settings {
     /// Fade the island out while a fullscreen app is in front. Off: the
     /// island stays on top of everything, fullscreen apps included.
     pub hide_in_fullscreen: bool,
+    /// The mascot idles on its own: glances around, blinks, the odd smile.
+    pub alive: bool,
     /// The notification inbox: Sidekick reads Windows notifications and only
     /// brings up what matters.
     pub notifications: NotificationSettings,
@@ -545,7 +547,9 @@ pub struct SkillPref {
 pub const SENSORS_OFF_BY_DEFAULT: [&str; 0] = [];
 
 pub const THEMES: [&str; 3] = ["pearl", "graphite", "midnight"];
-pub const SOUND_KITS: [&str; 1] = ["01"];
+/// "sidekick" is synthesized in the app (soft tones with character);
+/// "01" is the SND kit.
+pub const SOUND_KITS: [&str; 2] = ["sidekick", "01"];
 
 impl Default for Settings {
     fn default() -> Self {
@@ -578,6 +582,7 @@ impl Default for Settings {
             routines: true,
             routines_auto: false,
             hide_in_fullscreen: false,
+            alive: true,
             notifications: NotificationSettings::default(),
             recipes: Vec::new(),
             memory: Vec::new(),
@@ -846,7 +851,7 @@ mod tests {
         }
         .sanitized();
         assert_eq!(s.theme, "pearl");
-        assert_eq!(s.sound_kit, "01");
+        assert_eq!(s.sound_kit, "sidekick");
     }
 
     #[test]

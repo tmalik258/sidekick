@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
-import { checkKit, cueVolume, playCue } from "@/lib/sound";
+import { checkKit, cueVolume, playCue, SYNTH_KIT } from "@/lib/sound";
 import { updateSettings, useSidekick } from "@/lib/store";
 import {
   type ActionRecord,
@@ -27,6 +27,11 @@ import {
 import { Orb, THEME_STYLES } from "../Orb";
 import { SetupChecklist, usePendingByTab } from "../SetupChecklist";
 import { Button, ChipList, Field, FolderPicker, Section, Select, ShortcutRecorder, Slider, Toggle } from "./ui";
+
+const SOUND_KITS: [string, string][] = [
+  [SYNTH_KIT, "Sidekick"],
+  ["01", "Classic"],
+];
 
 const COLLAPSE_OPTIONS: [string, string][] = [
   ["4", "4 seconds"],
@@ -67,7 +72,7 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
       <Section title="Today" keywords="time tracking hours apps">
         <TimeToday />
       </Section>
-      <Section title="Appearance" keywords="theme orb color look fullscreen hide">
+      <Section title="Appearance" keywords="theme orb color look fullscreen hide alive mascot idle">
         <div className="grid grid-cols-3 gap-3">
           {THEMES.map((t) => (
             <button
@@ -92,6 +97,12 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
             onChange={(v) => save({ collapseAfterSecs: Number(v) })}
           />
         </Field>
+        <Toggle
+          label="Alive mode"
+          hint="While nothing is happening, Sidekick glances around, blinks and smiles now and then. No sounds."
+          checked={settings.alive}
+          onChange={(alive) => save({ alive })}
+        />
         <Toggle
           label="Hide while fullscreen"
           hint="Keeps the island out of videos, slides and games. Hover the top edge to bring it back."
@@ -160,9 +171,21 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
         collapsible
         summary={settings.muted ? "Muted" : "On"}
         title="Sound"
-        hint="Sounds by SND (snd.dev), designed by Dentsu Inc. and Starryworks Inc."
-        keywords="volume mute audio cue"
+        hint={
+          settings.soundKit === SYNTH_KIT
+            ? "Soft sounds made by Sidekick itself."
+            : "Sounds by SND (snd.dev), designed by Dentsu Inc. and Starryworks Inc."
+        }
+        keywords="volume mute audio cue kit voice"
       >
+        <Field label="Sounds">
+          <Select
+            label="Sounds"
+            value={settings.soundKit}
+            options={SOUND_KITS}
+            onChange={(soundKit) => save({ soundKit })}
+          />
+        </Field>
         <KitStatus kit={settings.soundKit} />
         <Toggle label="Mute all sounds" checked={settings.muted} onChange={(muted) => save({ muted })} />
         <Slider
