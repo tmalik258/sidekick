@@ -14,6 +14,9 @@ use crate::state::{AppState, lock};
 pub const PROBLEM: &str = "health.problem";
 const EVERY: Duration = Duration::from_secs(5 * 60);
 const FIRST_AFTER: Duration = Duration::from_secs(90);
+/// A check that just failed is tried again after this, so a moment of
+/// being busy (Ollama loading a model) is not reported as broken.
+const CONFIRM_AFTER: Duration = Duration::from_secs(20);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Check {
@@ -98,8 +101,15 @@ pub fn start(app: &AppHandle) {
         tokio::time::sleep(FIRST_AFTER).await;
         let mut before: HashMap<Check, bool> = HashMap::new();
         loop {
-            let now = probe(&app).await;
-            for c in newly_broken(&before, &now) {
+            let mut now = probe(&app).await;
+            let mut broken = newly_broken(&before, &now);
+            if !broken.is_empty() {
+                tokio::time::sleep(CONFIRM_AFTER).await;
+                now = probe(&app).await;
+                let still = newly_broken(&before, &now);
+                broken.retain(|c| still.contains(c));
+            }
+            for c in broken {
                 let (title, detail) = c.message();
                 log::warn!("health: {title}");
                 app.state::<AppState>().bus.publish(Event::new(
@@ -121,9 +131,20 @@ pub fn start(app: &AppHandle) {
 /// The Fix button.
 pub async fn fix(app: &AppHandle, what: &str) -> Result<String, String> {
     match what {
-        "ollama" => crate::setup::run(app, "ollama")
-            .await
-            .map(|()| "Opening Ollama".into()),
+        "ollama" => {
+            // It may have come back on its own since the note appeared.
+            let base_url = lock(&app.state::<AppState>().settings)
+                .ai
+                .local
+                .base_url
+                .clone();
+            if crate::setup::ollama_models(&base_url).await.is_some() {
+                return Ok("Ollama is running again".into());
+            }
+            crate::setup::run(app, "ollama")
+                .await
+                .map(|()| "Opening Ollama".into())
+        }
         "composio" => crate::composio::sign_in(app)
             .await
             .map(|_| "Sign in to Composio in the browser".into()),
