@@ -322,7 +322,17 @@ pub fn parse_state(text: &str) -> PcState {
 pub fn describe(s: &PcState) -> String {
     let mut out = vec![
         format!("Night light: {}", s.night_light.as_str()),
-        format!("Do Not Disturb: {}", s.do_not_disturb.as_str()),
+        // The registry only shows whether banners are allowed, not the Do Not
+        // Disturb switch itself; dnd_on and dnd_off check that live.
+        format!(
+            "Notification banners: {} (Do Not Disturb is not shown here; dnd_on or dnd_off \
+             checks it and says if it was already so)",
+            match s.do_not_disturb {
+                Switch::On => "off",
+                Switch::Off => "on",
+                Switch::Unknown => "unknown",
+            }
+        ),
         format!("Dark mode: {}", s.dark_mode.as_str()),
     ];
     if let Some(b) = s.battery {
@@ -824,6 +834,8 @@ mod tests {
         let d = describe(&s);
         assert!(d.contains("Night light: on"));
         assert!(d.contains("Battery: 64%, plugged in"));
+        assert!(d.contains("Notification banners: off"));
+        assert!(!d.contains("Do Not Disturb: "));
 
         let off = parse_state("night_light_byte=19\ntoasts=\napps_light=1\n");
         assert_eq!(off.night_light, Switch::Off);
