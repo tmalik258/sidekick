@@ -111,6 +111,7 @@ pub fn run() {
             commands::sensors_resume,
             commands::mascot_get,
             commands::island_set_hit_rect,
+            commands::island_ready,
             commands::suggestion_current,
             commands::suggestion_choose,
             commands::suggestion_dismiss,
