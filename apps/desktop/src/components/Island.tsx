@@ -11,7 +11,7 @@ import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
 import type { NetNotice } from "@/lib/net";
 import { playSound } from "@/lib/sound";
-import { connect, setHovered, uiVolume, useSidekick, watchWaiting } from "@/lib/store";
+import { connect, notePick, setHovered, uiVolume, useSidekick, watchWaiting } from "@/lib/store";
 import { isPaused, type MascotState, type Suggestion } from "@/lib/types";
 import { ASK_ORB, AskPanel } from "./AskPanel";
 import { Icon } from "./Icon";
@@ -668,6 +668,7 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
 function choose(suggestion: Suggestion, index: number) {
   playSound("select", uiVolume(), useSidekick.getState().settings.soundKit);
   useSidekick.setState({ running: suggestion.options[index] ?? null });
+  notePick(suggestion.skillId, suggestion.options[index] ?? "");
   void api.suggestionChoose(suggestion.id, index);
 }
 

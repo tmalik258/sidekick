@@ -363,6 +363,38 @@ export function setMood(id: Expression, ms: number, sound?: SynthSound) {
   if (sound) playMood(sound, uiVolume(), useSidekick.getState().settings.soundKit);
 }
 
+/** Two failures this close together make the mascot sad, not just "oops". */
+const SAD_WITHIN_MS = 10 * 60_000;
+let failures = 0;
+let lastFailure = 0;
+/** The option the user picked last, to know what an action result was for. */
+let lastPick: { skillId: string; label: string } | null = null;
+
+export function notePick(skillId: string, label: string) {
+  lastPick = { skillId, label };
+}
+
+/** How an action ended: a second failure in a row is sad; finishing the
+ * whole morning routine is worth a small celebration. */
+function reactToResult(result: ActionResult, sound: boolean) {
+  const pick = lastPick;
+  lastPick = null;
+  if (!result.ok) {
+    const now = Date.now();
+    failures = now - lastFailure < SAD_WITHIN_MS ? failures + 1 : 1;
+    lastFailure = now;
+    if (failures >= 2) {
+      failures = 0;
+      setMood("sad", 3500, sound ? "sad" : undefined);
+    }
+    return;
+  }
+  failures = 0;
+  if (pick?.skillId === "system.morning-brief" && pick.label === "Open all") {
+    setMood("celebrate", 3000, sound ? "fanfare" : undefined);
+  }
+}
+
 /** "Thanks" in Ask: a little shy, then warm. */
 function thanked() {
   setMood("shy", 1400, "cooSoft");
@@ -549,7 +581,10 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         const mood = moodForSkill(suggestion.skillId);
         if (mood) setMood(mood, SUGGESTION_MOOD_MS);
       }),
-      listen(EVENTS.actionResult, (lastResult) => useSidekick.setState({ lastResult, running: null })),
+      listen(EVENTS.actionResult, (lastResult) => {
+        useSidekick.setState({ lastResult, running: null });
+        reactToResult(lastResult, sounds);
+      }),
       listen(EVENTS.suggestionClear, (id) => {
         if (useSidekick.getState().suggestion?.id === id) useSidekick.setState({ suggestion: null });
       }),
@@ -557,7 +592,12 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         useSidekick.setState({ passwordSaved });
         setMood("wink", 1800);
       }),
-      listen(EVENTS.suggestionLater, (later) => useSidekick.setState({ later })),
+      listen(EVENTS.suggestionLater, (later) => {
+        // Everything that was waiting is dealt with: a small celebration.
+        const before = useSidekick.getState().later;
+        useSidekick.setState({ later });
+        if (before >= 2 && later === 0) setMood("celebrate", 3000, sounds ? "tada" : undefined);
+      }),
       listen(EVENTS.islandHover, setHovered),
       listen(EVENTS.islandVisible, (visible) => useSidekick.setState({ visible })),
       listen(EVENTS.islandFullscreen, (fullscreen) => useSidekick.setState({ fullscreen })),
