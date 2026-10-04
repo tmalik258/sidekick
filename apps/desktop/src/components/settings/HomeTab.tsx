@@ -166,6 +166,7 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
           checked={settings.checkUpdates}
           onChange={(checkUpdates) => save({ checkUpdates })}
         />
+        <UpdateRow version={info?.version ?? ""} onError={onError} />
       </Section>
       <Section
         collapsible
@@ -585,5 +586,53 @@ function NotificationInbox({ onError }: { onError: (e: string) => void }) {
         </>
       )}
     </>
+  );
+}
+
+/** This version, and a newer one when it is out: Install, or Check now. */
+function UpdateRow({ version, onError }: { version: string; onError: (e: string) => void }) {
+  const update = useSidekick((s) => s.update);
+  const [state, setState] = useState<"idle" | "checking" | "latest" | "installing">("idle");
+  const check = () => {
+    setState("checking");
+    api.updateCheck().then(
+      (found) => setState(found ? "idle" : "latest"),
+      (e) => {
+        setState("idle");
+        onError(String(e));
+      },
+    );
+  };
+  const install = () => {
+    setState("installing");
+    api.updateInstall().catch((e) => {
+      setState("idle");
+      onError(String(e));
+    });
+  };
+  return (
+    <div className="flex items-center justify-between gap-3 text-[13px]">
+      <span className="min-w-0">
+        <span className="block text-white">
+          {update ? `Sidekick ${update.version} is available` : `Sidekick ${version}`}
+        </span>
+        <span className="block text-(--muted)">
+          {update
+            ? `You have ${update.current}. It downloads, checks and opens the installer.`
+            : state === "latest"
+              ? "You have the newest version."
+              : "Checks once a day while the switch above is on."}
+        </span>
+      </span>
+      {update ? (
+        <Button small onClick={install} disabled={state === "installing"}>
+          {state === "installing" ? "Opening..." : "Install"}
+        </Button>
+      ) : (
+        <Button small onClick={check} disabled={state === "checking"}>
+          {state === "checking" ? "Checking..." : "Check now"}
+        </Button>
+      )}
+    </div>
   );
 }

@@ -18,6 +18,7 @@ import {
   type Settings,
   type Suggestion,
   type Turn,
+  type UpdateInfo,
   type VoiceStatus,
 } from "./types";
 import { welcomeHeard } from "./welcomeVoice";
@@ -28,6 +29,8 @@ interface SidekickState {
   suggestion: Suggestion | null;
   /** Brief chip after mirroring a password into browser stores. */
   passwordSaved: PasswordSaved | null;
+  /** A newer release, until it is installed. */
+  update: UpdateInfo | null;
   /** A short-lived face on top of the mascot's state (see mood.ts). */
   mood: Mood | null;
   /** The internet is reachable. */
@@ -159,6 +162,7 @@ export const useSidekick = create<SidekickState>(() => ({
   suggestion: null,
   passwordSaved: null,
   mood: null,
+  update: null,
   online: true,
   offlineSince: null,
   netNotice: null,
@@ -541,8 +545,13 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       listen(EVENTS.settingsChanged, (settings) => {
         useSidekick.setState({ settings });
         if (sounds) preloadSounds(settings.soundKit);
+        void api.updateStatus().then(
+          (update) => !disposed && useSidekick.setState({ update }),
+          () => {},
+        );
         if (!settings.onboarded && !useSidekick.getState().ask) void api.askEnsureWelcome();
       }),
+      listen(EVENTS.updateAvailable, (update) => useSidekick.setState({ update })),
       listen(EVENTS.suggestionNew, (suggestion) => {
         useSidekick.setState({ suggestion, lastResult: null });
         // The cue already plays for a new suggestion, so the mood is silent.

@@ -265,6 +265,13 @@ export interface PasswordEditDraft {
   password: string;
 }
 
+/** A newer Sidekick release than the one running. */
+export interface UpdateInfo {
+  version: string;
+  current: string;
+  url: string;
+}
+
 export interface PasswordSaved {
   id: string;
   domain: string;
