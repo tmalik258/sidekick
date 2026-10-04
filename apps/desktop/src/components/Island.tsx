@@ -20,7 +20,6 @@ import { IslandGuide, useGuide } from "./IslandGuide";
 import { IslandSettings } from "./IslandSettings";
 import { IslandWelcome } from "./IslandWelcome";
 import { Orb } from "./Orb";
-import { PasswordSavedChip, PasswordSavePanel } from "./PasswordSave";
 import { PreparingVoice } from "./PreparingVoice";
 
 const TITLE: Record<MascotState, string> = {
@@ -83,7 +82,7 @@ const morphClose = { type: "spring", bounce: 0.12, duration: 0.42 } as const;
 const resize = { type: "spring", bounce: 0, duration: 0.34 } as const;
 
 export function Island() {
-  const { mascot, settings, suggestion, passwordSaved, hovered: rawHover, visible, ready } = useSidekick();
+  const { mascot, settings, suggestion, hovered: rawHover, visible, ready } = useSidekick();
   const asking = useSidekick((s) => s.ask !== null);
   const view = useSidekick((s) => s.ask?.view);
   const chatting = useSidekick((s) => s.chatId !== null);
@@ -140,7 +139,6 @@ export function Island() {
     guiding ||
     (OPEN_STATES.has(mascot) && !voicePill) ||
     (!!suggestion && !voicePill) ||
-    (!!passwordSaved && !voicePill) ||
     (!!netNotice && !voicePill);
   // At rest only the sphere shows. The shell keeps its size (so hover and the
   // orb position do not move) but loses its background.
@@ -149,8 +147,8 @@ export function Island() {
 
   const [contentHeight, setContentHeight] = useState(0);
   const bump = useMotionValue(1);
-  // A mood (thanks, Claude finished, a saved password) shows for a moment;
-  // offline and at rest, the mascot looks a little lost.
+  // A mood (thanks, Claude finished) shows for a moment; offline and at
+  // rest, the mascot looks a little lost.
   const mood = useSidekick((s) => s.mood);
   const face = mood?.id ?? (!online && (mascot === "idle" || mascot === "sleeping") ? "offline" : null);
   const contentEl = useRef<HTMLDivElement | null>(null);
@@ -507,14 +505,12 @@ function ExpandedContent({
 }) {
   const result = useSidekick((s) => s.lastResult);
   const running = useSidekick((s) => s.running);
-  const passwordSaved = useSidekick((s) => s.passwordSaved);
   const netNotice = useSidekick((s) => s.netNotice);
   const reporting = (mascot === "success" || mascot === "error" || mascot === "working") && !suggestion;
   if (netNotice && !suggestion) return <NetNoticeCard notice={netNotice} />;
-  if (!suggestion && (mascot === "idle" || mascot === "sleeping") && !passwordSaved) {
+  if (!suggestion && (mascot === "idle" || mascot === "sleeping")) {
     return <Glance paused={paused} />;
   }
-  const passwordSave = suggestion?.skillId === "browser.password_save";
   // Working names what it is doing; done and error say what happened.
   const detail =
     suggestion?.detail ??
@@ -529,17 +525,15 @@ function ExpandedContent({
     <div className="flex flex-col">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          {!passwordSave && (
-            <p className="truncate font-display text-[15px] leading-5 font-semibold tracking-[-0.015em] text-white">
-              {suggestion?.title ?? (passwordSaved ? "Saved" : TITLE[mascot])}
-            </p>
-          )}
+          <p className="truncate font-display text-[15px] leading-5 font-semibold tracking-[-0.015em] text-white">
+            {suggestion?.title ?? TITLE[mascot]}
+          </p>
           <p
-            className={`${passwordSave ? "" : "mt-0.5"} ${
+            className={`mt-0.5 ${
               suggestion?.skillId.startsWith("notify.") ? "line-clamp-4 whitespace-pre-line" : "line-clamp-2"
             } text-[13px] leading-4.5 tracking-[-0.005em] text-[rgb(235_235_245/0.6)]`}
           >
-            {passwordSaved && !suggestion ? passwordSaved.domain : detail}
+            {detail}
           </p>
         </div>
         {!suggestion && reporting && (result?.path || result?.undoId) ? (
@@ -554,18 +548,7 @@ function ExpandedContent({
         ) : null}
       </div>
 
-      {passwordSave && suggestion ? (
-        <PasswordSavePanel key={suggestion.id} suggestion={suggestion} />
-      ) : suggestion ? (
-        <Options key={suggestion.id} suggestion={suggestion} />
-      ) : null}
-      {passwordSaved && !suggestion && (
-        <PasswordSavedChip
-          key={`${passwordSaved.id}:${passwordSaved.expiresAt}`}
-          saved={passwordSaved}
-          onGone={() => useSidekick.setState({ passwordSaved: null })}
-        />
-      )}
+      {suggestion ? <Options key={suggestion.id} suggestion={suggestion} /> : null}
     </div>
   );
 }
@@ -696,7 +679,7 @@ function useIntent(raw: boolean): boolean {
 /** Number keys pick an option, Esc dismisses (when the island has focus). */
 function useSuggestionKeys(suggestion: Suggestion | null) {
   useEffect(() => {
-    if (!suggestion || suggestion.skillId === "browser.password_save") return;
+    if (!suggestion) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey) return; // Alt+N is a global shortcut handled in Rust
       if (e.key === "Escape") dismiss(suggestion);

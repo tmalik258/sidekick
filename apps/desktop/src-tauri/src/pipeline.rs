@@ -76,16 +76,6 @@ async fn handle(app: &AppHandle, mut event: Event) {
             *lock(&app.state::<AppState>().last_window) = Some(event.payload.clone());
             timetrack::on_away(app);
         }
-        if event.kind == "browser.login_submitted" {
-            app.state::<AppState>()
-                .browser
-                .clear_pending_login(&event.id.to_string());
-        }
-        return;
-    }
-    // Password stays in AppState only; do not store, index, or skill-match.
-    if event.kind == "browser.login_submitted" {
-        crate::password_save::on_submitted(app, &event).await;
         return;
     }
     store(app, event.clone()).await;

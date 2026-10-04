@@ -232,7 +232,7 @@ clipboard.changed: kind (url|json|color|email|path|stack_trace|code|text|secret)
 window.focused: app, exe, title, pid
 claude.stop / claude.notification / codex.stop: project, cwd, session, message
 claude.permission: id, project, tool, summary, seconds
-browser.login_form / browser.long_read / browser.upwork_job: url, domain, title, text, words, tab
+browser.long_read / browser.upwork_job: url, domain, title, text, words, tab
 browser.site: domain, browser
 browser.many_tabs: count, duplicates
 system.disk_low: mount, free_human, total_human, percent_free

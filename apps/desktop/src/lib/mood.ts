@@ -1,7 +1,6 @@
 // Moods: a short-lived expression on top of the mascot's state, set by what
-// just happened (Claude finished, you said thanks, a password was saved).
-// The state machine says what Sidekick is doing; a mood says how it feels
-// about it, for a few seconds.
+// just happened (Claude finished, you said thanks). The state machine says
+// what Sidekick is doing; a mood says how it feels about it, for a few seconds.
 
 import type { Expression } from "@/components/orb/expressions";
 

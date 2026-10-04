@@ -1,6 +1,6 @@
 // Sidekick extension, background. Relays page events to the desktop app on
-// 127.0.0.1 and runs the commands it sends back (fill a login, close
-// duplicate tabs, save the session). Nothing here talks to any other server.
+// 127.0.0.1 and runs the commands it sends back (close duplicate tabs, save
+// the session). Nothing here talks to any other server.
 
 const BRIDGE = "http://127.0.0.1:47822";
 const MANY_TABS = 25;
@@ -111,7 +111,6 @@ async function poll() {
 }
 
 async function run(cmd) {
-  if (cmd.type === "fill") return fill(cmd);
   if (cmd.type === "close_duplicates") return closeDuplicates();
   if (cmd.type === "save_session") return saveSession();
 }
@@ -228,21 +227,6 @@ function hostOf(url) {
   } catch {
     return "";
   }
-}
-
-/** Fills only a tab whose host is the one the login was matched to. */
-async function fill(cmd) {
-  const tabs = await chrome.tabs.query({});
-  const tab =
-    tabs.find((t) => t.id === cmd.tab && hostOf(t.url) === cmd.domain) ||
-    tabs.find((t) => t.active && hostOf(t.url) === cmd.domain);
-  if (!tab) return;
-  await chrome.tabs.sendMessage(tab.id, {
-    type: "sidekick-fill",
-    domain: cmd.domain,
-    username: cmd.username,
-    password: cmd.password,
-  });
 }
 
 function duplicateIds(tabs) {

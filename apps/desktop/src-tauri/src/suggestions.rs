@@ -329,9 +329,9 @@ fn plain(text: &str) -> String {
 }
 
 /// What the user started themselves still answers while paused: a coding
-/// agent's message and saving a password they just typed.
+/// agent's message.
 fn shows_while_paused(skill_id: &str) -> bool {
-    skill_id == "mcp.notify" || skill_id == crate::password_save::SKILL_ID
+    skill_id == "mcp.notify"
 }
 
 fn show_or_queue(app: &AppHandle, proposal: Proposal) {
@@ -346,37 +346,21 @@ fn show_or_queue(app: &AppHandle, proposal: Proposal) {
         // A newer copy of the same suggestion replaces the waiting one;
         // different ones (two servers, two downloads) all stay queued.
         queue.retain(|q| {
-            !(proposal.skill_id != crate::password_save::SKILL_ID
-                && q.proposal.skill_id == proposal.skill_id
-                && q.proposal.title == proposal.title)
+            !(q.proposal.skill_id == proposal.skill_id && q.proposal.title == proposal.title)
         });
-        let dropped = if queue.len() >= MAX_QUEUE {
-            queue.pop_front()
-        } else {
-            None
-        };
+        if queue.len() >= MAX_QUEUE {
+            queue.pop_front();
+        }
         queue.push_back(Queued {
             proposal,
             at: Instant::now(),
         });
-        drop(queue);
-        if let Some(q) = dropped
-            && let Some(id) = crate::password_save::prompt_id(&q.proposal)
-        {
-            crate::password_save::abandon(app, id);
-        }
         return;
     }
     show(app, proposal);
 }
 
 fn show(app: &AppHandle, proposal: Proposal) {
-    if let Some(id) = crate::password_save::prompt_id(&proposal)
-        && !crate::password_save::exists(app, id)
-    {
-        schedule_next(app, NEXT_AFTER_DISMISS);
-        return;
-    }
     if mascot::dispatch(app, MascotEvent::SkillMatched).is_none() {
         // Raced with another state change; try again shortly.
         let app = app.clone();
@@ -388,9 +372,7 @@ fn show(app: &AppHandle, proposal: Proposal) {
         return;
     }
     let ui = Suggestion {
-        id: crate::password_save::prompt_id(&proposal)
-            .map(str::to_owned)
-            .unwrap_or_else(|| ulid::Ulid::new().to_string()),
+        id: ulid::Ulid::new().to_string(),
         skill_id: proposal.skill_id.clone(),
         title: proposal.title.clone(),
         detail: proposal.detail.clone(),
@@ -469,16 +451,9 @@ fn expire_when_ignored(app: &AppHandle, id: String) {
         loop {
             tokio::time::sleep(EXPIRY_TICK).await;
             let state = app.state::<AppState>();
-            let skill = lock(&state.active)
-                .as_ref()
-                .filter(|a| a.ui.id == id)
-                .map(|a| a.ui.skill_id.clone());
-            let Some(skill_id) = skill else {
+            let still_active = lock(&state.active).as_ref().is_some_and(|a| a.ui.id == id);
+            if !still_active {
                 return;
-            };
-            // Auto-save countdown: Cancel is the out; do not time out mid-count.
-            if skill_id == crate::password_save::SKILL_ID {
-                continue;
             }
             let limit = Duration::from_secs(u64::from(lock(&state.settings).collapse_after_secs));
             idle = if state.hovered.load(Ordering::Relaxed) {
@@ -642,14 +617,6 @@ async fn execute(
                 path: None,
             });
         }
-        "password_save_cancel" => {
-            let id = arg("id").ok_or("no save id")?;
-            crate::password_save::cancel(app, id)?;
-            return Ok(sidekick_actions::Outcome {
-                message: "Not saved".into(),
-                path: None,
-            });
-        }
         "claude_allow" | "claude_deny" | "claude_pass" => {
             let id = arg("id").ok_or("no request id")?;
             let answer = match option.action.as_str() {
@@ -758,7 +725,7 @@ async fn execute(
                 path: None,
             });
         }
-        "browser_fill" | "browser_close_duplicates" | "browser_save_session" => {
+        "browser_close_duplicates" | "browser_save_session" => {
             return crate::browser::run(app, &option.action, &option.args).await;
         }
         _ => {}
@@ -819,11 +786,6 @@ fn log_action(
 
 pub fn dismiss(app: &AppHandle, id: &str, reason: &str) -> Result<(), String> {
     let active = take(app, id)?;
-    if reason != "saved"
-        && let Some(password_id) = crate::password_save::prompt_id(&active.proposal)
-    {
-        crate::password_save::abandon(app, password_id);
-    }
     log::info!(
         "suggestion from {} dismissed: {reason}",
         active.proposal.skill_id
@@ -927,34 +889,21 @@ fn schedule_next(app: &AppHandle, after: Duration) {
         if lock(&state.active).is_some() || mascot::current(&app) != MascotState::Idle {
             // Still busy: the action that finishes will schedule again.
             if mascot::current(&app) == MascotState::Sleeping {
-                let dropped: Vec<_> = lock(&state.queue).drain(..).collect();
-                for q in dropped {
-                    if let Some(id) = crate::password_save::prompt_id(&q.proposal) {
-                        crate::password_save::abandon(&app, id);
-                    }
-                }
+                lock(&state.queue).drain(..);
             }
             return;
         }
-        let (next, dropped) = {
+        let next = {
             let mut queue = lock(&state.queue);
-            let mut dropped = Vec::new();
             let mut retained = std::collections::VecDeque::new();
             for q in queue.drain(..) {
                 if q.at.elapsed() < STALE_AFTER {
                     retained.push_back(q);
-                } else {
-                    dropped.push(q);
                 }
             }
             *queue = retained;
-            (queue.pop_front(), dropped)
+            queue.pop_front()
         };
-        for q in dropped {
-            if let Some(id) = crate::password_save::prompt_id(&q.proposal) {
-                crate::password_save::abandon(&app, id);
-            }
-        }
         if let Some(q) = next {
             show(&app, q.proposal);
         }
