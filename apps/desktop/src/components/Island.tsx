@@ -149,19 +149,10 @@ export function Island() {
 
   const [contentHeight, setContentHeight] = useState(0);
   const bump = useMotionValue(1);
-  // The orb reacts to how things went: a small nod when done, a shake on error.
-  const nodY = useMotionValue(0);
-  const shakeX = useMotionValue(0);
-  useEffect(() => {
-    if (reduced) return;
-    if (mascot === "success") void animate(nodY, [0, -4, 0, -2, 0], { duration: 0.6, ease: "easeOut" });
-    if (mascot === "error") void animate(shakeX, [0, -4, 4, -3, 3, 0], { duration: 0.45, ease: "easeInOut" });
-  }, [mascot, reduced, nodY, shakeX]);
-  // Connection lost: a slow droop. Back: the same nod as done.
-  useEffect(() => {
-    if (reduced) return;
-    void animate(nodY, online ? [0, -4, 0, -2, 0] : [0, 3, 3, 0], { duration: online ? 0.6 : 1.2, ease: "easeOut" });
-  }, [online, reduced, nodY]);
+  // A mood (thanks, Claude finished, a saved password) shows for a moment;
+  // offline and at rest, the mascot looks a little lost.
+  const mood = useSidekick((s) => s.mood);
+  const face = mood?.id ?? (!online && (mascot === "idle" || mascot === "sleeping") ? "offline" : null);
   const contentEl = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => connect({ sounds: true }), []);
@@ -293,9 +284,13 @@ export function Island() {
           transition={transition}
           style={{ originX: 0, originY: 0 }}
         >
-          <motion.div style={{ x: shakeX, y: nodY }}>
-            <Orb state={chatting && mascot === "idle" ? "working" : mascot} size={ORB} theme={settings.theme} />
-          </motion.div>
+          <Orb
+            state={chatting && mascot === "idle" ? "working" : mascot}
+            face={chatting && mascot === "idle" ? null : face}
+            size={ORB}
+            theme={settings.theme}
+            alive={settings.alive && visible}
+          />
         </motion.div>
 
         <AnimatePresence initial={false}>

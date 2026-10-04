@@ -54,6 +54,8 @@ export function watchNet(
   get: () => NetState,
   set: (s: Partial<NetState>) => void,
   play: ((sound: "caution" | "transition_up") => void) | null,
+  /** A happy face for a moment when the connection is back. */
+  onBack?: () => void,
 ) {
   let hide: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
@@ -73,6 +75,7 @@ export function watchNet(
       set({ online: true, offlineSince: null });
       show(backNotice(Date.now() - (offlineSince ?? Date.now())), BACK_SHOWN_MS);
       play?.("transition_up");
+      onBack?.();
     } else {
       set({ online: false, offlineSince: Date.now() });
       show(lostNotice(typeof navigator !== "undefined" && !navigator.onLine), LOST_SHOWN_MS);
