@@ -649,9 +649,22 @@ async fn take(app: &AppHandle, settings: &sidekick_core::Settings, t: Toast, thi
                 "body": clip(&item.body, 160),
                 "why": item.why,
                 "code": item.code,
+                "link": first_link(&format!("{} {}", item.title, item.body)),
             }),
         ));
     }
+}
+
+/// The first web link in a notification (a PR, an order, a meeting), so the
+/// card can offer it apart from opening the app.
+fn first_link(text: &str) -> Option<String> {
+    let at = text.find("https://").or_else(|| text.find("http://"))?;
+    let link: String = text[at..]
+        .chars()
+        .take_while(|c| !c.is_whitespace() && !matches!(c, '"' | '\'' | '<' | '>' | ')' | ']'))
+        .collect();
+    let link = link.trim_end_matches(['.', ',', ';', ':', '!', '?']);
+    (link.len() > "https://".len()).then(|| link.to_owned())
 }
 
 /// Messages gathered since the last card, as one card, at most every
@@ -881,6 +894,20 @@ pub fn describe(level: Option<&str>, from: Option<&str>, minutes: Option<u64>) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finds_the_link_in_a_message() {
+        assert_eq!(
+            first_link("CI failed: see https://github.com/me/app/pull/12. Fix it").as_deref(),
+            Some("https://github.com/me/app/pull/12")
+        );
+        assert_eq!(
+            first_link("(https://x.co/a)").as_deref(),
+            Some("https://x.co/a")
+        );
+        assert_eq!(first_link("no link here"), None);
+        assert_eq!(first_link("https:// broken"), None);
+    }
 
     fn item(app: &str, title: &str, body: &str) -> Item {
         Item {
