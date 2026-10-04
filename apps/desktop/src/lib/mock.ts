@@ -80,6 +80,14 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   island_set_hit_rect: () => undefined,
   island_ready: () => undefined,
   net_status: () => true,
+  update_status: () => null,
+  // The preview pretends a release is out, so the update UI can be seen.
+  update_check: () => {
+    const update = { version: "0.2.0", current: "0.1.0", url: "https://github.com/tmalik258/sidekick/releases" };
+    emit("update://available", update);
+    return update;
+  },
+  update_install: () => "Installing Sidekick_0.2.0_x64-setup.exe",
   net_check: () => typeof navigator === "undefined" || navigator.onLine,
   suggestion_current: () => suggestion,
   suggestion_choose: (a) => {

@@ -4,10 +4,12 @@
 //! and runs it (the user clicks through it); Sidekick then quits so it can
 //! be replaced. Nothing installs on its own.
 
+use std::sync::Mutex;
 use std::time::Duration;
 
+use serde::Serialize;
 use sidekick_core::Event;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::state::{AppState, lock};
 
@@ -15,6 +17,43 @@ pub const AVAILABLE: &str = "app.update_available";
 const LATEST: &str = "https://api.github.com/repos/tmalik258/sidekick/releases/latest";
 const RELEASES: &str = "https://github.com/tmalik258/sidekick/releases/";
 const CHECK_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
+/// Tells the island an update is waiting, so it can keep a small sign up.
+pub const EVENT: &str = "update://available";
+
+/// A newer release than the one running.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Available {
+    pub version: String,
+    pub current: String,
+    pub url: String,
+}
+
+/// The update found by the last check, kept until it is installed.
+static FOUND: Mutex<Option<Available>> = Mutex::new(None);
+
+pub fn found() -> Option<Available> {
+    FOUND.lock().map(|f| f.clone()).unwrap_or(None)
+}
+
+/// Asks GitHub now. Remembers and announces a newer release; returns it,
+/// or None when this is the newest.
+pub async fn check(app: &AppHandle) -> Result<Option<Available>, String> {
+    let current = app.package_info().version.to_string();
+    let (tag, url) = latest().await?;
+    let next = is_newer(&tag, &current).then(|| Available {
+        version: tag.trim_start_matches('v').to_owned(),
+        current,
+        url,
+    });
+    if let Ok(mut f) = FOUND.lock() {
+        *f = next.clone();
+    }
+    if let Some(a) = &next {
+        let _ = app.emit(EVENT, a);
+    }
+    Ok(next)
+}
 
 /// "v1.2.3" or "1.2.3" as numbers; pre-release suffixes are ignored.
 fn parse(v: &str) -> Option<(u64, u64, u64)> {
@@ -153,22 +192,22 @@ async fn latest() -> Result<(String, String), String> {
 pub fn start(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let current = app.package_info().version.to_string();
         let mut offered = String::new();
         loop {
             tokio::time::sleep(Duration::from_secs(120)).await;
             let enabled = lock(&app.state::<AppState>().settings).check_updates;
             if enabled {
-                match latest().await {
-                    Ok((tag, url)) if is_newer(&tag, &current) && tag != offered => {
-                        offered = tag.clone();
+                match check(&app).await {
+                    // The card comes once per version; the small sign stays.
+                    Ok(Some(a)) if a.version != offered => {
+                        offered = a.version.clone();
                         app.state::<AppState>().bus.publish(Event::new(
                             AVAILABLE,
                             "updates",
                             serde_json::json!({
-                                "version": tag.trim_start_matches('v'),
-                                "current": current,
-                                "url": url,
+                                "version": a.version,
+                                "current": a.current,
+                                "url": a.url,
                             }),
                         ));
                     }

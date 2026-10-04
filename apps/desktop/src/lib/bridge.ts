@@ -42,6 +42,7 @@ import type {
   Suggestion,
   Transition,
   Turn,
+  UpdateInfo,
   VoiceDownload,
   VoiceHeard,
   VoiceStatus,
@@ -75,6 +76,7 @@ export const EVENTS = {
   passwordSaved: "password://saved",
   passwordMirror: "password://mirror",
   netStatus: "net://status",
+  updateAvailable: "update://available",
 } as const;
 
 export interface EventPayloads {
@@ -86,6 +88,7 @@ export interface EventPayloads {
   [EVENTS.islandVisible]: boolean;
   [EVENTS.islandFullscreen]: boolean;
   [EVENTS.netStatus]: boolean;
+  [EVENTS.updateAvailable]: UpdateInfo;
   [EVENTS.inboxChanged]: null;
   [EVENTS.aiDelta]: { id: string; text: string };
   [EVENTS.aiDone]: { id: string; provider: string | null; error: string | null; handoff: string | null };
@@ -135,6 +138,9 @@ export const api = {
   islandSetHitRect: (rect: HitRect) => invoke<void>("island_set_hit_rect", { rect }),
   islandReady: () => invoke<void>("island_ready"),
   netStatus: () => invoke<boolean>("net_status"),
+  updateStatus: () => invoke<UpdateInfo | null>("update_status"),
+  updateCheck: () => invoke<UpdateInfo | null>("update_check"),
+  updateInstall: () => invoke<string>("update_install"),
   netCheck: (lost: boolean) => invoke<boolean>("net_check", { lost }),
   suggestionCurrent: () => invoke<Suggestion | null>("suggestion_current"),
   suggestionChoose: (id: string, index: number) => invoke<void>("suggestion_choose", { id, index }),
