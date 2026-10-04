@@ -19,11 +19,20 @@ pub fn notifications_set_level(app: AppHandle, from: String, level: String) -> C
     crate::inbox::set_level(&app, &from, level)
 }
 
-/// Turns on Windows' Do Not Disturb, so pop-ups stop while every
-/// notification still reaches Notification Center and Sidekick.
+/// Whether Windows' Do Not Disturb is on right now (None: cannot tell).
 #[tauri::command]
-pub async fn notifications_silence() -> CmdResult<String> {
-    tauri::async_runtime::spawn_blocking(|| sidekick_actions::pc::set_dnd(true))
+pub async fn dnd_get() -> Option<bool> {
+    tauri::async_runtime::spawn_blocking(sidekick_actions::dnd::state)
+        .await
+        .ok()
+        .flatten()
+}
+
+/// Switches Windows' Do Not Disturb, quietly: pop-ups stop while every
+/// notification still reaches Sidekick.
+#[tauri::command]
+pub async fn dnd_set(on: bool) -> CmdResult<String> {
+    tauri::async_runtime::spawn_blocking(move || sidekick_actions::pc::set_dnd(on))
         .await
         .map_err(|e| e.to_string())?
         .map(|o| o.message)
