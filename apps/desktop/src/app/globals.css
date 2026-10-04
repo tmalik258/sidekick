@@ -116,7 +116,6 @@ body {
 
 .orb-body {
   overflow: hidden;
-  transform-style: preserve-3d;
   background: radial-gradient(
     circle at 34% 28%,
     color-mix(in oklab, var(--o2) 70%, white) 0%,
@@ -128,6 +127,17 @@ body {
     inset 0 calc(var(--size) * -0.09) calc(var(--size) * 0.16) rgb(0 0 0 / 0.38),
     inset 0 calc(var(--size) * 0.04) calc(var(--size) * 0.08) rgb(255 255 255 / 0.32),
     0 calc(var(--size) * 0.06) calc(var(--size) * 0.18) rgb(0 0 0 / 0.45);
+}
+
+/* Clips the sheen to the circle. clip-path holds where overflow plus
+   border-radius drops the clip for a spinning layer in a tilted body,
+   which flashed a square corner. */
+.orb-sheen-clip {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  clip-path: circle(50% at 50% 50%);
 }
 
 /* Slow counter-rotating color drift inside the glass. */
