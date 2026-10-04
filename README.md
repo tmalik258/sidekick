@@ -178,7 +178,7 @@ assets/                  app icon and social preview
 
 ## Contributing
 
-Bug reports, ideas and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), which also covers writing your own skills.
+Bug reports, ideas and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), which also covers writing your own skills. How the app is built, and the rules every change keeps, are in [docs/architecture.md](docs/architecture.md).
 
 ## License
 

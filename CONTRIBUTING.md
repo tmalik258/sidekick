@@ -42,7 +42,7 @@ You can also ask Sidekick to write one: in Ask mode type what you want and pick 
 
 ## Security rules
 
-See `CLAUDE.md` for the full list. In short: no reading browser password stores, cookies or Claude credentials; secrets never reach AI; localhost endpoints refuse web pages; models download from pinned URLs with checksums.
+See [docs/architecture.md](docs/architecture.md) for the full list. In short: no reading cookies or Claude credentials; browser password stores are only used for local fill and save after your approval; secrets never reach AI; localhost endpoints refuse web pages; models download from pinned URLs with checksums.
 
 ## License
 
