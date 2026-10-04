@@ -333,6 +333,22 @@ pub fn blocked(name: &str, args: &Value) -> Option<String> {
     is_write(name).then(|| name.to_owned())
 }
 
+/// Composio's own plumbing: connecting accounts, its sandbox, feedback.
+/// Sidekick handles connections in Settings, so the model never sees these.
+fn plumbing(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    [
+        "MANAGE_CONNECTIONS",
+        "WAIT_FOR_CONNECTIONS",
+        "REMOTE_BASH",
+        "REMOTE_WORKBENCH",
+        "MANAGE_SKILL",
+        "SUBMIT_FEEDBACK",
+    ]
+    .iter()
+    .any(|p| upper.contains(p))
+}
+
 /// The tools most related to the question, best first, plus the handoff.
 pub fn pick_tools(tools: &[McpTool], question: &str) -> Vec<ToolDef> {
     let q: Vec<String> = question
@@ -353,7 +369,7 @@ pub fn pick_tools(tools: &[McpTool], question: &str) -> Vec<ToolDef> {
         }
         s
     };
-    let mut ranked: Vec<&McpTool> = tools.iter().collect();
+    let mut ranked: Vec<&McpTool> = tools.iter().filter(|t| !plumbing(&t.name)).collect();
     ranked.sort_by(|a, b| score(b).cmp(&score(a)).then_with(|| a.name.cmp(&b.name)));
     let handoff = handoff_tool();
     let size = |t: &ToolDef| t.name.len() + t.description.len() + t.parameters.to_string().len();
@@ -442,6 +458,10 @@ impl ToolRunner for Runner {
             *lock(&self.handoff) = Some(reason.chars().take(160).collect());
             return "Noted. Tell the user in one sentence that Claude Code can finish this, \
                     with the button below the answer."
+                .into();
+        }
+        if plumbing(name) {
+            return "Error: app connections are managed in Sidekick's Settings > Apps, not here."
                 .into();
         }
         if let Some(what) = blocked(name, arguments) {
@@ -1001,7 +1021,12 @@ mod tests {
             "Search Jira issues assigned to a user",
         ));
         tools.push(tool("COMPOSIO_SEARCH_TOOLS", "Find tools"));
+        tools.push(tool(
+            "COMPOSIO_MANAGE_CONNECTIONS",
+            "Manage jira connections assigned to me",
+        ));
         let picked = pick_tools(&tools, "what jira issues are assigned to me?");
+        assert!(!picked.iter().any(|t| t.name.contains("MANAGE_CONNECTIONS")));
         assert_eq!(picked.len(), MAX_TOOLS + 1);
         assert_eq!(picked[0].name, "JIRA_SEARCH_ISSUES");
         assert!(picked.iter().any(|t| t.name == "COMPOSIO_SEARCH_TOOLS"));
