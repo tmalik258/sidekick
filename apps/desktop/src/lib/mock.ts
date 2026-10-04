@@ -18,6 +18,7 @@ let settings: Settings = structuredClone(DEFAULT_SETTINGS);
 let mascot: MascotState = "idle";
 let suggestion: Suggestion | null = null;
 let epoch = 0;
+let mockDnd = false;
 
 const CUE_BY_STATE: Partial<Record<MascotState, Cue>> = {
   idle: "settle",
@@ -145,7 +146,11 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   codex_add_notify: () => "C:\\Users\\you\\.codex\\config.toml.sidekick-backup-20261002",
   codex_add_mcp: () => null,
   guide_keys: () => null,
-  notifications_silence: () => "Done. Do Not Disturb is on",
+  dnd_get: () => mockDnd,
+  dnd_set: (a) => {
+    mockDnd = Boolean(a.on);
+    return `Done. Do Not Disturb is ${mockDnd ? "on" : "off"}`;
+  },
   recipe_save: (args) => {
     const r = args.recipe as Settings["recipes"][number];
     const recipe = { ...r, id: r.id || `r${Date.now()}`, name: r.name || r.prompt.split(" ").slice(0, 6).join(" ") };

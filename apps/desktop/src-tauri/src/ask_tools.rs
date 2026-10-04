@@ -407,13 +407,13 @@ pub fn defs() -> Vec<ToolDef> {
             name: WINDOWS.into(),
             description: "Apps and windows on this PC: find {name} (is an app installed? \
                 spelling is forgiven), list (the open windows), focus {name} (bring one to the \
-                front), launch {name} (start an installed app, e.g. Spotify). To close one, use \
-                propose with close_app."
+                front), launch {name} (start an installed app, e.g. Spotify), close {name} (like \
+                pressing its X; the app still asks to save unsaved work, so just do it)."
                 .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
-                    "action": { "type": "string", "enum": ["find", "list", "focus", "launch"] },
+                    "action": { "type": "string", "enum": ["find", "list", "focus", "launch", "close"] },
                     "name": { "type": "string", "description": "App or window name" }
                 },
                 "required": ["action"],
@@ -492,6 +492,7 @@ pub fn step_label(name: &str, args: &Value) -> String {
             "find" => quoted("Looking for", arg("name")),
             "launch" => quoted("Opening", arg("name")),
             "focus" => quoted("Switching to", arg("name")),
+            "close" => quoted("Closing", arg("name")),
             _ => "Looking at your windows".into(),
         },
         OPEN => quoted("Opening", arg("target")),
@@ -588,6 +589,7 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
             let name = args["name"].as_str().unwrap_or_default().to_owned();
             match args["action"].as_str().unwrap_or("list") {
                 "focus" => blocking(move || pc::focus_window(&name).map(|o| o.message)).await,
+                "close" => blocking(move || pc::close_window(&name).map(|o| o.message)).await,
                 "launch" => blocking(move || pc::launch_app(&name).map(|o| o.message)).await,
                 "find" => {
                     blocking(move || {
@@ -675,19 +677,56 @@ fn propose(app: &AppHandle, chat_id: &str, args: &Value) -> String {
     if !ASK_ACTIONS.contains(&action) {
         return format!("Error: {action} is not something you can offer.");
     }
+    let action_args = args["args"].clone();
+    // Models sometimes pass the action's own name ("close_app") as the text.
     let label: String = args["label"]
         .as_str()
-        .filter(|l| !l.trim().is_empty())
-        .unwrap_or(action)
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.contains('_'))
+        .map_or_else(|| button_text(action, &action_args), str::to_owned)
         .chars()
         .take(60)
         .collect();
-    let action_args = args["args"].clone();
     if action == "open_path" && action_args["path"].as_str().is_some_and(runs_code) {
         return "Refused: that file runs a program. Tell the user to open it themselves.".into();
     }
     offer(app, chat_id, action, action_args, &label);
     format!("Shown to the user as a button \"{label}\". Say in one short sentence what it will do.")
+}
+
+/// Readable button text for an action offered without one.
+fn button_text(action: &str, args: &Value) -> String {
+    let what = ["name", "path", "url"]
+        .iter()
+        .find_map(|k| args[k].as_str())
+        .map(|v| {
+            v.trim_end_matches(['/', '\\'])
+                .rsplit(['/', '\\'])
+                .next()
+                .unwrap_or(v)
+                .to_owned()
+        })
+        .unwrap_or_default();
+    let verb = match action {
+        "close_app" => "Close",
+        "open_path" | "open_url" => "Open",
+        "reveal_path" => "Show in folder",
+        "move_file" => "Move",
+        "zip" => "Zip",
+        "convert" => "Convert",
+        "extract_archive" | "extract_text" => "Extract",
+        "launch_project" => "Open project",
+        "git_pull" => "Pull",
+        "install_deps" => "Install packages",
+        "sleep_pc" => "Put the PC to sleep",
+        "empty_recycle_bin" => "Empty the Recycle Bin",
+        other => return other.replace('_', " "),
+    };
+    if what.is_empty() {
+        verb.to_owned()
+    } else {
+        format!("{verb} {what}")
+    }
 }
 
 /// A button under the answer that runs `action` when tapped. Sidekick's own
@@ -1021,6 +1060,22 @@ fn runs_code(target: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn buttons_never_show_action_names() {
+        assert_eq!(
+            button_text("close_app", &json!({ "name": "Notepad" })),
+            "Close Notepad"
+        );
+        assert_eq!(
+            button_text(
+                "open_path",
+                &json!({ "path": "C:\\Users\\me\\invoice.pdf" })
+            ),
+            "Open invoice.pdf"
+        );
+        assert_eq!(button_text("sleep_pc", &json!({})), "Put the PC to sleep");
+    }
 
     #[test]
     fn steps_say_what_they_do() {

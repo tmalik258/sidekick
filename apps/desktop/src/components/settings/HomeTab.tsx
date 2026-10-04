@@ -443,11 +443,36 @@ const LEVEL_TONE: Record<NotifyLevel, string> = {
   never: "bg-white/5 text-(--muted)",
 };
 
+/** Windows' Do Not Disturb as a switch that shows the real state. */
+function DoNotDisturb({ onError }: { onError: (e: string) => void }) {
+  const [on, setOn] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => void api.dndGet().then(setOn), []);
+  const flip = (want: boolean) => {
+    if (busy) return;
+    setBusy(true);
+    setOn(want);
+    void api
+      .dndSet(want)
+      .catch((e) => onError(String(e)))
+      .then(() => api.dndGet())
+      .then((now) => setOn(now ?? want))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <Toggle
+      label="Do Not Disturb"
+      hint={busy ? "Switching..." : "Stops Windows pop-ups. Notifications still reach Sidekick."}
+      checked={on ?? false}
+      onChange={flip}
+    />
+  );
+}
+
 /** Read Windows notifications and only bring up what matters. */
 function NotificationInbox({ onError }: { onError: (e: string) => void }) {
   const notifications = useSidekick((s) => s.settings.notifications);
   const [status, setStatus] = useState<InboxStatus | null>(null);
-  const [silenced, setSilenced] = useState<string | null>(null);
   const refresh = useCallback(() => void api.notificationsStatus().then(setStatus), []);
   useEffect(() => {
     refresh();
@@ -465,6 +490,7 @@ function NotificationInbox({ onError }: { onError: (e: string) => void }) {
 
   return (
     <>
+      <DoNotDisturb onError={onError} />
       <Toggle
         label="Sort my notifications"
         hint={
@@ -479,22 +505,6 @@ function NotificationInbox({ onError }: { onError: (e: string) => void }) {
       />
       {notifications.enabled && (
         <>
-          <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
-            <Button
-              small
-              onClick={() =>
-                void api
-                  .notificationsSilence()
-                  .then(setSilenced)
-                  .catch((e) => onError(String(e)))
-              }
-            >
-              Turn on Do Not Disturb
-            </Button>
-            <span className="text-(--muted)">
-              {silenced ?? "Stops Windows pop-ups. Notifications still reach Sidekick."}
-            </span>
-          </div>
           <p className="text-[13px] font-medium">
             Always come through <span className="font-normal text-(--muted)">people, by name</span>
           </p>
