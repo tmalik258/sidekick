@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "pnpm@12.8.1",
   "scripts": {
-    "dev": "pnpm --filter desktop tauri dev -- --release",
+    "dev": "pnpm --filter desktop tauri dev",
     "build": "pnpm --filter desktop tauri build --config src-tauri/tauri.release.conf.json",
     "web": "pnpm --filter desktop dev",
     "lint": "biome check .",
