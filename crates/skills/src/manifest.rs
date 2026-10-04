@@ -1,4 +1,4 @@
-//! Skill manifests (SRS 9.1). A skill is data: what event it reacts to, which
+//! Skill manifests. A skill is data: what event it reacts to, which
 //! payload fields must match, and the suggestion it offers.
 
 use std::collections::BTreeMap;
@@ -42,7 +42,7 @@ fn yes() -> bool {
     true
 }
 
-/// How much approval a skill's action needs (FR-ACT-01).
+/// How much approval a skill's action needs.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Trust {

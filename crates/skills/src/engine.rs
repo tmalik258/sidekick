@@ -1,4 +1,4 @@
-//! The rule engine (SRS 4.2): match an event against every enabled skill,
+//! The rule engine: match an event against every enabled skill,
 //! merge the matches into one proposal, rank options by what the user picked
 //! before, and drop options whose requirements are missing.
 

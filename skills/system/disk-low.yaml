@@ -1,6 +1,6 @@
 id: system.disk-low
 name: Low disk space
-description: Warn when a drive runs low on space (FR-SYS-01) and offer a way to free some.
+description: Warn when a drive runs low on space and offer a way to free some.
 priority: 60
 cooldown_secs: 21600
 dedupe: "{{mount}}"

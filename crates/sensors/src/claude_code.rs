@@ -11,7 +11,7 @@ use tokio::task::JoinHandle;
 
 use crate::{Sensor, SensorGate, http};
 
-/// Receives Claude Code hooks (FR-SEN-09) on a local port, so Sidekick knows
+/// Receives Claude Code hooks on a local port, so Sidekick knows
 /// when a session finishes or needs the user. Claude Code posts the hook
 /// input here through an HTTP hook in `~/.claude/settings.json`. The user can
 /// add those hooks with "Add for me" (backup + merge); this sensor never
@@ -22,7 +22,7 @@ pub struct ClaudeCodeSensor {
     pub approvals: Approvals,
 }
 
-/// Open permission requests (FR-DEV-06), by id. `Some(true)` allows,
+/// Open permission requests, by id. `Some(true)` allows,
 /// `Some(false)` denies, `None` hands the question back to the terminal.
 #[derive(Clone, Default)]
 pub struct Approvals(Arc<Mutex<HashMap<String, oneshot::Sender<Option<bool>>>>>);

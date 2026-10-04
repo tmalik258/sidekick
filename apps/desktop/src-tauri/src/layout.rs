@@ -1,4 +1,4 @@
-//! Window layouts per monitor setup (FR-SYS-04): while a setup stays the
+//! Window layouts per monitor setup: while a setup stays the
 //! same, where windows sit is saved every few minutes; when monitors are
 //! plugged in and that setup has a saved layout, it is offered back (or
 //! restored at once if the skill is set to Auto).

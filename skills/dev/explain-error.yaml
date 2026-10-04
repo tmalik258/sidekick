@@ -1,6 +1,6 @@
 id: dev.explain-error
 name: Explain copied errors
-description: When you copy an error or stack trace, offer to explain it and suggest a fix with AI (FR-DEV-08). The error is only sent when you click.
+description: When you copy an error or stack trace, offer to explain it and suggest a fix with AI. The error is only sent when you click.
 priority: 40
 cooldown_secs: 20
 trigger:

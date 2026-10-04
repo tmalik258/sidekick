@@ -1,6 +1,6 @@
 id: files.archive
 name: Extract archives
-description: Extract a downloaded archive next to it (FR-FILE-03).
+description: Extract a downloaded archive next to it.
 priority: 60
 trigger:
   event: file.download_completed

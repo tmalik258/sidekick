@@ -7,9 +7,9 @@ use tokio::task::JoinHandle;
 
 use crate::{Sensor, SensorGate};
 
-/// Notices local TCP servers starting and stopping (FR-SEN-04). Windows has
+/// Notices local TCP servers starting and stopping. Windows has
 /// no push notification for new listening sockets, so this checks once a
-/// second, which is what NFR-RES-03 allows.
+/// second, which keeps its cost negligible.
 pub struct PortsSensor;
 
 impl PortsSensor {

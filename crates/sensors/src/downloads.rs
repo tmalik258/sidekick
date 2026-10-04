@@ -13,9 +13,9 @@ use crate::{Sensor, SensorGate};
 
 /// Watches the Downloads folder through OS file notifications
 /// (ReadDirectoryChangesW on Windows), so a finished download is noticed as
-/// soon as its size settles, not on a timer (FR-SEN-01, FR-SEN-02).
+/// soon as its size settles, not on a timer.
 ///
-/// The same watcher also serves the Screenshots folder (FR-SCR-01), with its
+/// The same watcher also serves the Screenshots folder, with its
 /// own sensor id and event kind.
 pub struct DownloadsSensor {
     dir: Option<PathBuf>,

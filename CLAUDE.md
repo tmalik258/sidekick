@@ -1,7 +1,5 @@
 # Sidekick: notes for contributors and AI agents
 
-Spec: the SRS linked in README.md. Requirement IDs (FR-UI-01, NFR-SEC-05, ...) in code comments refer to it.
-
 ## Architecture rules
 
 - Rust owns everything that touches the OS and all state machines. The UI only renders state and calls named commands.

@@ -84,7 +84,7 @@ pub struct AppState {
     pub decisions: Mutex<crate::decide::Cache>,
     pub voice: crate::voice::Voice,
     pub calendar: sidekick_sensors::Calendar,
-    /// Claude Code permission requests waiting on the island (FR-DEV-06).
+    /// Claude Code permission requests waiting on the island.
     pub approvals: sidekick_sensors::Approvals,
     /// Submitted login waiting for auto-save / edit (password only in memory).
     pub pending_password: Mutex<crate::password_save::PasswordBook>,

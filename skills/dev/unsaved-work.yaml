@@ -1,6 +1,6 @@
 id: dev.unsaved-work
 name: End of day repos
-description: In the evening, tell you which git repos still have uncommitted or unpushed work (FR-DEV-09).
+description: In the evening, tell you which git repos still have uncommitted or unpushed work.
 priority: 50
 cooldown_secs: 43200
 trigger:

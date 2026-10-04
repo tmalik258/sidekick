@@ -1,6 +1,6 @@
 id: files.installer
 name: Installers
-description: Offer to run a downloaded installer and show who signed it (FR-FILE-04). Never runs on its own (FR-ACT-02).
+description: Offer to run a downloaded installer and show who signed it. Never runs on its own.
 priority: 70
 trigger:
   event: file.download_completed

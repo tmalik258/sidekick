@@ -1,7 +1,7 @@
-//! AI tiers (SRS 5.5 and 9.3). Every AI call goes through [`AiProvider`]
-//! (FR-AI-01) and the [`Router`] picks the first provider that is switched on
-//! and reachable, falling back down the list (FR-AI-02). Sidekick works fully
-//! without any of them (FR-AI-09).
+//! AI tiers. Every AI call goes through [`AiProvider`]
+//! and the [`Router`] picks the first provider that is switched on
+//! and reachable, falling back down the list. Sidekick works fully
+//! without any of them.
 //!
 //! Decisions (pick one option from a typed list) are a separate, cheaper
 //! interface, [`Decider`], served by SemIf or a local model (T1).

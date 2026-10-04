@@ -1,4 +1,4 @@
-//! Downloads housekeeping (FR-FILE-05, 07). Both actions only touch files
+//! Downloads housekeeping. Both actions only touch files
 //! directly inside the Downloads folder and send them to the Recycle Bin,
 //! so they can be restored. Neither ever runs at Auto.
 

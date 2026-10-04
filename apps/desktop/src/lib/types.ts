@@ -468,7 +468,7 @@ export interface ActionRecord {
   undone: boolean;
 }
 
-/** Undo is kept for 24 hours (FR-ACT-04). */
+/** Undo is kept for 24 hours. */
 export function canUndo(a: ActionRecord, now = Date.now()): boolean {
   return !!a.undoPath && !a.undone && now - Date.parse(a.ts) < 24 * 60 * 60 * 1000;
 }

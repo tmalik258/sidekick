@@ -1,4 +1,4 @@
-//! Sidekick as an MCP server for Claude Code (FR-AI-08, FR-RAG-11), over
+//! Sidekick as an MCP server for Claude Code, over
 //! Streamable HTTP on 127.0.0.1. Claude Code can search your history,
 //! show a note on the island, open a link, and read today's time.
 //!
@@ -20,7 +20,7 @@ const PATH: &str = "/mcp";
 const VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
 
 /// Config Ask-mode chats pass to Claude Code, so it can use Sidekick's
-/// tools too (FR-AI-08). Lives in the AI workdir, next to nothing else.
+/// tools too. Lives in the AI workdir, next to nothing else.
 pub const CONFIG_FILE: &str = "sidekick-mcp.json";
 
 fn write_client_config(app: &AppHandle, token: &str) {

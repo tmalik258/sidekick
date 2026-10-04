@@ -1,6 +1,6 @@
 id: files.download
 name: Downloaded file
-description: Open or find a file the moment its download finishes (FR-FILE-01).
+description: Open or find a file the moment its download finishes.
 priority: 50
 trigger:
   event: file.download_completed

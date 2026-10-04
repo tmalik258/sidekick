@@ -1,8 +1,8 @@
-//! Built-in actions (FR-ACT-03) and detection of what is installed, so skills
+//! Built-in actions and detection of what is installed, so skills
 //! only offer what can actually run.
 //!
 //! Every external program is started with an argument list, never a shell
-//! string built from event data (NFR-SEC-06).
+//! string built from event data.
 
 mod capabilities;
 pub mod cleanup;
@@ -56,7 +56,7 @@ impl Outcome {
 }
 
 /// Actions that may run without a click when a skill is set to Auto.
-/// Anything destructive or outward-facing is left out on purpose (FR-ACT-02).
+/// Anything destructive or outward-facing is left out on purpose.
 const SAFE: &[&str] = &[
     "open_path",
     "reveal_path",

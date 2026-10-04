@@ -1,4 +1,4 @@
-//! Calendar (FR-COMM-02): meetings come from Google Calendar or Outlook
+//! Calendar: meetings come from Google Calendar or Outlook
 //! through Composio (the app fills [`CalendarState::meetings`]). Raises
 //! `calendar.meeting_soon` a few minutes before a meeting and
 //! `calendar.meeting_ended` after it.

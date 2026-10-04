@@ -1,7 +1,7 @@
-//! Time per app and project (FR-SYS-06), from the active-window events. It
+//! Time per app and project, from the active-window events. It
 //! is stored locally only, pauses while you are away, and is flushed to
 //! SQLite every minute. A long stretch in an editor raises
-//! `focus.long_session` (FR-SYS-05), which the Focus skill turns into a
+//! `focus.long_session`, which the Focus skill turns into a
 //! Do Not Disturb suggestion.
 
 use std::sync::Mutex;
@@ -163,7 +163,7 @@ pub fn by_name(rows: &[sidekick_core::AppTime]) -> Vec<(String, i64)> {
     by_name
 }
 
-/// The day's summary event (FR-COMM-04): time per project (or app), with a
+/// The day's summary event: time per project (or app), with a
 /// plain-text version ready to paste into a standup or timesheet.
 pub fn day_summary(rows: &[sidekick_core::AppTime]) -> Option<Event> {
     let total: i64 = rows.iter().map(|r| r.secs).sum();

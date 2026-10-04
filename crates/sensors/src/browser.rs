@@ -1,4 +1,4 @@
-//! The browser bridge (FR-SEN-10). The Sidekick extension reports page
+//! The browser bridge. The Sidekick extension reports page
 //! events (a login form, a long article, an Upwork job, many tabs) and picks
 //! up commands (fill this login, close duplicate tabs) over a localhost-only
 //! endpoint.

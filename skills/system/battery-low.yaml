@@ -1,6 +1,6 @@
 id: system.battery-low
 name: Low battery
-description: On battery below 20 percent, offer Battery saver and show what uses the most (FR-SYS-03).
+description: On battery below 20 percent, offer Battery saver and show what uses the most.
 priority: 65
 cooldown_secs: 3600
 trigger:

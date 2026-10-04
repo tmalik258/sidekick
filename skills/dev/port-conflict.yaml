@@ -1,6 +1,6 @@
 id: dev.port-conflict
 name: Free a busy port
-description: When you copy an "address already in use" error, offer to stop whatever holds the port (FR-DEV-03).
+description: When you copy an "address already in use" error, offer to stop whatever holds the port.
 priority: 90
 trigger:
   event: clipboard.changed

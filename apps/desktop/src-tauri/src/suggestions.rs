@@ -459,7 +459,7 @@ pub fn always(app: &AppHandle, id: &str, index: usize) -> Result<(), String> {
     crate::learn::make_auto(app, &skill).map(|_| ())
 }
 
-/// Dismisses a suggestion nobody looked at (FR-UI-02). Hovering the island
+/// Dismisses a suggestion nobody looked at. Hovering the island
 /// restarts the countdown. Lives here rather than in the UI so a stalled
 /// webview can never block the queue.
 fn expire_when_ignored(app: &AppHandle, id: String) {

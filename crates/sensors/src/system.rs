@@ -9,7 +9,7 @@ use tokio::task::JoinHandle;
 
 use crate::{Sensor, SensorGate};
 
-/// Disk space and memory pressure (FR-SYS-01, FR-SYS-02).
+/// Disk space and memory pressure.
 pub struct SystemSensor;
 
 impl SystemSensor {
@@ -140,7 +140,7 @@ impl Sensor for SystemSensor {
     }
 }
 
-/// Below this, on battery, power saving is offered (FR-SYS-03).
+/// Below this, on battery, power saving is offered.
 const BATTERY_LOW_PCT: u8 = 20;
 
 /// Battery percent, whether it is on mains power and whether Battery

@@ -1,6 +1,6 @@
 id: dev.claude-permission
 name: Claude Code permissions
-description: Allow or deny Claude Code's permission requests from the island (FR-DEV-06). Unanswered for 25 seconds, Claude Code asks in the terminal as usual. Never automatic.
+description: Allow or deny Claude Code's permission requests from the island. Unanswered for 25 seconds, Claude Code asks in the terminal as usual. Never automatic.
 priority: 95
 trigger:
   event: claude.permission

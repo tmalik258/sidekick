@@ -5,7 +5,7 @@ use tokio::task::JoinHandle;
 
 use crate::{Sensor, SensorGate};
 
-/// Notices which app and window the user is in (FR-SEN-05).
+/// Notices which app and window the user is in.
 pub struct WindowSensor;
 
 impl WindowSensor {

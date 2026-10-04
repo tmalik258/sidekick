@@ -1,4 +1,4 @@
-//! T1 ranking of suggestion options (SRS 5.5, FR-AI-10/11). Before a
+//! T1 ranking of suggestion options. Before a
 //! suggestion shows, SemIf or the local model guesses which option the user
 //! wants, and that option moves to the front. Options the user has picked
 //! before always win: learned choices are never overridden.

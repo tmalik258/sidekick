@@ -1,6 +1,6 @@
 id: browser.upwork-job
 name: Draft Upwork proposals
-description: On an Upwork job page, offer a quick summary of the job and a proposal draft with AI (FR-BRW-03). Needs the Sidekick browser extension.
+description: On an Upwork job page, offer a quick summary of the job and a proposal draft with AI. Needs the Sidekick browser extension.
 priority: 60
 cooldown_secs: 300
 dedupe: "{{url}}"

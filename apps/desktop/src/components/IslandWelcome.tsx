@@ -1,6 +1,6 @@
 "use client";
 
-// First run (P5 onboarding): short steps inside the island. What Sidekick
+// First run: short steps inside the island. What Sidekick
 // does and what stays private, then a live checklist of the AI, connections
 // and tools to set up, each with the exact command to run, and a few extras.
 // Finishing (or skipping) marks onboarding done; the same checklist stays in

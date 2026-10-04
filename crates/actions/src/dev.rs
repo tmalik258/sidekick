@@ -1,4 +1,4 @@
-//! Developer actions (FR-DEV-04, 05, 07, 10): pull, install dependencies,
+//! Developer actions: pull, install dependencies,
 //! create `.env` from its example, start Docker Desktop, and open a project.
 //! Every command is a fixed program with argument lists; paths are only
 //! ever passed as arguments, never through a shell.
@@ -171,7 +171,7 @@ pub fn start_docker() -> Result<Outcome, ActionError> {
     Ok(Outcome::msg("Starting Docker Desktop"))
 }
 
-/// Editor plus a terminal in the project folder (FR-DEV-10).
+/// Editor plus a terminal in the project folder.
 pub fn launch(path: &Path, editor: Option<(&Path, &str)>) -> Result<Outcome, ActionError> {
     let mut opened = Vec::new();
     if let Some((code, name)) = editor {

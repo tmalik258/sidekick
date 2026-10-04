@@ -1,4 +1,4 @@
-//! Undo for actions that created a file or folder (FR-ACT-04): the new item
+//! Undo for actions that created a file or folder: the new item
 //! goes to the Recycle Bin, so even an undo can be undone. Only paths an
 //! action itself produced are ever touched, and only for 24 hours.
 

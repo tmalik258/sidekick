@@ -1,4 +1,4 @@
-//! App and site deny-list (FR-SET-02, FR-RAG-08): events from these apps
+//! App and site deny-list: events from these apps
 //! and sites are dropped before they are stored, indexed or seen by skills.
 //! Password managers are on the list from the start.
 

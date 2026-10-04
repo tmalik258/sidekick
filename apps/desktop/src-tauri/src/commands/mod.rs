@@ -184,7 +184,7 @@ pub struct SkillInfo {
     auto_by_default: bool,
 }
 
-/// Every loaded skill with the user's switches applied (FR-SKL-06).
+/// Every loaded skill with the user's switches applied.
 #[tauri::command]
 pub fn skills_list(state: State<'_, AppState>) -> Vec<SkillInfo> {
     let settings = lock(&state.settings).clone();
@@ -258,7 +258,7 @@ pub async fn capabilities_get(app: AppHandle, rescan: bool) -> CmdResult<Capabil
     })
 }
 
-/// Forgets which options the user picked before (FR-DEV-02).
+/// Forgets which options the user picked before.
 #[tauri::command]
 pub fn choices_reset(app: AppHandle, state: State<'_, AppState>) -> CmdResult<usize> {
     decide::clear(&app);
@@ -365,7 +365,7 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
     Ok(next)
 }
 
-/// Installs a skill written in Ask mode, after checking it (FR-SKL-08), and
+/// Installs a skill written in Ask mode, after checking it, and
 /// reloads all skills. Returns the skill's name.
 #[tauri::command]
 pub fn skill_install(state: State<'_, AppState>, yaml: String) -> CmdResult<String> {

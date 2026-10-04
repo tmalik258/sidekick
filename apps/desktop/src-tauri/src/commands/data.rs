@@ -130,7 +130,7 @@ pub struct ClipItem {
     ts: String,
 }
 
-/// Recent clipboard text, newest first (FR-CLIP-01). Secrets are never in it.
+/// Recent clipboard text, newest first. Secrets are never in it.
 #[tauri::command]
 pub fn clipboard_history(app: AppHandle, limit: Option<u32>) -> Vec<ClipItem> {
     lock(&app.state::<AppState>().storage)
@@ -151,7 +151,7 @@ pub async fn clipboard_copy(app: AppHandle, text: String) -> CmdResult<()> {
         .map_err(|e| e.to_string())
 }
 
-/// Repos in the code folders, for the project launcher (FR-DEV-10).
+/// Repos in the code folders, for the project launcher.
 #[tauri::command]
 pub async fn projects_list(app: AppHandle) -> Vec<crate::projects::ProjectInfo> {
     tauri::async_runtime::spawn_blocking(move || crate::projects::infos(&app))
@@ -183,7 +183,7 @@ pub async fn project_launch(app: AppHandle, path: String) -> CmdResult<String> {
         .map_err(|e| e.to_string())
 }
 
-/// Deletes everything in the search index (FR-RAG-12). Folders are indexed
+/// Deletes everything in the search index. Folders are indexed
 /// again on the next re-index.
 #[tauri::command]
 pub fn search_clear(state: State<'_, AppState>) -> CmdResult<usize> {
@@ -195,7 +195,7 @@ pub fn search_clear(state: State<'_, AppState>) -> CmdResult<usize> {
 const BACKUP_VERSION: u32 = 1;
 
 /// Saves settings, your own skills and the action history to one file in
-/// Documents and shows it (FR-SET-04). Composio headers are secrets, so they
+/// Documents and shows it. Composio headers are secrets, so they
 /// are left out.
 #[tauri::command]
 pub async fn backup_export(app: AppHandle) -> CmdResult<String> {

@@ -1,7 +1,7 @@
 //! Sensors turn OS signals into [`Event`]s on the [`EventBus`].
 //!
 //! Each sensor runs as its own tokio task and checks a [`SensorGate`] before
-//! emitting, so pausing (FR-SET-01) and per-sensor switches (FR-SEN-12) are
+//! emitting, so pausing and per-sensor switches are
 //! enforced in one place.
 
 mod browser;

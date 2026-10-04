@@ -1,6 +1,6 @@
 id: calendar.meeting-soon
 name: Meeting reminders
-description: A few minutes before a meeting, offer to join the call, open the doc that matches it, or prepare with AI (FR-COMM-02). Add your calendar's private iCal link in Settings > Today.
+description: A few minutes before a meeting, offer to join the call, open the doc that matches it, or prepare with AI. Add your calendar's private iCal link in Settings > Today.
 priority: 70
 cooldown_secs: 600
 dedupe: "{{title}} {{start}}"

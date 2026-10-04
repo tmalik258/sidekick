@@ -66,7 +66,7 @@ export function ChatHistory({
 }
 
 /** Clipboard history: arrows or the mouse pick, Enter or a click copies
- * again (FR-CLIP-01). Typing filters the list. */
+ * again. Typing filters the list. */
 export function Clips({
   items,
   filtered,

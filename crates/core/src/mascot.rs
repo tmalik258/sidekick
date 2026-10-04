@@ -1,4 +1,4 @@
-//! Mascot and island state machine (SRS 7.1).
+//! Mascot and island state machine.
 //!
 //! The machine is pure: it only decides transitions. Timers (for example
 //! Success back to Idle after 1.5 s) are driven by the app, which feeds the
