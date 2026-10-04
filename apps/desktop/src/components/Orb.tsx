@@ -162,8 +162,9 @@ export function Orb({
       role="img"
       aria-label={`Sidekick is ${state}`}
     >
-      <div ref={halo} className="orb-halo" />
       <div ref={float} className="orb-float">
+        {/* Inside the float, so the glow moves with the body (pull, hops, poses). */}
+        <div ref={halo} className="orb-halo" />
         <div ref={life} className="orb-life">
           <div ref={body} className="orb-body">
             <div className="orb-spec" />
