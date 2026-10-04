@@ -407,8 +407,7 @@ pub fn page_event(input: &serde_json::Value) -> Option<Event> {
         "tab": input["tab"].as_u64().unwrap_or(0),
     });
     Some(
-        Event::new(*event_kind, BrowserSensor::ID, payload)
-            .with_sensitivity(Sensitivity::Personal),
+        Event::new(*event_kind, BrowserSensor::ID, payload).with_sensitivity(Sensitivity::Personal),
     )
 }
 

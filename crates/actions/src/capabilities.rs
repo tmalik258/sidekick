@@ -503,5 +503,4 @@ mod tests {
             "--private-window"
         );
     }
-
 }

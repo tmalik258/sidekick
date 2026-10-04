@@ -451,9 +451,7 @@ fn expire_when_ignored(app: &AppHandle, id: String) {
         loop {
             tokio::time::sleep(EXPIRY_TICK).await;
             let state = app.state::<AppState>();
-            let still_active = lock(&state.active)
-                .as_ref()
-                .is_some_and(|a| a.ui.id == id);
+            let still_active = lock(&state.active).as_ref().is_some_and(|a| a.ui.id == id);
             if !still_active {
                 return;
             }
