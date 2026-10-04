@@ -15,6 +15,18 @@ impl WindowSensor {
 
 const CHECK_EVERY: Duration = Duration::from_millis(500);
 
+/// Windows that pass over the screen for a moment (the screenshot overlay,
+/// Notification Center): not the app the user is in, and never fullscreen.
+const PASSING: &[&str] = &[
+    "screenclippinghost.exe",
+    "snippingtool.exe",
+    "shellexperiencehost.exe",
+];
+
+fn passing(exe: &str) -> bool {
+    PASSING.iter().any(|p| exe.eq_ignore_ascii_case(p))
+}
+
 impl Sensor for WindowSensor {
     fn id(&self) -> &'static str {
         Self::ID
@@ -33,7 +45,12 @@ impl Sensor for WindowSensor {
                 else {
                     continue;
                 };
-                if win.process_id == own_pid {
+                let passing_by = win
+                    .process_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(passing);
+                if win.process_id == own_pid || passing_by {
                     continue;
                 }
                 // Fullscreen is part of the key: pressing F11 or Esc changes
@@ -172,4 +189,16 @@ fn fullscreen_monitor() -> Option<Rect> {
 #[cfg(not(windows))]
 fn fullscreen_monitor() -> Option<Rect> {
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn screenshot_overlay_is_not_an_app() {
+        assert!(passing("ScreenClippingHost.exe"));
+        assert!(passing("SnippingTool.exe"));
+        assert!(!passing("notepad.exe"));
+    }
 }
