@@ -74,6 +74,7 @@ const SAFE: &[&str] = &[
     "open_system_page",
     "launch_app",
     "open_app",
+    "open_app_and_url",
     "dnd_on",
     "dnd_off",
     "create_env",
@@ -252,6 +253,20 @@ impl Executor {
                 tokio::task::spawn_blocking(move || pc::open_app(&name))
                     .await
                     .map_err(fail)?
+            }
+            // A notification with a link: the app (or its website) and the
+            // link, in one tap.
+            "open_app_and_url" => {
+                let url = arg(args, "url")?.to_owned();
+                let name = arg(args, "name")?.to_owned();
+                let opened = tokio::task::spawn_blocking(move || pc::open_app(&name))
+                    .await
+                    .map_err(fail)?;
+                let link = self.open_url(&url, None, false);
+                match (opened, link) {
+                    (Ok(a), Ok(_)) => Ok(Outcome::msg(format!("{} and the link", a.message))),
+                    (_, Err(e)) | (Err(e), _) => Err(e),
+                }
             }
             "close_app" => {
                 let name = arg(args, "name")?.to_owned();

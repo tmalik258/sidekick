@@ -857,7 +857,41 @@ pub fn launch_app(q: &str) -> Result<Outcome, ActionError> {
 
 /// Brings an app to the front, or starts it when it is not open.
 pub fn open_app(q: &str) -> Result<Outcome, ActionError> {
-    focus_window(q).or_else(|_| launch_app(q))
+    focus_window(q).or_else(|e| {
+        launch_app(q).or_else(|_| match web_app(q) {
+            // A service people use in the browser (Gmail, WhatsApp Web).
+            Some(url) => open::that_detached(url)
+                .map(|()| Outcome::msg(format!("Opened {}", q.trim())))
+                .map_err(|e| ActionError::Failed(e.to_string())),
+            None => Err(e),
+        })
+    })
+}
+
+/// The web address of a service that is often only a website, for
+/// "Open Gmail" when no app by that name is installed.
+pub fn web_app(name: &str) -> Option<&'static str> {
+    const WEB: &[(&str, &str)] = &[
+        ("gmail", "https://mail.google.com"),
+        ("googlecalendar", "https://calendar.google.com"),
+        ("calendar", "https://calendar.google.com"),
+        ("googledrive", "https://drive.google.com"),
+        ("outlook", "https://outlook.office.com/mail"),
+        ("whatsapp", "https://web.whatsapp.com"),
+        ("slack", "https://app.slack.com"),
+        ("telegram", "https://web.telegram.org"),
+        ("discord", "https://discord.com/app"),
+        ("teams", "https://teams.microsoft.com"),
+        ("microsoftteams", "https://teams.microsoft.com"),
+        ("upwork", "https://www.upwork.com"),
+        ("linkedin", "https://www.linkedin.com"),
+        ("github", "https://github.com/notifications"),
+        ("messenger", "https://www.messenger.com"),
+        ("instagram", "https://www.instagram.com"),
+        ("youtube", "https://www.youtube.com"),
+    ];
+    let key = squash(name);
+    WEB.iter().find(|(k, _)| *k == key).map(|(_, url)| *url)
 }
 
 pub fn sleep_pc() -> Result<Outcome, ActionError> {
@@ -942,6 +976,9 @@ mod tests {
                 .collect()
         };
         assert_eq!(names("WIND HAWK"), ["Windhawk"]);
+        assert_eq!(web_app("Gmail"), Some("https://mail.google.com"));
+        assert_eq!(web_app("WhatsApp"), Some("https://web.whatsapp.com"));
+        assert_eq!(web_app("Notepad"), None);
         assert_eq!(names("spotify"), ["Spotify"]);
         assert_eq!(names("win"), ["Windhawk", "Windows Terminal"]);
         assert_eq!(names("terminal windows"), ["Windows Terminal"]);
