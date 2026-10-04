@@ -139,7 +139,6 @@ export function Orb({
   const look = LOOKS[state];
   const anchorRef = useRef<HTMLDivElement>(null);
   const haloRef = useRef<HTMLDivElement>(null);
-  const sheenRef = useRef<HTMLDivElement>(null);
   const spinRef = useRef<Animation[]>([]);
   const lookRef = useRef(look);
   lookRef.current = look;
@@ -245,13 +244,15 @@ export function Orb({
   // Halo rotation on the compositor (WAAPI). Speed changes go through the
   // playback rate, so the halo accelerates smoothly instead of jumping.
   useEffect(() => {
-    const targets = [haloRef.current, sheenRef.current].filter(Boolean) as HTMLElement[];
-    spinRef.current = targets.map((el, i) =>
-      el.animate([{ transform: "rotate(0turn)" }, { transform: `rotate(${i === 0 ? 1 : -1}turn)` }], {
-        duration: IDLE_SPIN_MS,
-        iterations: Number.POSITIVE_INFINITY,
-      }),
-    );
+    const halo = haloRef.current;
+    spinRef.current = halo
+      ? [
+          halo.animate([{ transform: "rotate(0turn)" }, { transform: "rotate(1turn)" }], {
+            duration: IDLE_SPIN_MS,
+            iterations: Number.POSITIVE_INFINITY,
+          }),
+        ]
+      : [];
     return () => {
       for (const a of spinRef.current) a.cancel();
     };
@@ -289,11 +290,6 @@ export function Orb({
       <motion.div className="orb-float" style={{ x: pullX, y: bodyY }}>
         <div ref={haloRef} className="orb-halo" />
         <motion.div className="orb-body" style={{ rotateX, rotateY }}>
-          {/* Its own round clip: the spinning sheen is larger than the body, and
-              the body's clip alone sometimes lets a corner show while tilted. */}
-          <div className="orb-sheen-clip">
-            <div ref={sheenRef} className="orb-sheen" />
-          </div>
           <motion.div className="orb-spec" style={{ x: specX, y: specY }} />
           <motion.div className="orb-face" style={{ x: eyeX, y: eyeY }}>
             <Eyes scaleY={eyeScaleY} happy={!!look.happy} worried={!!look.worried} />

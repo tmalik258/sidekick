@@ -96,8 +96,7 @@ body {
 
 .orb-float,
 .orb-body,
-.orb-halo,
-.orb-sheen {
+.orb-halo {
   position: absolute;
   inset: 0;
   border-radius: 50%;
@@ -127,28 +126,6 @@ body {
     inset 0 calc(var(--size) * -0.09) calc(var(--size) * 0.16) rgb(0 0 0 / 0.38),
     inset 0 calc(var(--size) * 0.04) calc(var(--size) * 0.08) rgb(255 255 255 / 0.32),
     0 calc(var(--size) * 0.06) calc(var(--size) * 0.18) rgb(0 0 0 / 0.45);
-}
-
-/* Clips the sheen to the circle. clip-path holds where overflow plus
-   border-radius drops the clip for a spinning layer in a tilted body,
-   which flashed a square corner. */
-.orb-sheen-clip {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  overflow: hidden;
-  clip-path: circle(50% at 50% 50%);
-}
-
-/* Slow counter-rotating color drift inside the glass. */
-.orb-sheen {
-  inset: -30%;
-  background: conic-gradient(from 0.25turn, transparent, var(--g2), transparent 40%, var(--g3), transparent 75%);
-  mix-blend-mode: soft-light;
-  opacity: 0.55;
-  will-change: transform;
-  -webkit-mask-image: radial-gradient(closest-side, #000 70%, transparent 100%);
-  mask-image: radial-gradient(closest-side, #000 70%, transparent 100%);
 }
 
 .orb-spec {
@@ -223,12 +200,6 @@ body {
 }
 .chip:active {
   transform: scale(0.96);
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  .orb-sheen {
-    display: none;
-  }
 }
 
 /* ---------- Ask ---------- */
