@@ -154,6 +154,14 @@ export function Island() {
   const contentEl = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => connect({ sounds: true }), []);
+  // The window stays hidden until this page has drawn, so it never flashes
+  // an empty black frame at startup. Two frames: the first one is painted.
+  useEffect(() => {
+    let raf = requestAnimationFrame(() => {
+      raf = requestAnimationFrame(() => void api.islandReady().catch(() => {}));
+    });
+    return () => cancelAnimationFrame(raf);
+  }, []);
   useEffect(() => watchWaiting(), []);
 
   // Measure expanded content so the capsule grows exactly to fit it. A
