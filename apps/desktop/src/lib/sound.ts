@@ -5,6 +5,7 @@
 // and sliced per sound. If a kit cannot load, a quiet synthesized tone is
 // used instead so feedback never disappears.
 
+import { playSynth, type SynthSound } from "./synth";
 import type { Cue, Settings } from "./types";
 
 /** Sound names inside an SND sprite. */
@@ -29,6 +30,47 @@ const CUE_SOUND: Record<Cue, SndSound> = {
   boop: "caution",
   yawn: "transition_down",
   settle: "button", // unused: settle is synthesized, see powerUp
+};
+
+/** The kit made of synthesized sounds, see synth.ts. */
+export const SYNTH_KIT = "sidekick";
+
+/** The Sidekick kit's sound for each cue and each SND sound name. */
+const SYNTH_CUE: Record<Cue, SynthSound | null> = {
+  chirp: "chirp",
+  pop: "pop",
+  open: "open",
+  ding: "coo",
+  boop: "uhoh",
+  yawn: "yawn",
+  settle: null,
+};
+const SYNTH_FOR: Record<SndSound, SynthSound> = {
+  button: "tap",
+  caution: "uhoh",
+  celebration: "tada",
+  disabled: "buzz",
+  notification: "chirp",
+  select: "click",
+  toggle_on: "pop",
+  toggle_off: "down",
+  transition_up: "reconnect",
+  transition_down: "disconnect",
+};
+/** The closest SND sound for each mood sound, when the SND kit is picked. */
+const SND_FOR: Partial<Record<SynthSound, SndSound>> = {
+  hello: "transition_up",
+  sparkle: "celebration",
+  tada: "celebration",
+  fanfare: "celebration",
+  mwah: "notification",
+  cooSoft: "select",
+  coo: "toggle_on",
+  gasp: "caution",
+  uhoh: "caution",
+  disconnect: "transition_down",
+  reconnect: "transition_up",
+  click: "select",
 };
 
 interface Kit {
@@ -79,6 +121,7 @@ async function fetchSpriteMap(id: string): Promise<Record<string, { start: numbe
 }
 
 function loadKit(id: string): Promise<Kit | null> {
+  if (id === SYNTH_KIT) return Promise.resolve(null);
   let kit = kits.get(id);
   if (!kit) {
     const { ac } = audio();
@@ -100,13 +143,14 @@ function loadKit(id: string): Promise<Kit | null> {
 
 /** Loads a kit and reports whether it decoded, for the settings screen. */
 export async function checkKit(id: string): Promise<string | null> {
+  if (id === SYNTH_KIT) return null;
   const kit = await loadKit(id);
   return kit ? null : (kitErrors.get(id) ?? "unknown error");
 }
 
 /** Starts decoding a kit ahead of the first cue so playback is instant. */
 export function preloadSounds(kitId: string): void {
-  if (typeof window !== "undefined") void loadKit(kitId);
+  if (typeof window !== "undefined" && kitId !== SYNTH_KIT) void loadKit(kitId);
 }
 
 export function cueVolume(settings: Settings, cue: Cue): number {
@@ -122,12 +166,34 @@ export function playCue(cue: Cue, volume: number, kitId: string): void {
     }
     return;
   }
+  if (kitId === SYNTH_KIT) {
+    const sound = SYNTH_CUE[cue];
+    if (sound) playMood(sound, volume, kitId);
+    return;
+  }
   playSound(CUE_SOUND[cue], volume, kitId);
+}
+
+/** A mascot sound (hello, sparkle, mwah...): its own voice in the Sidekick
+ * kit, the closest designed sound otherwise. */
+export function playMood(sound: SynthSound, volume: number, kitId: string): void {
+  if (volume <= 0 || typeof window === "undefined") return;
+  if (kitId === SYNTH_KIT) {
+    const { ac, out } = audio();
+    playSynth(ac, out, sound, volume);
+    return;
+  }
+  const snd = SND_FOR[sound];
+  if (snd) playSound(snd, volume, kitId);
 }
 
 /** Plays one sound from a kit. Used for cues and for chip presses. */
 export function playSound(sound: SndSound, volume: number, kitId: string): void {
   if (volume <= 0 || typeof window === "undefined") return;
+  if (kitId === SYNTH_KIT) {
+    playMood(SYNTH_FOR[sound], volume, kitId);
+    return;
+  }
   void loadKit(kitId).then((kit) => {
     const { ac, out } = audio();
     const slice = kit?.map[sound];

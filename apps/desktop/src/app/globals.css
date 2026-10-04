@@ -84,6 +84,7 @@ body {
 .orb {
   position: relative;
   flex: none;
+  font-size: var(--size);
   perspective: calc(var(--size) * 4);
   transition:
     --o1 600ms ease,
@@ -95,12 +96,16 @@ body {
 }
 
 .orb-float,
+.orb-life,
 .orb-body,
-.orb-halo,
-.orb-sheen {
+.orb-halo {
   position: absolute;
   inset: 0;
   border-radius: 50%;
+}
+
+.orb-float {
+  transform-origin: 50% 70%;
 }
 
 .orb-halo {
@@ -116,7 +121,6 @@ body {
 
 .orb-body {
   overflow: hidden;
-  transform-style: preserve-3d;
   background: radial-gradient(
     circle at 34% 28%,
     color-mix(in oklab, var(--o2) 70%, white) 0%,
@@ -128,17 +132,48 @@ body {
     inset 0 calc(var(--size) * -0.09) calc(var(--size) * 0.16) rgb(0 0 0 / 0.38),
     inset 0 calc(var(--size) * 0.04) calc(var(--size) * 0.08) rgb(255 255 255 / 0.32),
     0 calc(var(--size) * 0.06) calc(var(--size) * 0.18) rgb(0 0 0 / 0.45);
+  transition: filter 600ms ease;
 }
 
-/* Slow counter-rotating color drift inside the glass. */
-.orb-sheen {
-  inset: -30%;
-  background: conic-gradient(from 0.25turn, transparent, var(--g2), transparent 40%, var(--g3), transparent 75%);
-  mix-blend-mode: soft-light;
-  opacity: 0.55;
-  will-change: transform;
-  -webkit-mask-image: radial-gradient(closest-side, #000 70%, transparent 100%);
-  mask-image: radial-gradient(closest-side, #000 70%, transparent 100%);
+.orb[data-dim="true"] .orb-body {
+  filter: saturate(0.4) brightness(0.72);
+}
+
+/* The only loops: slow and tiny, on the compositor. */
+.orb-life[data-life="breathe"] {
+  animation: orb-breathe 4.8s ease-in-out infinite;
+}
+.orb-life[data-life="breatheSlow"] {
+  animation: orb-breathe-slow 6.5s ease-in-out infinite;
+}
+.orb-life[data-life="pulse"] {
+  animation: orb-pulse 1.3s ease-in-out infinite;
+}
+.orb-life[data-life="sway"] {
+  animation: orb-sway 5s ease-in-out infinite;
+}
+@keyframes orb-breathe {
+  50% {
+    transform: scale(1.009);
+  }
+}
+@keyframes orb-breathe-slow {
+  50% {
+    transform: translateY(-0.4%) scale(1.014);
+  }
+}
+@keyframes orb-pulse {
+  50% {
+    transform: scale(1.022);
+  }
+}
+@keyframes orb-sway {
+  25% {
+    transform: rotate(2.2deg);
+  }
+  75% {
+    transform: rotate(-2.2deg);
+  }
 }
 
 .orb-spec {
@@ -155,36 +190,129 @@ body {
 .orb-face {
   position: absolute;
   inset: 0;
+  color: var(--eye, #fff);
 }
 
 .orb-eyes {
   position: absolute;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: 30%;
+  height: 0.33em;
   display: flex;
-  align-items: center;
   justify-content: center;
-  gap: 15%;
-  padding-bottom: 4%;
+  gap: 0.045em;
 }
 
 .orb-eye {
-  display: block;
-  width: 11%;
-  height: 26%;
-  border-radius: 999px;
-  background: var(--eye, #fff);
-  box-shadow: 0 0 calc(var(--size) * 0.07) var(--eye-glow, rgb(255 255 255 / 0.55));
+  width: 0.22em;
+  height: 0.33em;
+  overflow: visible;
+  transform-origin: 50% 50%;
+  filter: drop-shadow(0 0 calc(var(--size) * 0.035) var(--eye-glow, transparent));
 }
 
-.orb-eye-happy {
-  display: block;
-  width: 17%;
-  height: 11%;
-  margin-top: -6%;
-  border: calc(var(--size) * 0.045) solid var(--eye, #fff);
-  border-bottom: 0;
-  border-radius: 999px 999px 0 0;
-  filter: drop-shadow(0 0 calc(var(--size) * 0.05) var(--eye-glow, rgb(255 255 255 / 0.5)));
+.orb-eye *,
+.orb-mouth * {
+  fill: currentColor;
+}
+
+.orb-eye .orb-line,
+.orb-mouth .orb-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.orb-eye .orb-glint {
+  fill: rgb(255 255 255 / 0.9);
+}
+
+.orb-mouth {
+  position: absolute;
+  left: 50%;
+  top: 63%;
+  width: 0.2em;
+  height: 0.1em;
+  margin-left: -0.1em;
+  overflow: visible;
+  opacity: 0;
+  transform: scale(0.7);
+  transition:
+    opacity 300ms ease,
+    transform 350ms var(--ease-out-strong);
+}
+
+.orb-mouth[data-on="true"] {
+  opacity: 1;
+  transform: none;
+}
+
+.orb-cheek {
+  position: absolute;
+  top: 60%;
+  width: 0.15em;
+  height: 0.075em;
+  border-radius: 50%;
+  background: #ff6fa0;
+  filter: blur(calc(var(--size) * 0.018));
+  opacity: 0;
+  transition: opacity 400ms ease;
+}
+.orb-cheek-l {
+  left: 17%;
+}
+.orb-cheek-r {
+  right: 17%;
+}
+
+.orb-fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.orb-glyph {
+  position: absolute;
+  line-height: 1;
+  font-weight: 600;
+  color: rgb(235 240 255 / 0.85);
+}
+
+.orb-twinkle {
+  position: absolute;
+  width: 1em;
+  height: 1em;
+  background: #fff8dc;
+  clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
+  filter: drop-shadow(0 0 0.2em rgb(255 214 10 / 0.8));
+}
+
+.orb-bubble {
+  position: absolute;
+  right: -6%;
+  top: -8%;
+  display: flex;
+  gap: 0.03em;
+  padding: 0.035em 0.06em;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.14);
+}
+.orb-bubble-muted {
+  background: rgb(142 142 147 / 0.22);
+}
+.orb-bubble span {
+  width: 0.045em;
+  height: 0.045em;
+  border-radius: 50%;
+  background: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb-life {
+    animation: none !important;
+  }
 }
 
 /* ---------- Island ---------- */
@@ -213,12 +341,6 @@ body {
 }
 .chip:active {
   transform: scale(0.96);
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  .orb-sheen {
-    display: none;
-  }
 }
 
 /* ---------- Ask ---------- */
