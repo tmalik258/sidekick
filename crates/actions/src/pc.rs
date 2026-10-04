@@ -811,15 +811,68 @@ pub fn match_apps<'a>(apps: &'a [(String, String)], q: &str) -> Vec<&'a (String,
     hits.into_iter().map(|(_, a)| a).collect()
 }
 
+/// Pairs of letters in `s`, for comparing names that are spelled a bit off.
+fn pairs(s: &str) -> Vec<(char, char)> {
+    let c: Vec<char> = s.chars().collect();
+    c.windows(2).map(|w| (w[0], w[1])).collect()
+}
+
+/// How alike two names are, 0 to 1, by the letter pairs they share.
+fn likeness(a: &str, b: &str) -> f32 {
+    let (a, b) = (pairs(&squash(a)), pairs(&squash(b)));
+    if a.is_empty() || b.is_empty() {
+        return 0.0;
+    }
+    let mut rest = b.clone();
+    let shared = a
+        .iter()
+        .filter(|p| {
+            rest.iter()
+                .position(|r| r == *p)
+                .map(|i| rest.swap_remove(i))
+                .is_some()
+        })
+        .count();
+    2.0 * shared as f32 / (a.len() + b.len()) as f32
+}
+
+/// When nothing matches (a typo like "win halt"), the installed names that
+/// look closest, best first.
+pub fn closest_apps<'a>(apps: &'a [(String, String)], q: &str, n: usize) -> Vec<&'a str> {
+    let mut scored: Vec<(f32, &str)> = apps
+        .iter()
+        .map(|a| (likeness(&a.0, q), a.0.as_str()))
+        .filter(|(s, _)| *s >= 0.3)
+        .collect();
+    scored.sort_by(|a, b| b.0.total_cmp(&a.0));
+    scored.into_iter().take(n).map(|(_, name)| name).collect()
+}
+
+/// What an app search found: names that match, or, when none do, the
+/// closest-looking ones to ask about.
+pub enum Found {
+    Matches(Vec<String>),
+    Closest(Vec<String>),
+}
+
 /// Installed apps whose name is like `q`, for "do I have ...".
-pub fn find_apps(q: &str) -> Result<Vec<String>, ActionError> {
+pub fn find_apps(q: &str) -> Result<Found, ActionError> {
     let q = query(q)?;
     let apps = start_apps()?;
-    Ok(match_apps(&apps, &q)
+    let hits: Vec<String> = match_apps(&apps, &q)
         .into_iter()
         .take(10)
         .map(|a| a.0.clone())
-        .collect())
+        .collect();
+    if !hits.is_empty() {
+        return Ok(Found::Matches(hits));
+    }
+    Ok(Found::Closest(
+        closest_apps(&apps, &q, 3)
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+    ))
 }
 
 /// Starts an installed app by name (spelling and spaces forgiven); only
@@ -831,7 +884,16 @@ pub fn launch_app(q: &str) -> Result<Outcome, ActionError> {
         .first()
         .map(|a| (a.0.clone(), a.1.clone()))
     else {
-        return Err(ActionError::Failed(format!("no installed app named {q}")));
+        // A typo never starts the wrong app; it names the likely ones.
+        let close = closest_apps(&apps, &q, 3);
+        return Err(ActionError::Failed(if close.is_empty() {
+            format!("no installed app named {q}")
+        } else {
+            format!(
+                "no installed app named {q}; did you mean {}?",
+                close.join(" or ")
+            )
+        }));
     };
     powershell(
         "Start-Process \"shell:AppsFolder\\$env:SIDEKICK_APP_ID\"",
@@ -939,6 +1001,15 @@ mod tests {
         assert_eq!(names("win"), ["Windhawk", "Windows Terminal"]);
         assert_eq!(names("terminal windows"), ["Windows Terminal"]);
         assert!(names("photoshop").is_empty());
+        assert_eq!(names("win hawk"), ["Windhawk"]);
+        // Typos match nothing but are offered as the closest names.
+        assert!(names("win halt").is_empty());
+        assert_eq!(
+            closest_apps(&apps, "win halt", 3).first(),
+            Some(&"Windhawk")
+        );
+        assert_eq!(closest_apps(&apps, "spotfy", 3).first(), Some(&"Spotify"));
+        assert!(closest_apps(&apps, "photoshop", 3).is_empty());
         assert_eq!(query(" chr*ome ").unwrap(), "chrome");
     }
 
