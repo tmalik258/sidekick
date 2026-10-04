@@ -13,6 +13,7 @@ mod files;
 pub mod office;
 pub mod passwords;
 pub mod pc;
+mod script;
 mod system;
 pub mod uia;
 
