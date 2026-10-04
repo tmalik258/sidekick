@@ -131,6 +131,7 @@ export const api = {
   sensorsResume: () => invoke<Settings>("sensors_resume"),
   mascotGet: () => invoke<MascotState>("mascot_get"),
   islandSetHitRect: (rect: HitRect) => invoke<void>("island_set_hit_rect", { rect }),
+  islandReady: () => invoke<void>("island_ready"),
   suggestionCurrent: () => invoke<Suggestion | null>("suggestion_current"),
   suggestionChoose: (id: string, index: number) => invoke<void>("suggestion_choose", { id, index }),
   suggestionDismiss: (id: string, reason: "user" | "timeout") => invoke<void>("suggestion_dismiss", { id, reason }),

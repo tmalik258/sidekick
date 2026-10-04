@@ -78,6 +78,7 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   },
   mascot_get: () => mascot,
   island_set_hit_rect: () => undefined,
+  island_ready: () => undefined,
   suggestion_current: () => suggestion,
   suggestion_choose: (a) => {
     const index = a.index as number;
