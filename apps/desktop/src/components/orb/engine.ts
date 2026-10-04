@@ -17,6 +17,8 @@ export interface Material {
 export interface OrbNodes {
   root: HTMLElement;
   halo: HTMLElement;
+  /** Holds the halo; moves with the body's position only. */
+  haloPos: HTMLElement;
   float: HTMLElement;
   life: HTMLElement;
   body: HTMLElement;
@@ -512,7 +514,10 @@ export class OrbEngine {
     const size = this.size;
     const sq = s.squash.value * 0.04;
     const sc = s.scale.value;
-    this.n.float.style.transform = `translate(${s.px.value}px, ${s.py.value + s.y.value * size}px) rotate(${s.tilt.value}deg) scale(${sc * (1 + sq)}, ${sc * (1 - sq)})`;
+    const tx = s.px.value;
+    const ty = s.py.value + s.y.value * size;
+    this.n.float.style.transform = `translate(${tx}px, ${ty}px) rotate(${s.tilt.value}deg) scale(${sc * (1 + sq)}, ${sc * (1 - sq)})`;
+    this.n.haloPos.style.transform = `translate(${tx}px, ${ty}px)`;
     const gx = s.gx.value;
     const gy = s.gy.value;
     this.n.face.style.transform = `translate(${gx * size * 0.13}px, ${gy * size * 0.1}px)`;
