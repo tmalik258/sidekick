@@ -26,7 +26,7 @@ impl Browser {
     /// Chromium browsers show their profile picker when started without a
     /// profile, and the link is lost. Open in the profile used last instead.
     pub fn profile_arg(&self) -> Option<String> {
-        let data = crate::passwords::user_data_dir(&self.id)?;
+        let data = user_data_dir(&self.id)?;
         last_profile(&data).map(|p| format!("--profile-directory={p}"))
     }
 
@@ -85,6 +85,23 @@ pub fn default_browser() -> Option<&'static str> {
     {
         None
     }
+}
+
+/// Chromium user-data root for an installed browser id, if the folder exists.
+pub fn user_data_dir(id: &str) -> Option<PathBuf> {
+    let base = dirs::data_local_dir()?;
+    let candidates: &[&str] = match id {
+        "chrome" => &["Google/Chrome/User Data"],
+        "edge" => &["Microsoft/Edge/User Data"],
+        "brave" => &["BraveSoftware/Brave-Browser/User Data"],
+        "samsung" => &[
+            "SamsungInternet/User Data",
+            "Samsung/SamsungInternet/User Data",
+            "Samsung/Internet/User Data",
+        ],
+        _ => return None,
+    };
+    candidates.iter().map(|p| base.join(p)).find(|p| p.is_dir())
 }
 
 /// The profile folder a Chromium browser used last, from its `Local State`
@@ -163,10 +180,6 @@ impl Capabilities {
             Some(("tool", "pandoc")) => self.pandoc.is_some(),
             Some(("tool", "tar")) => self.tar.is_some(),
             Some(("tool", "code")) => self.code.is_some(),
-            Some(("tool", "browser_passwords")) => self
-                .browsers
-                .iter()
-                .any(|b| crate::passwords::user_data_dir(&b.id).is_some()),
             Some(("tool", "tesseract")) => self.tesseract.is_some(),
             _ => false,
         }
@@ -489,23 +502,5 @@ mod tests {
             caps.browser("zen").unwrap().private_flag(),
             "--private-window"
         );
-    }
-
-    #[test]
-    fn browser_passwords_needs_a_chromium_store() {
-        let with_store = Capabilities {
-            browsers: vec![Browser {
-                id: "chrome".into(),
-                path: "/x/chrome".into(),
-            }],
-            ..Capabilities::default()
-        };
-        // chrome path may or may not exist on the machine; capability is about
-        // user_data_dir presence, not the exe. Without a real profile, false.
-        let _ = with_store.has("tool:browser_passwords");
-        let empty = Capabilities::default();
-        assert!(!empty.has("tool:browser_passwords"));
-        assert!(!empty.has("tool:op"));
-        assert!(!empty.has("tool:bw"));
     }
 }

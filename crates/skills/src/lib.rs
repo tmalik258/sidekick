@@ -129,10 +129,6 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/browser/pair.yaml"),
     ),
     (
-        "browser/login.yaml",
-        include_str!("../../../skills/browser/login.yaml"),
-    ),
-    (
         "browser/many-tabs.yaml",
         include_str!("../../../skills/browser/many-tabs.yaml"),
     ),
@@ -290,7 +286,6 @@ pub const ACTIONS: &[&str] = &[
     "claude_always",
     "browser_pair_allow",
     "browser_pair_deny",
-    "browser_fill",
     "browser_close_duplicates",
     "browser_save_session",
     "save_log",

@@ -706,32 +706,6 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         items.push(item);
     }
 
-    let password_browsers: Vec<_> = caps
-        .browsers
-        .iter()
-        .filter(|b| sidekick_actions::passwords::user_data_dir(&b.id).is_some())
-        .collect();
-    let passwords_ok = !password_browsers.is_empty();
-    let passwords_status = if passwords_ok {
-        password_browsers
-            .iter()
-            .map(|b| b.label())
-            .collect::<Vec<_>>()
-            .join(", ")
-    } else {
-        "No browser password store found".into()
-    };
-    items.push(
-        SetupItem::new(
-            "passwords",
-            Group::Tools,
-            "Browser passwords",
-            "Fill and save locally in the last-used Chrome, Edge, Brave or Samsung Internet profile. Unsupported encryption is reported.",
-        )
-        .done(passwords_ok, &passwords_status, "Not found")
-        .tab("connections")
-        .recommended(),
-    );
     items
 }
 

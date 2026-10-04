@@ -752,36 +752,6 @@ commands.time_today = () => [
   { app: "Slack", project: "", secs: 640 },
 ];
 commands.browser_info = () => ({ token: "browser-preview-pairing-code", port: 47822 });
-commands.password_browsers = () =>
-  ["chrome", "edge"].map((id) => ({
-    id,
-    name: id === "chrome" ? "Chrome" : "Edge",
-    enabled: settings.passwordBrowsers === null || settings.passwordBrowsers.includes(id),
-  }));
-commands.password_save_draft = (a) => ({
-  id: a.id,
-  domain: "example.com",
-  username: "you",
-  password: "secret",
-});
-commands.password_save_status = (a) => ({
-  id: a.id,
-  domain: "example.com",
-  username: "you",
-  seconds: 5,
-  phase: "countdown",
-  missing: ["chrome"],
-  conflicts: ["edge"],
-  existing: ["edge"],
-  unavailable: [],
-  sources: [],
-  mirror: false,
-});
-commands.password_save_commit = () => "Saved locally to Chrome, Edge";
-commands.passwords_mirror_status = () => ({ running: false, message: "" });
-commands.passwords_mirror_cancel = () => undefined;
-commands.password_save_cancel = () => undefined;
-commands.passwords_mirror = () => "Mirrored 0 login writes across Chrome, Edge";
 commands.action_undo = () => "Moved photo.webp to the Recycle Bin";
 commands.ai_status = () => [
   { id: "claude_code", available: true, local: false },

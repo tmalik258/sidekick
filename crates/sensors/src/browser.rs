@@ -1,6 +1,6 @@
 //! The browser bridge. The Sidekick extension reports page
-//! events (a login form, a long article, an Upwork job, many tabs) and picks
-//! up commands (fill this login, close duplicate tabs) over a localhost-only
+//! events (a long article, an Upwork job, many tabs) and picks
+//! up commands (close duplicate tabs, save session) over a localhost-only
 //! endpoint.
 //!
 //! Only the extension gets in: every request must carry the pairing token,
@@ -15,7 +15,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use sidekick_core::{Event, EventBus, Sensitivity};
 use tokio::net::{TcpListener, TcpStream};
@@ -33,22 +33,12 @@ const MAX_TEXT: usize = 20_000;
 
 /// Page events the extension may report, and the event kind each becomes.
 const KINDS: &[(&str, &str)] = &[
-    ("login_form", "browser.login_form"),
-    ("login_submitted", "browser.login_submitted"),
     ("long_read", "browser.long_read"),
     ("upwork_job", "browser.upwork_job"),
     ("many_tabs", "browser.many_tabs"),
     // The domain in the active tab (never the page), for routines and time.
     ("site", "browser.site"),
 ];
-
-/// Username + password from a form submit, kept only in memory until the
-/// island saves or cancels. Never written to the event database.
-#[derive(Clone)]
-pub struct PendingLogin {
-    pub username: String,
-    pub password: String,
-}
 
 /// How long a pairing request waits for Allow on the island.
 pub const PAIR_WAIT: Duration = Duration::from_secs(90);
@@ -63,8 +53,6 @@ pub struct BrowserBridge {
     seen: Arc<Mutex<HashMap<String, i64>>>,
     /// Requests waiting for the extension's answer, by id.
     pending: Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<serde_json::Value>>>>,
-    /// Submission ids bind credentials to metadata; dropped events expire in 90s.
-    pending_login: Arc<Mutex<HashMap<String, (Instant, PendingLogin)>>>,
 }
 
 impl BrowserBridge {
@@ -141,44 +129,6 @@ impl BrowserBridge {
         self.seen().iter().any(|(_, t)| now - t < 60)
     }
 
-    pub fn set_pending_login(&self, id: String, login: PendingLogin) -> bool {
-        let Ok(mut records) = self.pending_login.lock() else {
-            return false;
-        };
-        records.retain(|_, (at, _)| at.elapsed() < Duration::from_secs(90));
-        if records.len() >= MAX_QUEUED {
-            return false;
-        }
-        records.insert(id.clone(), (Instant::now(), login));
-        drop(records);
-        let bridge = self.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(90)).await;
-            bridge.clear_pending_login(&id);
-        });
-        true
-    }
-
-    pub fn take_pending_login(&self, id: &str) -> Option<PendingLogin> {
-        self.pending_login
-            .lock()
-            .ok()?
-            .remove(id)
-            .and_then(|(at, login)| (at.elapsed() < Duration::from_secs(90)).then_some(login))
-    }
-
-    pub fn clear_pending_login(&self, id: &str) {
-        if let Ok(mut records) = self.pending_login.lock() {
-            records.remove(id);
-        }
-    }
-
-    pub fn clear_pending_logins(&self) {
-        if let Ok(mut records) = self.pending_login.lock() {
-            records.clear();
-        }
-    }
-
     fn take(&self) -> Option<serde_json::Value> {
         self.queue.lock().ok()?.pop_front()
     }
@@ -239,8 +189,6 @@ impl Sensor for BrowserSensor {
                     serve(sock, &ctx, |event| {
                         if gate.allows(Self::ID) {
                             bus.publish(event);
-                        } else if event.kind == "browser.login_submitted" {
-                            ctx.bridge.clear_pending_login(&event.id.to_string());
                         }
                     })
                     .await;
@@ -390,25 +338,6 @@ async fn serve(mut sock: TcpStream, ctx: &Ctx, publish: impl Fn(Event)) {
                 http::respond(&mut sock, "400 Bad Request", &cors, None).await;
                 return;
             };
-            if event.kind == "browser.login_submitted" {
-                let v = parsed.as_ref().expect("validated JSON event");
-                let password = v["password"].as_str().unwrap_or_default();
-                let username = v["username"].as_str().unwrap_or_default();
-                if password.is_empty() || password.len() > 8000 || username.len() > 2000 {
-                    http::respond(&mut sock, "400 Bad Request", &cors, None).await;
-                    return;
-                }
-                if !bridge.set_pending_login(
-                    event.id.to_string(),
-                    PendingLogin {
-                        username: username.to_owned(),
-                        password: password.to_owned(),
-                    },
-                ) {
-                    http::respond(&mut sock, "429 Too Many Requests", &cors, None).await;
-                    return;
-                }
-            }
             event.payload["browser"] = browser.into();
             publish(event);
             http::respond(&mut sock, "204 No Content", &cors, None).await;
@@ -467,7 +396,6 @@ pub fn page_event(input: &serde_json::Value) -> Option<Event> {
             .collect()
     };
     let host = host_of(url);
-    // Submitted credentials are stored only by event id, never on the event bus.
     let payload = serde_json::json!({
         "url": url,
         "domain": host.trim_start_matches("www."),
@@ -478,58 +406,13 @@ pub fn page_event(input: &serde_json::Value) -> Option<Event> {
         "duplicates": input["duplicates"].as_u64().unwrap_or(0),
         "tab": input["tab"].as_u64().unwrap_or(0),
     });
-    let sensitivity = if kind == "login_submitted" {
-        Sensitivity::Secret
-    } else {
-        Sensitivity::Personal
-    };
-    Some(Event::new(*event_kind, BrowserSensor::ID, payload).with_sensitivity(sensitivity))
+    Some(
+        Event::new(*event_kind, BrowserSensor::ID, payload).with_sensitivity(Sensitivity::Personal),
+    )
 }
 
 #[cfg(test)]
 mod tests {
-
-    #[tokio::test]
-    async fn submissions_are_bound_to_ids_and_cleanup_is_independent() {
-        let bridge = BrowserBridge::default();
-        assert!(bridge.set_pending_login(
-            "a".into(),
-            PendingLogin {
-                username: "alice".into(),
-                password: "one".into()
-            }
-        ));
-        assert!(bridge.set_pending_login(
-            "b".into(),
-            PendingLogin {
-                username: "bob".into(),
-                password: "two".into()
-            }
-        ));
-        assert_eq!(bridge.take_pending_login("a").unwrap().password, "one");
-        bridge.clear_pending_login("a");
-        assert_eq!(bridge.take_pending_login("b").unwrap().username, "bob");
-        assert!(bridge.take_pending_login("a").is_none());
-        for i in 0..MAX_QUEUED {
-            assert!(bridge.set_pending_login(
-                i.to_string(),
-                PendingLogin {
-                    username: String::new(),
-                    password: "x".into()
-                }
-            ));
-        }
-        assert!(!bridge.set_pending_login(
-            "overflow".into(),
-            PendingLogin {
-                username: String::new(),
-                password: "x".into()
-            }
-        ));
-        bridge.clear_pending_logins();
-        assert!(bridge.take_pending_login("0").is_none());
-    }
-
     #[tokio::test]
     async fn requests_get_their_answer() {
         let bridge = BrowserBridge::default();
@@ -573,34 +456,28 @@ mod tests {
     #[test]
     fn maps_known_page_events_only() {
         let e = page_event(&serde_json::json!({
-            "kind": "login_form", "url": "https://www.github.com/login", "title": "Sign in", "tab": 7,
+            "kind": "long_read", "url": "https://www.example.com/article", "title": "A long piece", "tab": 7, "words": 1200,
         }))
         .unwrap();
-        assert_eq!(e.kind, "browser.login_form");
-        assert_eq!(e.payload["domain"], "github.com");
+        assert_eq!(e.kind, "browser.long_read");
+        assert_eq!(e.payload["domain"], "example.com");
         assert_eq!(e.payload["tab"], 7);
+        assert_eq!(e.sensitivity, Sensitivity::Personal);
         assert!(
             page_event(&serde_json::json!({ "kind": "run_this", "url": "https://x.com" }))
                 .is_none()
         );
         assert!(
-            page_event(&serde_json::json!({ "kind": "login_form", "url": "file:///etc/passwd" }))
+            page_event(&serde_json::json!({ "kind": "long_read", "url": "file:///etc/passwd" }))
                 .is_none()
         );
-        let submitted = page_event(&serde_json::json!({
-            "kind": "login_submitted",
-            "url": "https://github.com/session",
-            "username": "octocat",
-            "password": "s3cret",
-        }))
-        .unwrap();
-        assert_eq!(submitted.kind, "browser.login_submitted");
-        assert!(submitted.payload.get("username").is_none());
         assert!(
-            submitted.payload.get("password").is_none() || submitted.payload["password"].is_null()
+            page_event(&serde_json::json!({
+                "kind": "login_form",
+                "url": "https://github.com/login",
+            }))
+            .is_none()
         );
-        assert_ne!(submitted.payload["username"], serde_json::json!("s3cret"));
-        assert_eq!(submitted.sensitivity, Sensitivity::Secret);
     }
 
     #[test]
@@ -640,7 +517,7 @@ mod tests {
         .spawn(bus, gate);
         tokio::time::sleep(Duration::from_millis(100)).await;
 
-        let body = r#"{"kind":"login_form","url":"https://github.com/login","title":"Sign in"}"#;
+        let body = r#"{"kind":"long_read","url":"https://example.com/article","title":"A long piece","words":1200}"#;
         let post = |origin: &str, token: &str| {
             format!(
                 "POST /browser/event HTTP/1.1\r\norigin: {origin}\r\nx-sidekick-token: {token}\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
@@ -672,7 +549,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(e.kind, "browser.login_form");
+        assert_eq!(e.kind, "browser.long_read");
 
         // A queued command reaches the extension's poll.
         bridge.send(serde_json::json!({ "type": "close_duplicates" }));

@@ -1,7 +1,6 @@
-// Sidekick extension, page side. Notices a login form, a long article or an
-// Upwork job and tells the background, which tells the desktop app. It never
-// reads keystrokes except on form submit (username + password for a local
-// save prompt), and fills a login only when you pick that on the island.
+// Sidekick extension, page side. Notices a long article or an Upwork job and
+// tells the background, which tells the desktop app. It never reads keystrokes
+// and never types into password fields for agent actions.
 
 (() => {
   // Loaded once per page, even when Sidekick injects it again.
@@ -19,13 +18,7 @@
 
   const visible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
 
-  function passwordField() {
-    return [...document.querySelectorAll('input[type="password"]')].find(visible);
-  }
-
   function check() {
-    if (passwordField()) send({ kind: "login_form" });
-
     if (/(^|\.)upwork\.com$/.test(location.hostname) && /\/(jobs|job)\//.test(location.pathname)) {
       const text = (document.querySelector("main") || document.body).innerText.slice(0, 20000);
       send({ kind: "upwork_job", text });
@@ -47,53 +40,6 @@
     check();
     if (++looks >= 5) clearInterval(timer);
   }, 2000);
-
-  // After a login submit: offer to mirror into the user's other browsers.
-  // Credentials go only to the local Sidekick bridge, never into the page DOM.
-  document.addEventListener(
-    "submit",
-    (e) => {
-      const form = e.target;
-      if (!(form instanceof HTMLFormElement)) return;
-      const pass = [...form.querySelectorAll('input[type="password"]')].find(visible);
-      if (!pass?.value) return;
-      const user = [
-        ...form.querySelectorAll('input[type="email"], input[type="text"], input[autocomplete="username"]'),
-      ].find(visible);
-      chrome.runtime.sendMessage({
-        type: "sidekick-event",
-        event: {
-          kind: "login_submitted",
-          url: location.href,
-          title: document.title,
-          username: user?.value || "",
-          password: pass.value,
-        },
-      });
-    },
-    true,
-  );
-
-  // Fill only on this exact host, and only into what looks like the form.
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg?.type !== "sidekick-fill") return;
-    if (location.hostname.replace(/^www\./, "") !== msg.domain) return;
-    const pass = passwordField();
-    if (!pass) return;
-    const form = pass.form || document;
-    const user = [
-      ...form.querySelectorAll('input[type="email"], input[type="text"], input[autocomplete="username"]'),
-    ].find(visible);
-    const set = (el, value) => {
-      const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
-      proto.set.call(el, value);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-    };
-    if (user && msg.username) set(user, msg.username);
-    set(pass, msg.password);
-    pass.focus();
-  });
 
   // Reading and acting on the page for Sidekick (only when you asked it to).
   // Elements get a short number ([12]) so a model can say "click 12".

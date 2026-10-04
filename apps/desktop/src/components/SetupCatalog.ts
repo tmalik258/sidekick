@@ -206,13 +206,6 @@ export const SETUP_CATALOG: Array<{
     why: "Convert Office files to PDF.",
     recommended: false,
   },
-  {
-    id: "passwords",
-    group: "tools",
-    title: "Browser passwords",
-    why: "Fill and save locally in the last-used Chrome, Edge, Brave or Samsung Internet profile. Unsupported encryption is reported.",
-    recommended: true,
-  },
 ];
 
 export function skeletonItem(entry: (typeof SETUP_CATALOG)[number]): SetupItem {
