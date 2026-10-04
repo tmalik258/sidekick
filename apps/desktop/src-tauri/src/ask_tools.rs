@@ -589,12 +589,14 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
                 "launch" => blocking(move || pc::launch_app(&name).map(|o| o.message)).await,
                 "find" => {
                     blocking(move || {
-                        pc::find_apps(&name).map(|found| {
-                            if found.is_empty() {
-                                format!("No installed app like {name}.")
-                            } else {
-                                format!("Installed: {}", found.join(", "))
-                            }
+                        pc::find_apps(&name).map(|found| match found {
+                            pc::Found::Matches(names) => format!("Installed: {}", names.join(", ")),
+                            pc::Found::Closest(names) if !names.is_empty() => format!(
+                                "No app named {name}. Closest installed: {}. Ask the user which \
+                                 one they mean before opening it.",
+                                names.join(", ")
+                            ),
+                            pc::Found::Closest(_) => format!("No installed app like {name}."),
                         })
                     })
                     .await
