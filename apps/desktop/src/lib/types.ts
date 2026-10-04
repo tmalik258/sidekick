@@ -57,6 +57,8 @@ export interface Settings {
   denySites: string[];
   routines: boolean;
   routinesAuto: boolean;
+  /** The mascot idles on its own: glances around, blinks, the odd smile. */
+  alive: boolean;
   /** Fade the island while a fullscreen app is in front. */
   hideInFullscreen: boolean;
   notifications: NotificationSettings;
@@ -333,7 +335,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sensors: {},
   pause: { kind: "none" },
   theme: "pearl",
-  soundKit: "01",
+  soundKit: "sidekick",
   paletteHotkey: "Ctrl+Space",
   shortcuts: {
     talk: "Ctrl+Alt+Space",
@@ -376,6 +378,7 @@ export const DEFAULT_SETTINGS: Settings = {
   routines: true,
   routinesAuto: false,
   hideInFullscreen: false,
+  alive: true,
   notifications: { enabled: true, apps: {}, vip: [] },
   recipes: [],
   memory: [],
