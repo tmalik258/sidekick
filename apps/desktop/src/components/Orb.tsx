@@ -68,6 +68,7 @@ export function Orb({
   const expression = face ?? FOR_STATE[state];
   const root = useRef<HTMLDivElement>(null);
   const halo = useRef<HTMLDivElement>(null);
+  const haloPos = useRef<HTMLDivElement>(null);
   const float = useRef<HTMLDivElement>(null);
   const life = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -89,6 +90,7 @@ export function Orb({
       {
         root: root.current as HTMLElement,
         halo: halo.current as HTMLElement,
+        haloPos: haloPos.current as HTMLElement,
         float: float.current as HTMLElement,
         life: life.current as HTMLElement,
         body: body.current as HTMLElement,
@@ -162,7 +164,11 @@ export function Orb({
       role="img"
       aria-label={`Sidekick is ${state}`}
     >
-      <div ref={halo} className="orb-halo" />
+      {/* The glow sits behind the body and only slides with it: no tilt or
+          squash, and always under the face. */}
+      <div ref={haloPos} className="orb-halo-pos">
+        <div ref={halo} className="orb-halo" />
+      </div>
       <div ref={float} className="orb-float">
         <div ref={life} className="orb-life">
           <div ref={body} className="orb-body">
