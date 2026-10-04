@@ -217,7 +217,30 @@ function QuickActions({ paused }: { paused: boolean }) {
       <RoundButton label="Settings" onClick={() => void api.openSettings()}>
         <Icon name="settings" size={15} />
       </RoundButton>
+      <UpdateButton />
     </>
+  );
+}
+
+/** Only while a newer release is waiting: a small button with a dot. */
+function UpdateButton() {
+  const update = useSidekick((s) => s.update);
+  const [busy, setBusy] = useState(false);
+  if (!update) return null;
+  const install = () => {
+    setBusy(true);
+    void api.updateInstall().catch(() => setBusy(false));
+  };
+  return (
+    <span className="relative">
+      <RoundButton label={busy ? "Opening the installer..." : `Update to ${update.version}`} onClick={install}>
+        <Icon name="update" size={15} />
+      </RoundButton>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute top-0 right-0 size-2 rounded-full bg-[#0a84ff] ring-2 ring-black"
+      />
+    </span>
   );
 }
 

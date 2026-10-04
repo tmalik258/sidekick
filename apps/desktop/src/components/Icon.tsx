@@ -25,6 +25,8 @@ const BODIES = {
   // Drawn for Sidekick (not from Solar), in the same 1.5 stroke style.
   file: '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M14 2.5H7.5a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7L14 2.5Z"/><path d="M14 2.5V7h4.5M9 12.5h6M9 16h4"/></g>',
   wifi: '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path d="M2 8.8a15 15 0 0 1 20 0"/><path d="M5.3 12.5a10 10 0 0 1 13.4 0"/><path d="M8.6 16.1a5 5 0 0 1 6.8 0"/></g><circle cx="12" cy="19.5" r="1.25" fill="currentColor"/>',
+  update:
+    '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 16.5v-9M8.5 11 12 7.5l3.5 3.5"/></g>',
   wifiOff:
     '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path d="M2 8.8a15 15 0 0 1 20 0"/><path d="M5.3 12.5a10 10 0 0 1 13.4 0"/><path d="M8.6 16.1a5 5 0 0 1 6.8 0"/><path d="M3.5 3.5l17 17"/></g><circle cx="12" cy="19.5" r="1.25" fill="currentColor"/>',
 } as const;

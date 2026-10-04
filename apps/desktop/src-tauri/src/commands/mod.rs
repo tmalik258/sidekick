@@ -94,6 +94,24 @@ pub fn island_ready(app: AppHandle) {
     }
 }
 
+/// The update found by the last check, if any.
+#[tauri::command]
+pub fn update_status() -> Option<crate::updates::Available> {
+    crate::updates::found()
+}
+
+/// Checks for a newer release now (Settings > Check now).
+#[tauri::command]
+pub async fn update_check(app: AppHandle) -> Result<Option<crate::updates::Available>, String> {
+    crate::updates::check(&app).await
+}
+
+/// Downloads, verifies and runs the newest installer, then quits.
+#[tauri::command]
+pub async fn update_install(app: AppHandle) -> Result<String, String> {
+    crate::updates::install(&app).await
+}
+
 /// Whether the internet is reachable, as last checked.
 #[tauri::command]
 pub fn net_status() -> bool {
