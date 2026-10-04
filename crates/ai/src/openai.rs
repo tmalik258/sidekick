@@ -231,7 +231,43 @@ fn parse_arguments(raw: &Value) -> Value {
     }
 }
 
-/// Removes a `<think>...</think>` block some models (Qwen3) put first.
+/// Whether text so far could still turn out to be a tool call written as
+/// text: a JSON object, a code fence or a `<tool_call>` tag.
+fn may_be_call(t: &str) -> bool {
+    let prefix_of = |marker: &str| marker.starts_with(t) || t.starts_with(marker);
+    t.starts_with('{') || prefix_of("```") || prefix_of("<tool_call>")
+}
+
+/// A tool call the model wrote as text (`{"name": ..., "arguments": ...}`,
+/// maybe fenced or tagged), when it names one of the `offered` tools.
+fn text_call(text: &str, offered: &[&str]) -> Option<Value> {
+    let mut t = text.trim();
+    if let Some(inner) = t.strip_prefix("<tool_call>") {
+        t = inner.trim_end().trim_end_matches("</tool_call>").trim();
+    }
+    if let Some(inner) = t.strip_prefix("```") {
+        let inner = inner.trim_start_matches(|c: char| c.is_ascii_alphabetic());
+        t = inner.trim_end().trim_end_matches("```").trim();
+    }
+    let v: Value = serde_json::from_str(t).ok()?;
+    let f = if v["function"].is_object() {
+        &v["function"]
+    } else {
+        &v
+    };
+    let name = f["name"].as_str()?;
+    if !offered.contains(&name) {
+        return None;
+    }
+    let args = [&f["arguments"], &f["parameters"]]
+        .into_iter()
+        .map(parse_arguments)
+        .find(|a| a.as_object().is_some_and(|o| !o.is_empty()))
+        .unwrap_or_else(|| json!({}));
+    Some(json!({ "id": "call_text", "type": "function",
+                 "function": { "name": name, "arguments": args.to_string() } }))
+}
+
 /// What one streamed round produced.
 struct Round {
     /// Everything the model wrote, thinking included (for the history).
@@ -265,6 +301,19 @@ impl OpenAiCompat {
         let mut think = Thinking::default();
         let mut parts: Vec<(String, String, String)> = Vec::new();
         let mut started = false;
+        // Small models sometimes write a tool call as text instead of
+        // calling it. A reply that starts like one is held back until the
+        // round ends, so the user never sees raw JSON.
+        let mut held = String::new();
+        let mut holding = true;
+        let mut show = |piece: &str, text: &mut String| {
+            if !started {
+                sink.send(gap);
+                started = true;
+            }
+            sink.send(piece);
+            text.push_str(piece);
+        };
         sse::each_data(resp, cancel, |data| {
             let Ok(v) = serde_json::from_str::<Value>(data) else {
                 return Ok(true);
@@ -274,12 +323,17 @@ impl OpenAiCompat {
                 raw.push_str(piece);
                 let visible = think.push(piece);
                 if !visible.is_empty() {
-                    if !started {
-                        sink.send(gap);
-                        started = true;
+                    if holding {
+                        held.push_str(&visible);
+                        let t = held.trim_start();
+                        if t.is_empty() || may_be_call(t) {
+                            return Ok(true);
+                        }
+                        holding = false;
+                        show(&std::mem::take(&mut held), &mut text);
+                    } else {
+                        show(&visible, &mut text);
                     }
-                    sink.send(&visible);
-                    text.push_str(&visible);
                 }
             }
             for call in d["tool_calls"].as_array().into_iter().flatten() {
@@ -301,7 +355,7 @@ impl OpenAiCompat {
             Ok(true)
         })
         .await?;
-        let calls = parts
+        let mut calls: Vec<Value> = parts
             .into_iter()
             .filter(|(_, name, _)| !name.is_empty())
             .map(|(id, name, args)| {
@@ -309,6 +363,21 @@ impl OpenAiCompat {
                         "function": { "name": name, "arguments": if args.is_empty() { "{}".into() } else { args } } })
             })
             .collect();
+        if !held.trim().is_empty() {
+            let offered: Vec<&str> = body["tools"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|t| t["function"]["name"].as_str())
+                .collect();
+            match text_call(&held, &offered) {
+                Some(call) if calls.is_empty() => {
+                    calls.push(call);
+                    raw.clear();
+                }
+                _ => show(&held, &mut text),
+            }
+        }
         Ok(Round { raw, text, calls })
     }
 }
@@ -572,6 +641,35 @@ mod tests {
         assert_eq!(strip_thinking("<think>hmm</think>\n\nHello"), "Hello");
         assert_eq!(strip_thinking("<think>never closed"), "");
         assert_eq!(strip_thinking("  plain  "), "plain");
+    }
+
+    #[test]
+    fn reads_tool_calls_written_as_text() {
+        let offered = ["continue_in_claude_code", "apps"];
+        let c = text_call(
+            r#"{"name": "continue_in_claude_code", "arguments": {"reason": "needs more"}}"#,
+            &offered,
+        )
+        .unwrap();
+        assert_eq!(c["function"]["name"], "continue_in_claude_code");
+        assert_eq!(
+            parse_arguments(&c["function"]["arguments"])["reason"],
+            "needs more"
+        );
+        let fenced = "```json\n{\"name\": \"apps\", \"parameters\": {\"action\": \"find\"}}\n```";
+        assert_eq!(
+            parse_arguments(&text_call(fenced, &offered).unwrap()["function"]["arguments"])["action"],
+            "find"
+        );
+        let tagged = r#"<tool_call>{"function": {"name": "apps", "arguments": "{}"}}</tool_call>"#;
+        assert!(text_call(tagged, &offered).is_some());
+        // Not an offered tool, or plain JSON the user asked for: shown as is.
+        assert!(text_call(r#"{"name": "rm_rf", "arguments": {}}"#, &offered).is_none());
+        assert!(text_call(r#"{"a": 1}"#, &offered).is_none());
+        assert!(may_be_call("{\"na"));
+        assert!(may_be_call("``"));
+        assert!(may_be_call("<tool"));
+        assert!(!may_be_call("Sure, "));
     }
 
     #[test]
