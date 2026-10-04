@@ -11,7 +11,7 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm web` previews the UI in a browser with a mock backend. On Windows, `pnpm dev` builds the Rust side in release mode so it matches the sherpa/ONNX DLLs (a debug build hits a Visual C++ CRT assert at startup).
+`pnpm web` previews the UI in a browser with a mock backend.
 
 ## Checks
 

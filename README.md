@@ -1,14 +1,35 @@
-<p align="center"><img src="assets/icon.png" width="128" alt="Sidekick"></p>
+<p align="center">
+  <img src="assets/icon.png" width="140" alt="Sidekick icon">
+</p>
 
-# Sidekick
+<h1 align="center">Sidekick</h1>
 
-A proactive desktop companion for Windows. Sidekick lives in a small "island" at the top of the screen, notices what you are doing (downloads, dev servers, login pages, Claude Code sessions), and suggests the next useful action. Safe actions can run on their own; everything else waits for one click.
+<p align="center">
+  A proactive desktop companion for Windows.<br>
+  It notices what you are doing and suggests the next step.
+</p>
 
-Local-first: events, history, and settings stay on your machine. AI runs in tiers: rules first, a local decision model (SemIf) next, and Claude Code for real work.
+<p align="center">
+  <a href="https://github.com/tmalik258/sidekick/releases/latest"><b>Download</b></a> ·
+  <a href="docs/setup.md">Setup</a> ·
+  <a href="docs/privacy.md">Privacy</a> ·
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a>
+</p>
 
-> Status: **P2**. Rule-based skills (T0), SemIf or a local model for ranking (T1), and chat through Claude Code, the Anthropic API or a local model (T2) work end to end. Browser extension fill/save from local browser password stores is in progress for P3.
+<p align="center">
+  <a href="https://github.com/tmalik258/sidekick/actions/workflows/ci.yml"><img src="https://github.com/tmalik258/sidekick/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4" alt="Windows 10 and 11">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"></a>
+</p>
 
-Full spec: [Desktop AI Assistant SRS](https://claude.ai/code/artifact/2f76a151-4e3f-4d9b-ab0c-bd1239d8ff69)
+## What it is
+
+Sidekick lives in a small island at the top of your screen, with a friendly orb for a face. It watches for moments where it can help (a download finishing, a dev server starting, an error on the clipboard, a meeting about to begin) and offers the next useful action. Safe actions can run on their own; everything else waits for one click, and anything destructive always asks.
+
+- **Local-first.** Events, history and settings stay on your PC. AI and online services are only used for what you turn on.
+- **Works without AI.** Rules handle the everyday moments. Add Claude Code, the Anthropic API, Codex or a local model through Ollama for answers, drafts and multi-step tasks.
+- **Yours to shape.** Switch skills on, off or to automatic, record your own shortcuts, and write your own skills in YAML.
 
 ## Install
 
@@ -31,56 +52,7 @@ Get-FileHash .\Sidekick_x.y.z_x64-setup.exe -Algorithm SHA256
 
 Updates come to the island on their own (Settings > Home > Tell me about new versions) and are checked against `SHA256SUMS.txt` before they run. See [CHANGELOG.md](CHANGELOG.md) for what changed in each release.
 
-## Stack
-
-| Layer | Choice |
-| --- | --- |
-| Shell | Tauri 2 (Rust) |
-| UI | Next.js 16 static export, React 19, TypeScript, Tailwind CSS v4, Motion, Zustand |
-| Storage | SQLite (`rusqlite`, bundled) |
-| Async | tokio |
-| Lint | clippy, rustfmt, Biome |
-
-## Repository layout
-
-```text
-apps/desktop/            Next.js UI (island, settings) + src-tauri (the app)
-  src/app/               routes: /island, /settings
-  src/components/        Island, Mascot (Canvas), SettingsPanel
-  src/lib/               bridge to Rust, browser mock, store, sound cues
-  src-tauri/src/         commands, mascot driver, pipeline, island window, tray
-crates/core/             event envelope, bus, mascot state machine, settings, storage
-crates/sensors/          downloads, ports, clipboard, window, Claude Code hooks, disk and memory, away
-crates/skills/           YAML skill engine
-crates/actions/          built-in actions and detection of installed browsers and tools
-crates/ai/               AI providers (Claude Code, local, Anthropic API), router, SemIf decisions
-crates/voice/            Hey Sidekick wake word, live speech to text, Supertonic speech (sherpa-onnx, on this PC)
-skills/                  built-in skills
-assets/                  mascot art and sounds (separate license)
-```
-
-## Prerequisites (Windows)
-
-- Rust (stable) with the MSVC toolchain
-- Node.js 22+ and pnpm 10 (`corepack enable`)
-- WebView2 runtime (preinstalled on Windows 11)
-
-## Run
-
-```powershell
-pnpm install
-pnpm dev          # Next.js + Tauri (debug Rust build)
-```
-
-Preview only the UI in a browser, with a mock core instead of Rust:
-
-```powershell
-pnpm web          # then open http://localhost:3002/island/ or /settings/
-```
-
-In the browser preview, `window.sidekickMock.go("success")` switches mascot states from the console.
-
-## Try it
+## Things to try
 
 - **Download a file.** The moment it finishes, the island offers Open, Show in folder, Copy file, and conversions that fit the file (images to WebP, PNG or JPG; videos to MP4 or MP3; Office files to PDF; archives extracted) when ffmpeg, ImageMagick, LibreOffice or tar are installed.
 - **Start a dev server** (`pnpm dev`, `uvicorn`, `python -m http.server`, also from WSL). Within a second it offers Chrome, Incognito, Zen, Edge, Firefox or your default browser, and FastAPI docs for Python servers. The browser you pick moves to the front next time.
@@ -108,9 +80,9 @@ In the browser preview, `window.sidekickMock.go("success")` switches mascot stat
 - **Learns**: three Not nows in a row quiet a skill for a while; **Always do this** on a suggestion makes it automatic (see Settings > Skills > Automations). Low-priority suggestions are saved for later instead of popping up; a small number on the island shows how many.
 - **Shortcuts** for Talk, Accept, Not now, Ask about the screen, Clipboard history, Pause and Settings. Record your own in Settings > Home > Shortcuts.
 
-## AI setup
+## Setup
 
-Everything works without AI. The full checklist (AI, connections and tools, with every command) is in [docs/setup.md](docs/setup.md) and in the app under Settings > Home > Setup. In short:
+Sidekick works on its own after install. The first-run welcome looks around (code folders, documents, Ollama models, Claude Code) and **Set it all up** applies what you tick. **Settings > Home > Setup** shows what is left, with the exact command for anything missing. The full checklist is in [docs/setup.md](docs/setup.md). The short version for AI:
 
 ```powershell
 # Claude Code: answers come from your own Claude subscription
@@ -125,9 +97,38 @@ ollama pull qwen3:4b
 setx ANTHROPIC_API_KEY "your-key"
 ```
 
-SemIf (optional, T1 decisions) runs from WSL. Install it there, then set the command in Settings > AI, for example `wsl.exe -d Ubuntu-22.04 -- /home/you/semif/.venv/bin/semif-score`, with the llamacpp backend and a GGUF file for the GTX 1650 Ti.
+SemIf (optional) can rank suggestions from WSL. Install it there, then set its command in Settings > AI, for example `wsl.exe -d Ubuntu-22.04 -- /home/you/semif/.venv/bin/semif-score`.
 
-## Checks
+## Privacy
+
+Sidekick runs on your PC and keeps its data there. Passwords and API keys you copy are never stored, password managers are ignored from the start, and you can exclude any app or site. Screenshots are only taken when you ask. Details in [docs/privacy.md](docs/privacy.md).
+
+## Development
+
+### Prerequisites
+
+- Windows 10 or 11
+- Rust (stable) with the MSVC toolchain
+- Node.js 22+ and pnpm 10 (`corepack enable`)
+
+### Run
+
+```powershell
+pnpm install
+pnpm dev          # Next.js + Tauri, debug Rust build
+```
+
+Preview only the UI in a browser, with a mock core instead of Rust:
+
+```powershell
+pnpm web          # then open http://localhost:3002/island/ or /settings/
+```
+
+In the browser preview, `window.sidekickMock.go("success")` switches mascot states from the console.
+
+### Checks
+
+CI runs the same:
 
 ```powershell
 cargo fmt --all --check
@@ -138,25 +139,53 @@ pnpm typecheck
 pnpm --filter desktop build
 ```
 
-## Build an installer
+### Build an installer
 
 ```powershell
 pnpm build        # NSIS and MSI installers under target/release/bundle
 ```
 
+Releases are built by GitHub Actions from a version tag; see [docs/releasing.md](docs/releasing.md).
+
+### Stack
+
+| Layer | Choice |
+| --- | --- |
+| Shell | Tauri 2 (Rust) |
+| UI | Next.js 16 static export, React 19, TypeScript, Tailwind CSS v4, Motion, Zustand |
+| Storage | SQLite (`rusqlite`, bundled) |
+| Async | tokio |
+| Voice | sherpa-onnx (wake word, speech to text, Supertonic speech), on this PC |
+| Lint | clippy, rustfmt, Biome |
+
+### Repository layout
+
+```text
+apps/desktop/            Next.js UI (island, Ask mode, settings) + src-tauri (the app)
+  src/app/               routes: /island, /settings
+  src/components/        Island, Orb mascot, Ask panel, settings
+  src/lib/               bridge to Rust, browser mock, store, sounds
+  src-tauri/src/         commands, pipeline, island window, tray, updates
+crates/core/             event envelope, bus, mascot state machine, settings, storage
+crates/sensors/          downloads, ports, clipboard, window, Claude Code hooks, disk and memory, away
+crates/skills/           YAML skill engine
+crates/actions/          built-in actions and detection of installed browsers and tools
+crates/ai/               AI providers (Claude Code, Codex, local, Anthropic API), router, SemIf decisions
+crates/voice/            Hey Sidekick wake word, live speech to text, Supertonic speech
+skills/                  built-in skills
+assets/                  app icon and social preview
+```
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), which also covers writing your own skills.
+
 ## License
 
-Code: MIT (see `LICENSE`).
+MIT, see [LICENSE](LICENSE).
 
 Credits:
 
 - UI sounds: [SND](https://snd.dev/) by Dentsu Inc. and Starryworks Inc., installed from npm (`snd-lib`) and copied into `apps/desktop/public/sounds` at build time. Free to use; copyright of the audio belongs to the credited sound designers.
 - Interface icons: [Solar](https://www.figma.com/community/file/1166831539721848736) by 480 Design, CC BY 4.0, via Iconify.
 - The orb mascot is drawn with CSS and is original to this project.
-
-## More
-
-- [Setup](docs/setup.md)
-- [Privacy](docs/privacy.md)
-- [Contributing and writing skills](CONTRIBUTING.md)
-- [Releasing](docs/releasing.md)
