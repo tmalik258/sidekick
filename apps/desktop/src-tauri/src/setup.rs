@@ -762,6 +762,9 @@ pub async fn run(app: &AppHandle, id: &str) -> Result<(), String> {
             .iter()
             .find(|i| i.id == id)
             .ok_or("Unknown setup step")?;
+        if item.done {
+            return Err(format!("{} is already set up", item.title));
+        }
         if !item.runnable {
             return Err("Copy this one instead".into());
         }
