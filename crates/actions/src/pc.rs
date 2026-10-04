@@ -33,7 +33,10 @@ impl Switch {
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]
 pub struct PcState {
     pub night_light: Switch,
+    /// Read live from Windows (see `dnd`), not from the registry.
     pub do_not_disturb: Switch,
+    /// Notification banners allowed at all (Settings > Notifications).
+    pub banners: Switch,
     pub dark_mode: Switch,
     pub battery: Option<u8>,
     pub charging: Option<bool>,
@@ -56,45 +59,6 @@ if($br){"brightness=$($br.CurrentBrightness)"}
 $w=netsh wlan show interfaces | Select-String '^\s+SSID\s+:' | Select-Object -First 1
 if($w){"wifi=$((($w.Line) -split ':',2)[1].Trim())"}
 "#;
-
-/// Switches Do Not Disturb from Notification Center, the way a person
-/// would: open it, flip the bell switch, close it. Windows has no API for
-/// it. Prints `#ok on|off`, `#already on|off`, or `#error <why>`.
-const DND_SCRIPT: &str = r##"$ErrorActionPreference='Stop'
-try {
-Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
-$A=[System.Windows.Automation.AutomationElement]
-$want=$env:SK_ON -eq '1'
-Start-Process 'ms-actioncenter:'
-$btn=$null
-for($i=0;$i -lt 40 -and -not $btn;$i++){
-  Start-Sleep -Milliseconds 150
-  foreach($w in $A::RootElement.FindAll('Children',[System.Windows.Automation.Condition]::TrueCondition)){
-    if($w.Current.Name -match 'Notification Center|Action center|Notification centre'){
-      $btn=$w.FindAll('Descendants',[System.Windows.Automation.Condition]::TrueCondition) |
-        Where-Object { $_.Current.Name -match 'Do not disturb|Focus assist' -and $_.Current.IsEnabled } |
-        Select-Object -First 1
-      if($btn){break}
-    }
-  }
-}
-if(-not $btn){ '#error the Do not disturb switch was not found in Notification Center'; exit }
-$t=$null
-if($btn.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern,[ref]$t)){
-  $on=$t.Current.ToggleState -eq 'On'
-  if($on -eq $want){ "#already $(if($want){'on'}else{'off'})" }
-  else { $t.Toggle(); Start-Sleep -Milliseconds 200; "#ok $(if($t.Current.ToggleState -eq 'On'){'on'}else{'off'})" }
-} else {
-  $inv=$null
-  if(-not $btn.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern,[ref]$inv)){ '#error the switch did not respond'; exit }
-  $inv.Invoke(); "#ok $(if($want){'on'}else{'off'})"
-}
-} catch { "#error $($_.Exception.Message)" }
-finally {
-  Start-Sleep -Milliseconds 150
-  (New-Object -ComObject WScript.Shell).SendKeys('{ESC}')
-}
-"##;
 
 /// Active playback devices: `{endpoint}\tName (Driver)`, from the registry
 /// Windows keeps for them.
@@ -229,38 +193,20 @@ pub fn display_mode(mode: &str) -> Result<Outcome, ActionError> {
     Ok(Outcome::msg(said))
 }
 
-/// Reads the DND script's answer: the state it ended in, or why it failed.
-pub fn parse_dnd(out: &str) -> Result<(bool, bool), String> {
-    let line = out
-        .lines()
-        .map(str::trim)
-        .find(|l| l.starts_with('#'))
-        .ok_or_else(|| "no answer from Notification Center".to_owned())?;
-    let (tag, rest) = line[1..].split_once(' ').unwrap_or((&line[1..], ""));
-    match tag {
-        "ok" | "already" => Ok((rest.trim() == "on", tag == "already")),
-        _ => Err(rest.trim().to_owned()),
-    }
-}
-
-/// Turns Do Not Disturb on or off, and says so.
+/// Turns Do Not Disturb on or off without showing anything, and says so.
 pub fn set_dnd(on: bool) -> Result<Outcome, ActionError> {
     state_changed();
     if !cfg!(windows) {
         return Err(ActionError::Failed("Do Not Disturb needs Windows".into()));
     }
-    let out = powershell(DND_SCRIPT, &[("SK_ON", if on { "1" } else { "0" })])?;
-    let (now, already) = parse_dnd(&out).map_err(ActionError::Failed)?;
-    if now != on {
-        return Err(ActionError::Failed(
-            "Windows did not switch Do Not Disturb".into(),
-        ));
-    }
-    Ok(Outcome::msg(match (on, already) {
-        (true, true) => "Do Not Disturb was already on",
-        (true, false) => "Done. Do Not Disturb is on",
-        (false, true) => "Do Not Disturb was already off",
-        (false, false) => "Done. Do Not Disturb is off",
+    let done = crate::dnd::set(on).map_err(ActionError::Failed)?;
+    let word = if on { "on" } else { "off" };
+    Ok(Outcome::msg(match done {
+        crate::dnd::Switched::Done => format!("Done. Do Not Disturb is {word}"),
+        crate::dnd::Switched::Already => format!("Do Not Disturb was already {word}"),
+        crate::dnd::Switched::Unconfirmed => {
+            format!("Switched Do Not Disturb {word}; Windows has not confirmed it yet")
+        }
     }))
 }
 
@@ -286,10 +232,10 @@ pub fn parse_state(text: &str) -> PcState {
             }
             "toasts" => {
                 saw_toasts_line = true;
-                s.do_not_disturb = if value == "0" {
-                    Switch::On
-                } else {
+                s.banners = if value == "0" {
                     Switch::Off
+                } else {
+                    Switch::On
                 };
             }
             "apps_light" => {
@@ -313,7 +259,7 @@ pub fn parse_state(text: &str) -> PcState {
         }
     }
     if !saw_toasts_line {
-        s.do_not_disturb = Switch::Unknown;
+        s.banners = Switch::Unknown;
     }
     s
 }
@@ -322,19 +268,12 @@ pub fn parse_state(text: &str) -> PcState {
 pub fn describe(s: &PcState) -> String {
     let mut out = vec![
         format!("Night light: {}", s.night_light.as_str()),
-        // The registry only shows whether banners are allowed, not the Do Not
-        // Disturb switch itself; dnd_on and dnd_off check that live.
-        format!(
-            "Notification banners: {} (Do Not Disturb is not shown here; dnd_on or dnd_off \
-             checks it and says if it was already so)",
-            match s.do_not_disturb {
-                Switch::On => "off",
-                Switch::Off => "on",
-                Switch::Unknown => "unknown",
-            }
-        ),
+        format!("Do Not Disturb: {}", s.do_not_disturb.as_str()),
         format!("Dark mode: {}", s.dark_mode.as_str()),
     ];
+    if s.banners == Switch::Off {
+        out.push("Notification banners: off (Settings > Notifications)".into());
+    }
     if let Some(b) = s.battery {
         let plug = match s.charging {
             Some(true) => ", plugged in",
@@ -397,9 +336,14 @@ pub fn read_state() -> PcState {
     {
         return state.clone();
     }
-    let state = powershell(STATUS_SCRIPT, &[])
+    let mut state = powershell(STATUS_SCRIPT, &[])
         .map(|t| parse_state(&t))
         .unwrap_or_default();
+    state.do_not_disturb = match crate::dnd::state() {
+        Some(true) => Switch::On,
+        Some(false) => Switch::Off,
+        None => Switch::Unknown,
+    };
     if let Ok(mut cache) = STATE_CACHE.lock() {
         *cache = Some((std::time::Instant::now(), state.clone()));
     }
@@ -943,14 +887,6 @@ mod tests {
         assert!(display_mode("sideways").is_err());
     }
 
-    #[test]
-    fn reads_dnd_answers() {
-        assert_eq!(parse_dnd("noise\n#ok on\n"), Ok((true, false)));
-        assert_eq!(parse_dnd("#already off"), Ok((false, true)));
-        assert_eq!(parse_dnd("#error not found"), Err("not found".to_owned()));
-        assert!(parse_dnd("").is_err());
-    }
-
     use super::*;
 
     #[test]
@@ -959,7 +895,9 @@ mod tests {
             "night_light_byte=21\ntoasts=0\napps_light=0\nbattery=64\nbattery_status=2\nbrightness=70\nwifi=Home 5G\n",
         );
         assert_eq!(s.night_light, Switch::On);
-        assert_eq!(s.do_not_disturb, Switch::On);
+        assert_eq!(s.banners, Switch::Off);
+        // Do Not Disturb is read live, never from this script.
+        assert_eq!(s.do_not_disturb, Switch::Unknown);
         assert_eq!(s.dark_mode, Switch::On);
         assert_eq!(s.battery, Some(64));
         assert_eq!(s.charging, Some(true));
@@ -968,21 +906,17 @@ mod tests {
         assert!(d.contains("Night light: on"));
         assert!(d.contains("Battery: 64%, plugged in"));
         assert!(d.contains("Notification banners: off"));
-        assert!(!d.contains("Do Not Disturb: "));
+        assert!(d.contains("Do Not Disturb: unknown"));
 
         let off = parse_state("night_light_byte=19\ntoasts=\napps_light=1\n");
         assert_eq!(off.night_light, Switch::Off);
-        assert_eq!(
-            off.do_not_disturb,
-            Switch::Off,
-            "no value means notifications on"
-        );
+        assert_eq!(off.banners, Switch::On, "no value means notifications on");
         assert_eq!(off.dark_mode, Switch::Off);
         assert_eq!(off.battery, None);
 
         let none = parse_state("");
         assert_eq!(none.night_light, Switch::Unknown);
-        assert_eq!(none.do_not_disturb, Switch::Unknown);
+        assert_eq!(none.banners, Switch::Unknown);
     }
 
     #[test]
