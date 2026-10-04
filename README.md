@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/icon.png" width="128" alt="Sidekick"></p>
+
 # Sidekick
 
 A proactive desktop companion for Windows. Sidekick lives in a small "island" at the top of the screen, notices what you are doing (downloads, dev servers, login pages, Claude Code sessions), and suggests the next useful action. Safe actions can run on their own; everything else waits for one click.
