@@ -83,6 +83,9 @@ pub struct Proposed {
     pub action: String,
     pub args: Value,
     pub label: String,
+    /// The chat it was offered in, so the same button is not offered twice.
+    #[serde(default)]
+    pub chat_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -402,14 +405,15 @@ pub fn defs() -> Vec<ToolDef> {
         },
         ToolDef {
             name: WINDOWS.into(),
-            description: "Apps and windows: list (the open windows), focus {name} (bring one \
-                to the front), launch {name} (start an installed app, e.g. Spotify). To close one, \
-                use propose with close_app."
+            description: "Apps and windows on this PC: find {name} (is an app installed? \
+                spelling is forgiven), list (the open windows), focus {name} (bring one to the \
+                front), launch {name} (start an installed app, e.g. Spotify). To close one, use \
+                propose with close_app."
                 .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
-                    "action": { "type": "string", "enum": ["list", "focus", "launch"] },
+                    "action": { "type": "string", "enum": ["find", "list", "focus", "launch"] },
                     "name": { "type": "string", "description": "App or window name" }
                 },
                 "required": ["action"],
@@ -484,7 +488,12 @@ pub fn step_label(name: &str, args: &Value) -> String {
                 format!("Changing {}", thing(&what))
             }
         }
-        WINDOWS => "Looking at your windows".into(),
+        WINDOWS => match args["action"].as_str().unwrap_or("list") {
+            "find" => quoted("Looking for", arg("name")),
+            "launch" => quoted("Opening", arg("name")),
+            "focus" => quoted("Switching to", arg("name")),
+            _ => "Looking at your windows".into(),
+        },
         OPEN => quoted("Opening", arg("target")),
         REVEAL => "Showing it in its folder".into(),
         DESKTOP => {
@@ -580,6 +589,20 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
             match args["action"].as_str().unwrap_or("list") {
                 "focus" => blocking(move || pc::focus_window(&name).map(|o| o.message)).await,
                 "launch" => blocking(move || pc::launch_app(&name).map(|o| o.message)).await,
+                "find" => {
+                    blocking(move || {
+                        pc::find_apps(&name).map(|found| match found {
+                            pc::Found::Matches(names) => format!("Installed: {}", names.join(", ")),
+                            pc::Found::Closest(names) if !names.is_empty() => format!(
+                                "No app named {name}. Closest installed: {}. Ask the user which \
+                                 one they mean before opening it.",
+                                names.join(", ")
+                            ),
+                            pc::Found::Closest(_) => format!("No installed app like {name}."),
+                        })
+                    })
+                    .await
+                }
                 _ => {
                     blocking(|| {
                         pc::windows().map(|w| {
@@ -702,12 +725,20 @@ pub fn offer(app: &AppHandle, chat_id: &str, action: &str, action_args: Value, l
     {
         let state = app.state::<AppState>();
         let mut all = lock(&state.ask_proposals);
+        // Small models sometimes call the same thing twice in one answer.
+        let repeat = all
+            .values()
+            .any(|p| p.chat_id == chat_id && p.action == action && p.args == action_args);
+        if repeat {
+            return;
+        }
         all.insert(
             id.clone(),
             Proposed {
                 action: action.into(),
                 args: action_args,
                 label: label.clone(),
+                chat_id: chat_id.to_owned(),
             },
         );
         save_proposals(app, &mut all);
