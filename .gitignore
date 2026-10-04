@@ -9,3 +9,7 @@ apps/desktop/src-tauri/resources/voice-models/
 
 # Editor and agent files
 .cursor/
+
+# Local AI assistant notes (Next.js dev writes the apps/desktop ones)
+CLAUDE.md
+AGENTS.md

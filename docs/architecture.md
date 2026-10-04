@@ -1,4 +1,6 @@
-# Sidekick: notes for contributors and AI agents
+# Architecture and project rules
+
+How Sidekick is put together, and the rules every change has to keep. Read this before a larger change; [CONTRIBUTING.md](../CONTRIBUTING.md) covers setup and pull requests.
 
 ## Architecture rules
 
@@ -22,7 +24,7 @@
 - Next.js runs as a static export inside Tauri: no SSR, API routes, server actions, or middleware.
 - Tauri APIs are imported dynamically through `src/lib/bridge.ts`; it falls back to `src/lib/mock.ts` in a plain browser.
 - Keep `src/lib/types.ts` in sync with the Rust serde types.
-- Next.js 16 differs from older versions; see `apps/desktop/AGENTS.md`.
+- Next.js 16 differs from older versions; check the guides in `node_modules/next/dist/docs/` before using an API.
 
 ## Checks before pushing
 
@@ -36,4 +38,4 @@ pnpm lint && pnpm typecheck && pnpm --filter desktop build
 ## Style
 
 - No em dashes in user-facing text or docs.
-- Mascot art and sounds must be original. Do not copy Coucou's Mochi assets.
+- Mascot art and sounds must be original or properly licensed and credited.
