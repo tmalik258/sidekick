@@ -21,10 +21,20 @@ const RULES: [RegExp, string][] = [
   ],
 ];
 
+let offline = false;
+/** Kept in sync with the connection, so failures while offline say so. */
+export function setOffline(value: boolean) {
+  offline = value;
+}
+
+const NETWORK =
+  /timed? ?out|timeout|deadline|network|dns|connection (refused|reset)|could not connect|failed to connect|error sending request/i;
+
 export function friendlyError(raw: unknown): string {
   const text = String(raw)
     .replace(/^(Error|error|Failed):\s*/g, "")
     .trim();
+  if (offline && NETWORK.test(text)) return "You're offline. Try again once the internet is back.";
   const hit = RULES.find(([re]) => re.test(text));
   return hit ? hit[1] : text;
 }

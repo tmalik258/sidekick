@@ -94,6 +94,19 @@ pub fn island_ready(app: AppHandle) {
     }
 }
 
+/// Whether the internet is reachable, as last checked.
+#[tauri::command]
+pub fn net_status() -> bool {
+    crate::net::online()
+}
+
+/// Checks the connection now. `lost` is set when Windows just reported the
+/// network gone, so one failed try is enough to call it offline.
+#[tauri::command]
+pub async fn net_check(app: AppHandle, lost: bool) -> bool {
+    crate::net::check(&app, lost).await
+}
+
 #[tauri::command]
 pub fn island_set_hit_rect(state: State<'_, AppState>, rect: HitRect) {
     *lock(&state.hit_rect) = rect;

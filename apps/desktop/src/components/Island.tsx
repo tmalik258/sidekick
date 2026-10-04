@@ -9,6 +9,7 @@ import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } fr
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
+import type { NetNotice } from "@/lib/net";
 import { playSound } from "@/lib/sound";
 import { connect, setHovered, uiVolume, useSidekick, watchWaiting } from "@/lib/store";
 import { isPaused, type MascotState, type Suggestion } from "@/lib/types";
@@ -51,6 +52,8 @@ const ORB = 44;
 const COMPACT = {
   width: 39,
   busyWidth: 109,
+  /** Orb + the offline mark. */
+  offlineWidth: 66,
   waitWidth: 248,
   /** Orb + "Listening..." + bars; grows with transcript up to voiceWidth. */
   voiceMinWidth: 156,
@@ -85,6 +88,8 @@ export function Island() {
   const view = useSidekick((s) => s.ask?.view);
   const chatting = useSidekick((s) => s.chatId !== null);
   const voiceStatus = useSidekick((s) => s.voiceStatus);
+  const online = useSidekick((s) => s.online);
+  const netNotice = useSidekick((s) => s.netNotice);
   const waiting = useSidekick((s) => (s.ask ? null : s.waiting));
   // A task still running after Ask closed: its current step, small.
   const working = useSidekick((s) => {
@@ -135,10 +140,11 @@ export function Island() {
     guiding ||
     (OPEN_STATES.has(mascot) && !voicePill) ||
     (!!suggestion && !voicePill) ||
-    (!!passwordSaved && !voicePill);
+    (!!passwordSaved && !voicePill) ||
+    (!!netNotice && !voicePill);
   // At rest only the sphere shows. The shell keeps its size (so hover and the
   // orb position do not move) but loses its background.
-  const bare = !expanded && !chatting && !waiting && (mascot === "idle" || mascot === "sleeping");
+  const bare = !expanded && !chatting && !waiting && online && (mascot === "idle" || mascot === "sleeping");
   const busy = chatting || preparingVoice || mascot === "noticing" || mascot === "working" || mascot === "listening";
 
   const [contentHeight, setContentHeight] = useState(0);
@@ -151,6 +157,11 @@ export function Island() {
     if (mascot === "success") void animate(nodY, [0, -4, 0, -2, 0], { duration: 0.6, ease: "easeOut" });
     if (mascot === "error") void animate(shakeX, [0, -4, 4, -3, 3, 0], { duration: 0.45, ease: "easeInOut" });
   }, [mascot, reduced, nodY, shakeX]);
+  // Connection lost: a slow droop. Back: the same nod as done.
+  useEffect(() => {
+    if (reduced) return;
+    void animate(nodY, online ? [0, -4, 0, -2, 0] : [0, 3, 3, 0], { duration: online ? 0.6 : 1.2, ease: "easeOut" });
+  }, [online, reduced, nodY]);
   const contentEl = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => connect({ sounds: true }), []);
@@ -214,7 +225,9 @@ export function Island() {
           ? COMPACT.waitWidth
           : busy
             ? COMPACT.busyWidth
-            : COMPACT.width;
+            : !online
+              ? COMPACT.offlineWidth
+              : COMPACT.width;
   // The island window is already fixed (~560 tall); do not re-cap against
   // innerHeight or Settings/Welcome get clipped by the shell spring.
   const height = expanded ? Math.max(EXPANDED.minHeight, contentHeight + EXPANDED.pad) : COMPACT.height;
@@ -288,7 +301,13 @@ export function Island() {
         <AnimatePresence initial={false}>
           {!expanded && voicePill && <VoicePill key="voice" {...voicePill} />}
           {!expanded && !bare && !voicePill && (
-            <CompactTrailing key="compact" busy={busy} paused={paused} waiting={waiting?.label ?? null} />
+            <CompactTrailing
+              key="compact"
+              busy={busy}
+              paused={paused}
+              offline={!online}
+              waiting={waiting?.label ?? null}
+            />
           )}
         </AnimatePresence>
 
@@ -411,7 +430,17 @@ function VoicePill({ text, thinking, working }: { text: string; thinking: boolea
   );
 }
 
-function CompactTrailing({ paused, busy, waiting }: { paused: boolean; busy: boolean; waiting: string | null }) {
+function CompactTrailing({
+  paused,
+  busy,
+  offline,
+  waiting,
+}: {
+  paused: boolean;
+  busy: boolean;
+  offline: boolean;
+  waiting: string | null;
+}) {
   const later = useSidekick((s) => s.later);
   if (waiting) {
     return (
@@ -436,6 +465,10 @@ function CompactTrailing({ paused, busy, waiting }: { paused: boolean; busy: boo
     >
       {busy ? (
         <Activity />
+      ) : offline ? (
+        <span role="img" aria-label="Offline" title="Offline" className="text-[#ff9f0a]">
+          <Icon name="wifiOff" size={14} />
+        </span>
       ) : paused ? (
         <span className="size-1.5 rounded-full bg-[#ffd60a]" style={{ boxShadow: "0 0 8px #ffd60a" }} title="Paused" />
       ) : (
@@ -480,7 +513,9 @@ function ExpandedContent({
   const result = useSidekick((s) => s.lastResult);
   const running = useSidekick((s) => s.running);
   const passwordSaved = useSidekick((s) => s.passwordSaved);
+  const netNotice = useSidekick((s) => s.netNotice);
   const reporting = (mascot === "success" || mascot === "error" || mascot === "working") && !suggestion;
+  if (netNotice && !suggestion) return <NetNoticeCard notice={netNotice} />;
   if (!suggestion && (mascot === "idle" || mascot === "sleeping") && !passwordSaved) {
     return <Glance paused={paused} />;
   }
@@ -536,6 +571,30 @@ function ExpandedContent({
           onGone={() => useSidekick.setState({ passwordSaved: null })}
         />
       )}
+    </div>
+  );
+}
+
+/** The connection dropped or came back. */
+function NetNoticeCard({ notice }: { notice: NetNotice }) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-display text-[15px] leading-5 font-semibold tracking-[-0.015em] text-white">
+          {notice.title}
+        </p>
+        <p className="mt-0.5 line-clamp-2 text-[13px] leading-4.5 tracking-[-0.005em] text-[rgb(235_235_245/0.6)]">
+          {notice.detail}
+        </p>
+      </div>
+      <span
+        className={`grid size-8 shrink-0 place-items-center rounded-full ${
+          notice.online ? "bg-[#30d158]/15 text-[#30d158]" : "bg-[#ff9f0a]/15 text-[#ff9f0a]"
+        }`}
+        aria-hidden="true"
+      >
+        <Icon name={notice.online ? "wifi" : "wifiOff"} size={16} />
+      </span>
     </div>
   );
 }
