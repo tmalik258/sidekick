@@ -106,8 +106,15 @@ switch($env:SK_DO){
   }
   'type' {
     if($e.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern,[ref]$p) -and -not $p.Current.IsReadOnly){ $p.SetValue($env:SK_TEXT); Write-Output "#ok`tTyped into $($c.Name)"; break }
+    # No value to set (Notepad's editor, many chat boxes): paste. A field is
+    # replaced; a document gets the text where the cursor is.
+    [void]$sh.AppActivate([int]$win.Current.ProcessId); Start-Sleep -Milliseconds 150
     $e.SetFocus(); Start-Sleep -Milliseconds 100
-    Set-Clipboard -Value $env:SK_TEXT; $sh.SendKeys('^a'); $sh.SendKeys('^v')
+    $old=Get-Clipboard -Raw
+    Set-Clipboard -Value $env:SK_TEXT
+    if($c.ControlType -ne [System.Windows.Automation.ControlType]::Document){ $sh.SendKeys('^a') }
+    $sh.SendKeys('^v'); Start-Sleep -Milliseconds 250
+    if($old){ Set-Clipboard -Value $old }
     Write-Output "#ok`tTyped into $($c.Name)"
   }
   'select' {
@@ -284,10 +291,12 @@ pub fn keys(target: &Target, keys: &str) -> Result<Outcome, ActionError> {
 
 /// Brings the app forward and runs one clipboard round trip, keeping what
 /// was on the clipboard before.
+/// Runs after `FIND_APP`; the app is the one named, else the one by pid.
 const CLIP: &str = r##"$ErrorActionPreference='SilentlyContinue'
 Add-Type -AssemblyName System.Windows.Forms
 $sh=New-Object -ComObject WScript.Shell
-if($env:SK_PID){ [void]$sh.AppActivate([int]$env:SK_PID) }
+$to= if($env:SK_APP){ (Find-App $env:SK_APP).Id } elseif($env:SK_PID){ [int]$env:SK_PID }
+if($to){ [void]$sh.AppActivate([int]$to) }
 Start-Sleep -Milliseconds 250
 $old=Get-Clipboard -Raw
 "##;
@@ -296,7 +305,7 @@ $old=Get-Clipboard -Raw
 pub fn selection(target: &Target) -> Result<String, ActionError> {
     let out = run(
         &format!(
-            "{CLIP}Set-Clipboard -Value ' '\n$sh.SendKeys('^c')\nStart-Sleep -Milliseconds 300\n$sel=Get-Clipboard -Raw\nif($old){{ Set-Clipboard -Value $old }}\nif($sel -and $sel -ne ' '){{ Write-Output $sel }}"
+            "{FIND_APP}{CLIP}Set-Clipboard -Value ' '\n$sh.SendKeys('^c')\nStart-Sleep -Milliseconds 300\n$sel=Get-Clipboard -Raw\nif($old){{ Set-Clipboard -Value $old }}\nif($sel -and $sel -ne ' '){{ Write-Output $sel }}"
         ),
         &target.env(),
     )?;
@@ -313,7 +322,7 @@ pub fn type_here(target: &Target, text: &str) -> Result<Outcome, ActionError> {
     env.push(("SK_TEXT", text.to_owned()));
     run(
         &format!(
-            "{CLIP}Set-Clipboard -Value $env:SK_TEXT\n$sh.SendKeys('^v')\nStart-Sleep -Milliseconds 300\nif($old){{ Set-Clipboard -Value $old }}\nWrite-Output \"#ok\""
+            "{FIND_APP}{CLIP}Set-Clipboard -Value $env:SK_TEXT\n$sh.SendKeys('^v')\nStart-Sleep -Milliseconds 300\nif($old){{ Set-Clipboard -Value $old }}\nWrite-Output \"#ok\""
         ),
         &env,
     )?;
