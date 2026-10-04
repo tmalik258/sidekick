@@ -48,10 +48,8 @@ assets/                  mascot art and sounds (separate license)
 
 ```powershell
 pnpm install
-pnpm dev          # Next.js + Tauri (Rust release; needed so sherpa DLLs match the CRT)
+pnpm dev          # Next.js + Tauri (debug Rust build)
 ```
-
-On Windows, a debug Rust build links the debug CRT while the sherpa/ONNX DLLs use the release CRT, which crashes at startup with a Visual C++ assert. `pnpm dev` therefore runs Tauri with `--release`.
 
 Preview only the UI in a browser, with a mock core instead of Rust:
 
