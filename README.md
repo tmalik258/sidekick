@@ -10,6 +10,27 @@ Local-first: events, history, and settings stay on your machine. AI runs in tier
 
 Full spec: [Desktop AI Assistant SRS](https://claude.ai/code/artifact/2f76a151-4e3f-4d9b-ab0c-bd1239d8ff69)
 
+## Install
+
+1. Download the latest installer from [Releases](https://github.com/tmalik258/sidekick/releases/latest):
+   - `Sidekick_x.y.z_x64-setup.exe` for most people.
+   - `Sidekick_x.y.z_x64_en-US.msi` for managed or scripted installs.
+2. Run it. Sidekick starts in the island at the top of the screen and walks you through setup.
+
+Sidekick runs on Windows 10 and 11 (64-bit). The installer sets up the WebView2 runtime if it is missing.
+
+### "Windows protected your PC"
+
+The installers are not code signed yet, so Microsoft Defender SmartScreen may stop the first run with a blue "Windows protected your PC" window. To continue, click **More info**, check that the file name is the Sidekick installer you downloaded, then click **Run anyway**. This warning fades as more people install a release, and goes away once releases are signed.
+
+To check the download first, compare its hash with `SHA256SUMS.txt` from the same release:
+
+```powershell
+Get-FileHash .\Sidekick_x.y.z_x64-setup.exe -Algorithm SHA256
+```
+
+Updates come to the island on their own (Settings > Home > Tell me about new versions) and are checked against `SHA256SUMS.txt` before they run. See [CHANGELOG.md](CHANGELOG.md) for what changed in each release.
+
 ## Stack
 
 | Layer | Choice |
