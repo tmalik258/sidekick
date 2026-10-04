@@ -252,6 +252,7 @@ pub const ACTIONS: &[&str] = &[
     "open_system_page",
     "launch_app",
     "open_app",
+    "open_app_and_url",
     "notify_level",
     "recipe_run",
     "recipe_save",
