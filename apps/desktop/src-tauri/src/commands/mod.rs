@@ -86,6 +86,14 @@ pub fn mascot_get(app: AppHandle) -> MascotState {
     mascot::current(&app)
 }
 
+/// The island's page has drawn its first frame: show the window now.
+#[tauri::command]
+pub fn island_ready(app: AppHandle) {
+    if let Some(w) = app.get_webview_window(crate::island::LABEL) {
+        crate::island::reveal(&w);
+    }
+}
+
 #[tauri::command]
 pub fn island_set_hit_rect(state: State<'_, AppState>, rect: HitRect) {
     *lock(&state.hit_rect) = rect;
