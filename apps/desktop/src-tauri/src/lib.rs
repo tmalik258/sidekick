@@ -31,6 +31,7 @@ mod mcp;
 mod mcp_oauth;
 mod meetings;
 mod moments;
+mod net;
 mod office;
 mod password_save;
 mod pipeline;
@@ -112,6 +113,8 @@ pub fn run() {
             commands::mascot_get,
             commands::island_set_hit_rect,
             commands::island_ready,
+            commands::net_status,
+            commands::net_check,
             commands::suggestion_current,
             commands::suggestion_choose,
             commands::suggestion_dismiss,
@@ -313,6 +316,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     mcp::start(app, mcp_token);
     meetings::start(app);
     health::start(app);
+    net::start(app);
     tauri::async_runtime::spawn(async move {
         let sensors: Vec<Box<dyn Sensor>> = vec![
             Box::new(DownloadsSensor::new()),

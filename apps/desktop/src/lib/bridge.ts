@@ -74,6 +74,7 @@ export const EVENTS = {
   voiceWelcome: "voice://welcome",
   passwordSaved: "password://saved",
   passwordMirror: "password://mirror",
+  netStatus: "net://status",
 } as const;
 
 export interface EventPayloads {
@@ -84,6 +85,7 @@ export interface EventPayloads {
   [EVENTS.islandCursor]: { x: number; y: number };
   [EVENTS.islandVisible]: boolean;
   [EVENTS.islandFullscreen]: boolean;
+  [EVENTS.netStatus]: boolean;
   [EVENTS.inboxChanged]: null;
   [EVENTS.aiDelta]: { id: string; text: string };
   [EVENTS.aiDone]: { id: string; provider: string | null; error: string | null; handoff: string | null };
@@ -132,6 +134,8 @@ export const api = {
   mascotGet: () => invoke<MascotState>("mascot_get"),
   islandSetHitRect: (rect: HitRect) => invoke<void>("island_set_hit_rect", { rect }),
   islandReady: () => invoke<void>("island_ready"),
+  netStatus: () => invoke<boolean>("net_status"),
+  netCheck: (lost: boolean) => invoke<boolean>("net_check", { lost }),
   suggestionCurrent: () => invoke<Suggestion | null>("suggestion_current"),
   suggestionChoose: (id: string, index: number) => invoke<void>("suggestion_choose", { id, index }),
   suggestionDismiss: (id: string, reason: "user" | "timeout") => invoke<void>("suggestion_dismiss", { id, reason }),
