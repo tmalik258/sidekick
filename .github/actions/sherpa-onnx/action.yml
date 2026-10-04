@@ -1,0 +1,28 @@
+name: sherpa-onnx libraries
+description: >
+  Downloads sherpa-onnx's prebuilt static libraries to a fixed folder and
+  points SHERPA_ONNX_LIB_DIR at it.
+
+# sherpa-onnx-sys otherwise downloads them into target/sherpa-onnx-prebuilt,
+# which rust-cache does not keep. A restored target/ then skips the build
+# script and linking fails with "could not find native static library
+# sherpa-onnx-c-api". With SHERPA_ONNX_LIB_DIR set, the cached build output
+# points at a folder this step fills on every run.
+runs:
+  using: composite
+  steps:
+    - shell: pwsh
+      run: |
+        $lock = Get-Content Cargo.lock -Raw
+        if ($lock -notmatch 'name = "sherpa-onnx-sys"\r?\nversion = "([^"]+)"') { throw "sherpa-onnx-sys not in Cargo.lock" }
+        $v = $Matches[1]
+        $name = "sherpa-onnx-v$v-win-x64-static-MT-Release-lib"
+        $dir = Join-Path $env:RUNNER_TEMP "sherpa-onnx"
+        New-Item -ItemType Directory -Force $dir | Out-Null
+        $archive = Join-Path $dir "$name.tar.bz2"
+        Invoke-WebRequest "https://github.com/k2-fsa/sherpa-onnx/releases/download/v$v/$name.tar.bz2" -OutFile $archive
+        tar -xjf $archive -C $dir
+        Remove-Item $archive
+        $lib = Join-Path $dir "$name\lib"
+        if (-not (Test-Path (Join-Path $lib "sherpa-onnx-c-api.lib"))) { throw "sherpa-onnx-c-api.lib missing in $lib" }
+        "SHERPA_ONNX_LIB_DIR=$lib" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
