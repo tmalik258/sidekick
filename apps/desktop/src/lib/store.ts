@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api, EVENTS, listen } from "./bridge";
-import { cueVolume, playCue, preloadSounds } from "./sound";
+import { type NetNotice, watchNet } from "./net";
+import { cueVolume, playCue, playSound, preloadSounds } from "./sound";
 import { toolStatus } from "./tools";
 import {
   type ActionResult,
@@ -24,6 +25,12 @@ interface SidekickState {
   suggestion: Suggestion | null;
   /** Brief chip after mirroring a password into browser stores. */
   passwordSaved: PasswordSaved | null;
+  /** The internet is reachable. */
+  online: boolean;
+  /** When the connection dropped, while offline. */
+  offlineSince: number | null;
+  /** A short note that the connection dropped or came back. */
+  netNotice: NetNotice | null;
   /** Cursor is over the island's interactive area (reported by Rust). */
   hovered: boolean;
   /** False while a fullscreen app is in front; the island fades away. */
@@ -146,6 +153,9 @@ export const useSidekick = create<SidekickState>(() => ({
   settings: DEFAULT_SETTINGS,
   suggestion: null,
   passwordSaved: null,
+  online: true,
+  offlineSince: null,
+  netNotice: null,
   hovered: false,
   visible: true,
   fullscreen: false,
@@ -635,8 +645,15 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
     if (!settings.onboarded) void api.askEnsureWelcome();
   })();
 
+  const stopNet = watchNet(
+    useSidekick.getState,
+    (s) => useSidekick.setState(s),
+    sounds ? (sound) => playSound(sound, uiVolume(), useSidekick.getState().settings.soundKit) : null,
+  );
+
   return () => {
     disposed = true;
+    stopNet();
     for (const off of unlisteners) off();
   };
 }
