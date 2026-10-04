@@ -10,6 +10,7 @@
 //! of any app ("rewrite this politely"), and keys as a last resort.
 
 use crate::pc::powershell;
+use crate::script::{FIND_APP, OUTLINE, UIA, clean_query};
 use crate::{ActionError, Outcome};
 
 /// Which window: the app the user was in (by process id), or one named.
@@ -32,23 +33,11 @@ impl Target {
     }
 }
 
-fn clean_query(q: &str) -> String {
-    q.chars()
-        .filter(|c| !matches!(c, '*' | '?' | '[' | ']' | '`'))
-        .collect::<String>()
-        .trim()
-        .to_owned()
-}
-
 /// Finds the window, then lists its controls the same way every time.
-const FIND: &str = r##"$ErrorActionPreference='SilentlyContinue'
-Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
-$A=[System.Windows.Automation.AutomationElement]
-$S=[System.Windows.Automation.TreeScope]
-$win=$null
+/// Runs after `UIA` and `FIND_APP`; see `script`.
+const FIND: &str = r##"$win=$null
 if($env:SK_APP){
-  $q=$env:SK_APP
-  $p=Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and ($_.ProcessName -like "*$q*" -or $_.MainWindowTitle -like "*$q*") } | Select-Object -First 1
+  $p=Find-App $env:SK_APP
   if($p){ $win=$A::FromHandle($p.MainWindowHandle) }
 }
 if(-not $win -and $env:SK_PID){
@@ -57,7 +46,7 @@ if(-not $win -and $env:SK_PID){
 }
 if(-not $win){ Write-Output "#error`tNo window found"; exit }
 $kinds=@('Button','Edit','Document','CheckBox','RadioButton','ComboBox','ListItem','MenuItem','TabItem','Hyperlink','TreeItem','SplitButton','DataItem')
-$all=$win.FindAll($S::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
+$all=$win.FindAll($S::Descendants,$All)
 $els=New-Object System.Collections.ArrayList
 foreach($e in $all){
   $c=$e.Current
@@ -104,26 +93,7 @@ if(-not $e){ Write-Output "#error`tThat control is not there now; read the windo
 $c=$e.Current
 if($c.IsPassword -and $env:SK_DO -eq 'type'){ Write-Output "#error`tSidekick never types into password fields"; exit }
 # Show where: a short outline around the control, without taking focus.
-if($env:SK_HIGHLIGHT -eq '1'){ try {
-  Add-Type -AssemblyName System.Windows.Forms,System.Drawing
-  if(-not ('Sk.Hi' -as [type])){ Add-Type -Namespace Sk -Name Hi -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int c); [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h,IntPtr a,int x,int y,int w,int ht,uint f);' }
-  [void][Sk.Hi]::SetProcessDPIAware()
-  $r=$c.BoundingRectangle
-  if(-not $r.IsEmpty -and $r.Width -gt 2){
-    $b=3; $x=[int]$r.X-$b; $y=[int]$r.Y-$b; $w=[int]$r.Width+2*$b; $h=[int]$r.Height+2*$b
-    $f=New-Object System.Windows.Forms.Form
-    $f.FormBorderStyle='None'; $f.ShowInTaskbar=$false; $f.TopMost=$true
-    $f.BackColor=[System.Drawing.Color]::FromArgb(10,132,255)
-    $f.StartPosition='Manual'; $f.Bounds=New-Object System.Drawing.Rectangle($x,$y,$w,$h)
-    $g=New-Object System.Drawing.Region(New-Object System.Drawing.Rectangle(0,0,$w,$h))
-    $g.Exclude((New-Object System.Drawing.Rectangle($b,$b,($w-2*$b),($h-2*$b))))
-    $f.Region=$g
-    [void][Sk.Hi]::ShowWindow($f.Handle,4)
-    [void][Sk.Hi]::SetWindowPos($f.Handle,[IntPtr](-1),$x,$y,$w,$h,0x10)
-    for($i=0;$i -lt 6;$i++){ [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 70 }
-    $f.Close(); $f.Dispose()
-  }
-} catch {} }
+if($env:SK_HIGHLIGHT -eq '1'){ try { Show-Outline $c.BoundingRectangle } catch {} }
 $p=$null
 $sh=New-Object -ComObject WScript.Shell
 switch($env:SK_DO){
@@ -136,14 +106,21 @@ switch($env:SK_DO){
   }
   'type' {
     if($e.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern,[ref]$p) -and -not $p.Current.IsReadOnly){ $p.SetValue($env:SK_TEXT); Write-Output "#ok`tTyped into $($c.Name)"; break }
+    # No value to set (Notepad's editor, many chat boxes): paste. A field is
+    # replaced; a document gets the text where the cursor is.
+    [void]$sh.AppActivate([int]$win.Current.ProcessId); Start-Sleep -Milliseconds 150
     $e.SetFocus(); Start-Sleep -Milliseconds 100
-    Set-Clipboard -Value $env:SK_TEXT; $sh.SendKeys('^a'); $sh.SendKeys('^v')
+    $old=Get-Clipboard -Raw
+    Set-Clipboard -Value $env:SK_TEXT
+    if($c.ControlType -ne [System.Windows.Automation.ControlType]::Document){ $sh.SendKeys('^a') }
+    $sh.SendKeys('^v'); Start-Sleep -Milliseconds 250
+    if($old){ Set-Clipboard -Value $old }
     Write-Output "#ok`tTyped into $($c.Name)"
   }
   'select' {
     if($e.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern,[ref]$p)){ $p.Expand(); Start-Sleep -Milliseconds 300 }
     $want=$env:SK_TEXT
-    $items=$e.FindAll($S::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
+    $items=$e.FindAll($S::Descendants,$All)
     $hit=$null
     foreach($x in $items){ if($x.Current.Name -like "*$want*"){ $hit=$x; break } }
     if($hit -and $hit.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern,[ref]$p)){ $p.Select(); Write-Output "#ok`tPicked $($hit.Current.Name)"; break }
@@ -229,6 +206,21 @@ fn fail(e: String) -> ActionError {
     ActionError::Failed(e)
 }
 
+/// A script that finds the target window first, then runs `rest`.
+fn on_window(rest: &[&str]) -> String {
+    let mut s = [
+        "$ErrorActionPreference='SilentlyContinue'\n",
+        UIA,
+        FIND_APP,
+        FIND,
+    ]
+    .concat();
+    for r in rest {
+        s.push_str(r);
+    }
+    s
+}
+
 fn run(script: &str, env: &[(&'static str, String)]) -> Result<String, ActionError> {
     let pairs: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
     powershell(script, &pairs)
@@ -236,7 +228,7 @@ fn run(script: &str, env: &[(&'static str, String)]) -> Result<String, ActionErr
 
 /// The window's controls, numbered.
 pub fn snapshot(target: &Target) -> Result<Snapshot, ActionError> {
-    let out = run(&format!("{FIND}{SNAPSHOT}"), &target.env())?;
+    let out = run(&on_window(&[SNAPSHOT]), &target.env())?;
     parse_snapshot(&out).map_err(fail)
 }
 
@@ -259,7 +251,7 @@ pub fn act(
     // Clicks and typing show where they land first.
     let highlight = matches!(what, "click" | "type" | "select");
     env.push(("SK_HIGHLIGHT", if highlight { "1" } else { "0" }.to_owned()));
-    let out = run(&format!("{FIND}{ACT}"), &env)?;
+    let out = run(&on_window(&[OUTLINE, ACT]), &env)?;
     if let Some(e) = error_of(&out) {
         return Err(fail(e));
     }
@@ -286,9 +278,9 @@ pub fn keys(target: &Target, keys: &str) -> Result<Outcome, ActionError> {
     let mut env = target.env();
     env.push(("SK_KEYS", keys.to_owned()));
     let out = run(
-        &format!(
-            "{FIND}\n$h=$win.Current.NativeWindowHandle\n$pr=Get-Process | Where-Object {{ $_.MainWindowHandle -eq $h }} | Select-Object -First 1\n$sh=New-Object -ComObject WScript.Shell\nif($pr){{ [void]$sh.AppActivate($pr.Id) }}\nStart-Sleep -Milliseconds 200\n$sh.SendKeys($env:SK_KEYS)\nWrite-Output \"#ok`tSent keys\""
-        ),
+        &on_window(&[
+            "\n$h=$win.Current.NativeWindowHandle\n$pr=Get-Process | Where-Object {{ $_.MainWindowHandle -eq $h }} | Select-Object -First 1\n$sh=New-Object -ComObject WScript.Shell\nif($pr){{ [void]$sh.AppActivate($pr.Id) }}\nStart-Sleep -Milliseconds 200\n$sh.SendKeys($env:SK_KEYS)\nWrite-Output \"#ok`tSent keys\"",
+        ]),
         &env,
     )?;
     if let Some(e) = error_of(&out) {
@@ -299,10 +291,12 @@ pub fn keys(target: &Target, keys: &str) -> Result<Outcome, ActionError> {
 
 /// Brings the app forward and runs one clipboard round trip, keeping what
 /// was on the clipboard before.
+/// Runs after `FIND_APP`; the app is the one named, else the one by pid.
 const CLIP: &str = r##"$ErrorActionPreference='SilentlyContinue'
 Add-Type -AssemblyName System.Windows.Forms
 $sh=New-Object -ComObject WScript.Shell
-if($env:SK_PID){ [void]$sh.AppActivate([int]$env:SK_PID) }
+$to= if($env:SK_APP){ (Find-App $env:SK_APP).Id } elseif($env:SK_PID){ [int]$env:SK_PID }
+if($to){ [void]$sh.AppActivate([int]$to) }
 Start-Sleep -Milliseconds 250
 $old=Get-Clipboard -Raw
 "##;
@@ -311,7 +305,7 @@ $old=Get-Clipboard -Raw
 pub fn selection(target: &Target) -> Result<String, ActionError> {
     let out = run(
         &format!(
-            "{CLIP}Set-Clipboard -Value ' '\n$sh.SendKeys('^c')\nStart-Sleep -Milliseconds 300\n$sel=Get-Clipboard -Raw\nif($old){{ Set-Clipboard -Value $old }}\nif($sel -and $sel -ne ' '){{ Write-Output $sel }}"
+            "{FIND_APP}{CLIP}Set-Clipboard -Value ' '\n$sh.SendKeys('^c')\nStart-Sleep -Milliseconds 300\n$sel=Get-Clipboard -Raw\nif($old){{ Set-Clipboard -Value $old }}\nif($sel -and $sel -ne ' '){{ Write-Output $sel }}"
         ),
         &target.env(),
     )?;
@@ -328,7 +322,7 @@ pub fn type_here(target: &Target, text: &str) -> Result<Outcome, ActionError> {
     env.push(("SK_TEXT", text.to_owned()));
     run(
         &format!(
-            "{CLIP}Set-Clipboard -Value $env:SK_TEXT\n$sh.SendKeys('^v')\nStart-Sleep -Milliseconds 300\nif($old){{ Set-Clipboard -Value $old }}\nWrite-Output \"#ok\""
+            "{FIND_APP}{CLIP}Set-Clipboard -Value $env:SK_TEXT\n$sh.SendKeys('^v')\nStart-Sleep -Milliseconds 300\nif($old){{ Set-Clipboard -Value $old }}\nWrite-Output \"#ok\""
         ),
         &env,
     )?;
