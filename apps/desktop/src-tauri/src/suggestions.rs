@@ -279,7 +279,10 @@ pub fn later_clear(app: &AppHandle) {
 
 /// Shows a proposal now, keeps a minor one (or one during a meeting) in the
 /// quiet list, or queues it while the island is busy.
-pub fn offer(app: &AppHandle, proposal: Proposal) {
+pub fn offer(app: &AppHandle, mut proposal: Proposal) {
+    // Cards show plain text; agents' messages often carry markdown.
+    proposal.title = plain(&proposal.title);
+    proposal.detail = plain(&proposal.detail);
     // Paused: nothing appears on its own. Notifications wait in "Saved for
     // later"; everything else (a moment that has passed) is dropped.
     if crate::state::is_paused(app) && !shows_while_paused(&proposal.skill_id) {
@@ -297,6 +300,32 @@ pub fn offer(app: &AppHandle, proposal: Proposal) {
         return;
     }
     show_or_queue(app, proposal);
+}
+
+/// Markdown marks removed (`**7**` reads 7), for a card's one or two lines.
+fn plain(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for (i, line) in text.lines().enumerate() {
+        if i > 0 {
+            out.push(' ');
+        }
+        let line = line.trim_start_matches(['#', '>']).trim();
+        let line = line.strip_prefix("- ").unwrap_or(line);
+        out.push_str(line);
+    }
+    let mut out = out.replace("**", "").replace("__", "").replace('`', "");
+    // [label](link) keeps the label.
+    while let Some(open) = out.find('[') {
+        let Some(mid) = out[open..].find("](").map(|i| open + i) else {
+            break;
+        };
+        let Some(close) = out[mid..].find(')').map(|i| mid + i) else {
+            break;
+        };
+        let label = out[open + 1..mid].to_owned();
+        out.replace_range(open..=close, &label);
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// What the user started themselves still answers while paused: a coding
@@ -961,6 +990,18 @@ pub fn demo(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cards_show_plain_text() {
+        assert_eq!(
+            plain("Done, Calculator is open with **7** displayed."),
+            "Done, Calculator is open with 7 displayed."
+        );
+        assert_eq!(
+            plain("## Fixed\n- see [the PR](https://x.y/1) and `cargo test`"),
+            "Fixed see the PR and cargo test"
+        );
+    }
 
     #[test]
     fn moments_leave_the_missed_list_sooner() {

@@ -69,6 +69,18 @@ use tauri::{AppHandle, Manager};
 
 use crate::state::AppState;
 
+/// Release builds stop on a panic, so where it happened is written to a
+/// file first (and the log), for the next bug report.
+fn log_panics(file: std::path::PathBuf) {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let note = format!("{} {info}\n", Utc::now().to_rfc3339());
+        let _ = std::fs::write(&file, &note);
+        log::error!("panic: {info}");
+        default(info);
+    }));
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -213,6 +225,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     let caps = Capabilities::detect();
     log::info!("found: {}", caps.summary().join(", "));
     let data_dir = app.path().app_data_dir()?;
+    log_panics(data_dir.join("last-crash.txt"));
     let db_path = data_dir.join("sidekick.db");
     let scratch_dir = app.path().app_cache_dir()?;
 
@@ -258,7 +271,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         hovered: Default::default(),
         last_window: Mutex::default(),
         chats: Mutex::default(),
-        ask_proposals: Mutex::default(),
+        ask_proposals: Mutex::new(ask_tools::load_proposals(&data_dir)),
         ai_workdir: data_dir.join("claude-workspace"),
         voice: voice::Voice::new(data_dir.join("voice-models")),
         calendar: calendar.clone(),
