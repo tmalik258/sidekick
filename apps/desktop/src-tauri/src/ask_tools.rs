@@ -6,6 +6,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use sidekick_ai::ToolDef;
 use sidekick_core::ActionRecord;
+use std::collections::HashMap;
 use tauri::{AppHandle, Emitter, Manager};
 
 use sidekick_actions::pc;
@@ -77,12 +78,13 @@ const ASK_ACTIONS: &[&str] = &[
 ];
 
 /// An action waiting for a tap, from one chat.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct Proposed {
     pub action: String,
     pub args: Value,
     pub label: String,
     /// The chat it was offered in, so the same button is not offered twice.
+    #[serde(default)]
     pub chat_id: String,
 }
 
@@ -690,20 +692,47 @@ fn propose(app: &AppHandle, chat_id: &str, args: &Value) -> String {
 
 /// A button under the answer that runs `action` when tapped. Sidekick's own
 /// code uses this for steps that need the user's yes (send, post, pay).
+const PROPOSALS_FILE: &str = "ask-buttons.json";
+/// Buttons kept for a tap; older ones are let go.
+const KEEP_PROPOSALS: usize = 60;
+
+/// Buttons still waiting from before a restart, so they keep working.
+pub fn load_proposals(dir: &std::path::Path) -> HashMap<String, Proposed> {
+    std::fs::read(dir.join(PROPOSALS_FILE))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+fn save_proposals(app: &AppHandle, all: &mut HashMap<String, Proposed>) {
+    // Ids are ULIDs, so the smallest are the oldest.
+    while all.len() > KEEP_PROPOSALS {
+        let Some(oldest) = all.keys().min().cloned() else {
+            break;
+        };
+        all.remove(&oldest);
+    }
+    if let Ok(dir) = app.path().app_data_dir()
+        && let Ok(bytes) = serde_json::to_vec(&*all)
+    {
+        let _ = std::fs::write(dir.join(PROPOSALS_FILE), bytes);
+    }
+}
+
 pub fn offer(app: &AppHandle, chat_id: &str, action: &str, action_args: Value, label: &str) {
     let label: String = label.chars().take(60).collect();
     let id = ulid::Ulid::new().to_string();
     {
         let state = app.state::<AppState>();
-        let mut proposals = lock(&state.ask_proposals);
+        let mut all = lock(&state.ask_proposals);
         // Small models sometimes call the same thing twice in one answer.
-        let repeat = proposals
+        let repeat = all
             .values()
             .any(|p| p.chat_id == chat_id && p.action == action && p.args == action_args);
         if repeat {
             return;
         }
-        proposals.insert(
+        all.insert(
             id.clone(),
             Proposed {
                 action: action.into(),
@@ -712,6 +741,7 @@ pub fn offer(app: &AppHandle, chat_id: &str, action: &str, action_args: Value, l
                 chat_id: chat_id.to_owned(),
             },
         );
+        save_proposals(app, &mut all);
     }
     let _ = app.emit(
         PROPOSAL_EVENT,
@@ -726,9 +756,14 @@ pub fn offer(app: &AppHandle, chat_id: &str, action: &str, action_args: Value, l
 /// Runs a proposal the user tapped, logs it, and keeps Undo for files it
 /// made or moved.
 pub async fn run_proposal(app: &AppHandle, id: &str) -> Result<Ran, String> {
-    let proposed = lock(&app.state::<AppState>().ask_proposals)
-        .remove(id)
-        .ok_or("That button has expired; ask again")?;
+    let proposed = {
+        let state = app.state::<AppState>();
+        let mut all = lock(&state.ask_proposals);
+        let found = all.remove(id);
+        save_proposals(app, &mut all);
+        found
+    }
+    .ok_or("That button has expired; ask again")?;
     let result = match crate::act::run(app, &proposed.action, &proposed.args).await {
         Some(r) => r,
         None => {

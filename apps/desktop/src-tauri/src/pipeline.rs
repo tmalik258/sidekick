@@ -47,7 +47,27 @@ fn spawn_consumer(app: AppHandle) {
     });
 }
 
+/// Hook events from the Claude Code and Codex runs Ask starts itself: the
+/// answer is already in Ask, so they make no "finished" card.
+fn from_ask(app: &AppHandle, event: &Event) -> bool {
+    if !(event.kind.starts_with("claude.") || event.kind.starts_with("codex.")) {
+        return false;
+    }
+    let Some(cwd) = event.payload["cwd"].as_str().filter(|c| !c.is_empty()) else {
+        return false;
+    };
+    let dir = &app.state::<AppState>().ai_workdir;
+    let same = |p: &std::path::Path| {
+        let norm = |s: &str| s.replace('\\', "/").trim_end_matches('/').to_lowercase();
+        norm(cwd) == norm(&p.to_string_lossy())
+    };
+    same(dir) || same(&dir.join("codex"))
+}
+
 async fn handle(app: &AppHandle, mut event: Event) {
+    if from_ask(app, &event) {
+        return;
+    }
     if crate::privacy::check(app, &event) {
         // Still remember which app is in front, so its copies are ignored
         // too, and keep the island out of fullscreen apps.
