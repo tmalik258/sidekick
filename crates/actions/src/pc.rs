@@ -755,18 +755,89 @@ pub fn close_window(q: &str) -> Result<Outcome, ActionError> {
     }
 }
 
-/// Starts an app from the Start menu by name; only installed apps start.
+/// Installed apps from the Start menu, as (name, AppID).
+fn start_apps() -> Result<Vec<(String, String)>, ActionError> {
+    let out = powershell(
+        "Get-StartApps | ForEach-Object { \"$($_.Name)`t$($_.AppID)\" }",
+        &[],
+    )?;
+    Ok(out
+        .lines()
+        .filter_map(|l| l.split_once('\t'))
+        .map(|(n, id)| (n.trim().to_owned(), id.trim().to_owned()))
+        .filter(|(n, id)| !n.is_empty() && !id.is_empty())
+        .collect())
+}
+
+/// Letters and digits only, lowercased: "WIND HAWK" and "Windhawk" agree.
+fn squash(s: &str) -> String {
+    s.chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
+}
+
+/// Installed app names that match `q`, closest first: the same name, then
+/// names that start with it, then names that contain it or all its words.
+pub fn match_apps<'a>(apps: &'a [(String, String)], q: &str) -> Vec<&'a (String, String)> {
+    let want = squash(q);
+    let words: Vec<String> = q
+        .split_whitespace()
+        .map(squash)
+        .filter(|w| !w.is_empty())
+        .collect();
+    if want.is_empty() {
+        return Vec::new();
+    }
+    let mut hits: Vec<(u8, &(String, String))> = apps
+        .iter()
+        .filter_map(|a| {
+            let name = squash(&a.0);
+            let rank = if name == want {
+                0
+            } else if name.starts_with(&want) {
+                1
+            } else if name.contains(&want) {
+                2
+            } else if words.len() > 1 && words.iter().all(|w| name.contains(w.as_str())) {
+                3
+            } else {
+                return None;
+            };
+            Some((rank, a))
+        })
+        .collect();
+    hits.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.0.len().cmp(&b.1.0.len())));
+    hits.into_iter().map(|(_, a)| a).collect()
+}
+
+/// Installed apps whose name is like `q`, for "do I have ...".
+pub fn find_apps(q: &str) -> Result<Vec<String>, ActionError> {
+    let q = query(q)?;
+    let apps = start_apps()?;
+    Ok(match_apps(&apps, &q)
+        .into_iter()
+        .take(10)
+        .map(|a| a.0.clone())
+        .collect())
+}
+
+/// Starts an installed app by name (spelling and spaces forgiven); only
+/// apps in the Start menu start.
 pub fn launch_app(q: &str) -> Result<Outcome, ActionError> {
     let q = query(q)?;
-    let out = powershell(
-        "$a=Get-StartApps | Where-Object { $_.Name -like \"*$env:SIDEKICK_QUERY*\" } | Select-Object -First 1; \
-         if($a){ Start-Process \"shell:AppsFolder\\$($a.AppID)\"; $a.Name }",
-        &[("SIDEKICK_QUERY", &q)],
+    let apps = start_apps()?;
+    let Some((name, id)) = match_apps(&apps, &q)
+        .first()
+        .map(|a| (a.0.clone(), a.1.clone()))
+    else {
+        return Err(ActionError::Failed(format!("no installed app named {q}")));
+    };
+    powershell(
+        "Start-Process \"shell:AppsFolder\\$env:SIDEKICK_APP_ID\"",
+        &[("SIDEKICK_APP_ID", &id)],
     )?;
-    match out.trim() {
-        "" => Err(ActionError::Failed(format!("no installed app named {q}"))),
-        name => Ok(Outcome::msg(format!("Opened {name}"))),
-    }
+    Ok(Outcome::msg(format!("Opened {name}")))
 }
 
 /// Brings an app to the front, or starts it when it is not open.
@@ -848,6 +919,26 @@ mod tests {
         assert_eq!(settings_uri("nightlight"), Some("ms-settings:nightlight"));
         assert_eq!(settings_uri("home"), Some("ms-settings:"));
         assert!(query("**").is_err());
+        let apps: Vec<(String, String)> = [
+            ("Windhawk", "Windhawk.App"),
+            ("Windows Terminal", "Microsoft.WindowsTerminal"),
+            ("Hawk Viewer", "Hawk"),
+            ("Spotify", "Spotify.App"),
+        ]
+        .iter()
+        .map(|(n, id)| ((*n).to_owned(), (*id).to_owned()))
+        .collect();
+        let names = |q: &str| -> Vec<String> {
+            match_apps(&apps, q)
+                .into_iter()
+                .map(|a| a.0.clone())
+                .collect()
+        };
+        assert_eq!(names("WIND HAWK"), ["Windhawk"]);
+        assert_eq!(names("spotify"), ["Spotify"]);
+        assert_eq!(names("win"), ["Windhawk", "Windows Terminal"]);
+        assert_eq!(names("terminal windows"), ["Windows Terminal"]);
+        assert!(names("photoshop").is_empty());
         assert_eq!(query(" chr*ome ").unwrap(), "chrome");
     }
 
