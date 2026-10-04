@@ -8,10 +8,12 @@ mod capabilities;
 pub mod cleanup;
 mod convert;
 pub mod dev;
+pub mod dnd;
 mod files;
 pub mod office;
 pub mod passwords;
 pub mod pc;
+mod script;
 mod system;
 pub mod uia;
 
