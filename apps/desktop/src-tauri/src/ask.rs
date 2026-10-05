@@ -3,7 +3,8 @@
 //! button opens it; Esc or clicking anywhere else closes it. Until onboarding
 //! is finished, the island stays locked on welcome: blur, Esc and the Ask
 //! shortcut cannot dismiss it for good. Hide parks it (other apps stay usable);
-//! hovering the island brings welcome back. Only Skip or Start mark onboarded.
+//! hovering the island brings welcome back (the UI asks, unless a waiting
+//! guide is showing). Only Skip or Start mark onboarded.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -174,7 +175,9 @@ pub fn defer_welcome(app: &AppHandle) {
     WELCOME_DEFERRED.store(true, Ordering::SeqCst);
     KEEP_ON_BLUR.store(false, Ordering::SeqCst);
     let state = app.state::<AppState>();
-    if !state.ask_open.swap(false, Ordering::SeqCst) {
+    let was_open = state.ask_open.swap(false, Ordering::SeqCst);
+    log::info!("welcome parked (was open: {was_open})");
+    if !was_open {
         return;
     }
     if let Some(window) = app.get_webview_window(LABEL) {
@@ -187,25 +190,14 @@ pub fn defer_welcome(app: &AppHandle) {
 }
 
 /// Clears a Hide and shows welcome again (island hover or Ask shortcut).
+/// Re-emits when already open, so a missed cold-start ask://open is repaired.
 pub fn resume_welcome(app: &AppHandle) {
     if !needs_welcome(app) {
         return;
     }
+    log::info!("welcome resumed (was parked: {})", is_deferred());
     WELCOME_DEFERRED.store(false, Ordering::SeqCst);
     ensure_welcome(app);
-}
-
-/// Hover tracker: resume parked welcome, or repair a Locked session that never
-/// reached the webview (missed ask://open).
-pub fn on_island_hover(app: &AppHandle) {
-    if !needs_welcome(app) {
-        return;
-    }
-    if is_deferred() {
-        resume_welcome(app);
-    } else if !is_open(app) {
-        ensure_welcome(app);
-    }
 }
 
 /// Opens welcome if onboarding is unfinished and not parked by Hide.

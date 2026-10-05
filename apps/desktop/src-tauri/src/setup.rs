@@ -2,8 +2,10 @@
 //! exact command or Settings tab for each item that is not. Status checks are
 //! read-only. "Run" opens a visible PowerShell window with an allowlisted
 //! command from this file, except starting Ollama, which opens the Ollama
-//! app like its Start menu shortcut. "Add for me" (hooks/MCP) and the browser
-//! helper live in other modules and run only when the user presses the button.
+//! app like its Start menu shortcut, and paste-only steps (API keys), which
+//! copy the command and open a blank PowerShell for the user. "Add for me"
+//! (hooks/MCP) and the browser helper live in other modules and run only
+//! when the user presses the button.
 
 use std::path::Path;
 use std::time::Duration;
@@ -41,6 +43,8 @@ pub struct SetupItem {
     pub action: &'static str,
     /// "Run" opens the installed app instead of a terminal window.
     pub opens_app: bool,
+    /// Opens a terminal and copies the command; the user pastes and edits it.
+    pub opens_terminal: bool,
     /// Settings tab where this is set up.
     pub tab: Option<&'static str>,
     /// Part of the recommended setup; the rest is optional.
@@ -60,6 +64,7 @@ impl SetupItem {
             runnable: false,
             action: "Install",
             opens_app: false,
+            opens_terminal: false,
             tab: None,
             recommended: false,
         }
@@ -90,6 +95,14 @@ impl SetupItem {
         self.runnable = false;
         self
     }
+    /// Copies the command and opens PowerShell so the user can paste and edit.
+    fn terminal_paste(mut self, command: impl Into<String>) -> Self {
+        self.command = Some(command.into());
+        self.runnable = true;
+        self.opens_terminal = true;
+        self.action = "Open terminal";
+        self
+    }
     fn tab(mut self, tab: &'static str) -> Self {
         self.tab = Some(tab);
         self
@@ -98,6 +111,19 @@ impl SetupItem {
         self.recommended = true;
         self
     }
+}
+
+/// Whether the welcome **On this PC** batch may offer this step. Ollama and
+/// GitHub CLI need the checklist (Run, Sign in, model downloads); winget or
+/// opening the app alone does not finish them.
+pub fn welcome_bulk_install(item: &SetupItem) -> bool {
+    if item.opens_app || item.opens_terminal {
+        return false;
+    }
+    !matches!(
+        item.id,
+        "ollama" | "ollama_chat" | "ollama_embed" | "ollama_vision" | "gh"
+    )
 }
 
 pub const CLAUDE_HOOK_URL: &str = "http://127.0.0.1:47821/claude-code";
@@ -223,30 +249,60 @@ async fn gh_signed_in() -> bool {
     )
 }
 
+/// How recently the extension must have checked in to count as connected.
+const BROWSER_RECENT_SECS: i64 = 7 * 24 * 3600;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserStatus {
+    pub id: String,
+    pub name: String,
+    /// The extension checked in from this kind of browser recently.
+    pub connected: bool,
+}
+
+/// Installed browsers and whether the extension is connected in each.
+pub fn browsers(state: &AppState) -> Vec<BrowserStatus> {
+    let seen = state.browser.seen();
+    let now = chrono::Utc::now().timestamp();
+    let recent = |name: &str| {
+        seen.iter()
+            .any(|(n, t)| n.eq_ignore_ascii_case(name) && now - t < BROWSER_RECENT_SECS)
+    };
+    executor(state)
+        .capabilities()
+        .browsers
+        .iter()
+        .map(|b| {
+            let name = b.label().to_owned();
+            // Firefox and Zen report as Firefox.
+            let reported = if b.id == "zen" {
+                "Firefox"
+            } else {
+                name.as_str()
+            };
+            BrowserStatus {
+                connected: recent(reported),
+                id: b.id.clone(),
+                name,
+            }
+        })
+        .collect()
+}
+
 pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     refresh_path();
+    // setx writes the user env; pick the key up without asking for a restart.
+    refresh_user_env("ANTHROPIC_API_KEY");
     let state = app.state::<AppState>();
     let settings = lock(&state.settings).clone();
     let base_url = settings.ai.local.base_url.clone();
-    let composio_settings = settings.composio.clone();
-    let composio_on = crate::composio::is_set_up(&composio_settings);
-    let need_composio_apps = composio_on && crate::composio::signed_in();
 
     // Independent probes run together so wall time ≈ the slowest one.
     let caps_fut = tauri::async_runtime::spawn_blocking(sidekick_actions::Capabilities::detect);
     let models_fut = ollama_models(&base_url);
-    let composio_fut = async {
-        if need_composio_apps {
-            crate::composio::apps(&composio_settings)
-                .await
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        }
-    };
     let gh_fut = gh_signed_in();
-    let (caps_res, models, composio_apps, gh_ok) =
-        tokio::join!(caps_fut, models_fut, composio_fut, gh_fut);
+    let (caps_res, models, gh_ok) = tokio::join!(caps_fut, models_fut, gh_fut);
 
     let caps = caps_res.unwrap_or_else(|_| executor(&state).capabilities().clone());
     *state
@@ -317,7 +373,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     };
     let has_chat = models.as_ref().is_some_and(|m| {
         if settings.ai.local.model.trim().is_empty() {
-            m.iter().any(|x| !sidekick_ai::is_embedding_model(x))
+            m.iter().any(|x| sidekick_ai::is_chat_model(x))
         } else {
             has_model(m, &chat_model)
         }
@@ -406,10 +462,10 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             "anthropic",
             Group::Ai,
             "Anthropic API key",
-            "Pay as you go. Restart Sidekick after setting it.",
+            "Pay as you go. Opens PowerShell with the command ready to paste.",
         )
-        .done(api_key, "Set", "Not set")
-        .copy("setx ANTHROPIC_API_KEY \"your-key\""),
+        .done(api_key, "Set", "")
+        .terminal_paste("setx ANTHROPIC_API_KEY \"your-key\""),
     );
 
     // Connections
@@ -481,16 +537,18 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     );
 
     // Match Connections: only count authenticated check-ins, not pair_request
-    // events stored before the user clicks Allow on the island.
-    let browser_seen = !state.browser.seen().is_empty();
+    // events stored before the user clicks Allow on the island. Done when any
+    // browser is paired; the list under Set up shows the rest.
+    let browsers = browsers(&state);
+    let any_paired = browsers.iter().any(|b| b.connected);
     items.push(
         SetupItem::new(
             "browser",
             Group::Connect,
             "Browser extension",
-            "Page summaries, form help, duplicate tabs and saving sessions.",
+            "Page help, tabs and sessions on the island.",
         )
-        .done(browser_seen, "Paired", "Not paired")
+        .done(any_paired, "Paired", "Not paired")
         .tab("connections")
         .recommended(),
     );
@@ -502,13 +560,12 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             "Code folders",
             "Project status, the project launcher and the end-of-day check.",
         )
-        .done(!settings.code_folders.is_empty(), "Set", "Not set")
+        .done(!settings.code_folders.is_empty(), "Set", "")
         .tab("home")
         .recommended(),
     );
 
     let composio_on = crate::composio::is_set_up(&settings.composio);
-    let has_app = |slug: &str| composio_apps.iter().any(|a| a.slug == slug && a.connected);
     items.push(
         SetupItem::new(
             "composio",
@@ -519,24 +576,6 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         .done(composio_on, "Connected", "Not connected")
         .tab("connections")
         .recommended(),
-    );
-    items.push(
-        SetupItem::new(
-            "calendar",
-            Group::Connect,
-            "Calendar",
-            "Meeting reminders with Join. Connect it on Composio.",
-        )
-        .done(
-            has_app("googlecalendar") || has_app("outlook"),
-            "Connected",
-            if composio_on {
-                "Not connected"
-            } else {
-                "Needs Composio"
-            },
-        )
-        .tab("connections"),
     );
     items.push(
         SetupItem::new(
@@ -570,25 +609,6 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             },
         )
         .tab("ai"),
-    );
-
-    items.push(
-        SetupItem::new(
-            "fathom",
-            Group::Connect,
-            "Fathom",
-            "Follow-ups from meeting notes. Connect it on Composio.",
-        )
-        .done(
-            has_app("fathom"),
-            "Connected",
-            if composio_on {
-                "Not connected"
-            } else {
-                "Needs Composio"
-            },
-        )
-        .tab("connections"),
     );
 
     // Tools
@@ -745,6 +765,10 @@ pub async fn run(app: &AppHandle, id: &str) -> Result<(), String> {
         if item.opens_app {
             return open_app(item.id);
         }
+        if item.opens_terminal {
+            let command = item.command.clone().ok_or("Nothing to paste")?;
+            return open_terminal_paste(&command);
+        }
         item.command.clone().ok_or("Nothing to run")?
     };
     open_terminal(&command)
@@ -802,14 +826,23 @@ pub fn chain(commands: &[String]) -> String {
 /// Returns what it did, for the welcome screen.
 pub async fn run_many(app: &AppHandle, ids: &[String]) -> Result<Vec<String>, String> {
     let items = status(app).await;
-    let chosen = items
+    let chosen: Vec<&SetupItem> = items
         .iter()
-        .filter(|i| ids.contains(&i.id.to_owned()) && i.runnable && !i.done);
-    let (apps, mut steps): (Vec<&SetupItem>, Vec<&SetupItem>) = chosen.partition(|i| i.opens_app);
+        .filter(|i| ids.contains(&i.id.to_owned()) && i.runnable && !i.done)
+        .collect();
+    let (apps, rest): (Vec<&SetupItem>, Vec<&SetupItem>) =
+        chosen.into_iter().partition(|i| i.opens_app);
+    let (pastes, mut steps): (Vec<&SetupItem>, Vec<&SetupItem>) =
+        rest.into_iter().partition(|i| i.opens_terminal);
     let mut done = Vec::new();
     for item in apps {
         open_app(item.id)?;
         done.push(format!("Opened {}", item.title));
+    }
+    for item in pastes {
+        let command = item.command.as_deref().ok_or("Nothing to paste")?;
+        open_terminal_paste(command)?;
+        done.push(format!("Opened terminal for {}", item.title));
     }
     // Installers before anything that needs what they install.
     steps.sort_by_key(|i| {
@@ -825,8 +858,28 @@ pub async fn run_many(app: &AppHandle, ids: &[String]) -> Result<Vec<String>, St
     Ok(done)
 }
 
+/// Copies `command` and opens PowerShell with paste instructions. Does not
+/// run the command — the user must put their own secret in first.
+fn open_terminal_paste(command: &str) -> Result<(), String> {
+    arboard::Clipboard::new()
+        .and_then(|mut c| c.set_text(command.to_owned()))
+        .map_err(|e| format!("could not copy the command: {e}"))?;
+    open_terminal_window(&format!(
+        "Write-Host 'Command copied to the clipboard:' -ForegroundColor Cyan; Write-Host '  {}' -ForegroundColor Yellow; Write-Host ''; Write-Host 'Replace your-key with your real key, paste (Ctrl+V), press Enter, then come back to Sidekick.' -ForegroundColor White",
+        command.replace('\'', "''")
+    ))
+}
+
 #[cfg(windows)]
 fn open_terminal(command: &str) -> Result<(), String> {
+    open_terminal_window(&format!(
+        "Write-Host 'Sidekick setup: {}' -ForegroundColor Cyan; {command}; Write-Host ''; Write-Host 'Done. Close this window and press Check again in Sidekick.' -ForegroundColor Green",
+        command.replace('\'', "''")
+    ))
+}
+
+#[cfg(windows)]
+fn open_terminal_window(script: &str) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     use std::process::Stdio;
     // Sidekick is a GUI process with no console. If we spawn PowerShell with
@@ -834,13 +887,13 @@ fn open_terminal(command: &str) -> Result<(), String> {
     // "failed to get console mode for stderr". `cmd /c start` opens a real
     // console window; CREATE_NO_WINDOW only hides the brief cmd trampoline.
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let script = format!(
-        "Write-Host 'Sidekick setup: {}' -ForegroundColor Cyan; {command}; Write-Host ''; Write-Host 'Done. Close this window and press Check again in Sidekick.' -ForegroundColor Green",
-        command.replace('\'', "''")
-    );
+    // Don't inherit the app's cwd (e.g. src-tauri in dev); open in the
+    // user profile so the prompt looks like a normal terminal.
+    let home = dirs::home_dir().unwrap_or_else(|| Path::new("C:\\").to_path_buf());
     // `start "title" prog` — the quoted title is required so `start` does not
     // treat the first quoted arg as the window title and drop the program.
     std::process::Command::new("cmd.exe")
+        .current_dir(&home)
         .args([
             "/c",
             "start",
@@ -850,7 +903,7 @@ fn open_terminal(command: &str) -> Result<(), String> {
             "-NoLogo",
             "-NoProfile",
             "-Command",
-            &script,
+            script,
         ])
         .creation_flags(CREATE_NO_WINDOW)
         .stdin(Stdio::null())
@@ -866,28 +919,19 @@ fn open_terminal(_command: &str) -> Result<(), String> {
     Err("Running setup commands is only available on Windows; copy the command instead".into())
 }
 
+#[cfg(not(windows))]
+fn open_terminal_window(_script: &str) -> Result<(), String> {
+    Err("Opening a terminal is only available on Windows; copy the command instead".into())
+}
+
 /// Installers add to PATH in the registry, which this already running
 /// process does not see. Reads it again so new tools are found without a
 /// restart.
 #[cfg(windows)]
 pub fn refresh_path() {
-    let mut cmd = std::process::Command::new("powershell.exe");
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    }
-    let Ok(out) = cmd
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            "[Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')",
-        ])
-        .output()
-    else {
+    let Some(fresh) = user_and_machine_env("Path") else {
         return;
     };
-    let fresh = String::from_utf8_lossy(&out.stdout).trim().to_owned();
     if fresh.len() < 3 {
         return;
     }
@@ -903,6 +947,72 @@ pub fn refresh_path() {
 #[cfg(not(windows))]
 pub fn refresh_path() {}
 
+/// `setx` and Settings write user env vars the running process does not see.
+/// Pull one name from the user registry into this process so setup / AI work
+/// without a restart mid-onboarding.
+#[cfg(windows)]
+pub fn refresh_user_env(name: &str) {
+    let Some(value) = user_env(name) else {
+        return;
+    };
+    if value.trim().is_empty() {
+        return;
+    }
+    let current = std::env::var(name).unwrap_or_default();
+    if current == value {
+        return;
+    }
+    // SAFETY: see refresh_path.
+    unsafe { std::env::set_var(name, value) };
+}
+
+#[cfg(not(windows))]
+pub fn refresh_user_env(_name: &str) {}
+
+#[cfg(windows)]
+fn user_env(name: &str) -> Option<String> {
+    let mut cmd = std::process::Command::new("powershell.exe");
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let out = cmd
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            &format!(
+                "[Environment]::GetEnvironmentVariable('{}','User')",
+                name.replace('\'', "''")
+            ),
+        ])
+        .output()
+        .ok()?;
+    let value = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    (!value.is_empty()).then_some(value)
+}
+
+#[cfg(windows)]
+fn user_and_machine_env(name: &str) -> Option<String> {
+    let mut cmd = std::process::Command::new("powershell.exe");
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let out = cmd
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            &format!(
+                "[Environment]::GetEnvironmentVariable('{n}','Machine') + ';' + [Environment]::GetEnvironmentVariable('{n}','User')",
+                n = name.replace('\'', "''")
+            ),
+        ])
+        .output()
+        .ok()?;
+    Some(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+}
 /// Registry entries first, then anything this process had that they lack.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn merge_path(fresh: &str, current: &str) -> String {
@@ -994,12 +1104,40 @@ mod tests {
     }
 
     #[test]
+    fn welcome_bulk_skips_ollama_and_gh() {
+        let ollama = SetupItem::new("ollama", Group::Ai, "Ollama", "w")
+            .run("winget install Ollama")
+            .recommended();
+        let gh = SetupItem::new("gh", Group::Tools, "GitHub CLI", "w")
+            .run("gh auth login")
+            .recommended();
+        let git = SetupItem::new("git", Group::Tools, "Git", "w")
+            .run("winget install Git")
+            .recommended();
+        assert!(!welcome_bulk_install(&ollama));
+        assert!(!welcome_bulk_install(&gh));
+        assert!(welcome_bulk_install(&git));
+    }
+
+    #[test]
     fn running_ollama_opens_the_app_not_a_terminal() {
         let item = SetupItem::new("ollama", Group::Ai, "Ollama", "w").opens_app();
         assert!(item.runnable && item.opens_app);
         assert_eq!(item.command, None);
         assert_eq!(item.action, "Run");
         assert_eq!(install_all(&[item]), None);
+    }
+
+    #[test]
+    fn api_key_opens_a_terminal_for_paste() {
+        let item = SetupItem::new("anthropic", Group::Ai, "Anthropic API key", "w")
+            .terminal_paste("setx ANTHROPIC_API_KEY \"your-key\"");
+        assert!(item.runnable && item.opens_terminal && !item.opens_app);
+        assert_eq!(item.action, "Open terminal");
+        assert_eq!(
+            item.command.as_deref(),
+            Some("setx ANTHROPIC_API_KEY \"your-key\"")
+        );
     }
 
     #[test]

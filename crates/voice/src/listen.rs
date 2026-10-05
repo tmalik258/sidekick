@@ -38,6 +38,9 @@ pub enum Control {
     ListenNow,
     /// Stop listening and go back to waiting for the wake phrase.
     Cancel,
+    /// Sidekick is speaking (true) or quiet again (false). While muted the
+    /// microphone hears the speakers, so nothing it hears counts.
+    Mute(bool),
 }
 
 #[derive(Debug, Clone)]
@@ -75,6 +78,8 @@ pub struct Engine {
     heard: usize,
     /// While waiting, the speech model transcribes and wakes on the phrase.
     transcript_wake: bool,
+    /// Sidekick's own voice is playing: audio is dropped, not heard.
+    muted: bool,
 }
 
 fn model(
@@ -173,7 +178,18 @@ impl Engine {
             last: String::new(),
             heard: 0,
             transcript_wake: transcript,
+            muted: false,
         })
+    }
+
+    /// While muted, audio is dropped: the speakers' sound must not wake
+    /// Sidekick, nor be primed into the next question. Muting also ends
+    /// waiting on anything half heard. A push to talk unmutes.
+    pub fn set_muted(&mut self, muted: bool) {
+        if muted && !self.muted {
+            self.reset();
+        }
+        self.muted = muted;
     }
 
     /// Back to waiting, as if just started: nothing heard, nothing pending.
@@ -192,6 +208,7 @@ impl Engine {
 
     /// Starts transcribing now, with the last moment of audio included.
     pub fn listen_now(&mut self) {
+        self.muted = false;
         self.start_listening();
     }
 
@@ -230,6 +247,9 @@ impl Engine {
 
     /// Feeds 16 kHz mono audio and returns what was heard.
     pub fn feed(&mut self, chunk: &[f32]) -> Vec<Heard> {
+        if self.muted {
+            return Vec::new();
+        }
         let mut out = Vec::new();
         self.recent.extend(chunk.iter().copied());
         while self.recent.len() > PRIME {
@@ -390,6 +410,7 @@ impl Listener {
                                 on(Heard::Wake);
                             }
                             Control::Cancel => engine.cancel(),
+                            Control::Mute(muted) => engine.set_muted(muted),
                         }
                     }
                     match chunks.recv_timeout(Duration::from_millis(100)) {

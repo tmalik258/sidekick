@@ -553,7 +553,7 @@ impl Default for Settings {
             muted: false,
             master_volume: 0.6,
             cue_volumes: BTreeMap::new(),
-            collapse_after_secs: 8,
+            collapse_after_secs: 6,
             launch_at_login: true,
             sensors: BTreeMap::new(),
             pause: Pause::None,
@@ -791,7 +791,7 @@ mod tests {
         fs::write(&path, r#"{"muted": true}"#).unwrap();
         let partial = Settings::load(&path);
         assert!(partial.muted);
-        assert_eq!(partial.collapse_after_secs, 8);
+        assert_eq!(partial.collapse_after_secs, 6);
         fs::remove_dir_all(dir).unwrap();
     }
 

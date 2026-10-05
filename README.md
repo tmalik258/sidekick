@@ -115,8 +115,21 @@ Sidekick runs on your PC and keeps its data there. Passwords and API keys you co
 
 ```powershell
 pnpm install
-pnpm dev          # Next.js + Tauri, debug Rust build
+pnpm dev          # Next.js + Tauri ("Sidekick Dev"), debug Rust build
+pnpm dev:fresh    # wipe Sidekick Dev data, then `pnpm dev` (first-run welcome again)
 ```
+
+`pnpm dev` uses [`apps/desktop/src-tauri/tauri.dev.conf.json`](apps/desktop/src-tauri/tauri.dev.conf.json) so the debug app is a separate product from the installed one:
+
+| | Production (`pnpm build` / installer) | Dev (`pnpm dev`) |
+| --- | --- | --- |
+| Product name | Sidekick | Sidekick Dev |
+| Identifier | `app.sidekick.desktop` | `app.sidekick.desktop.dev` |
+| Settings, DB, skills | `%APPDATA%\app.sidekick.desktop\` | `%APPDATA%\app.sidekick.desktop.dev\` |
+| Extension, local AI files | `%LOCALAPPDATA%\app.sidekick.desktop\` | `%LOCALAPPDATA%\app.sidekick.desktop.dev\` |
+| Credential Manager service | Sidekick | Sidekick Dev |
+
+You can run both at once. `pnpm dev:fresh` only deletes the **dev** folders and Sidekick Dev secrets; it refuses to touch production. Work log (`Documents\Sidekick\worklog.md`) stays shared.
 
 Preview only the UI in a browser, with a mock core instead of Rust:
 

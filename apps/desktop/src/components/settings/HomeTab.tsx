@@ -35,7 +35,7 @@ const SOUND_KITS: [string, string][] = [
 
 const COLLAPSE_OPTIONS: [string, string][] = [
   ["4", "4 seconds"],
-  ["8", "8 seconds"],
+  ["6", "6 seconds"],
   ["15", "15 seconds"],
   ["30", "30 seconds"],
   ["60", "1 minute"],
@@ -152,12 +152,12 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
       </Section>
       <Section
         collapsible
-        summary="Start with Windows, updates"
+        summary="Launch on login, updates"
         title="Startup and updates"
         keywords="launch login windows start update version"
       >
         <Toggle
-          label="Start Sidekick with Windows"
+          label="Launch on login"
           checked={settings.launchAtLogin}
           onChange={(launchAtLogin) => save({ launchAtLogin })}
         />

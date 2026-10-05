@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -888,6 +888,10 @@ pub fn sign_out(app: &AppHandle) -> Result<(), String> {
 /// first, then the rest. The last good answer is kept, so Settings still
 /// shows it when Composio is slow.
 pub async fn apps(c: &ComposioSettings) -> Result<Vec<api::App>, String> {
+    let previous: std::collections::BTreeSet<String> = CONNECTED
+        .read()
+        .map(|c| c.iter().cloned().collect())
+        .unwrap_or_default();
     let cl = client(c).await?;
     let mut connected = std::collections::BTreeSet::new();
     if let Ok(tools) = cl.list_tools().await
@@ -898,17 +902,56 @@ pub async fn apps(c: &ComposioSettings) -> Result<Vec<api::App>, String> {
     match call(c, api::CONNECTIONS_TOOL, api::list_args()).await {
         Ok(v) => {
             let listed = api::connected_from_list(&v);
-            // The list is exact for Sidekick's apps.
-            connected.retain(|s| !api::APPS.iter().any(|a| a.0 == s.as_str()));
+            let inactive = api::inactive_from_list(&v);
+            // Union description + active list. Keep what we already knew unless
+            // this list explicitly marks it inactive — a fresh connect can
+            // disappear from the next poll for a second or two.
             connected.extend(listed);
+            for s in previous {
+                if !inactive.contains(&s) || recently_pinned(&s) {
+                    connected.insert(s);
+                }
+            }
+            for s in &inactive {
+                if !recently_pinned(s) {
+                    connected.remove(s);
+                }
+            }
         }
-        Err(err) if connected.is_empty() => return Err(err),
-        Err(err) => log::info!("Composio connections list failed, using the summary: {err}"),
+        Err(err) if connected.is_empty() && previous.is_empty() => return Err(err),
+        Err(err) => {
+            log::info!("Composio connections list failed, using the summary: {err}");
+            connected.extend(previous);
+        }
     }
     if let Ok(mut g) = CONNECTED.write() {
         *g = connected.iter().cloned().collect();
     }
     Ok(api::merge_apps(&connected))
+}
+
+/// After a successful connect poll, ignore "not active" list answers for a bit.
+const PIN_GRACE: Duration = Duration::from_secs(45);
+static PINNED: std::sync::RwLock<Vec<(String, Instant)>> = std::sync::RwLock::new(Vec::new());
+
+/// Remembers one app as connected (e.g. right after a successful connect poll).
+fn pin_connected(slug: &str) {
+    if let Ok(mut g) = CONNECTED.write() {
+        if !g.iter().any(|s| s == slug) {
+            g.push(slug.to_owned());
+        }
+    }
+    if let Ok(mut p) = PINNED.write() {
+        p.retain(|(s, at)| s != slug && at.elapsed() < PIN_GRACE);
+        p.push((slug.to_owned(), Instant::now()));
+    }
+}
+
+fn recently_pinned(slug: &str) -> bool {
+    PINNED
+        .read()
+        .map(|p| p.iter().any(|(s, at)| s == slug && at.elapsed() < PIN_GRACE))
+        .unwrap_or(false)
 }
 
 /// The apps last seen connected, without asking Composio.
@@ -947,7 +990,11 @@ pub async fn connect_app(app: &AppHandle, slug: &str) -> Result<(), String> {
             if let Ok(v) = call(&c, api::CONNECTIONS_TOOL, api::list_args()).await
                 && api::connected_from_list(&v).contains(&slug)
             {
+                // Pin before/after the full refresh so a laggy list cannot
+                // clear the app we just saw as active.
+                pin_connected(&slug);
                 let _ = apps(&c).await;
+                pin_connected(&slug);
                 return changed(&app, true, format!("{} connected", api::app_name(&slug)));
             }
         }

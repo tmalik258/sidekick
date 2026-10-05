@@ -112,20 +112,37 @@ fn is_active(v: &Value) -> bool {
     v.as_str().is_some_and(|s| s.eq_ignore_ascii_case("active"))
 }
 
+fn toolkit_active(r: &Value) -> bool {
+    is_active(&r["status"])
+        || r["accounts"]
+            .as_array()
+            .is_some_and(|a| a.iter().any(|x| is_active(&x["status"])))
+}
+
+fn list_results(v: &Value) -> Option<&serde_json::Map<String, Value>> {
+    v["data"]["results"]
+        .as_object()
+        .or(v["results"].as_object())
+}
+
 /// Toolkits with an active connection, from a `list` answer.
 pub fn connected_from_list(v: &Value) -> BTreeSet<String> {
-    let results = v["data"]["results"]
-        .as_object()
-        .or(v["results"].as_object());
-    results
+    list_results(v)
         .map(|m| {
             m.iter()
-                .filter(|(_, r)| {
-                    is_active(&r["status"])
-                        || r["accounts"]
-                            .as_array()
-                            .is_some_and(|a| a.iter().any(|x| is_active(&x["status"])))
-                })
+                .filter(|(_, r)| toolkit_active(r))
+                .map(|(k, _)| k.clone())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Toolkits the list mentioned as not active (so a sticky cache can drop them).
+pub fn inactive_from_list(v: &Value) -> BTreeSet<String> {
+    list_results(v)
+        .map(|m| {
+            m.iter()
+                .filter(|(_, r)| !toolkit_active(r))
                 .map(|(k, _)| k.clone())
                 .collect()
         })
@@ -244,6 +261,9 @@ mod tests {
         let c = connected_from_list(&v);
         assert!(c.contains("googlecalendar") && c.contains("gmail"));
         assert!(!c.contains("jira"));
+        let inactive = inactive_from_list(&v);
+        assert!(inactive.contains("jira"));
+        assert!(!inactive.contains("gmail"));
     }
 
     #[test]

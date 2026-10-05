@@ -86,6 +86,11 @@ pub struct AppState {
     pub calendar: sidekick_sensors::Calendar,
     /// Claude Code permission requests waiting on the island.
     pub approvals: sidekick_sensors::Approvals,
+    /// Sidekick's app data folder.
+    pub data_dir: PathBuf,
+    /// The background features (brief, moments, search, updates...) are
+    /// running; they start once onboarding is done.
+    pub features_started: AtomicBool,
 }
 
 /// The interactive part of the island window, in logical pixels relative to
@@ -166,12 +171,21 @@ pub fn is_paused(app: &tauri::AppHandle) -> bool {
         .is_active(Utc::now())
 }
 
+/// Until onboarding is done only these run: the window sensor, so the island
+/// follows the active monitor and hides in fullscreen apps, and the browser
+/// bridge, so the extension can ask to pair. The pipeline lets nothing else
+/// from them through.
+const ONBOARDING_SENSORS: [&str; 2] = ["window", "browser"];
+
 pub fn gate_state(settings: &Settings, now: DateTime<Utc>) -> GateState {
     GateState {
         paused: settings.pause.is_active(now),
         disabled: SENSOR_IDS
             .iter()
-            .filter(|id| !settings.sensor_enabled(id))
+            .filter(|id| {
+                !settings.sensor_enabled(id)
+                    || (!settings.onboarded && !ONBOARDING_SENSORS.contains(id))
+            })
             .map(|id| id.to_string())
             .collect(),
     }
@@ -244,6 +258,7 @@ mod tests {
     fn gate_state_reflects_pause_and_disabled_sensors() {
         let now = Utc::now();
         let mut s = Settings::default();
+        s.onboarded = true;
         s.sensors.insert("clipboard".into(), false);
         s.sensors.insert("downloads".into(), true);
         s.pause = Pause::for_minutes(5, now);
@@ -251,5 +266,20 @@ mod tests {
         assert!(g.paused);
         // clipboard was switched off; everything else defaults on.
         assert_eq!(g.disabled.into_iter().collect::<Vec<_>>(), ["clipboard"]);
+    }
+
+    #[test]
+    fn only_onboarding_sensors_run_before_onboarding() {
+        let now = Utc::now();
+        let s = Settings::default();
+        assert!(!s.onboarded);
+        let g = gate_state(&s, now);
+        let mut expected: Vec<String> = SENSOR_IDS
+            .iter()
+            .filter(|id| !ONBOARDING_SENSORS.contains(id))
+            .map(|id| id.to_string())
+            .collect();
+        expected.sort();
+        assert_eq!(g.disabled.into_iter().collect::<Vec<_>>(), expected);
     }
 }

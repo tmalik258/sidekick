@@ -345,19 +345,67 @@ body {
 .chip {
   transition:
     transform 140ms var(--ease-out-strong),
-    background-color 160ms ease;
+    background-color 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease,
+    box-shadow 160ms ease;
 }
-.chip:active {
+.chip:active:not(:disabled) {
   transform: scale(0.96);
+}
+/* Layered, so a cursor utility on the element (cursor-grab) still wins. */
+@layer components {
+  .chip {
+    cursor: pointer;
+  }
+  .chip:disabled {
+    cursor: default;
+  }
+}
+/* Keyboard focus only; a click never leaves a ring behind. */
+.chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgb(10 132 255 / 0.85);
 }
 
 /* ---------- Ask ---------- */
 
 .ask-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: rgb(255 255 255 / 0.18) transparent;
   scrollbar-gutter: stable;
   overscroll-behavior: contain;
+}
+
+/* Slim custom scrollbar for the island. WebView2 draws step arrows with
+   scrollbar-width, so only ::-webkit-scrollbar parts are used (Chromium
+   ignores them once scrollbar-width or scrollbar-color is set). */
+.ask-scroll::-webkit-scrollbar,
+.settings-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.ask-scroll::-webkit-scrollbar-track,
+.settings-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.ask-scroll::-webkit-scrollbar-thumb,
+.settings-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.14);
+}
+.ask-scroll::-webkit-scrollbar-thumb:hover,
+.settings-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgb(255 255 255 / 0.28);
+}
+.ask-scroll::-webkit-scrollbar-thumb:active,
+.settings-scroll::-webkit-scrollbar-thumb:active {
+  background: rgb(255 255 255 / 0.4);
+}
+.ask-scroll::-webkit-scrollbar-button,
+.settings-scroll::-webkit-scrollbar-button {
+  display: none;
+}
+.ask-scroll::-webkit-scrollbar-corner,
+.settings-scroll::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* ---------- Settings inside the island ---------- */
@@ -379,13 +427,27 @@ body {
   background-color: rgb(255 255 255 / 0.2);
 }
 
+/* An edge fades only when there is more to scroll to on that side
+   (data-fade-top / data-fade-bottom, set by useScrollEdge); content that
+   fits is never faded. */
 .settings-scroll {
-  /* Content fades out at the edge instead of being cut. */
-  mask-image: linear-gradient(to bottom, black calc(100% - 20px), transparent);
-  scrollbar-width: thin;
-  scrollbar-color: rgb(255 255 255 / 0.2) transparent;
+  --fade-top: 0px;
+  --fade-bottom: 0px;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    black var(--fade-top),
+    black calc(100% - var(--fade-bottom)),
+    transparent 100%
+  );
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+.settings-scroll[data-fade-top] {
+  --fade-top: 20px;
+}
+.settings-scroll[data-fade-bottom] {
+  --fade-bottom: 20px;
 }
 
 .no-scrollbar {

@@ -313,6 +313,7 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
     *lock(&state.settings) = next.clone();
     if next.onboarded && !previous.onboarded {
         ask::release_sticky();
+        crate::start_features(app);
     }
     if keys_changed && let Err(err) = ask::register(app, &next.palette_hotkey) {
         // Put the old keys back so Ask keeps working.
@@ -350,7 +351,10 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
     if previous.calendar != next.calendar {
         sync_calendar(&state.calendar, &next);
     }
-    if previous.voice != next.voice || previous.pause != next.pause {
+    if previous.voice != next.voice
+        || previous.pause != next.pause
+        || previous.onboarded != next.onboarded
+    {
         crate::voice::refresh(app);
     }
 

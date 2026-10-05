@@ -8,10 +8,11 @@ Windows with Rust (stable), Node 22 and pnpm:
 
 ```powershell
 pnpm install
-pnpm dev
+pnpm dev          # "Sidekick Dev" — separate data from the installed app
+pnpm dev:fresh    # wipe Sidekick Dev data, then start (replay first-run)
 ```
 
-`pnpm web` previews the UI in a browser with a mock backend.
+`pnpm web` previews the UI in a browser with a mock backend. Dev vs production data paths are in [README.md](README.md#development).
 
 ## Checks
 

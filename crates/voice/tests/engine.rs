@@ -53,6 +53,40 @@ fn wakes_and_transcribes_spoken_audio() {
     );
 }
 
+/// Sidekick saying "Hey Sidekick" itself (muted while it speaks) must not
+/// wake it; once unmuted, the same audio does.
+#[test]
+fn muted_engine_never_wakes() {
+    let Ok(root) = std::env::var("SIDEKICK_VOICE_MODELS") else {
+        eprintln!("skipped: set SIDEKICK_VOICE_MODELS to run");
+        return;
+    };
+    let root = std::path::PathBuf::from(root);
+    let tts = OfflineTts::create(&tts_config(&root)).expect("voice model loads");
+    let mut engine = Engine::new(&root, true).unwrap();
+    let (said, rate) = synthesize(
+        &tts,
+        &respell("Hey Sidekick. What time is it in London right now?"),
+        speaker_id(DEFAULT_VOICE),
+        1.0,
+    )
+    .expect("speech");
+    let mut audio = vec![0.0; MIC_RATE as usize];
+    audio.extend(Resampler::new(rate, MIC_RATE).process(&said));
+    audio.extend(vec![0.0; MIC_RATE as usize * 3]);
+
+    engine.set_muted(true);
+    let heard: Vec<Heard> = audio.chunks(1600).flat_map(|c| engine.feed(c)).collect();
+    assert!(heard.is_empty(), "{heard:?}");
+    assert!(!engine.listening());
+
+    // Nothing from the muted audio was kept to prime the next listen.
+    engine.set_muted(false);
+    let quiet = vec![0.0f32; MIC_RATE as usize * 3];
+    let after: Vec<Heard> = quiet.chunks(1600).flat_map(|c| engine.feed(c)).collect();
+    assert!(after.is_empty(), "{after:?}");
+}
+
 /// People pause after "Hey Sidekick". The pause must not end listening;
 /// the question that follows is what gets transcribed.
 #[test]
