@@ -377,35 +377,47 @@ body {
 
 /* Slim custom scrollbar for the island. WebView2 draws step arrows with
    scrollbar-width, so only ::-webkit-scrollbar parts are used (Chromium
-   ignores them once scrollbar-width or scrollbar-color is set). */
+   ignores them once scrollbar-width or scrollbar-color is set).
+   .island-scroll is the shared class for any other scroller. */
 .ask-scroll::-webkit-scrollbar,
-.settings-scroll::-webkit-scrollbar {
+.settings-scroll::-webkit-scrollbar,
+.island-scroll::-webkit-scrollbar {
   width: 4px;
 }
 .ask-scroll::-webkit-scrollbar-track,
-.settings-scroll::-webkit-scrollbar-track {
+.settings-scroll::-webkit-scrollbar-track,
+.island-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 .ask-scroll::-webkit-scrollbar-thumb,
-.settings-scroll::-webkit-scrollbar-thumb {
+.settings-scroll::-webkit-scrollbar-thumb,
+.island-scroll::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: rgb(255 255 255 / 0.14);
 }
 .ask-scroll::-webkit-scrollbar-thumb:hover,
-.settings-scroll::-webkit-scrollbar-thumb:hover {
+.settings-scroll::-webkit-scrollbar-thumb:hover,
+.island-scroll::-webkit-scrollbar-thumb:hover {
   background: rgb(255 255 255 / 0.28);
 }
 .ask-scroll::-webkit-scrollbar-thumb:active,
-.settings-scroll::-webkit-scrollbar-thumb:active {
+.settings-scroll::-webkit-scrollbar-thumb:active,
+.island-scroll::-webkit-scrollbar-thumb:active {
   background: rgb(255 255 255 / 0.4);
 }
 .ask-scroll::-webkit-scrollbar-button,
-.settings-scroll::-webkit-scrollbar-button {
+.settings-scroll::-webkit-scrollbar-button,
+.island-scroll::-webkit-scrollbar-button {
   display: none;
 }
 .ask-scroll::-webkit-scrollbar-corner,
-.settings-scroll::-webkit-scrollbar-corner {
+.settings-scroll::-webkit-scrollbar-corner,
+.island-scroll::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+.island-scroll {
+  overscroll-behavior: contain;
 }
 
 /* ---------- Settings inside the island ---------- */

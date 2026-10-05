@@ -580,6 +580,12 @@ export function cancelChat() {
   void api.voiceStop();
 }
 
+/** Ends an in-flight chat so a new voice turn can start (clears chatId). */
+function clearInFlightChat() {
+  cancelChat();
+  if (useSidekick.getState().chatId) useSidekick.setState({ chatId: null });
+}
+
 /** Push to talk: listen now, no wake word needed. */
 export function startListening() {
   useSidekick.setState({ hearing: "" });
@@ -615,6 +621,13 @@ function watchVoice() {
 export function stopListening() {
   useSidekick.setState({ hearing: null });
   void api.voiceStop();
+}
+
+/** Chirp/Pop while listening or waiting on a voice answer would talk over the user. */
+function muteSuggestionCue(state: MascotState, previous: MascotState | null): boolean {
+  const { hearing, voiceQuestion } = useSidekick.getState();
+  if (hearing !== null || voiceQuestion !== null) return true;
+  return state === "listening" || previous === "listening";
 }
 
 export function newChat() {
@@ -663,7 +676,9 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       listen(EVENTS.mascotState, (t) => {
         useSidekick.setState({ mascot: t.state });
         const { settings } = useSidekick.getState();
-        if (sounds && t.cue) playCue(t.cue, cueVolume(settings, t.cue), settings.soundKit);
+        const suggestionCue = t.cue === "chirp" || t.cue === "pop";
+        const skipCue = suggestionCue && muteSuggestionCue(t.state, t.previous);
+        if (sounds && t.cue && !skipCue) playCue(t.cue, cueVolume(settings, t.cue), settings.soundKit);
         if (sounds && t.previous === "sleeping" && t.state === "idle") helloOncePerDay();
       }),
       listen(EVENTS.settingsChanged, (settings) => {
@@ -758,17 +773,24 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           watchVoice();
           return;
         }
-        useSidekick.setState({ hearing: null });
-        const { settings, turns, ask } = useSidekick.getState();
-        if (text.trim()) {
-          // Asked with Ask closed: stay compact until the answer comes.
-          const started = sendChat(text, { speak: settings.voice.speakAnswers });
-          if (started && !ask) {
-            useSidekick.setState({ voiceQuestion: text.trim() });
+        const q = text.trim();
+        const { settings, turns, ask, chatId } = useSidekick.getState();
+        if (q) {
+          // A stale chatId makes sendChat no-op and drops the Thinking pill,
+          // leaving a bare idle island (tiny hit rect / lockout).
+          if (chatId) clearInFlightChat();
+          // Asked with Ask closed: Thinking pill first so the hit rect stays live.
+          if (!ask) {
+            useSidekick.setState({ hearing: null, voiceQuestion: q });
             watchVoice();
+          } else {
+            useSidekick.setState({ hearing: null });
           }
-        } else if (byVoice && turns.length === 0 && ask) {
-          void api.askClose();
+          const started = sendChat(q, { speak: settings.voice.speakAnswers });
+          if (!started && !ask) useSidekick.setState({ voiceQuestion: null });
+        } else {
+          useSidekick.setState({ hearing: null });
+          if (byVoice && turns.length === 0 && ask) void api.askClose();
         }
       }),
       listen(EVENTS.aiDelta, ({ id, text }) => {

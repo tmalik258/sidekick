@@ -828,6 +828,12 @@ const CHOICE_WAIT: std::time::Duration = std::time::Duration::from_secs(6);
 /// Suggestions below this priority are not read aloud.
 const SPEAK_FROM_PRIORITY: i32 = 50;
 
+fn suggestion_speech_blocked(app: &AppHandle) -> bool {
+    mascot::current(app) == sidekick_core::MascotState::Listening
+        || lock(&voice(app).speaking).is_some()
+        || !lock(&app.state::<AppState>().chats).is_empty()
+}
+
 /// Reads a suggestion aloud ("Report.pdf downloaded. Say open, show in
 /// folder, or not now.") and takes a spoken choice.
 pub fn offer_spoken(app: &AppHandle, ui: &crate::state::Suggestion, priority: i32) {
@@ -838,6 +844,7 @@ pub fn offer_spoken(app: &AppHandle, ui: &crate::state::Suggestion, priority: i3
         || ui.options.is_empty()
         || ask::is_open(app)
         || *lock(&app.state::<AppState>().island_hidden)
+        || suggestion_speech_blocked(app)
     {
         return;
     }

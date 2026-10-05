@@ -140,6 +140,9 @@ export function Island() {
     !settings.onboarded && !asking && !(voiceStatus?.models.some((m) => m.id === "voice" && m.installed) ?? false);
   // A guide stays open while Sidekick waits on something you finish elsewhere.
   const guiding = !!waiting && !waiting.minimized && (waiting.steps?.length ?? 0) > 0;
+  // Voice with Ask closed: Listening / Thinking pill. Stay non-bare so the
+  // hit rect stays usable (Idle alone would shrink to a pinprick and lock out).
+  const voiceBusy = hearing !== null || voiceQuestion !== null || mascot === "listening";
   const voicePill: { text: string; thinking: boolean; working?: boolean } | null = asking
     ? null
     : voiceQuestion !== null
@@ -149,18 +152,32 @@ export function Island() {
         : working !== null
           ? { text: working, thinking: true, working: true }
           : null;
+  // Suggestions stay normal during thinking — do not gate them on !voicePill.
   const expanded =
     asking ||
     preparingVoice ||
     (hovered && !voicePill) ||
     guiding ||
     (OPEN_STATES.has(mascot) && !voicePill) ||
-    (!!suggestion && !voicePill) ||
+    !!suggestion ||
     (!!netNotice && !voicePill);
   // At rest only the sphere shows. The shell keeps its size (so hover and the
   // orb position do not move) but loses its background.
-  const bare = !expanded && !chatting && !waiting && online && (mascot === "idle" || mascot === "sleeping");
-  const busy = chatting || preparingVoice || mascot === "noticing" || mascot === "working" || mascot === "listening";
+  const bare =
+    !expanded && !chatting && !waiting && !voiceBusy && !working && online && (mascot === "idle" || mascot === "sleeping");
+  const busy =
+    chatting ||
+    preparingVoice ||
+    voiceBusy ||
+    Boolean(working) ||
+    mascot === "noticing" ||
+    mascot === "working";
+
+  // Hover while Thinking: open Ask so the island is usable, not a dead pill.
+  useEffect(() => {
+    if (!intent || quiet || asking || !settings.onboarded || voiceQuestion === null) return;
+    void api.askOpen();
+  }, [intent, quiet, asking, settings.onboarded, voiceQuestion]);
 
   const [contentHeight, setContentHeight] = useState(0);
   const bump = useMotionValue(1);
@@ -266,6 +283,8 @@ export function Island() {
 
   // Number keys must not pick a suggestion while the user is typing.
   useSuggestionKeys(asking ? null : suggestion);
+  // WebView chrome: Ctrl+J is Downloads — not a Sidekick feature.
+  useBlockBrowserKeys();
 
   if (!ready) return null;
 
@@ -708,4 +727,18 @@ function useSuggestionKeys(suggestion: Suggestion | null) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [suggestion]);
+}
+
+/** Stops Chromium/WebView2 browser chrome shortcuts that have no place here. */
+function useBlockBrowserKeys() {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      if (e.key.toLowerCase() !== "j") return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
 }
