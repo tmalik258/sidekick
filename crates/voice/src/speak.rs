@@ -94,7 +94,9 @@ pub fn synthesize(tts: &OfflineTts, text: &str, sid: i32, speed: f32) -> Option<
 
 /// Written how the voice should say it. Supertonic softens "Sidekick" into
 /// something like "cider kick"; "Syde kick" was recognised as the name 5
-/// times in 6 by the wake word model, plain "Sidekick" 0 in 6.
+/// times in 6 by the wake word model, plain "Sidekick" 0 in 6. Mid-line
+/// stops become commas so the model breathes without saying "dot" — and we
+/// keep one synthesize call (splitting clauses stalls on the next synth).
 pub fn respell(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 8);
     let mut rest = text;
@@ -112,6 +114,33 @@ pub fn respell(text: &str) -> String {
         rest = &rest[end..];
     }
     out.push_str(rest);
+    tts_punctuation(&out)
+}
+
+/// `. ` / `! ` / `? ` → `, ` so Supertonic does not say "dot"; trailing
+/// sentence stops are dropped (silence after the clip covers the end).
+fn tts_punctuation(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let prev = i.checked_sub(1).map(|j| chars[j]);
+        let next = chars.get(i + 1).copied();
+        if matches!(c, '.' | '!' | '?')
+            && prev.is_some_and(|p| p.is_alphabetic() || p == '\'' || p == '"')
+            && next == Some(' ')
+        {
+            out.push(',');
+            i += 1;
+            continue;
+        }
+        out.push(c);
+        i += 1;
+    }
+    while matches!(out.chars().last(), Some('.' | '!' | '?')) {
+        out.pop();
+    }
     out
 }
 
@@ -387,8 +416,18 @@ mod tests {
     }
 
     #[test]
+    fn turns_mid_stops_into_commas_so_dot_is_not_said() {
+        assert_eq!(
+            respell("Now, your world. Connect your calendar"),
+            "Now, your world, Connect your calendar"
+        );
+        assert_eq!(respell("I'm Sidekick."), "I'm Syde kick");
+        assert_eq!(respell("Hi! I'm Sidekick."), "Hi, I'm Syde kick");
+    }
+
+    #[test]
     fn respells_the_name_only_as_a_word() {
-        assert_eq!(respell("Hi! I'm Sidekick."), "Hi! I'm Syde kick.");
+        assert_eq!(respell("Hi! I'm Sidekick."), "Hi, I'm Syde kick");
         assert_eq!(respell("hey SIDEKICK, go"), "hey Syde kick, go");
         assert_eq!(respell("sidekicks are fun"), "sidekicks are fun");
         assert_eq!(respell("No name here"), "No name here");

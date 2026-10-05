@@ -9,7 +9,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
-import { backgroundWaiting, minimizeWaiting, stopWaiting, type Waiting } from "@/lib/store";
+import { backgroundWaiting, cancelWaiting, minimizeWaiting, type Waiting } from "@/lib/store";
 
 interface GuideButton {
   label: string;
@@ -65,7 +65,7 @@ export function useGuide(waiting: Waiting | null): Guide {
     if (keyed.length === 0) return;
     void api.guideKeys(keyed.length).catch(() => undefined);
     const off = listen(EVENTS.guideKey, (n) => {
-      if (n === 0) stopWaiting();
+      if (n === 0) cancelWaiting();
       else latest.current[n - 1]?.run();
     });
     return () => {
@@ -117,7 +117,7 @@ export function IslandGuide({ waiting, guide }: { waiting: Waiting; guide: Guide
         ))}
         <button
           type="button"
-          onClick={stopWaiting}
+          onClick={cancelWaiting}
           className="chip ml-auto rounded-full px-2.5 py-1.5 text-[12.5px] text-[rgb(235_235_245/0.6)] hover:text-white"
         >
           Cancel <kbd className="ml-1 font-sans text-[11px] text-white/35">Alt 0</kbd>

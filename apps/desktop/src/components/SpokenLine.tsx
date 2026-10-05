@@ -154,7 +154,7 @@ export function SpokenLine({ step, onDone }: { step: number; onDone: () => void 
   // Only the words heard so far are in the layout, so the island grows
   // with the line instead of opening at its full height.
   const visible = list.slice(0, Math.min(shown, list.length));
-  if (visible.length === 0 && !done.current) return <Thinking />;
+  if (visible.length === 0 && !done.current) return <Thinking step={step} />;
   return (
     <p className="font-display text-[17px] leading-snug tracking-[-0.01em] text-white">
       {/* Screen readers get the whole line at once. */}
@@ -172,22 +172,43 @@ export function SpokenLine({ step, onDone }: { step: number; onDone: () => void 
   );
 }
 
-/** What shows while the voice for a step is being made, so the wait reads
- * as Sidekick getting ready, not as an empty card. */
-const THINKING = [
-  "Gathering my thoughts",
-  "Warming up my voice",
-  "Looking around your PC",
-  "Getting this ready for you",
-  "Almost there",
+/**
+ * While the voice for a step is being made. Phrases match the step so the
+ * wait feels like that part of onboarding, not a generic spinner.
+ * 0 Welcome · 1 Your AI · 2 Connect · 3 Tools · 4 Extras
+ */
+const THINKING: string[][] = [
+  ["Saying hello", "Finding my spot up here", "Keeping everything on this PC", "Almost ready to meet you"],
+  [
+    "Thinking about how I think",
+    "Checking what AI you already have",
+    "Looking for Claude, Codex, a local model",
+    "Lining up how I'll answer",
+  ],
+  [
+    "Looking at your calendar and mail",
+    "Seeing which apps to connect",
+    "Checking the browser and folders",
+    "Getting your world in view",
+  ],
+  [
+    "Finding tools that make me sharper",
+    "Checking Git, OCR and the rest",
+    "Seeing what is already installed",
+    "Picking helpers worth adding",
+  ],
+  ["Getting voice ready", "Quieting Windows toasts", "Checking launch on login", "Almost there"],
 ];
 
-function Thinking() {
+function Thinking({ step }: { step: number }) {
   const [i, setI] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setI((n) => (n + 1) % THINKING.length), 1800);
+    setI(0);
+    const lines = THINKING[step] ?? THINKING[0];
+    const id = setInterval(() => setI((n) => (n + 1) % lines.length), 2200);
     return () => clearInterval(id);
-  }, []);
+  }, [step]);
+  const lines = THINKING[step] ?? THINKING[0];
   return (
     <p className="flex items-center gap-2.5 font-display text-[15px] leading-snug" role="status" aria-live="polite">
       <span className="inline-flex gap-1">
@@ -195,8 +216,8 @@ function Thinking() {
         <span className="thinking-dot" />
         <span className="thinking-dot" />
       </span>
-      <span key={i} className="thinking-words">
-        {THINKING[i]}
+      <span key={`${step}-${i}`} className="thinking-words">
+        {lines[i]}
       </span>
     </p>
   );

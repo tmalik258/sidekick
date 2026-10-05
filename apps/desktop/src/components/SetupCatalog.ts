@@ -56,7 +56,7 @@ export const SETUP_CATALOG: Array<{
     id: "anthropic",
     group: "ai",
     title: "Anthropic API key",
-    why: "Pay as you go. Restart Sidekick after setting it.",
+    why: "Pay as you go. Opens PowerShell with the command ready to paste.",
     recommended: false,
   },
   {
@@ -91,7 +91,7 @@ export const SETUP_CATALOG: Array<{
     id: "browser",
     group: "connect",
     title: "Browser extension",
-    why: "Page summaries, form help, duplicate tabs and saving sessions.",
+    why: "Page help, tabs and sessions on the island.",
     recommended: true,
   },
   {
@@ -109,13 +109,6 @@ export const SETUP_CATALOG: Array<{
     recommended: true,
   },
   {
-    id: "calendar",
-    group: "connect",
-    title: "Calendar",
-    why: "Meeting reminders with Join. Connect it on Composio.",
-    recommended: false,
-  },
-  {
     id: "search_folders",
     group: "connect",
     title: "Folders to search",
@@ -127,13 +120,6 @@ export const SETUP_CATALOG: Array<{
     group: "connect",
     title: "Voice",
     why: 'Say "Hey Sidekick" and hear answers. About 205 MB, all on this PC.',
-    recommended: false,
-  },
-  {
-    id: "fathom",
-    group: "connect",
-    title: "Fathom",
-    why: "Follow-ups from meeting notes. Connect it on Composio.",
     recommended: false,
   },
   {
@@ -220,6 +206,7 @@ export function skeletonItem(entry: (typeof SETUP_CATALOG)[number]): SetupItem {
     runnable: false,
     action: "Install",
     opensApp: false,
+    opensTerminal: false,
     tab: null,
     recommended: entry.recommended,
   };

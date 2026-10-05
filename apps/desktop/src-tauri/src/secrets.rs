@@ -1,12 +1,28 @@
 //! Secrets (the Composio key) live in Windows Credential Manager, never in
 //! the settings file. Elsewhere (development on Linux or macOS) they go in
-//! a file only the user can read.
+//! a file only the user can read. They are stored under the app's product
+//! name, so the dev build ("Sidekick Dev") never reads the installed app's.
 
-const SERVICE: &str = "Sidekick";
+use std::sync::OnceLock;
+
+static SERVICE: OnceLock<String> = OnceLock::new();
+
+/// Called once at startup, before any secret is read or written.
+pub fn init(product_name: &str) {
+    SERVICE
+        .set(product_name.to_owned())
+        .expect("secrets::init called twice");
+}
+
+fn service() -> &'static str {
+    SERVICE
+        .get()
+        .expect("secrets::init was not called at startup")
+}
 
 #[cfg(windows)]
 pub fn get(name: &str) -> Option<String> {
-    keyring::Entry::new(SERVICE, name)
+    keyring::Entry::new(service(), name)
         .ok()?
         .get_password()
         .ok()
@@ -15,14 +31,14 @@ pub fn get(name: &str) -> Option<String> {
 
 #[cfg(windows)]
 pub fn set(name: &str, value: &str) -> Result<(), String> {
-    keyring::Entry::new(SERVICE, name)
+    keyring::Entry::new(service(), name)
         .and_then(|e| e.set_password(value))
         .map_err(|e| format!("could not save to Credential Manager: {e}"))
 }
 
 #[cfg(windows)]
 pub fn delete(name: &str) {
-    if let Ok(e) = keyring::Entry::new(SERVICE, name) {
+    if let Ok(e) = keyring::Entry::new(service(), name) {
         let _ = e.delete_credential();
     }
 }
@@ -33,7 +49,12 @@ fn path(name: &str) -> Option<std::path::PathBuf> {
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
         .collect();
-    Some(dirs::config_dir()?.join(SERVICE).join("secrets").join(safe))
+    Some(
+        dirs::config_dir()?
+            .join(service())
+            .join("secrets")
+            .join(safe),
+    )
 }
 
 #[cfg(not(windows))]

@@ -1,93 +1,92 @@
 "use client";
 
-// Browser extension one-click helper: stage folder, copy path, open extensions page.
+// Browser extension one-click helper: one row per installed browser, each
+// paired on its own. Set up stages the folder, copies the path and opens the
+// browser's extensions page; the island keeps the steps while you finish.
 
-import { useEffect, useState } from "react";
-import { api } from "@/lib/bridge";
+import { useEffect, useRef, useState } from "react";
+import { api, EVENTS, listen } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { installExtension } from "@/lib/store";
-import type { BrowserStatus, ExtensionGuide } from "@/lib/types";
+import type { BrowserStatus } from "@/lib/types";
 
-/** Shared by welcome and Settings > Browser. */
+/** The welcome's browser step (and anywhere the checklist expands it inline). */
 export function BrowserInstallPanel({ onDone }: { onDone?: () => void }) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const [guide, setGuide] = useState<ExtensionGuide | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: browsers, refresh } = useCached<BrowserStatus[]>("browsers", api.browsersStatus);
+  // Already-paired ids when the panel first got data — only onDone for a new pair.
+  const known = useRef<Set<string> | null>(null);
 
-  const { data: browsers } = useCached<BrowserStatus[]>("browsers", api.browsersStatus);
   useEffect(() => {
-    if (!onDone) return;
-    const id = setInterval(() => void onDone(), 6000);
-    return () => clearInterval(id);
-  }, [onDone]);
+    const off = listen(EVENTS.browsersChanged, () => void refresh().catch(() => undefined));
+    return () => {
+      void off.then((f) => f());
+    };
+  }, [refresh]);
 
-  const install = (id: string, name: string) => {
-    setBusy(id);
-    setError(null);
-    // In the welcome the steps stay inline; elsewhere the island keeps them.
-    void installExtension(id, name, { shrink: !onDone })
-      .then((g) => setGuide(g))
-      .catch((e) => setError(String(e)))
-      .finally(() => setBusy(null));
-  };
-
-  const list = browsers && browsers.length > 0 ? browsers : [{ id: "chrome", name: "Chrome", connected: false }];
+  useEffect(() => {
+    if (!browsers) return;
+    if (known.current === null) {
+      known.current = new Set(browsers.filter((b) => b.connected).map((b) => b.id));
+      return;
+    }
+    const fresh = browsers.some((b) => b.connected && !known.current?.has(b.id));
+    for (const b of browsers) {
+      if (b.connected) known.current.add(b.id);
+    }
+    // Once when a browser newly pairs — not on a timer (that pulsed Checking…).
+    if (fresh) onDone?.();
+  }, [browsers, onDone]);
 
   return (
     <div className="flex flex-col gap-2 text-[12px] leading-relaxed text-(--muted)">
-      <p>
-        Sidekick opens your browser and gives you the two things to paste. You still click Load unpacked once (browsers
-        do not allow silent installs).
-      </p>
-      <div className="flex flex-wrap gap-1.5">
-        {list.map((b) => (
-          <button
-            key={b.id}
-            type="button"
-            disabled={busy !== null}
-            onClick={() => install(b.id, b.name)}
-            className="chip self-start rounded-full bg-white px-2.5 py-1 text-[12px] font-medium text-black hover:bg-white/90 disabled:opacity-50"
-          >
-            {busy === b.id ? "Opening..." : b.connected ? `${b.name} (paired)` : `Set up ${b.name}`}
-          </button>
-        ))}
-      </div>
-      {guide && (
-        <ol className="list-decimal space-y-1 pl-4 text-[11px] text-(--muted)">
-          {guide.steps.map((s) => (
-            <li key={s}>{s}</li>
+      <p>Opens the extensions page and copies the path. You Load unpacked once.</p>
+      {browsers === null ? (
+        <div className="h-9" aria-busy="true" />
+      ) : browsers.length === 0 ? (
+        <p>No supported browser found.</p>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {browsers.map((b) => (
+            <BrowserRow key={b.id} browser={b} />
           ))}
-        </ol>
+        </ul>
       )}
-      {guide && (
-        <div className="flex flex-wrap gap-1.5">
-          <CopyButton label="Copy extensions address" text={guide.page} />
-          <CopyButton label="Copy folder path" text={guide.copied} />
-        </div>
-      )}
-      {error && <p className="text-[11px] text-[#ff453a]">{error}</p>}
     </div>
   );
 }
 
-function CopyButton({ label, text }: { label: string; text: string }) {
-  const [copied, setCopied] = useState(false);
+function BrowserRow({ browser }: { browser: BrowserStatus }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const install = () => {
+    setBusy(true);
+    setError(null);
+    void installExtension(browser.id, browser.name)
+      .catch((e) => setError(String(e)))
+      .finally(() => setBusy(false));
+  };
   return (
-    <button
-      type="button"
-      title={text}
-      onClick={() =>
-        void navigator.clipboard
-          .writeText(text)
-          .then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          })
-          .catch(() => undefined)
-      }
-      className="chip rounded-full bg-white/[0.1] px-2.5 py-1 text-[12px] text-white/90 hover:bg-white/[0.16]"
-    >
-      {copied ? "Copied" : label}
-    </button>
+    <li className="flex flex-col gap-1 rounded-xl px-2.5 py-1.5 transition-colors duration-150 hover:bg-white/[0.04]">
+      <div className="flex items-center gap-2.5">
+        <span
+          aria-hidden="true"
+          className={`size-1.5 shrink-0 rounded-full ${browser.connected ? "bg-[#30d158]" : "bg-white/25"}`}
+        />
+        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-white">{browser.name}</span>
+        {browser.connected ? (
+          <span className="text-[12px] text-[#30d158]">Paired</span>
+        ) : (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={install}
+            className="chip rounded-full bg-white px-2.5 py-1 text-[12px] font-medium text-black hover:bg-white/90 disabled:opacity-50"
+          >
+            {busy ? "Opening..." : "Set up"}
+          </button>
+        )}
+      </div>
+      {error && <p className="text-[11px] text-[#ff453a]">{error}</p>}
+    </li>
   );
 }

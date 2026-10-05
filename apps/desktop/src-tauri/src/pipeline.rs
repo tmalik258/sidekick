@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use sidekick_core::{Event, MascotEvent, Pause};
-use sidekick_sensors::{DownloadsSensor, IdleSensor, WindowSensor};
-use tauri::{AppHandle, Manager};
+use sidekick_sensors::{DownloadsSensor, IdleSensor, PAIR_REQUEST, PAIRED, WindowSensor};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::commands;
@@ -78,6 +78,22 @@ async fn handle(app: &AppHandle, mut event: Event) {
         }
         return;
     }
+    // Pairing finished: tell the UI at once (welcome waiting guide, Connections).
+    if event.kind == PAIRED {
+        let _ = app.emit("browsers://changed", ());
+        return;
+    }
+    // Before onboarding is done Sidekick only onboards: the island follows
+    // the window, and the extension can pair. Nothing is stored or suggested.
+    if !lock(&app.state::<AppState>().settings).onboarded {
+        if event.kind == WindowSensor::EVENT_KIND {
+            island::follow_active_monitor(app, &event.payload);
+            island::follow_fullscreen(app, &event.payload);
+        } else if event.kind == PAIR_REQUEST {
+            propose(app, &event);
+        }
+        return;
+    }
     store(app, event.clone()).await;
     search::index_event(app, &event);
     crate::stuck::observe(app, &event);
@@ -128,7 +144,12 @@ async fn handle(app: &AppHandle, mut event: Event) {
         crate::moments::enrich_meeting(app, &mut event);
     }
 
-    if let Some(proposal) = evaluate(app, &event)
+    propose(app, &event);
+}
+
+/// Runs the skills on `event` and offers what matched.
+fn propose(app: &AppHandle, event: &Event) {
+    if let Some(proposal) = evaluate(app, event)
         && !crate::learn::is_muted(app, &proposal.skill_id)
     {
         // Ranking may ask a model, so it runs beside the event loop.

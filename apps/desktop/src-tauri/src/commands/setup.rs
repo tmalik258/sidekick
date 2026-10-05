@@ -125,7 +125,7 @@ pub struct Found {
     composio_signed_in: bool,
     composio_in_claude: bool,
     browsers: Vec<String>,
-    /// Setup steps that can run in one go, missing now.
+    /// Runnable recommended steps safe for welcome **Set up** (not Ollama / gh).
     installable: Vec<crate::setup::SetupItem>,
 }
 
@@ -139,9 +139,15 @@ pub async fn setup_detect(app: AppHandle) -> Found {
     let models = crate::setup::ollama_models(&settings.ai.local.base_url)
         .await
         .unwrap_or_default();
-    let (embed, chat): (Vec<String>, Vec<String>) = models
-        .into_iter()
-        .partition(|m| sidekick_ai::is_embedding_model(m));
+    let mut chat_models = Vec::new();
+    let mut embed_models = Vec::new();
+    for m in models {
+        if sidekick_ai::is_embedding_model(&m) {
+            embed_models.push(m);
+        } else if sidekick_ai::is_chat_model(&m) {
+            chat_models.push(m);
+        }
+    }
     let home = dirs::home_dir().unwrap_or_default();
     let claude_json = std::fs::read_to_string(home.join(".claude.json")).unwrap_or_default();
     let (code_folders, search_folders) = tauri::async_runtime::spawn_blocking(|| {
@@ -152,8 +158,8 @@ pub async fn setup_detect(app: AppHandle) -> Found {
     Found {
         code_folders,
         search_folders,
-        chat_models: chat,
-        embed_models: embed,
+        chat_models,
+        embed_models,
         claude_installed: done("claude_code"),
         claude_hooks: done("claude_hooks"),
         claude_mcp: done("claude_mcp"),
@@ -167,7 +173,9 @@ pub async fn setup_detect(app: AppHandle) -> Found {
             .collect(),
         installable: items
             .into_iter()
-            .filter(|i| i.runnable && !i.done && i.recommended)
+            .filter(|i| {
+                i.runnable && !i.done && i.recommended && crate::setup::welcome_bulk_install(i)
+            })
             .collect(),
     }
 }
@@ -259,44 +267,10 @@ pub fn codex_add_mcp(state: State<'_, AppState>) -> CmdResult<Option<String>> {
     crate::codex_config::add_mcp(&url, &state.mcp_token).map(|b| b.map(|p| p.display().to_string()))
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BrowserStatus {
-    id: String,
-    name: String,
-    /// The extension checked in from this kind of browser recently.
-    connected: bool,
-}
-
 /// Installed browsers and whether the extension is connected in each.
 #[tauri::command]
-pub fn browsers_status(app: AppHandle) -> Vec<BrowserStatus> {
-    let state = app.state::<AppState>();
-    let seen = state.browser.seen();
-    let now = chrono::Utc::now().timestamp();
-    let recent = |name: &str| {
-        seen.iter()
-            .any(|(n, t)| n.eq_ignore_ascii_case(name) && now - t < 7 * 24 * 3600)
-    };
-    executor(&state)
-        .capabilities()
-        .browsers
-        .iter()
-        .map(|b| {
-            let name = b.label().to_owned();
-            // Firefox and Zen report as Firefox.
-            let reported = if b.id == "zen" {
-                "Firefox"
-            } else {
-                name.as_str()
-            };
-            BrowserStatus {
-                connected: recent(reported),
-                id: b.id.clone(),
-                name,
-            }
-        })
-        .collect()
+pub fn browsers_status(app: AppHandle) -> Vec<crate::setup::BrowserStatus> {
+    crate::setup::browsers(&app.state::<AppState>())
 }
 
 /// Opens a browser's extensions page with the extension's path copied.

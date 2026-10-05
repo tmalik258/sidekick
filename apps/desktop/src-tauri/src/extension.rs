@@ -39,12 +39,14 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
 }
 
 /// A folder that stays put across Sidekick updates, so the browser keeps
-/// finding the extension. Refreshed when Sidekick ships a newer one.
+/// finding the extension. Under this build's own local data (dev and the
+/// installed app each have theirs). Refreshed when Sidekick ships a newer one.
 pub fn folder(app: &AppHandle) -> Result<PathBuf, String> {
     let from = shipped(app).ok_or("The extension is missing from this install")?;
-    let to = dirs::data_local_dir()
-        .ok_or("no app data folder")?
-        .join("Sidekick")
+    let to = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
         .join("extension");
     let same = std::fs::read(from.join("manifest.json")).ok()
         == std::fs::read(to.join("manifest.json")).ok()
@@ -117,16 +119,16 @@ pub struct Guide {
 }
 
 pub fn steps(firefox: bool) -> Vec<String> {
-    let open = "If the extensions page is not showing, paste its address into the address bar and press Enter (it is copied).";
     if firefox {
         vec![
-            open.into(),
+            "Sidekick opened the Temporary Extensions page.".into(),
             "Click Load Temporary Add-on.".into(),
-            "Click Copy file path below, paste it into the file box and press Enter.".into(),
+            "Paste the file path (Ctrl+V) into the file box and press Enter — it is copied.".into(),
             "Press Allow on Sidekick's island when it asks.".into(),
             "Firefox forgets temporary add-ons when it restarts; do this again then, or use a signed build.".into(),
         ]
     } else {
+        let open = "If the extensions page is not showing, paste its address into the address bar and press Enter (it is copied).";
         vec![
             open.into(),
             "Turn on Developer mode (top right), then click Load unpacked.".into(),
@@ -134,6 +136,12 @@ pub fn steps(firefox: bool) -> Vec<String> {
             "Press Allow on Sidekick's island when it asks.".into(),
         ]
     }
+}
+
+fn copy_clipboard(text: &str) -> Result<(), String> {
+    arboard::Clipboard::new()
+        .and_then(|mut c| c.set_text(text.to_owned()))
+        .map_err(|e| format!("could not copy to the clipboard: {e}"))
 }
 
 fn spawn_browser(exe: &Path, args: &[String]) -> Result<(), String> {
@@ -161,11 +169,12 @@ pub async fn install(app: &AppHandle, browser: &str) -> Result<Guide, String> {
     }
     .display()
     .to_string();
-    // The address goes first: the browser will not open its own extensions
-    // page when asked by another app, so it is pasted into the address bar.
-    arboard::Clipboard::new()
-        .and_then(|mut c| c.set_text(page.to_owned()))
-        .map_err(|e| format!("could not copy the address: {e}"))?;
+    // The address goes first: Chromium often drops the URL unless the user
+    // pastes it. Firefox and Zen open this tab reliably, so they get the
+    // manifest path on the clipboard after launch instead.
+    if !firefox {
+        copy_clipboard(page)?;
+    }
     let exe = executor(&app.state::<AppState>())
         .capabilities()
         .browser(browser)
@@ -184,6 +193,9 @@ pub async fn install(app: &AppHandle, browser: &str) -> Result<Guide, String> {
     }
     args.push(page.to_owned());
     spawn_browser(Path::new(&exe), &args)?;
+    if firefox {
+        copy_clipboard(&copied)?;
+    }
 
     Ok(Guide {
         copied,

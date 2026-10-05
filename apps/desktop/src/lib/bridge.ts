@@ -66,6 +66,7 @@ export const EVENTS = {
   voiceDownload: "voice://download",
   suggestionLater: "suggestion://later",
   composioChanged: "composio://changed",
+  browsersChanged: "browsers://changed",
   guideKey: "guide://key",
   voiceWelcome: "voice://welcome",
   netStatus: "net://status",
@@ -96,6 +97,7 @@ export interface EventPayloads {
   [EVENTS.voiceDownload]: VoiceDownload;
   [EVENTS.suggestionLater]: number;
   [EVENTS.composioChanged]: { ok: boolean; message: string };
+  [EVENTS.browsersChanged]: null;
   [EVENTS.guideKey]: number;
   [EVENTS.voiceWelcome]: WelcomeSpeech;
 }

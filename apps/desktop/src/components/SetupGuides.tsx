@@ -44,8 +44,6 @@ export function ItemGuide({ id, onDone }: { id: string; onDone: () => void }) {
     case "voice":
       return <VoiceGuide onDone={onDone} />;
     case "composio":
-    case "calendar":
-    case "fathom":
       return <ComposioGuide onDone={onDone} />;
     default:
       return (
@@ -225,11 +223,7 @@ function ComposioGuide({ onDone }: { onDone: () => void }) {
         setNote("Finish in your browser: sign in and press Allow.");
         startWaiting("composio", "Composio", {
           resumeTab: "connections",
-          steps: [
-            "Composio opened in your browser.",
-            "Sign in and press Allow, the same as in Claude.",
-            "Come back here; every app you connected there shows up by itself.",
-          ],
+          steps: ["Composio opened in your browser.", "Sign in and press Allow."],
           again: connect,
         });
       })

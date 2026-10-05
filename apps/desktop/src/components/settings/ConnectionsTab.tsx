@@ -8,6 +8,7 @@ import { api, EVENTS, listen } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { installExtension, startWaiting, updateSettings, useSidekick } from "@/lib/store";
 import type { BrowserInfo, BrowserStatus, CalendarToday, ComposioStatus, ExtensionGuide } from "@/lib/types";
+import { ComposioApps } from "./ComposioApps";
 import { Button, CopyButton, Field, Section, Select, TextField, Toggle } from "./ui";
 
 export function ConnectionsTab({ onError }: { onError: (e: string) => void }) {
@@ -36,7 +37,6 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
   const { data: status, refresh: reload } = useCached<ComposioStatus>("composio-status", api.composioStatus);
   const [waiting, setWaiting] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-  const [connecting, setConnecting] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const refresh = useCallback(() => {
     setBusy(true);
@@ -47,7 +47,6 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
   useEffect(() => {
     const off = listen(EVENTS.composioChanged, ({ ok, message }) => {
       setWaiting(false);
-      setConnecting(null);
       setNote(message);
       if (!ok) onError(message);
       refresh();
@@ -65,11 +64,7 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
       .then(() =>
         startWaiting("composio", "Composio", {
           resumeTab: "connections",
-          steps: [
-            "Composio opened in your browser.",
-            "Sign in and press Allow, the same as in Claude.",
-            "Come back here; every app you connected there shows up by itself.",
-          ],
+          steps: ["Composio opened in your browser.", "Sign in and press Allow."],
           again: signIn,
         }),
       )
@@ -109,7 +104,6 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
   }
 
   const connected = status.apps.filter((a) => a.connected || justDone === `app:${a.slug}`);
-  const missing = status.apps.filter((a) => !a.connected && a.why && justDone !== `app:${a.slug}`);
   return (
     <div className="flex flex-col gap-3 text-[13px]">
       <div className="flex items-center gap-3">
@@ -139,62 +133,7 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
       {status.error && (
         <p className="text-[12px] text-(--muted)">Could not check just now, showing the last list. {status.error}</p>
       )}
-      {connected.length > 0 && (
-        <ul className="flex flex-wrap gap-1.5">
-          {connected.map((a) => (
-            <li
-              key={a.slug}
-              title={a.why || undefined}
-              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12.5px] ${
-                justDone === `app:${a.slug}` ? "bg-[#30d158]/25" : "bg-black/5 dark:bg-white/10"
-              }`}
-            >
-              <span className="size-1.5 rounded-full bg-[#30d158]" />
-              {a.name}
-            </li>
-          ))}
-        </ul>
-      )}
-      {missing.length > 0 && (
-        <details className="text-[12.5px]">
-          <summary className="cursor-pointer text-(--muted)">
-            Sidekick can also use {missing.map((a) => a.name).join(", ")}
-          </summary>
-          <ul className="mt-2 flex flex-col gap-1.5">
-            {missing.map((a) => (
-              <li key={a.slug} className="flex items-center gap-2.5 rounded-xl border border-(--border) px-2.5 py-2">
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{a.name}</span>
-                  <span className="block truncate text-[11px] text-(--muted)">{a.why}</span>
-                </span>
-                <Button
-                  small
-                  disabled={connecting === a.slug}
-                  onClick={() => {
-                    setConnecting(a.slug);
-                    setNote(`Finish connecting ${a.name} in the browser.`);
-                    startWaiting(`app:${a.slug}`, a.name, {
-                      resumeTab: "connections",
-                      steps: [
-                        `${a.name} opened in your browser.`,
-                        "Sign in and allow access.",
-                        "Come back here; it shows up by itself.",
-                      ],
-                      again: () => void api.composioConnect(a.slug).catch(() => undefined),
-                    });
-                    api.composioConnect(a.slug).catch((e) => {
-                      setConnecting(null);
-                      onError(String(e));
-                    });
-                  }}
-                >
-                  {connecting === a.slug ? "Waiting..." : "Add"}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
+      <ComposioApps status={status} onError={onError} resumeTab="connections" />
       {note && <p className="text-[12px] text-(--muted)">{note}</p>}
       <Meetings onError={onError} />
       <Toggle
@@ -337,8 +276,13 @@ function Meetings({ onError }: { onError: (e: string) => void }) {
 function BrowserCard() {
   const [guide, setGuide] = useState<{ id: string; guide: ExtensionGuide } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // While a browser is being set up, watch for the extension to connect.
-  const { data: browsers } = useCached<BrowserStatus[]>("browsers", api.browsersStatus, guide ? 3000 : undefined);
+  const { data: browsers, refresh } = useCached<BrowserStatus[]>("browsers", api.browsersStatus);
+  useEffect(() => {
+    const off = listen(EVENTS.browsersChanged, () => void refresh().catch(() => undefined));
+    return () => {
+      void off.then((f) => f());
+    };
+  }, [refresh]);
   useEffect(() => {
     if (guide && browsers?.some((b) => b.id === guide.id && b.connected)) setGuide(null);
   }, [browsers, guide]);

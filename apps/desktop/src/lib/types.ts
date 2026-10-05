@@ -289,7 +289,7 @@ export const DEFAULT_SETTINGS: Settings = {
   muted: false,
   masterVolume: 0.6,
   cueVolumes: {},
-  collapseAfterSecs: 8,
+  collapseAfterSecs: 6,
   launchAtLogin: true,
   sensors: {},
   pause: { kind: "none" },
@@ -444,6 +444,8 @@ export interface SetupItem {
   action: string;
   /** "Run" opens the installed app instead of a terminal window. */
   opensApp: boolean;
+  /** Opens a terminal and copies the command for the user to paste. */
+  opensTerminal: boolean;
   tab: string | null;
   recommended: boolean;
 }

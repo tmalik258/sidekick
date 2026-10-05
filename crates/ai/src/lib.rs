@@ -23,7 +23,8 @@ pub use codex::Codex;
 pub use decide::{Decider, Decision, DecisionOption, LocalDecider, Ranked, SemIf};
 pub use mcp::{McpClient, McpTool};
 pub use openai::{
-    MAX_TOOL_STEPS, OpenAiCompat, ToolChatEnd, first_chat_model, is_embedding_model, strip_thinking,
+    MAX_TOOL_STEPS, OpenAiCompat, ToolChatEnd, first_chat_model, is_chat_model, is_embedding_model,
+    is_vision_model, strip_thinking,
 };
 pub use router::{Answer, Router};
 use serde::{Deserialize, Serialize};

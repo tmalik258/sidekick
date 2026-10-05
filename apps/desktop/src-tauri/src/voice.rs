@@ -33,11 +33,11 @@ pub const WELCOME_EVENT: &str = "voice://welcome";
 /// Punctuation is the direction: the voice lifts on "!" and "?" and
 /// breathes at commas.
 pub const WELCOME_LINES: [&str; 5] = [
-    "Hey there! Welcome to the future! I'm Sidekick, your personal AI assistant. I had a quick look around, and here's what I found. Let's get you set up.",
-    "First, my brain. I can think with Claude, or with a model that runs right here on your PC. Pick what you have, and I'll handle the rest.",
+    "Hey — I'm Sidekick. I live up here with you on this PC. I notice things, I help when you want, and I stay put: nothing leaves this machine, and I wait for your okay.",
+    "First, how I think. If you want everything to stay on this PC, you can run a local model — only if your machine is up for it. Or use Claude Code or Codex with the plan you already have. You can use any of them, or all three, and set the order I try.",
     "Now, your world. Connect your calendar, your mail and the tools you use, and I'll start noticing what matters.",
     "A few small helpers make me sharper. Install the ones you want, and I'll wait while they finish.",
-    "Almost there. Talk to me anytime, just say Hey Sidekick. And I can start with Windows, so I'm here when you are.",
+    "Welcome aboard. Say Hey Sidekick whenever you need me. Do Not Disturb is on so Windows stays quiet and alerts show once up here. Launch on login is already on, so I'm here when you sit down.",
 ];
 
 /// When each sentence of the welcome line sounds, in Unix milliseconds, so
@@ -82,6 +82,9 @@ struct Key {
     wake_word: bool,
     voice: String,
     speed: f32,
+    /// The microphone opens only once onboarding is done; until then
+    /// Sidekick speaks the welcome but never listens.
+    listen: bool,
 }
 
 struct Runtime {
@@ -226,10 +229,10 @@ fn emit_state(app: &AppHandle) {
 
 /// Starts, rebuilds or stops the voice runtime to match settings and pause.
 pub fn refresh(app: &AppHandle) {
-    let (settings, paused) = {
+    let (settings, paused, onboarded) = {
         let state = app.state::<AppState>();
         let s = lock(&state.settings);
-        (s.voice.clone(), s.pause.is_active(Utc::now()))
+        (s.voice.clone(), s.pause.is_active(Utc::now()), s.onboarded)
     };
     let v = voice(app);
     let wanted = settings.enabled && !paused && models::all_installed(&v.models);
@@ -248,6 +251,7 @@ pub fn refresh(app: &AppHandle) {
         wake_word: settings.wake_word,
         voice: settings.voice.clone(),
         speed: settings.speed,
+        listen: onboarded,
     };
     if lock(&v.runtime).as_ref().is_some_and(|r| r.key == key) {
         return;
@@ -279,6 +283,54 @@ pub fn refresh(app: &AppHandle) {
         // Settings may have changed while loading.
         refresh(&app);
     });
+}
+
+/// How often the echo guard checks whether Sidekick is speaking.
+const ECHO_CHECK: std::time::Duration = std::time::Duration::from_millis(50);
+/// The room still rings a moment after the speakers go quiet.
+const ECHO_TAIL: std::time::Duration = std::time::Duration::from_millis(400);
+
+/// Keeps the microphone deaf while Sidekick's own voice plays, so a line
+/// like "just say Hey Sidekick" never wakes it. Runs for the whole process.
+/// Only changes are sent (and the current state to a newly built listener):
+/// a push to talk right after speaking unmutes and must stay unmuted.
+pub fn start_echo_guard(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::Builder::new()
+        .name("sidekick-echo-guard".into())
+        .spawn(move || {
+            let mut quiet_since: Option<std::time::Instant> = None;
+            // The listener told last, and what it was told.
+            let mut told: Option<(usize, bool)> = None;
+            loop {
+                std::thread::sleep(ECHO_CHECK);
+                let v = voice(&app);
+                let greeting = lock(&v.greeter).as_ref().is_some_and(Speaker::busy);
+                let runtime = lock(&v.runtime);
+                let Some(listener) = runtime.as_ref().and_then(|r| r.listener.as_ref()) else {
+                    told = None;
+                    continue;
+                };
+                let speaking = greeting
+                    || runtime
+                        .as_ref()
+                        .and_then(|r| r.speaker.as_ref())
+                        .is_some_and(Speaker::busy);
+                let muted = if speaking {
+                    quiet_since = None;
+                    true
+                } else {
+                    let since = *quiet_since.get_or_insert_with(std::time::Instant::now);
+                    since.elapsed() < ECHO_TAIL
+                };
+                let id = std::ptr::from_ref(listener) as usize;
+                if told != Some((id, muted)) {
+                    listener.send(Control::Mute(muted));
+                    told = Some((id, muted));
+                }
+            }
+        })
+        .expect("could not start the echo guard thread");
 }
 
 /// True when the voice model is on disk and can speak the welcome line.
@@ -544,17 +596,21 @@ fn build(app: &AppHandle, key: Key, settings: &VoiceSettings) -> Runtime {
         }
     };
     let handle = app.clone();
-    let listener = match Listener::start(
-        ListenerConfig {
-            models: v.models.clone(),
-            wake_word: settings.wake_word,
-        },
-        move |heard| on_heard(&handle, heard),
-    ) {
-        Ok(l) => Some(l),
-        Err(e) => {
-            errors.push(format!("Microphone: {e}"));
-            None
+    let listener = if !key.listen {
+        None
+    } else {
+        match Listener::start(
+            ListenerConfig {
+                models: v.models.clone(),
+                wake_word: settings.wake_word,
+            },
+            move |heard| on_heard(&handle, heard),
+        ) {
+            Ok(l) => Some(l),
+            Err(e) => {
+                errors.push(format!("Microphone: {e}"));
+                None
+            }
         }
     };
     *lock(&v.last_error) = (!errors.is_empty()).then(|| errors.join(" "));
@@ -768,9 +824,15 @@ fn listen_after_speaking(
 
 const MAX_SPEECH: std::time::Duration = std::time::Duration::from_secs(90);
 /// How long a spoken suggestion waits for an answer.
-const CHOICE_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
+const CHOICE_WAIT: std::time::Duration = std::time::Duration::from_secs(6);
 /// Suggestions below this priority are not read aloud.
 const SPEAK_FROM_PRIORITY: i32 = 50;
+
+fn suggestion_speech_blocked(app: &AppHandle) -> bool {
+    mascot::current(app) == sidekick_core::MascotState::Listening
+        || lock(&voice(app).speaking).is_some()
+        || !lock(&app.state::<AppState>().chats).is_empty()
+}
 
 /// Reads a suggestion aloud ("Report.pdf downloaded. Say open, show in
 /// folder, or not now.") and takes a spoken choice.
@@ -782,6 +844,7 @@ pub fn offer_spoken(app: &AppHandle, ui: &crate::state::Suggestion, priority: i3
         || ui.options.is_empty()
         || ask::is_open(app)
         || *lock(&app.state::<AppState>().island_hidden)
+        || suggestion_speech_blocked(app)
     {
         return;
     }

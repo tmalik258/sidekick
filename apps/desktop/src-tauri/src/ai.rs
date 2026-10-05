@@ -82,6 +82,7 @@ fn providers(app: &AppHandle, ai: &AiSettings, all: bool) -> Vec<Arc<dyn AiProvi
                 )),
             })),
             "anthropic" if all || ai.anthropic.enabled => {
+                crate::setup::refresh_user_env("ANTHROPIC_API_KEY");
                 out.push(Arc::new(Anthropic::new(Some(ai.anthropic.model.clone()))))
             }
             "local" if all || ai.local.enabled => out.push(Arc::new(local_model(ai))),

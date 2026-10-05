@@ -282,11 +282,9 @@ fn spawn_hover_tracker(app: AppHandle, window: WebviewWindow) {
             state
                 .hovered
                 .store(inside, std::sync::atomic::Ordering::Relaxed);
+            // The UI decides what hover shows (a waiting guide, or the
+            // parked welcome), after its hover-intent delay.
             let _ = app.emit_to(LABEL, HOVER_EVENT, inside);
-            // Hide parks welcome; hovering the compact island brings it back.
-            if inside {
-                crate::ask::on_island_hover(&app);
-            }
         }
     });
 }

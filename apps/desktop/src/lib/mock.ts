@@ -277,7 +277,7 @@ function mockChat(a: Record<string, unknown>) {
   const answer: string = formatted
     ? "Here is the plan for **Friday**:\n\n1. Send the invoice to **Ali** by 10:00\n2. Review the *Upwork* proposal\n3. Book the dentist\n\nCosts so far:\n\n| Item | Amount |\n| --- | --- |\n| Hosting | **$24** |\n| Domain | $12 |\n\n- Invoice is in [invoice-sept.pdf](C:\\Users\\you\\Downloads\\invoice-sept.pdf)\n- Notes are in [Projects](C:\\Users\\you\\Projects\\)\nOPTION: Draft the email to Ali"
     : /sidekick/i.test(last)
-      ? "Found it: [Sidekick's app folder](/C:/Users/you/AppData/Roaming/dev.sidekick.app), changed today. Its settings are in [settings.json](C:\\Users\\you\\AppData\\Roaming\\dev.sidekick.app\\settings.json).\nOPTION: Open the folder\nOPTION: Show settings.json"
+      ? "Found it: [Sidekick's app folder](/C:/Users/you/AppData/Roaming/app.sidekick.desktop), changed today. Its settings are in [settings.json](C:\\Users\\you\\AppData\\Roaming\\app.sidekick.desktop\\settings.json).\nOPTION: Open the folder\nOPTION: Show settings.json"
       : `Found invoice-sept.pdf in Downloads, from Ali on Tuesday (preview, you asked "${last}").\nOPTION: Open invoice-sept.pdf\nOPTION: Show the folder\nOPTION: Find other invoices`;
   // Formatted answers arrive in bursts, like Claude Code's whole sentences.
   const words = formatted ? (answer.match(/[\s\S]{1,90}/g) ?? [answer]) : answer.split(/(?<=\s)/);
@@ -403,6 +403,7 @@ commands.setup_status = () => {
       runnable?: boolean;
       action?: string;
       opensApp?: boolean;
+      opensTerminal?: boolean;
       tab?: string;
       recommended?: boolean;
     } = {},
@@ -417,6 +418,7 @@ commands.setup_status = () => {
     runnable: extra.runnable ?? false,
     action: extra.action ?? "Install",
     opensApp: extra.opensApp ?? false,
+    opensTerminal: extra.opensTerminal ?? false,
     tab: extra.tab ?? null,
     recommended: extra.recommended ?? false,
   });
@@ -434,9 +436,20 @@ commands.setup_status = () => {
         action: "Download",
         recommended: true,
       }),
-      item("anthropic", "ai", "Anthropic API key", "Pay as you go instead of a Claude plan.", false, "Not set", {
-        command: 'setx ANTHROPIC_API_KEY "your-key"',
-      }),
+      item(
+        "anthropic",
+        "ai",
+        "Anthropic API key",
+        "Pay as you go. Opens PowerShell with the command ready to paste.",
+        false,
+        "",
+        {
+          command: 'setx ANTHROPIC_API_KEY "your-key"',
+          runnable: true,
+          action: "Open terminal",
+          opensTerminal: true,
+        },
+      ),
       item(
         "claude_hooks",
         "connect",
@@ -450,18 +463,26 @@ commands.setup_status = () => {
           recommended: true,
         },
       ),
-      item("browser", "connect", "Browser extension", "Page summaries, form help and tabs.", false, "Not paired", {
-        tab: "browser",
-        recommended: true,
-      }),
       item(
-        "calendar",
+        "browser",
         "connect",
-        "Calendar",
-        "Meeting reminders with Join and Prep.",
+        "Browser extension",
+        "Page help, tabs and sessions on the island.",
+        false,
+        "Not paired",
+        {
+          tab: "browser",
+          recommended: true,
+        },
+      ),
+      item(
+        "composio",
+        "connect",
+        "Composio",
+        "One sign-in for your calendar, mail, Slack and more.",
         Boolean(settings.composio.account),
         settings.composio.account ? "Connected" : "Not connected",
-        { tab: "connections" },
+        { tab: "connections", recommended: true },
       ),
       item("gh", "tools", "GitHub CLI", "Open PRs in the morning brief.", false, "Not installed", {
         command: w("GitHub.cli"),
@@ -580,7 +601,7 @@ commands.browsers_status = () => [
 commands.extension_install = (a) => {
   later(4000, () => browsersSeen.add(a.browser as string));
   return {
-    copied: "C:\\Users\\you\\AppData\\Local\\Sidekick\\extension",
+    copied: "C:\\Users\\you\\AppData\\Local\\app.sidekick.desktop\\extension",
     page: "chrome://extensions/",
     steps: [
       "If the extensions page is not showing, paste its address into the address bar and press Enter (it is copied).",
@@ -678,11 +699,11 @@ commands.voice_stop = () => {
 };
 // The welcome line as Rust would report it while it is spoken.
 const WELCOME_LINES = [
-  "Hey there! Welcome to the future! I'm Sidekick, your personal AI assistant. I had a quick look around, and here's what I found. Let's get you set up.",
-  "First, my brain. I can think with Claude, or with a model that runs right here on your PC. Pick what you have, and I'll handle the rest.",
+  "Hey — I'm Sidekick. I live up here with you on this PC. I notice things, I help when you want, and I stay put: nothing leaves this machine, and I wait for your okay.",
+  "First, how I think. If you want everything to stay on this PC, you can run a local model — only if your machine is up for it. Or use Claude Code or Codex with the plan you already have. You can use any of them, or all three, and set the order I try.",
   "Now, your world. Connect your calendar, your mail and the tools you use, and I'll start noticing what matters.",
   "A few small helpers make me sharper. Install the ones you want, and I'll wait while they finish.",
-  "Almost there. Talk to me anytime, just say Hey Sidekick. And I can start with Windows, so I'm here when you are.",
+  "Welcome aboard. Say Hey Sidekick whenever you need me. Do Not Disturb is on so Windows stays quiet and alerts show once up here. Launch on login is already on, so I'm here when you sit down.",
 ];
 let welcome: WelcomeSpeech = {
   step: 0,

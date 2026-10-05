@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { friendlyError } from "@/lib/friendly";
+import { useScrollEdge } from "@/lib/hooks";
 import { useSidekick } from "@/lib/store";
 import { AiTab } from "./settings/AiTab";
 import { ConnectionsTab } from "./settings/ConnectionsTab";
@@ -54,7 +55,15 @@ export function SettingsPanel() {
   const ready = useSidekick((s) => s.ready);
   const [tab, setTab] = useState<SettingsTab>(() => recent()?.tab ?? "home");
   const [query, setQuery] = useState("");
-  const scroller = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement | null>(null);
+  const edges = useScrollEdge();
+  const scrollerRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      scroller.current = el;
+      edges(el);
+    },
+    [edges],
+  );
   const tabRef = useRef(tab);
   tabRef.current = tab;
   // Kept as it scrolls: the element is already gone when unmounting.
@@ -116,8 +125,8 @@ export function SettingsPanel() {
   const show = (id: SettingsTab) => searching || tab === id;
 
   return (
-    <div className="island-settings flex flex-col">
-      <div className="flex flex-col gap-2 pb-2.5">
+    <div className="island-settings flex min-h-0 flex-auto flex-col">
+      <div className="flex shrink-0 flex-col gap-2 pb-2.5">
         <input
           type="search"
           value={query}
@@ -151,7 +160,7 @@ export function SettingsPanel() {
       {error && (
         <p
           role="alert"
-          className="mb-2 flex items-start justify-between gap-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300"
+          className="mb-2 flex shrink-0 items-start justify-between gap-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300"
         >
           <span className="min-w-0 break-words">{error}</span>
           <button type="button" onClick={() => setError(null)} aria-label="Hide" className="shrink-0 opacity-70">
@@ -162,11 +171,11 @@ export function SettingsPanel() {
 
       <SettingsQuery.Provider value={query.trim()}>
         <div
-          ref={scroller}
+          ref={scrollerRef}
           onScroll={(e) => {
             scrolled.current = e.currentTarget.scrollTop;
           }}
-          className="settings-scroll -mr-3 flex max-h-[430px] flex-col gap-5 overflow-y-auto pr-3 pl-0.5 pb-3"
+          className="settings-scroll -mr-3 flex min-h-0 flex-auto flex-col gap-5 overflow-y-auto pr-3 pl-0.5 pb-3"
         >
           {show("home") && <HomeTab onError={report} onOpenTab={open} />}
           {show("ai") && <AiTab onError={report} />}

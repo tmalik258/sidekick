@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Expression } from "@/components/orb/expressions";
 import { api, EVENTS, listen } from "./bridge";
+import { putCached, SETUP_STATUS_CACHE_KEY } from "./cache";
 import { firstToday, isThanks, type Mood, moodForSkill, SUGGESTION_MOOD_MS } from "./mood";
 import { type NetNotice, watchNet } from "./net";
 import { cueVolume, playCue, playMood, playSound, preloadSounds } from "./sound";
@@ -20,7 +21,6 @@ import {
   type UpdateInfo,
   type VoiceStatus,
 } from "./types";
-import { welcomeHeard } from "./welcomeVoice";
 
 interface SidekickState {
   mascot: MascotState;
@@ -103,14 +103,13 @@ export interface Waiting {
 }
 
 export interface WaitOptions {
-  shrink?: boolean;
   resumeTab?: string;
   steps?: string[];
   copies?: { label: string; text: string }[];
   again?: () => void;
   /** Browser id for per-browser extension waiting. */
   target?: string;
-  /** When false, the guide starts expanded. Default is minimized. */
+  /** When true, skip the initial expanded guide (steps only). */
   minimized?: boolean;
   doneLine?: string;
 }
@@ -186,9 +185,12 @@ export const useSidekick = create<SidekickState>(() => ({
 /** Give up waiting after this long. */
 const WAIT_LIMIT_MS = 10 * 60_000;
 const WAIT_POLL_MS = 3000;
+/** After Set up, keep the step guide open before shrinking to the pill. */
+const GUIDE_HOLD_MS = 5000;
 
 /** Settings tab to open once a waited-for step finishes (post-onboarding). */
 let resumeSettingsTab: string | null = null;
+let guideHoldTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
  * Shrinks to a "Waiting for …" pill while a step is finished elsewhere
@@ -197,28 +199,63 @@ let resumeSettingsTab: string | null = null;
 export function startWaiting(
   id: string,
   label: string,
-  { shrink = true, resumeTab, steps, copies, again, target, minimized = true, doneLine }: WaitOptions = {},
+  { resumeTab, steps, copies, again, target, minimized = false, doneLine }: WaitOptions = {},
 ) {
+  if (guideHoldTimer) {
+    clearTimeout(guideHoldTimer);
+    guideHoldTimer = null;
+  }
+  const since = Date.now();
+  const hasSteps = (steps?.length ?? 0) > 0;
+  const startMinimized = hasSteps ? minimized : true;
   useSidekick.setState({
-    waiting: { id, label, since: Date.now(), resumeTab, steps, copies, again, target, minimized, doneLine },
+    waiting: {
+      id,
+      label,
+      since,
+      resumeTab,
+      steps,
+      copies,
+      again,
+      target,
+      minimized: startMinimized,
+      doneLine,
+    },
   });
+  if (hasSteps && !startMinimized) {
+    guideHoldTimer = setTimeout(() => {
+      guideHoldTimer = null;
+      const waiting = useSidekick.getState().waiting;
+      if (waiting?.id === id && waiting.since === since) minimizeWaiting(true);
+    }, GUIDE_HOLD_MS);
+  }
   // ask_defer_welcome parks welcome, or closes Settings/Ask when already onboarded.
-  if (shrink) void api.askDeferWelcome();
+  void api.askDeferWelcome();
 }
 
 export function stopWaiting() {
+  if (guideHoldTimer) {
+    clearTimeout(guideHoldTimer);
+    guideHoldTimer = null;
+  }
   useSidekick.setState({ waiting: null });
+}
+
+/** The guide's Cancel: stop waiting, and carry on with the welcome if unfinished. */
+export function cancelWaiting() {
+  stopWaiting();
+  const { settings, ask } = useSidekick.getState();
+  if (!settings.onboarded && !ask) void api.askResumeWelcome();
 }
 
 /**
  * Opens a browser's extensions page and keeps the steps on the island until
  * the extension connects. Shared by the welcome and Settings.
  */
-export async function installExtension(id: string, name: string, { shrink = true } = {}): Promise<ExtensionGuide> {
+export async function installExtension(id: string, name: string): Promise<ExtensionGuide> {
   const guide = await api.extensionInstall(id);
   const firefox = guide.page.startsWith("about:");
   startWaiting("browser", `the ${name} extension`, {
-    shrink,
     resumeTab: "connections",
     target: id,
     steps: guide.steps,
@@ -226,7 +263,7 @@ export async function installExtension(id: string, name: string, { shrink = true
       { label: "Copy extensions address", text: guide.page },
       { label: firefox ? "Copy file path" : "Copy folder path", text: guide.copied },
     ],
-    again: () => void installExtension(id, name, { shrink }).catch(() => undefined),
+    again: () => void installExtension(id, name).catch(() => undefined),
   });
   return guide;
 }
@@ -244,23 +281,83 @@ export function backgroundWaiting() {
   if (waiting) useSidekick.setState({ waiting: { ...waiting, minimized: true, background: true } });
 }
 
-/** Marks a waited-for step done: speak, highlight, reopen welcome or Settings. */
+/** How long the island keeps the Done card after a waited step. */
+const JUST_DONE_MS = 3000;
+
+/** Marks a waited-for step done: speak, show island Done, then reopen welcome or Settings. */
 export function finishWaiting(waiting: Waiting, line: string) {
   if (useSidekick.getState().waiting?.id !== waiting.id) return;
   stopWaiting();
-  useSidekick.setState({ justDone: waiting.id });
-  setTimeout(() => {
-    if (useSidekick.getState().justDone === waiting.id) useSidekick.setState({ justDone: null });
-  }, 6000);
   const { settings } = useSidekick.getState();
   playCue("ding", cueVolume(settings, "ding"), settings.soundKit);
   void api.voiceSay(line);
-  if (settings.onboarded) {
-    resumeSettingsTab = waiting.resumeTab ?? "home";
-    void api.openSettings();
-  } else {
-    void api.askResumeWelcome();
-  }
+
+  // Island Done / All set (mascot success) — not only the orb celebrate face.
+  // Welcome/Settings reopen after this so the card is actually visible.
+  const detail = line.replace(/^Done\.\s*/i, "").trim() || `${waiting.label} is connected.`;
+  useSidekick.setState({
+    justDone: waiting.id,
+    mascot: "success",
+    lastResult: { ok: true, message: detail, path: null, auto: false, undoId: null },
+  });
+  setMood("celebrate", JUST_DONE_MS);
+
+  const openPanel = () => {
+    if (useSidekick.getState().justDone === waiting.id) {
+      useSidekick.setState({ justDone: null });
+    }
+    if (useSidekick.getState().mascot === "success") {
+      useSidekick.setState({ mascot: "idle", lastResult: null });
+    }
+    if (settings.onboarded) {
+      resumeSettingsTab = waiting.resumeTab ?? "home";
+      void api.openSettings();
+    } else {
+      void api.askResumeWelcome();
+    }
+  };
+
+  // Prime caches while Done shows; do not open the panel until the hold is up.
+  const caches = Promise.all([
+    api.setupStatus().then((s) => putCached(SETUP_STATUS_CACHE_KEY, s)),
+    api.browsersStatus().then((b) => putCached("browsers", b)),
+    api.composioStatus().then((s) => {
+      if (waiting.id.startsWith("app:")) {
+        const slug = waiting.id.slice("app:".length);
+        putCached("composio-status", {
+          ...s,
+          apps: s.apps.map((a) => (a.slug === slug ? { ...a, connected: true } : a)),
+        });
+      } else {
+        putCached("composio-status", s);
+      }
+    }),
+  ]).catch(() => undefined);
+
+  void Promise.all([caches, new Promise<void>((r) => setTimeout(r, JUST_DONE_MS))]).then(openPanel);
+}
+
+/** Finish a browser wait the moment pairing is allowed (no 3s poll lag). */
+function onBrowsersChanged() {
+  void api
+    .setupStatus()
+    .then((s) => putCached(SETUP_STATUS_CACHE_KEY, s))
+    .catch(() => undefined);
+
+  const waiting = useSidekick.getState().waiting;
+  if (waiting?.id !== "browser" || !waiting.target) return;
+  const target = waiting.target;
+  const name = waiting.label.charAt(0).toUpperCase() + waiting.label.slice(1);
+  void api
+    .browsersStatus()
+    .then((browsers) => {
+      putCached("browsers", browsers);
+      if (useSidekick.getState().waiting?.id !== waiting.id) return;
+      if (browsers.some((b) => b.id === target && b.connected)) {
+        finishWaiting(waiting, `Done. ${name} is connected.`);
+      }
+    })
+    .catch(() => undefined);
 }
 
 /** Checks the step being waited for; done or too long brings the panel back. */
@@ -484,6 +581,12 @@ export function cancelChat() {
   void api.voiceStop();
 }
 
+/** Ends an in-flight chat so a new voice turn can start (clears chatId). */
+function clearInFlightChat() {
+  cancelChat();
+  if (useSidekick.getState().chatId) useSidekick.setState({ chatId: null });
+}
+
 /** Push to talk: listen now, no wake word needed. */
 export function startListening() {
   useSidekick.setState({ hearing: "" });
@@ -519,6 +622,13 @@ function watchVoice() {
 export function stopListening() {
   useSidekick.setState({ hearing: null });
   void api.voiceStop();
+}
+
+/** Chirp/Pop while listening or waiting on a voice answer would talk over the user. */
+function muteSuggestionCue(state: MascotState, previous: MascotState | null): boolean {
+  const { hearing, voiceQuestion } = useSidekick.getState();
+  if (hearing !== null || voiceQuestion !== null) return true;
+  return state === "listening" || previous === "listening";
 }
 
 export function newChat() {
@@ -567,7 +677,9 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       listen(EVENTS.mascotState, (t) => {
         useSidekick.setState({ mascot: t.state });
         const { settings } = useSidekick.getState();
-        if (sounds && t.cue) playCue(t.cue, cueVolume(settings, t.cue), settings.soundKit);
+        const suggestionCue = t.cue === "chirp" || t.cue === "pop";
+        const skipCue = suggestionCue && muteSuggestionCue(t.state, t.previous);
+        if (sounds && t.cue && !skipCue) playCue(t.cue, cueVolume(settings, t.cue), settings.soundKit);
         if (sounds && t.previous === "sleeping" && t.state === "idle") helloOncePerDay();
       }),
       listen(EVENTS.settingsChanged, (settings) => {
@@ -602,6 +714,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       listen(EVENTS.islandHover, setHovered),
       listen(EVENTS.islandVisible, (visible) => useSidekick.setState({ visible })),
       listen(EVENTS.islandFullscreen, (fullscreen) => useSidekick.setState({ fullscreen })),
+      listen(EVENTS.browsersChanged, () => onBrowsersChanged()),
       listen(EVENTS.composioChanged, ({ ok, message }) => {
         const waiting = useSidekick.getState().waiting;
         if (!ok || !waiting) return;
@@ -661,19 +774,24 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           watchVoice();
           return;
         }
-        useSidekick.setState({ hearing: null });
-        const { settings, turns, ask } = useSidekick.getState();
-        // During the welcome, speech moves between steps instead of chatting.
-        if (ask?.view === "welcome" && welcomeHeard(text)) return;
-        if (text.trim()) {
-          // Asked with Ask closed: stay compact until the answer comes.
-          const started = sendChat(text, { speak: settings.voice.speakAnswers });
-          if (started && !ask) {
-            useSidekick.setState({ voiceQuestion: text.trim() });
+        const q = text.trim();
+        const { settings, turns, ask, chatId } = useSidekick.getState();
+        if (q) {
+          // A stale chatId makes sendChat no-op and drops the Thinking pill,
+          // leaving a bare idle island (tiny hit rect / lockout).
+          if (chatId) clearInFlightChat();
+          // Asked with Ask closed: Thinking pill first so the hit rect stays live.
+          if (!ask) {
+            useSidekick.setState({ hearing: null, voiceQuestion: q });
             watchVoice();
+          } else {
+            useSidekick.setState({ hearing: null });
           }
-        } else if (byVoice && turns.length === 0 && ask) {
-          void api.askClose();
+          const started = sendChat(q, { speak: settings.voice.speakAnswers });
+          if (!started && !ask) useSidekick.setState({ voiceQuestion: null });
+        } else {
+          useSidekick.setState({ hearing: null });
+          if (byVoice && turns.length === 0 && ask) void api.askClose();
         }
       }),
       listen(EVENTS.aiDelta, ({ id, text }) => {

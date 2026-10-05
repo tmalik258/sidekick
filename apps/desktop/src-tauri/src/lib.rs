@@ -212,6 +212,12 @@ pub fn run() {
 }
 
 fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
+    let product_name = app
+        .config()
+        .product_name
+        .as_deref()
+        .ok_or("productName is missing from tauri.conf.json")?;
+    secrets::init(product_name);
     let config_dir = app.path().app_config_dir()?;
     let settings_path = config_dir.join("settings.json");
     let skills_dir = config_dir.join("skills");
@@ -235,11 +241,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     let paused = settings.pause.is_active(Utc::now());
     let hotkey = settings.palette_hotkey.clone();
     let repos = ReposSensor {
-        roots: if settings.code_folders.is_empty() {
-            ReposSensor::default_roots()
-        } else {
-            settings.code_folders.iter().map(Into::into).collect()
-        },
+        roots: repo_roots(&settings),
         hour: settings.end_of_day_hour,
     };
     let browser_token = browser::load_or_create_token(&data_dir);
@@ -285,30 +287,23 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         tracker: Default::default(),
         browser: bridge.clone(),
         browser_token: browser_token.clone(),
-        mcp_token: mcp_token.clone(),
+        mcp_token,
+        data_dir,
+        features_started: Default::default(),
     });
 
     pipeline::start(app);
-    timetrack::start(app);
-    moments::start(app);
-    inbox::start(app);
-    recipes::start(app);
     // Prefer bundled models; only then network. Welcome opens from the island
     // once it listens (ask_ensure_welcome), or after models become ready.
     voice::seed_from_bundle(app);
     voice::refresh(app);
+    voice::start_echo_guard(app);
     if !settings_onboarded(app) && !voice::voice_ready(app) {
         voice::prepare_then_welcome(app);
     }
-    brief::start(app, data_dir.join("last-brief"), repos.roots.clone());
-    search::reindex_folders(app);
-    search::start_embedder(app);
-    updates::start(app);
-    files::start_weekly_check(app);
-    layout::start(app);
-    mcp::start(app, mcp_token);
-    meetings::start(app);
-    health::start(app);
+    if settings_onboarded(app) {
+        start_features(app);
+    }
     net::start(app);
     tauri::async_runtime::spawn(async move {
         let sensors: Vec<Box<dyn Sensor>> = vec![
@@ -349,4 +344,40 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
 
 fn settings_onboarded(app: &tauri::AppHandle) -> bool {
     state::lock(&app.state::<AppState>().settings).onboarded
+}
+
+fn repo_roots(settings: &Settings) -> Vec<std::path::PathBuf> {
+    if settings.code_folders.is_empty() {
+        ReposSensor::default_roots()
+    } else {
+        settings.code_folders.iter().map(Into::into).collect()
+    }
+}
+
+/// Starts everything Sidekick does on its own: briefs, moments, search,
+/// updates and the rest. Runs once, at startup when onboarding is already
+/// done, or the moment it finishes; until then Sidekick only onboards.
+pub fn start_features(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    if state
+        .features_started
+        .swap(true, std::sync::atomic::Ordering::SeqCst)
+    {
+        return;
+    }
+    let roots = repo_roots(&state::lock(&state.settings));
+    timetrack::start(app);
+    moments::start(app);
+    inbox::start(app);
+    recipes::start(app);
+    brief::start(app, state.data_dir.join("last-brief"), roots);
+    search::reindex_folders(app);
+    search::start_embedder(app);
+    updates::start(app);
+    files::start_weekly_check(app);
+    layout::start(app);
+    mcp::start(app, state.mcp_token.clone());
+    meetings::start(app);
+    health::start(app);
+    log::info!("features started");
 }

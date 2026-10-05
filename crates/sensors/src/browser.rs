@@ -43,6 +43,8 @@ const KINDS: &[(&str, &str)] = &[
 /// How long a pairing request waits for Allow on the island.
 pub const PAIR_WAIT: Duration = Duration::from_secs(90);
 pub const PAIR_REQUEST: &str = "browser.pair_request";
+/// The user allowed pairing; the extension is marked connected.
+pub const PAIRED: &str = "browser.paired";
 
 /// Commands for the extension, queued until it polls, and when each browser
 /// last checked in.
@@ -304,6 +306,11 @@ async fn serve(mut sock: TcpStream, ctx: &Ctx, publish: impl Fn(Event)) {
         ctx.pairing.store(false, Ordering::SeqCst);
         if allowed {
             bridge.mark(&browser);
+            publish(Event::new(
+                PAIRED,
+                BrowserSensor::ID,
+                serde_json::json!({ "browser": browser }),
+            ));
             let body = serde_json::json!({ "token": token });
             http::respond(&mut sock, "200 OK", &cors, Some(&body)).await;
         } else {
@@ -615,6 +622,12 @@ mod tests {
         assert!(resp.starts_with("HTTP/1.1 200"), "{resp}");
         assert!(resp.contains("t0ken"));
         assert_eq!(bridge.seen().first().map(|s| s.0.as_str()), Some("Chrome"));
+        let e = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(e.kind, PAIRED);
+        assert_eq!(e.payload["browser"], "Chrome");
 
         // Deny sends nothing.
         let asking = tokio::spawn(call(port, pair("chrome-extension://abcdefghij")));
@@ -622,6 +635,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+        assert_eq!(e.kind, PAIR_REQUEST);
         approvals.decide(e.payload["id"].as_str().unwrap(), Some(false));
         assert!(asking.await.unwrap().starts_with("HTTP/1.1 403"));
         task.abort();

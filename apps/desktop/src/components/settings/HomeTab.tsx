@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
+import { useDnd } from "@/lib/hooks";
 import { checkKit, cueVolume, playCue, SYNTH_KIT } from "@/lib/sound";
 import { updateSettings, useSidekick } from "@/lib/store";
 import {
@@ -35,7 +36,7 @@ const SOUND_KITS: [string, string][] = [
 
 const COLLAPSE_OPTIONS: [string, string][] = [
   ["4", "4 seconds"],
-  ["8", "8 seconds"],
+  ["6", "6 seconds"],
   ["15", "15 seconds"],
   ["30", "30 seconds"],
   ["60", "1 minute"],
@@ -152,12 +153,12 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
       </Section>
       <Section
         collapsible
-        summary="Start with Windows, updates"
+        summary="Launch on login, updates"
         title="Startup and updates"
         keywords="launch login windows start update version"
       >
         <Toggle
-          label="Start Sidekick with Windows"
+          label="Launch on login"
           checked={settings.launchAtLogin}
           onChange={(launchAtLogin) => save({ launchAtLogin })}
         />
@@ -469,26 +470,13 @@ const LEVEL_TONE: Record<NotifyLevel, string> = {
 
 /** Windows' Do Not Disturb as a switch that shows the real state. */
 function DoNotDisturb({ onError }: { onError: (e: string) => void }) {
-  const [on, setOn] = useState<boolean | null>(null);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => void api.dndGet().then(setOn), []);
-  const flip = (want: boolean) => {
-    if (busy) return;
-    setBusy(true);
-    setOn(want);
-    void api
-      .dndSet(want)
-      .catch((e) => onError(String(e)))
-      .then(() => api.dndGet())
-      .then((now) => setOn(now ?? want))
-      .finally(() => setBusy(false));
-  };
+  const dnd = useDnd({ onError });
   return (
     <Toggle
       label="Do Not Disturb"
-      hint={busy ? "Switching..." : "Stops Windows pop-ups. Notifications still reach Sidekick."}
-      checked={on ?? false}
-      onChange={flip}
+      hint={dnd.busy ? "Switching..." : "Stops Windows pop-ups. Notifications still reach Sidekick."}
+      checked={dnd.on}
+      onChange={dnd.set}
     />
   );
 }

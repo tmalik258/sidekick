@@ -112,19 +112,32 @@ impl OpenAiCompat {
 }
 
 /// The model to chat with when none is chosen: the first one listed (Ollama
-/// lists the newest first) that is not an embedding model, which cannot
-/// chat.
+/// lists the newest first) that can chat: not embedding, not vision-only.
 pub fn first_chat_model(models: &[String]) -> Option<&str> {
-    models
-        .iter()
-        .map(String::as_str)
-        .find(|m| !is_embedding_model(m))
+    models.iter().map(String::as_str).find(|m| is_chat_model(m))
 }
 
 /// Embedding models (for search) cannot hold a conversation.
 pub fn is_embedding_model(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
     n.contains("embed") || n.starts_with("bge") || n.contains("minilm") || n.contains("e5-")
+}
+
+/// Vision-only models (e.g. moondream) see pictures; they are not chat models.
+pub fn is_vision_model(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    n.contains("moondream")
+        || n.contains("llava")
+        || n.contains("bakllava")
+        || n.contains("minicpm-v")
+        || n.contains("qwen2-vl")
+        || n.contains("qwen2.5-vl")
+        || n.contains("vision")
+}
+
+/// A model Sidekick can use for local chat (not search, not vision-only).
+pub fn is_chat_model(name: &str) -> bool {
+    !is_embedding_model(name) && !is_vision_model(name)
 }
 
 /// Most tool rounds before the model must answer with what it has.
@@ -634,6 +647,17 @@ mod tests {
         assert_eq!(first_chat_model(&["bge-m3:latest".to_owned()]), None);
         assert!(is_embedding_model("mxbai-embed-large"));
         assert!(!is_embedding_model("qwen3:4b"));
+    }
+
+    #[test]
+    fn never_picks_a_vision_model_to_chat() {
+        assert!(is_vision_model("moondream:latest"));
+        assert!(!is_chat_model("moondream"));
+        assert_eq!(
+            first_chat_model(&["moondream:latest".to_owned(), "qwen3:4b".to_owned(),]),
+            Some("qwen3:4b")
+        );
+        assert_eq!(first_chat_model(&["moondream".to_owned()]), None);
     }
 
     #[test]

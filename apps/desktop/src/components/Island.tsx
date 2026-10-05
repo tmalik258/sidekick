@@ -9,6 +9,7 @@ import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } fr
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
+import { ISLAND_TOP, PANEL_PAD } from "@/lib/islandSize";
 import type { NetNotice } from "@/lib/net";
 import { playSound } from "@/lib/sound";
 import { connect, notePick, setHovered, uiVolume, useSidekick, watchWaiting } from "@/lib/store";
@@ -61,12 +62,14 @@ const COMPACT = {
   radius: 18,
   orb: 26,
 };
-const EXPANDED = { width: 388, minHeight: 78, radius: 30, pad: 16 };
+const EXPANDED = { width: 388, minHeight: 78, radius: 30, pad: PANEL_PAD };
 /** Ask mode: wider, so commands and answers have room. */
 const ASK_WIDTH = 560;
+/** The welcome: a short read, so a narrower column than Ask. */
+const WELCOME_WIDTH = 440;
 /** A setup guide: room for its steps and copy buttons. */
 const GUIDE_WIDTH = 452;
-const TOP = 6;
+const TOP = ISLAND_TOP;
 
 /** Delay before hover expands, so a cursor passing over the top edge does not trigger it. */
 const HOVER_IN_MS = 140;
@@ -90,6 +93,7 @@ export function Island() {
   const online = useSidekick((s) => s.online);
   const netNotice = useSidekick((s) => s.netNotice);
   const waiting = useSidekick((s) => (s.ask ? null : s.waiting));
+  const justDone = useSidekick((s) => s.justDone);
   // A task still running after Ask closed: its current step, small.
   const working = useSidekick((s) => {
     const last = s.turns[s.turns.length - 1];
@@ -114,15 +118,31 @@ export function Island() {
     setPrevAsking(asking);
     if (!asking) setQuiet(true);
   }
-  if (quiet && !rawHover) setQuiet(false);
+  // Cleared only once the cursor has been away as long as hover intent takes
+  // to fall; clearing at once let a stale intent reopen a just-hidden welcome.
+  useEffect(() => {
+    if (!quiet || rawHover) return;
+    const id = setTimeout(() => setQuiet(false), HOVER_OUT_MS);
+    return () => clearTimeout(id);
+  }, [quiet, rawHover]);
   const intent = useIntent(rawHover && !quiet);
-  // Until onboarding is done, hovering only brings the welcome back; the
-  // idle card ("watching for moments") would just flash on the way.
-  const hovered = intent && !quiet && settings.onboarded;
+  // Until onboarding is done, hover shows the steps being waited on, or else
+  // brings the welcome back; the idle card ("watching for moments") would
+  // just flash on the way.
+  const guideOnHover = !!waiting && !waiting.background;
+  const hovered = intent && !quiet && (settings.onboarded || guideOnHover);
+  const resumeWelcome =
+    intent && !quiet && !settings.onboarded && !asking && !guideOnHover && !justDone && mascot !== "success";
+  useEffect(() => {
+    if (resumeWelcome) void api.askResumeWelcome();
+  }, [resumeWelcome]);
   const preparingVoice =
     !settings.onboarded && !asking && !(voiceStatus?.models.some((m) => m.id === "voice" && m.installed) ?? false);
   // A guide stays open while Sidekick waits on something you finish elsewhere.
   const guiding = !!waiting && !waiting.minimized && (waiting.steps?.length ?? 0) > 0;
+  // Voice with Ask closed: Listening / Thinking pill. Stay non-bare so the
+  // hit rect stays usable (Idle alone would shrink to a pinprick and lock out).
+  const voiceBusy = hearing !== null || voiceQuestion !== null || mascot === "listening";
   const voicePill: { text: string; thinking: boolean; working?: boolean } | null = asking
     ? null
     : voiceQuestion !== null
@@ -132,18 +152,33 @@ export function Island() {
         : working !== null
           ? { text: working, thinking: true, working: true }
           : null;
+  // Suggestions stay normal during thinking — do not gate them on !voicePill.
   const expanded =
     asking ||
     preparingVoice ||
     (hovered && !voicePill) ||
     guiding ||
     (OPEN_STATES.has(mascot) && !voicePill) ||
-    (!!suggestion && !voicePill) ||
+    !!suggestion ||
     (!!netNotice && !voicePill);
   // At rest only the sphere shows. The shell keeps its size (so hover and the
   // orb position do not move) but loses its background.
-  const bare = !expanded && !chatting && !waiting && online && (mascot === "idle" || mascot === "sleeping");
-  const busy = chatting || preparingVoice || mascot === "noticing" || mascot === "working" || mascot === "listening";
+  const bare =
+    !expanded &&
+    !chatting &&
+    !waiting &&
+    !voiceBusy &&
+    !working &&
+    online &&
+    (mascot === "idle" || mascot === "sleeping");
+  const busy =
+    chatting || preparingVoice || voiceBusy || Boolean(working) || mascot === "noticing" || mascot === "working";
+
+  // Hover while Thinking: open Ask so the island is usable, not a dead pill.
+  useEffect(() => {
+    if (!intent || quiet || asking || !settings.onboarded || voiceQuestion === null) return;
+    void api.askOpen();
+  }, [intent, quiet, asking, settings.onboarded, voiceQuestion]);
 
   const [contentHeight, setContentHeight] = useState(0);
   const bump = useMotionValue(1);
@@ -203,7 +238,9 @@ export function Island() {
 
   const showGuide = !!waiting && !waiting.background && !suggestion && (mascot === "idle" || mascot === "sleeping");
   const width = asking
-    ? ASK_WIDTH
+    ? view === "welcome"
+      ? WELCOME_WIDTH
+      : ASK_WIDTH
     : expanded
       ? showGuide
         ? GUIDE_WIDTH
@@ -247,6 +284,8 @@ export function Island() {
 
   // Number keys must not pick a suggestion while the user is typing.
   useSuggestionKeys(asking ? null : suggestion);
+  // WebView chrome: Ctrl+J is Downloads — not a Sidekick feature.
+  useBlockBrowserKeys();
 
   if (!ready) return null;
 
@@ -689,4 +728,18 @@ function useSuggestionKeys(suggestion: Suggestion | null) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [suggestion]);
+}
+
+/** Stops Chromium/WebView2 browser chrome shortcuts that have no place here. */
+function useBlockBrowserKeys() {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      if (e.key.toLowerCase() !== "j") return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
 }

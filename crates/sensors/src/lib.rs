@@ -22,7 +22,7 @@ mod system;
 pub mod toasts;
 mod window;
 
-pub use browser::{BrowserBridge, BrowserSensor};
+pub use browser::{BrowserBridge, BrowserSensor, PAIR_REQUEST, PAIRED};
 pub use calendar::{Calendar, CalendarSensor};
 pub use claude_code::{Approvals, ClaudeCodeSensor};
 pub use clipboard::ClipboardSensor;

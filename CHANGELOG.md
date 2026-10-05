@@ -4,10 +4,6 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
-### Removed
-
-- Browser password fill, save, and mirror (Chromium `Login Data` access). Parked on `feature/browser-passwords` until that work is ready to ship again.
-
 ## [0.1.0] - Unreleased
 
 The first public release.

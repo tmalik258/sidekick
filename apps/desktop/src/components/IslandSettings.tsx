@@ -5,6 +5,7 @@
 
 import { useEffect } from "react";
 import { api } from "@/lib/bridge";
+import { PANEL_MAX_HEIGHT } from "@/lib/islandSize";
 import { setAsk } from "@/lib/store";
 import { ASK_ORB } from "./AskPanel";
 import { SettingsPanel } from "./SettingsPanel";
@@ -23,8 +24,8 @@ export function IslandSettings() {
   }, []);
 
   return (
-    <div className="flex flex-col">
-      <div className="mb-2.5 flex h-[30px] items-center gap-2" style={{ paddingLeft: ASK_ORB + 10 }}>
+    <div className="flex flex-col" style={{ maxHeight: PANEL_MAX_HEIGHT }}>
+      <div className="mb-2.5 flex h-[30px] shrink-0 items-center gap-2" style={{ paddingLeft: ASK_ORB + 10 }}>
         <h1 className="flex-1 font-display text-[17px] font-semibold tracking-[-0.015em]">Settings</h1>
         <button
           type="button"

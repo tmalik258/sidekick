@@ -10,12 +10,14 @@
 // placeholders on the very first run. Refreshing keeps every row on screen.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "@/lib/bridge";
-import { useCached } from "@/lib/cache";
+import { api, EVENTS, listen } from "@/lib/bridge";
+import { SETUP_STATUS_CACHE_KEY, useCached } from "@/lib/cache";
 import { stopWaiting, useSidekick } from "@/lib/store";
 import type { SetupGroup, SetupItem } from "@/lib/types";
+import { BrowserInstallPanel } from "./SetupBrowser";
 import { SETUP_CATALOG, skeletonItem } from "./SetupCatalog";
-import { SetupRow, SmallButton } from "./SetupChecklistRow";
+import { SetupRow, SetupSpinner, SetupStatusMark, SmallButton } from "./SetupChecklistRow";
+import { ComposioAppsRow } from "./welcome/ComposioAppsRow";
 
 const GROUP_TITLES: Record<SetupGroup, string> = {
   ai: "AI",
@@ -27,10 +29,26 @@ const WATCH_EVERY_MS = 6000;
 const WATCH_TIMES = 20;
 
 export function useSetupStatus() {
-  const { data: status, refreshing: checking, refresh, set } = useCached("setup-status", api.setupStatus);
+  const { data: status, refreshing: statusBusy, refresh, set } = useCached(SETUP_STATUS_CACHE_KEY, api.setupStatus);
+  const { refresh: refreshDetect } = useCached("setup-detect", api.setupDetect);
+  // Covers the full Check-again round-trip (status + detect), not only one cache.
+  const [recheck, setRecheck] = useState(false);
+  const checking = status === null || statusBusy || recheck;
   const watch = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const check = useCallback(() => refresh().catch(() => undefined), [refresh]);
+  const check = useCallback(async () => {
+    setRecheck(true);
+    try {
+      await Promise.all([refresh({ busy: true }), refreshDetect({ busy: true }).catch(() => undefined)]);
+    } finally {
+      setRecheck(false);
+    }
+  }, [refresh, refreshDetect]);
+
+  /** Same as Check again, without the Checking… pulse (e.g. after a browser pairs). */
+  const refreshQuiet = useCallback(async () => {
+    await Promise.all([refresh(), refreshDetect().catch(() => undefined)]);
+  }, [refresh, refreshDetect]);
 
   /** Checks again every few seconds for a while, after starting an install. */
   const watchForChanges = useCallback(() => {
@@ -53,7 +71,19 @@ export function useSetupStatus() {
     [],
   );
 
-  return { status, checking, check, watchForChanges };
+  useEffect(() => {
+    const off = listen(EVENTS.browsersChanged, () => {
+      void api
+        .setupStatus()
+        .then(set)
+        .catch(() => undefined);
+    });
+    return () => {
+      void off.then((f) => f());
+    };
+  }, [set]);
+
+  return { status, checking, check, refreshQuiet, watchForChanges };
 }
 
 /**
@@ -77,24 +107,24 @@ function mergeRows(groups: SetupGroup[], live: SetupItem[] | undefined): SetupIt
 export function SetupChecklist({
   groups,
   onOpenTab,
-  compact,
   /** Keep how-to inside the checklist (welcome) instead of jumping to a Settings tab. */
   inlineGuides,
 }: {
   groups: SetupGroup[];
   onOpenTab?: (tab: string) => void;
-  /** Hide optional items behind "More" (the welcome steps). */
-  compact?: boolean;
   inlineGuides?: boolean;
 }) {
-  const { status, checking, check, watchForChanges } = useSetupStatus();
+  const { status, checking, check, refreshQuiet, watchForChanges } = useSetupStatus();
   const [error, setError] = useState<string | null>(null);
-  const [showOptional, setShowOptional] = useState(!compact);
   // Coming back from a step finished elsewhere: make sure its row shows.
   const justDone = useSidekick((s) => s.justDone);
-  const showAll = showOptional || Boolean(justDone);
   const [openGuide, setOpenGuide] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(false);
+
+  useEffect(() => {
+    if (!inlineGuides) return;
+    void refreshQuiet().catch(() => undefined);
+  }, [inlineGuides, refreshQuiet]);
 
   // Stable callbacks, so a row only re-renders when its own data changes.
   const run = useCallback(
@@ -111,15 +141,41 @@ export function SetupChecklist({
     [watchForChanges],
   );
   const toggleGuide = useCallback((id: string) => setOpenGuide((open) => (open === id ? null : id)), []);
+  // Quiet: one-click finishes (hooks, browser pair) must not pulse Checking….
   const done = useCallback(() => {
-    void check();
+    void refreshQuiet();
     watchForChanges();
-  }, [check, watchForChanges]);
+  }, [refreshQuiet, watchForChanges]);
 
   const items = mergeRows(groups, status?.items);
   const recommended = items.filter((i) => i.recommended);
   const doneCount = recommended.filter((i) => i.done).length;
-  const optional = items.filter((i) => !i.recommended);
+  // Finished steps fold into one line, so the list is what is left to do.
+  // The welcome's Composio row stays open once connected: its apps are there.
+  // Browser and Composio stay open when done so you can pair another browser
+  // or connect more apps without digging into the folded "ready" line.
+  const stays = (i: SetupItem) =>
+    !i.done ||
+    i.id === justDone ||
+    (i.id === "composio" && (justDone?.startsWith("app:") ?? false)) ||
+    showDone ||
+    (inlineGuides === true && (i.id === "composio" || i.id === "browser"));
+  const row = (item: SetupItem) => (
+    <SetupRow
+      key={item.id}
+      item={item}
+      checking={checking}
+      onRun={run}
+      guideOpen={openGuide === item.id}
+      onToggleGuide={toggleGuide}
+      onOpenTab={onOpenTab}
+      inlineGuides={inlineGuides}
+      onDone={done}
+    >
+      {inlineGuides && item.id === "composio" && item.done && <ComposioAppsRow />}
+      {inlineGuides && item.id === "browser" && item.done && <BrowserInstallPanel onDone={done} />}
+    </SetupRow>
+  );
 
   return (
     <div className="flex flex-col gap-2 text-[13px]">
@@ -138,7 +194,14 @@ export function SetupChecklist({
           }}
           disabled={checking}
         >
-          Check again
+          {checking ? (
+            <>
+              <SetupSpinner />
+              Checking…
+            </>
+          ) : (
+            "Check again"
+          )}
         </SmallButton>
       </div>
 
@@ -167,57 +230,47 @@ export function SetupChecklist({
       )}
 
       {groups.map((g) => {
-        const shown = items.filter((i) => i.group === g && (i.recommended || showAll));
-        if (shown.length === 0) return null;
-        // Finished steps fold into one line, so the list is what is left to do.
-        const ready = shown.filter((i) => i.done && i.id !== justDone);
-        const rows = showDone ? shown : shown.filter((i) => !ready.includes(i));
+        const inGroup = items.filter((i) => i.group === g);
+        if (inGroup.length === 0) return null;
+        const ready = inGroup.filter((i) => !stays(i));
+        const main = inGroup.filter((i) => i.recommended && stays(i));
+        const extra = inGroup.filter((i) => !i.recommended && stays(i));
         return (
           <section key={g} className="flex flex-col gap-1.5">
-            {groups.length > 1 && (
-              <h3 className="px-1 pt-1 text-[12px] font-semibold text-[rgb(235_235_245/0.55)]">{GROUP_TITLES[g]}</h3>
-            )}
-            {rows.map((item) => (
-              <SetupRow
-                key={item.id}
-                item={item}
-                checking={status === null}
-                onRun={run}
-                guideOpen={openGuide === item.id}
-                onToggleGuide={toggleGuide}
-                onOpenTab={onOpenTab}
-                inlineGuides={inlineGuides}
-                onDone={done}
-              />
-            ))}
-            {!showDone && ready.length > 0 && (
+            {groups.length > 1 && <SectionTitle>{GROUP_TITLES[g]}</SectionTitle>}
+            {main.map(row)}
+            {ready.length > 0 && (
               <button
                 type="button"
                 onClick={() => setShowDone(true)}
-                className="chip flex items-center gap-2 rounded-2xl px-3.5 py-2 text-left text-[12px] text-[rgb(235_235_245/0.6)] hover:bg-white/[0.04] hover:text-white"
+                disabled={checking}
+                className="chip flex items-center gap-2 rounded-2xl px-3.5 py-2 text-left text-[12px] text-[rgb(235_235_245/0.6)] hover:bg-white/[0.04] hover:text-white disabled:opacity-80"
               >
-                <span className="grid size-[18px] shrink-0 place-items-center rounded-full bg-[#30d158] text-[10px] font-bold text-black">
-                  ✓
-                </span>
+                <SetupStatusMark checking={checking} done />
                 <span className="min-w-0 flex-1 truncate">
                   {ready.map((i) => i.title).join(", ")} {ready.length === 1 ? "is" : "are"} ready
                 </span>
               </button>
             )}
+            {extra.length > 0 && (
+              <>
+                <SectionTitle hint="Nice to have. Skip any of these.">Optional</SectionTitle>
+                {extra.map(row)}
+              </>
+            )}
           </section>
         );
       })}
-
-      {compact && optional.length > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowOptional(!showOptional)}
-          className="chip self-start rounded-full px-2.5 py-1 text-[12px] text-[rgb(235_235_245/0.6)] hover:text-white"
-        >
-          {showOptional ? "Fewer" : `${optional.length} optional`}
-        </button>
-      )}
     </div>
+  );
+}
+
+function SectionTitle({ children, hint }: { children: string; hint?: string }) {
+  return (
+    <h3 className="flex items-baseline gap-2 px-1 pt-2 text-[12px] font-semibold text-[rgb(235_235_245/0.55)]">
+      {children}
+      {hint && <span className="font-normal text-[rgb(235_235_245/0.4)]">{hint}</span>}
+    </h3>
   );
 }
 
