@@ -622,6 +622,12 @@ mod tests {
         assert!(resp.starts_with("HTTP/1.1 200"), "{resp}");
         assert!(resp.contains("t0ken"));
         assert_eq!(bridge.seen().first().map(|s| s.0.as_str()), Some("Chrome"));
+        let e = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(e.kind, PAIRED);
+        assert_eq!(e.payload["browser"], "Chrome");
 
         // Deny sends nothing.
         let asking = tokio::spawn(call(port, pair("chrome-extension://abcdefghij")));
@@ -629,6 +635,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+        assert_eq!(e.kind, PAIR_REQUEST);
         approvals.decide(e.payload["id"].as_str().unwrap(), Some(false));
         assert!(asking.await.unwrap().starts_with("HTTP/1.1 403"));
         task.abort();
