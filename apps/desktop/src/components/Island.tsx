@@ -164,14 +164,15 @@ export function Island() {
   // At rest only the sphere shows. The shell keeps its size (so hover and the
   // orb position do not move) but loses its background.
   const bare =
-    !expanded && !chatting && !waiting && !voiceBusy && !working && online && (mascot === "idle" || mascot === "sleeping");
+    !expanded &&
+    !chatting &&
+    !waiting &&
+    !voiceBusy &&
+    !working &&
+    online &&
+    (mascot === "idle" || mascot === "sleeping");
   const busy =
-    chatting ||
-    preparingVoice ||
-    voiceBusy ||
-    Boolean(working) ||
-    mascot === "noticing" ||
-    mascot === "working";
+    chatting || preparingVoice || voiceBusy || Boolean(working) || mascot === "noticing" || mascot === "working";
 
   // Hover while Thinking: open Ask so the island is usable, not a dead pill.
   useEffect(() => {

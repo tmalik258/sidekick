@@ -66,10 +66,7 @@ export function FoundCard({ onDone }: { onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const picks = useMemo(
-    () => (found ? picksFrom(found, off, settings) : []),
-    [found, off, settings],
-  );
+  const picks = useMemo(() => (found ? picksFrom(found, off, settings) : []), [found, off, settings]);
 
   if (!found) {
     return (

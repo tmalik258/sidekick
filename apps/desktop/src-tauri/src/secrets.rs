@@ -15,7 +15,9 @@ pub fn init(product_name: &str) {
 }
 
 fn service() -> &'static str {
-    SERVICE.get().expect("secrets::init was not called at startup")
+    SERVICE
+        .get()
+        .expect("secrets::init was not called at startup")
 }
 
 #[cfg(windows)]
@@ -47,7 +49,12 @@ fn path(name: &str) -> Option<std::path::PathBuf> {
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
         .collect();
-    Some(dirs::config_dir()?.join(service()).join("secrets").join(safe))
+    Some(
+        dirs::config_dir()?
+            .join(service())
+            .join("secrets")
+            .join(safe),
+    )
 }
 
 #[cfg(not(windows))]

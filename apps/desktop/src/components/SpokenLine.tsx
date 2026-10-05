@@ -179,20 +179,36 @@ export function SpokenLine({ step, onDone }: { step: number; onDone: () => void 
  */
 const THINKING: string[][] = [
   ["Saying hello", "Finding my spot up here", "Keeping everything on this PC", "Almost ready to meet you"],
-  ["Thinking about how I think", "Checking what AI you already have", "Looking for Claude, Codex, a local model", "Lining up how I'll answer"],
-  ["Looking at your calendar and mail", "Seeing which apps to connect", "Checking the browser and folders", "Getting your world in view"],
-  ["Finding tools that make me sharper", "Checking Git, OCR and the rest", "Seeing what is already installed", "Picking helpers worth adding"],
-  ["Getting voice ready", "Tuning Hey Sidekick", "Checking launch on login", "Almost there"],
+  [
+    "Thinking about how I think",
+    "Checking what AI you already have",
+    "Looking for Claude, Codex, a local model",
+    "Lining up how I'll answer",
+  ],
+  [
+    "Looking at your calendar and mail",
+    "Seeing which apps to connect",
+    "Checking the browser and folders",
+    "Getting your world in view",
+  ],
+  [
+    "Finding tools that make me sharper",
+    "Checking Git, OCR and the rest",
+    "Seeing what is already installed",
+    "Picking helpers worth adding",
+  ],
+  ["Getting voice ready", "Quieting Windows toasts", "Checking launch on login", "Almost there"],
 ];
 
 function Thinking({ step }: { step: number }) {
-  const lines = THINKING[step] ?? THINKING[0];
   const [i, setI] = useState(0);
   useEffect(() => {
     setI(0);
+    const lines = THINKING[step] ?? THINKING[0];
     const id = setInterval(() => setI((n) => (n + 1) % lines.length), 2200);
     return () => clearInterval(id);
-  }, [step, lines.length]);
+  }, [step]);
+  const lines = THINKING[step] ?? THINKING[0];
   return (
     <p className="flex items-center gap-2.5 font-display text-[15px] leading-snug" role="status" aria-live="polite">
       <span className="inline-flex gap-1">

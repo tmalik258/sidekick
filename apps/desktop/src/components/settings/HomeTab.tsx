@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
+import { useDnd } from "@/lib/hooks";
 import { checkKit, cueVolume, playCue, SYNTH_KIT } from "@/lib/sound";
 import { updateSettings, useSidekick } from "@/lib/store";
 import {
@@ -469,26 +470,13 @@ const LEVEL_TONE: Record<NotifyLevel, string> = {
 
 /** Windows' Do Not Disturb as a switch that shows the real state. */
 function DoNotDisturb({ onError }: { onError: (e: string) => void }) {
-  const [on, setOn] = useState<boolean | null>(null);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => void api.dndGet().then(setOn), []);
-  const flip = (want: boolean) => {
-    if (busy) return;
-    setBusy(true);
-    setOn(want);
-    void api
-      .dndSet(want)
-      .catch((e) => onError(String(e)))
-      .then(() => api.dndGet())
-      .then((now) => setOn(now ?? want))
-      .finally(() => setBusy(false));
-  };
+  const dnd = useDnd({ onError });
   return (
     <Toggle
       label="Do Not Disturb"
-      hint={busy ? "Switching..." : "Stops Windows pop-ups. Notifications still reach Sidekick."}
-      checked={on ?? false}
-      onChange={flip}
+      hint={dnd.busy ? "Switching..." : "Stops Windows pop-ups. Notifications still reach Sidekick."}
+      checked={dnd.on}
+      onChange={dnd.set}
     />
   );
 }

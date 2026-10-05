@@ -223,10 +223,7 @@ function ComposioGuide({ onDone }: { onDone: () => void }) {
         setNote("Finish in your browser: sign in and press Allow.");
         startWaiting("composio", "Composio", {
           resumeTab: "connections",
-          steps: [
-            "Composio opened in your browser.",
-            "Sign in and press Allow.",
-          ],
+          steps: ["Composio opened in your browser.", "Sign in and press Allow."],
           again: connect,
         });
       })

@@ -37,7 +37,7 @@ pub const WELCOME_LINES: [&str; 5] = [
     "First, how I think. If you want everything to stay on this PC, you can run a local model — only if your machine is up for it. Or use Claude Code or Codex with the plan you already have. You can use any of them, or all three, and set the order I try.",
     "Now, your world. Connect your calendar, your mail and the tools you use, and I'll start noticing what matters.",
     "A few small helpers make me sharper. Install the ones you want, and I'll wait while they finish.",
-    "Welcome aboard. Say Hey Sidekick whenever you need me. Launch on login is already on, so I'm here when you sit down.",
+    "Welcome aboard. Say Hey Sidekick whenever you need me. Do Not Disturb is on so Windows stays quiet and alerts show once up here. Launch on login is already on, so I'm here when you sit down.",
 ];
 
 /// When each sentence of the welcome line sounds, in Unix milliseconds, so

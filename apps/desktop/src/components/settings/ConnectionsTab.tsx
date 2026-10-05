@@ -64,10 +64,7 @@ function ComposioCard({ onError }: { onError: (e: string) => void }) {
       .then(() =>
         startWaiting("composio", "Composio", {
           resumeTab: "connections",
-          steps: [
-            "Composio opened in your browser.",
-            "Sign in and press Allow.",
-          ],
+          steps: ["Composio opened in your browser.", "Sign in and press Allow."],
           again: signIn,
         }),
       )

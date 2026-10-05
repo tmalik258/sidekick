@@ -21,6 +21,7 @@ import {
   type UpdateInfo,
   type VoiceStatus,
 } from "./types";
+
 interface SidekickState {
   mascot: MascotState;
   settings: Settings;

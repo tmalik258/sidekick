@@ -1,13 +1,15 @@
 "use client";
 
-// The last welcome step: voice and launch on login, each one tap.
+// The last welcome step: voice, quiet Windows, and launch on login.
 
 import { api } from "@/lib/bridge";
+import { useDnd } from "@/lib/hooks";
 import { updateSettings, useSidekick } from "@/lib/store";
 import { WelcomeChoice } from "./WelcomeChoice";
 
 export function Extras() {
   const settings = useSidekick((s) => s.settings);
+  const dnd = useDnd({ autoEnable: true });
   return (
     <div className="flex flex-col gap-2.5 text-[13px]">
       <WelcomeChoice
@@ -17,6 +19,16 @@ export function Extras() {
         onChange={(enabled) => {
           void updateSettings({ voice: { ...settings.voice, enabled } });
           if (enabled) void api.voiceDownload();
+        }}
+      />
+      <WelcomeChoice
+        title="Keep Windows quiet"
+        hint={
+          dnd.busy ? "Switching..." : "Do Not Disturb is on — I show what matters up here, not two alerts for one ping."
+        }
+        on={dnd.on}
+        onChange={(want) => {
+          if (!dnd.busy) dnd.set(want);
         }}
       />
       <WelcomeChoice

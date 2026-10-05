@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use sidekick_core::{Event, MascotEvent, Pause};
-use sidekick_sensors::{DownloadsSensor, IdleSensor, PAIRED, PAIR_REQUEST, WindowSensor};
+use sidekick_sensors::{DownloadsSensor, IdleSensor, PAIR_REQUEST, PAIRED, WindowSensor};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::broadcast::error::RecvError;
 

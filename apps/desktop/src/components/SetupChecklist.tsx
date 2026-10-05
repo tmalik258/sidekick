@@ -12,9 +12,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
 import { SETUP_STATUS_CACHE_KEY, useCached } from "@/lib/cache";
-import { BrowserInstallPanel } from "./SetupBrowser";
 import { stopWaiting, useSidekick } from "@/lib/store";
 import type { SetupGroup, SetupItem } from "@/lib/types";
+import { BrowserInstallPanel } from "./SetupBrowser";
 import { SETUP_CATALOG, skeletonItem } from "./SetupCatalog";
 import { SetupRow, SetupSpinner, SetupStatusMark, SmallButton } from "./SetupChecklistRow";
 import { ComposioAppsRow } from "./welcome/ComposioAppsRow";
@@ -29,10 +29,7 @@ const WATCH_EVERY_MS = 6000;
 const WATCH_TIMES = 20;
 
 export function useSetupStatus() {
-  const { data: status, refreshing: statusBusy, refresh, set } = useCached(
-    SETUP_STATUS_CACHE_KEY,
-    api.setupStatus,
-  );
+  const { data: status, refreshing: statusBusy, refresh, set } = useCached(SETUP_STATUS_CACHE_KEY, api.setupStatus);
   const { refresh: refreshDetect } = useCached("setup-detect", api.setupDetect);
   // Covers the full Check-again round-trip (status + detect), not only one cache.
   const [recheck, setRecheck] = useState(false);
@@ -42,10 +39,7 @@ export function useSetupStatus() {
   const check = useCallback(async () => {
     setRecheck(true);
     try {
-      await Promise.all([
-        refresh({ busy: true }),
-        refreshDetect({ busy: true }).catch(() => undefined),
-      ]);
+      await Promise.all([refresh({ busy: true }), refreshDetect({ busy: true }).catch(() => undefined)]);
     } finally {
       setRecheck(false);
     }
@@ -79,7 +73,10 @@ export function useSetupStatus() {
 
   useEffect(() => {
     const off = listen(EVENTS.browsersChanged, () => {
-      void api.setupStatus().then(set).catch(() => undefined);
+      void api
+        .setupStatus()
+        .then(set)
+        .catch(() => undefined);
     });
     return () => {
       void off.then((f) => f());

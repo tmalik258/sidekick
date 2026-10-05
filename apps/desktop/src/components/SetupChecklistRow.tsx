@@ -66,8 +66,7 @@ export const SetupRow = memo(function SetupRow({
   const waiting = useSidekick((s) => s.waiting);
   // App connects (app:notion) highlight the Composio row — that is the island done ring.
   const justDone = useSidekick(
-    (s) =>
-      s.justDone === item.id || (item.id === "composio" && (s.justDone?.startsWith("app:") ?? false)),
+    (s) => s.justDone === item.id || (item.id === "composio" && (s.justDone?.startsWith("app:") ?? false)),
   );
   // When Settings reopens after a step finished, show that step.
   const rowRef = useRef<HTMLDivElement>(null);
@@ -308,11 +307,7 @@ export function SetupStatusMark({ checking, done }: { checking: boolean; done: b
       role="img"
       aria-label={checking ? "Checking" : done ? "Done" : "Not done"}
       className={`grid size-[18px] shrink-0 place-items-center rounded-full text-[10px] font-bold transition-colors duration-300 ${
-        checking
-          ? "animate-pulse bg-white/15"
-          : done
-            ? "bg-[#30d158] text-black"
-            : "ring-1 ring-white/30 ring-inset"
+        checking ? "animate-pulse bg-white/15" : done ? "bg-[#30d158] text-black" : "ring-1 ring-white/30 ring-inset"
       }`}
     >
       {!checking && done ? "✓" : ""}

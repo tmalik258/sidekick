@@ -8,7 +8,7 @@
 // resumes where the user left off.
 
 import { AnimatePresence, motion } from "motion/react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
 import { prefetch, revalidate, SETUP_STATUS_CACHE_KEY } from "@/lib/cache";
 import { useScrollEdge } from "@/lib/hooks";
@@ -43,6 +43,7 @@ export function IslandWelcome() {
   /** Pointer over the panel — reading counts as activity, not idle. */
   const [over, setOver] = useState(false);
   const edges = useScrollEdge();
+  const root = useRef<HTMLDivElement>(null);
 
   const poke = () => setIdleGen((n) => n + 1);
 
@@ -81,6 +82,27 @@ export function IslandWelcome() {
     setLineReady(wasHeard(step));
   }, [step]);
 
+  // Pointer activity resets idle hide without making the shell a control.
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const enter = () => setOver(true);
+    const leave = () => setOver(false);
+    const activity = () => setIdleGen((n) => n + 1);
+    el.addEventListener("pointerenter", enter);
+    el.addEventListener("pointerleave", leave);
+    el.addEventListener("pointerdown", activity);
+    el.addEventListener("wheel", activity, { passive: true });
+    return () => {
+      el.removeEventListener("pointerenter", enter);
+      el.removeEventListener("pointerleave", leave);
+      el.removeEventListener("pointerdown", activity);
+      el.removeEventListener("wheel", activity);
+    };
+  }, []);
+
+  // go closes over the latest setters; only the countdown clock should restart.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: step and autoIn only
   useEffect(() => {
     if (step !== 0 || autoIn === null || autoIn <= 0) return;
     const id = setTimeout(() => {
@@ -93,6 +115,8 @@ export function IslandWelcome() {
   // Talking, auto-advancing, or the user is still on the panel (reading /
   // scrolling). Waiting already parks welcome via startWaiting.
   const busy = !lineReady || autoIn !== null || over;
+  // idleGen and step restart the clock after activity or a step change.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: busy plus restart triggers
   useEffect(() => {
     if (busy) return;
     const id = setTimeout(() => void api.askDeferWelcome(), IDLE_HIDE_MS);
@@ -100,15 +124,7 @@ export function IslandWelcome() {
   }, [busy, idleGen, step]);
 
   return (
-    <div
-      className="flex flex-col"
-      style={{ maxHeight: PANEL_MAX_HEIGHT }}
-      onPointerEnter={() => setOver(true)}
-      onPointerLeave={() => setOver(false)}
-      onPointerDown={poke}
-      onKeyDown={poke}
-      onWheel={poke}
-    >
+    <div ref={root} className="flex flex-col" style={{ maxHeight: PANEL_MAX_HEIGHT }}>
       <div className="mb-3 flex h-7.5 shrink-0 items-center gap-2" style={{ paddingLeft: ASK_ORB + 10 }}>
         <h1 className="flex-1 font-display text-[17px] font-semibold tracking-[-0.015em]">{STEPS[step]}</h1>
         <ol className="flex gap-1" aria-label={`Step ${step + 1} of ${STEPS.length}`}>
@@ -199,31 +215,23 @@ function FooterLink({ onClick, children }: { onClick: () => void; children: Reac
 /** Sidekick talks the step through (each word shown as it is heard), then
  * the step's content appears. Step content mounts hidden during speech so
  * setup detect/status can load before the reveal. */
-function Spoken({
-  step,
-  children,
-  onReady,
-}: {
-  step: number;
-  children: ReactNode;
-  onReady?: () => void;
-}) {
+function Spoken({ step, children, onReady }: { step: number; children: ReactNode; onReady?: () => void }) {
   const [revealed, setRevealed] = useState(() => wasHeard(step));
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
 
   useEffect(() => {
     if (wasHeard(step)) {
       setRevealed(true);
-      onReady?.();
+      onReadyRef.current?.();
     } else {
       setRevealed(false);
     }
-    // onReady is from the parent render; step is the only trigger we need.
-    // biome-ignore lint/correctness/useExhaustiveDependencies: step only
   }, [step]);
 
   const show = () => {
     setRevealed(true);
-    onReady?.();
+    onReadyRef.current?.();
   };
 
   return (
@@ -231,11 +239,7 @@ function Spoken({
       <SpokenLine step={step} onDone={show} />
       <motion.div
         initial={false}
-        animate={
-          revealed
-            ? { opacity: 1, y: 0, filter: "blur(0px)" }
-            : { opacity: 0, y: 8, filter: "blur(4px)" }
-        }
+        animate={revealed ? { opacity: 1, y: 0, filter: "blur(0px)" } : { opacity: 0, y: 8, filter: "blur(4px)" }}
         transition={{ duration: 0.35, ease: [0.23, 1, 0.32, 1] }}
         className={`flex flex-col gap-2.5 text-[13px] ${revealed ? "" : "hidden"}`}
         aria-hidden={!revealed}

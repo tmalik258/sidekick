@@ -950,7 +950,10 @@ fn pin_connected(slug: &str) {
 fn recently_pinned(slug: &str) -> bool {
     PINNED
         .read()
-        .map(|p| p.iter().any(|(s, at)| s == slug && at.elapsed() < PIN_GRACE))
+        .map(|p| {
+            p.iter()
+                .any(|(s, at)| s == slug && at.elapsed() < PIN_GRACE)
+        })
         .unwrap_or(false)
 }
 

@@ -173,7 +173,9 @@ pub async fn setup_detect(app: AppHandle) -> Found {
             .collect(),
         installable: items
             .into_iter()
-            .filter(|i| i.runnable && !i.done && i.recommended && crate::setup::welcome_bulk_install(i))
+            .filter(|i| {
+                i.runnable && !i.done && i.recommended && crate::setup::welcome_bulk_install(i)
+            })
             .collect(),
     }
 }

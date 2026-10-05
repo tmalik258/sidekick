@@ -114,10 +114,7 @@ impl OpenAiCompat {
 /// The model to chat with when none is chosen: the first one listed (Ollama
 /// lists the newest first) that can chat: not embedding, not vision-only.
 pub fn first_chat_model(models: &[String]) -> Option<&str> {
-    models
-        .iter()
-        .map(String::as_str)
-        .find(|m| is_chat_model(m))
+    models.iter().map(String::as_str).find(|m| is_chat_model(m))
 }
 
 /// Embedding models (for search) cannot hold a conversation.
@@ -657,10 +654,7 @@ mod tests {
         assert!(is_vision_model("moondream:latest"));
         assert!(!is_chat_model("moondream"));
         assert_eq!(
-            first_chat_model(&[
-                "moondream:latest".to_owned(),
-                "qwen3:4b".to_owned(),
-            ]),
+            first_chat_model(&["moondream:latest".to_owned(), "qwen3:4b".to_owned(),]),
             Some("qwen3:4b")
         );
         assert_eq!(first_chat_model(&["moondream".to_owned()]), None);
