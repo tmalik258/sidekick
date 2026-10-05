@@ -936,10 +936,10 @@ static PINNED: std::sync::RwLock<Vec<(String, Instant)>> = std::sync::RwLock::ne
 
 /// Remembers one app as connected (e.g. right after a successful connect poll).
 fn pin_connected(slug: &str) {
-    if let Ok(mut g) = CONNECTED.write() {
-        if !g.iter().any(|s| s == slug) {
-            g.push(slug.to_owned());
-        }
+    if let Ok(mut g) = CONNECTED.write()
+        && !g.iter().any(|s| s == slug)
+    {
+        g.push(slug.to_owned());
     }
     if let Ok(mut p) = PINNED.write() {
         p.retain(|(s, at)| s != slug && at.elapsed() < PIN_GRACE);

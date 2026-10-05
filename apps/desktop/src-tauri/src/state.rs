@@ -257,8 +257,10 @@ mod tests {
     #[test]
     fn gate_state_reflects_pause_and_disabled_sensors() {
         let now = Utc::now();
-        let mut s = Settings::default();
-        s.onboarded = true;
+        let mut s = Settings {
+            onboarded: true,
+            ..Default::default()
+        };
         s.sensors.insert("clipboard".into(), false);
         s.sensors.insert("downloads".into(), true);
         s.pause = Pause::for_minutes(5, now);
