@@ -97,7 +97,7 @@ export function Chat({ turns }: { turns: Turn[] }) {
               {i === turns.length - 1 && options.length > 0 && (
                 <AnswerOptions options={options} start={pendingCount(t.proposals)} />
               )}
-              {/* Offered when the local model gives up; Ctrl Enter works any time. */}
+              {/* Offered when the local model gives up; Ctrl Enter works when an agent is installed. */}
               {!t.streaming && i === turns.length - 1 && (t.handoff || t.error) && (
                 <Handoff turns={turns} reason={t.handoff ?? null} />
               )}
@@ -171,13 +171,12 @@ export function Steps({ steps, running }: { steps: string[]; running: boolean })
   );
 }
 
-/** The coding agent that gets handoffs: Claude Code or Codex. */
-export function useAgentName(): string {
+/** The coding agent that gets handoffs, or null when neither is installed. */
+export function useAgentName(): string | null {
   const { data } = useCached<Agents>("agents", api.agentsStatus);
-  return data?.handoff ?? "Claude Code";
+  return data?.handoff ?? null;
 }
 
-/** Continue this conversation in the coding agent, which can make changes. */
 /** "Try again" (Alt R) under a failed answer. */
 export function Retry() {
   useEffect(() => {
@@ -205,6 +204,7 @@ export function Retry() {
 export function Handoff({ turns, reason }: { turns: Turn[]; reason: string | null }) {
   const [state, setState] = useState<string>("idle");
   const agent = useAgentName();
+  if (!agent) return null;
   const go = () => {
     setState("opening");
     const messages = turns.filter((t) => !t.error && t.content.trim()).map(({ role, content }) => ({ role, content }));

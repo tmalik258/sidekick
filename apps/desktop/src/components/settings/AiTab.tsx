@@ -68,7 +68,7 @@ const PROVIDER_SETUP: Record<AiProviderId, string[]> = {
 };
 
 const CODING_AGENTS: [string, string][] = [
-  ["auto", "Whichever is installed (Claude Code first)"],
+  ["auto", "Higher of Claude Code / Codex in the list above"],
   ["claude_code", "Claude Code"],
   ["codex", "Codex"],
 ];

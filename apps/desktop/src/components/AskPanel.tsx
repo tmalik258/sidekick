@@ -30,6 +30,7 @@ import { Kbd, Pill, Row } from "./ask/parts";
 import type { Command } from "./ask/Starters";
 import { ContextChips, contextStarters, soonestMeeting } from "./ask/Starters";
 import { Icon } from "./Icon";
+import { SetupSpinner } from "./SetupChecklistRow";
 
 /** Space the island's orb takes at the top-left in Ask mode. */
 export const ASK_ORB = 30;
@@ -54,7 +55,9 @@ export function AskPanel() {
   const settings = useSidekick((s) => s.settings);
   const [text, setText] = useState(ask?.prompt ?? "");
   const [selected, setSelected] = useState(0);
-  const [providers, setProviders] = useState<ProviderStatus[]>([]);
+  const { data: providersData, refresh: refreshProviders } = useCached<ProviderStatus[]>("ai-status", api.aiStatus);
+  const providers = providersData ?? [];
+  const [handoffError, setHandoffError] = useState<string | null>(null);
   const [hits, setHits] = useState<{ query: string; items: SearchHit[] } | null>(null);
   const [clips, setClips] = useState<{ text: string; ts: string }[] | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -96,7 +99,8 @@ export function AskPanel() {
     setSelected(0);
     setClips(null);
     setHistoryOpen(false);
-    void api.aiStatus().then(setProviders);
+    setHandoffError(null);
+    void refreshProviders().catch(() => undefined);
     void api.projectsList().then(setProjects);
     void api
       .chatsList()
@@ -111,7 +115,7 @@ export function AskPanel() {
     }
     const id = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(id);
-  }, [seq]);
+  }, [seq, refreshProviders]);
 
   // A new question always jumps to the bottom, even after scrolling up.
   const userTurns = turns.filter((t) => t.role === "user").length;
@@ -392,13 +396,18 @@ export function AskPanel() {
     } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       // Ctrl Enter: this conversation (and what is typed) goes to the coding agent.
       e.preventDefault();
+      if (!agent) return;
       const messages = turns
         .filter((t) => !t.error && t.content.trim())
         .map(({ role, content }) => ({ role, content }));
       if (text.trim()) messages.push({ role: "user", content: text.trim() });
       if (messages.length === 0) return;
       setText("");
-      void api.aiHandoff(messages, null).then(() => api.askClose());
+      setHandoffError(null);
+      void api
+        .aiHandoff(messages, null)
+        .then(() => api.askClose())
+        .catch((err: unknown) => setHandoffError(String(err)));
     } else if (e.key === "Enter") {
       e.preventDefault();
       // In a conversation Enter sends the follow-up.
@@ -607,7 +616,7 @@ export function AskPanel() {
                     onHover={() => setSelected(row)}
                     onClick={() => runRow(row)}
                   >
-                    <span className="grid size-6 place-items-center rounded-full bg-white/[0.12] text-white/85">
+                    <span className="grid size-6 place-items-center rounded-full bg-white/12 text-white/85">
                       <Icon name={c.icon} size={13} />
                     </span>
                     <span className="flex-1 truncate">{c.label}</span>
@@ -620,10 +629,22 @@ export function AskPanel() {
         )}
       </AnimatePresence>
 
+      {handoffError && <p className="mt-1.5 text-[12px] text-[#ffb4ae]">{handoffError}</p>}
       <div className="mt-2 flex items-center gap-2 text-[11px] text-[rgb(235_235_245/0.45)]">
-        <span className={`size-1.5 rounded-full ${best ? "bg-[#30d158]" : "bg-[#ffd60a]"}`} aria-hidden="true" />
+        {providersData === null && !best ? (
+          <SetupSpinner className="text-white/50" />
+        ) : (
+          <span
+            className={`size-1.5 rounded-full ${best ? "bg-[#30d158]" : "bg-[#ffd60a]"}`}
+            aria-hidden="true"
+          />
+        )}
         {best ? (
           <ModelPicker choices={choices} best={best} picked={pickedModel} />
+        ) : providersData === null ? (
+          <span className="truncate" aria-live="polite">
+            Checking AI…
+          </span>
         ) : (
           <span className="truncate">
             {ask.localOnly ? "No local model running" : "No AI set up yet. See Settings > AI"}
@@ -633,9 +654,9 @@ export function AskPanel() {
           <span>
             <Kbd>Enter</Kbd> {asking ? "ask" : showClips ? "copy" : showHits ? "open" : "run"}
           </span>
-          {(asking || turns.length > 0) && (
+          {agent && (asking || turns.length > 0) && (
             <span>
-              <Kbd>Ctrl Enter</Kbd> {agent}
+              <Kbd>Ctrl Enter</Kbd> continue in {agent}
             </span>
           )}
           <span>
