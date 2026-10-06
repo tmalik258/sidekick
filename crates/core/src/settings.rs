@@ -296,6 +296,8 @@ pub struct VoiceSettings {
     pub conversation: bool,
     /// Read suggestions aloud and take a spoken choice ("open", "not now").
     pub speak_suggestions: bool,
+    /// Talking over a spoken answer stops it and listens.
+    pub interrupt: bool,
     /// Voice id, e.g. "f5" (Supertonic 3's Female 5).
     pub voice: String,
     /// 0.5 to 2.0.
@@ -322,6 +324,7 @@ impl Default for VoiceSettings {
             speak_answers: true,
             conversation: true,
             speak_suggestions: true,
+            interrupt: true,
             voice: "f5".into(),
             speed: 1.0,
             model: VOICE_MODEL,

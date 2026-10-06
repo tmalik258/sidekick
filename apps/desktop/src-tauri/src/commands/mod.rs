@@ -288,6 +288,10 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
     let next = next.sanitized();
     let now = Utc::now();
     let previous = lock(&state.settings).clone();
+    if next.ai != previous.ai {
+        // Warm sessions were started with the old models and paths.
+        crate::ai::close_sessions();
+    }
 
     if next.launch_at_login != previous.launch_at_login {
         let autolaunch = app.autolaunch();

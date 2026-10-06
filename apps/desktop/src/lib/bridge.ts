@@ -36,6 +36,7 @@ import type {
   SkillInfo,
   StoredEvent,
   Suggestion,
+  Timing,
   Transition,
   Turn,
   UpdateInfo,
@@ -72,6 +73,7 @@ export const EVENTS = {
   voiceWelcome: "voice://welcome",
   netStatus: "net://status",
   updateAvailable: "update://available",
+  timing: "timing://recorded",
 } as const;
 
 export interface EventPayloads {
@@ -101,6 +103,7 @@ export interface EventPayloads {
   [EVENTS.browsersChanged]: null;
   [EVENTS.guideKey]: number;
   [EVENTS.voiceWelcome]: WelcomeSpeech;
+  [EVENTS.timing]: Timing;
 }
 
 export function isTauri(): boolean {
@@ -166,10 +169,15 @@ export const api = {
       speak?: boolean;
       /** Provider picked in Ask mode; null lets Sidekick choose. */
       prefer?: string | null;
+      /** Started early at a pause in speech: hidden until aiRelease. */
+      hold?: boolean;
     },
     localOnly: boolean,
   ) => invoke<void>("ai_chat", { id, messages, attach, localOnly }),
   aiCancel: (id: string) => invoke<void>("ai_cancel", { id }),
+  aiRelease: (id: string) => invoke<void>("ai_release", { id }),
+  timingRecord: (name: Timing["name"], ms: number) => invoke<void>("timing_record", { name, ms }),
+  timingsRecent: () => invoke<Timing[]>("timings_recent"),
   askClose: () => invoke<void>("ask_close"),
   browserInfo: () => invoke<BrowserInfo>("browser_info"),
   timeToday: () => invoke<AppTime[]>("time_today"),

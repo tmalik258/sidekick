@@ -321,6 +321,9 @@ commands.ai_run_proposal = () => ({
   path: "C:/Users/you/Documents/Invoices/invoice-sept.pdf",
 });
 commands.ai_cancel = () => undefined;
+commands.ai_release = () => undefined;
+commands.timing_record = () => undefined;
+commands.timings_recent = () => [];
 let welcomeDeferred = false;
 commands.ask_close = () => {
   if (!settings.onboarded && !welcomeDeferred) {
