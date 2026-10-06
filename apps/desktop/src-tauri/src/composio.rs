@@ -591,7 +591,8 @@ impl AiProvider for LocalWithTools {
                 .ai
                 .local
                 .clone();
-            if !ai.vision_model.trim().is_empty() {
+            let vision_name = ai.vision_model.trim();
+            if !vision_name.is_empty() && !vision_name.eq_ignore_ascii_case("off") {
                 let vision = OpenAiCompat::new(Some(ai.base_url), Some(ai.vision_model));
                 return vision.chat(req, sink, cancel).await;
             }

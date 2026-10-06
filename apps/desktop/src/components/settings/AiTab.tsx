@@ -64,7 +64,7 @@ const PROVIDER_SETUP: Record<AiProviderId, string[]> = {
   claude_code: ["claude_code", "claude_hooks", "claude_mcp"],
   codex: ["codex", "codex_notify", "codex_mcp"],
   anthropic: ["anthropic"],
-  local: ["ollama", "ollama_chat", "ollama_embed"],
+  local: ["ollama", "ollama_chat", "ollama_embed", "ollama_vision"],
 };
 
 const CODING_AGENTS: [string, string][] = [
@@ -231,10 +231,10 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
                     <Field label="Vision model" hint="For pictures without text">
                       <Select
                         label="Vision model"
-                        value={ai.local.visionModel}
+                        value={!ai.local.visionModel || ai.local.visionModel === "off" ? "off" : ai.local.visionModel}
                         options={[
-                          ["", "Off (read text)"],
-                          ...(models?.chat ?? []).map((m) => [m, m] as [string, string]),
+                          ["off", "Off (read text)"],
+                          ...(models?.vision ?? []).map((m) => [m, m] as [string, string]),
                         ]}
                         onChange={(visionModel) => void save({ local: { ...ai.local, visionModel } })}
                       />

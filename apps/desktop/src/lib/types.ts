@@ -127,7 +127,7 @@ export interface VoiceDownload {
   error: string | null;
 }
 
-export const AI_PROVIDERS = ["claude_code", "codex", "anthropic", "local"] as const;
+export const AI_PROVIDERS = ["local", "claude_code", "codex", "anthropic"] as const;
 export type AiProviderId = (typeof AI_PROVIDERS)[number];
 
 export interface AiSettings {
@@ -309,7 +309,7 @@ export const DEFAULT_SETTINGS: Settings = {
   indexFolders: [],
   endOfDayHour: 18,
   ai: {
-    order: ["claude_code", "codex", "anthropic", "local"],
+    order: ["local", "claude_code", "codex", "anthropic"],
     claudeCode: { enabled: true, path: "", model: FAST_CLAUDE_MODEL },
     codex: { enabled: true, path: "", model: FAST_CODEX_MODEL },
     codingAgent: "auto",
@@ -530,6 +530,7 @@ export interface SetupPlan {
 export interface LocalModels {
   reachable: boolean;
   chat: string[];
+  vision: string[];
   embed: string[];
 }
 

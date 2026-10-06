@@ -140,9 +140,10 @@ export function Island() {
     !settings.onboarded && !asking && !(voiceStatus?.models.some((m) => m.id === "voice" && m.installed) ?? false);
   // A guide stays open while Sidekick waits on something you finish elsewhere.
   const guiding = !!waiting && !waiting.minimized && (waiting.steps?.length ?? 0) > 0;
-  // Voice with Ask closed: Listening / Thinking pill. Stay non-bare so the
-  // hit rect stays usable (Idle alone would shrink to a pinprick and lock out).
-  const voiceBusy = hearing !== null || voiceQuestion !== null || mascot === "listening";
+  // Voice / in-flight Ask with Ask closed: Listening / Thinking / Working pill.
+  // Stay non-bare so the hit rect stays usable (Idle alone would shrink to a
+  // pinprick and lock out).
+  const voiceBusy = hearing !== null || voiceQuestion !== null || mascot === "listening" || working !== null;
   const voicePill: { text: string; thinking: boolean; working?: boolean } | null = asking
     ? null
     : voiceQuestion !== null
@@ -164,21 +165,15 @@ export function Island() {
   // At rest only the sphere shows. The shell keeps its size (so hover and the
   // orb position do not move) but loses its background.
   const bare =
-    !expanded &&
-    !chatting &&
-    !waiting &&
-    !voiceBusy &&
-    !working &&
-    online &&
-    (mascot === "idle" || mascot === "sleeping");
-  const busy =
-    chatting || preparingVoice || voiceBusy || Boolean(working) || mascot === "noticing" || mascot === "working";
+    !expanded && !chatting && !waiting && !voiceBusy && online && (mascot === "idle" || mascot === "sleeping");
+  const busy = chatting || preparingVoice || voiceBusy || mascot === "noticing" || mascot === "working";
 
-  // Hover while Thinking: open Ask so the island is usable, not a dead pill.
+  // Hover while Thinking or Working: open Ask so the island is usable, not a dead pill.
   useEffect(() => {
-    if (!intent || quiet || asking || !settings.onboarded || voiceQuestion === null) return;
+    if (!intent || quiet || asking || !settings.onboarded) return;
+    if (voiceQuestion === null && working === null) return;
     void api.askOpen();
-  }, [intent, quiet, asking, settings.onboarded, voiceQuestion]);
+  }, [intent, quiet, asking, settings.onboarded, voiceQuestion, working]);
 
   const [contentHeight, setContentHeight] = useState(0);
   const bump = useMotionValue(1);

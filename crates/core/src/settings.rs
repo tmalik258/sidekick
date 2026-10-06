@@ -414,7 +414,7 @@ pub struct SemIfPref {
     pub gguf: String,
 }
 
-pub const AI_PROVIDERS: [&str; 4] = ["claude_code", "codex", "anthropic", "local"];
+pub const AI_PROVIDERS: [&str; 4] = ["local", "claude_code", "codex", "anthropic"];
 
 impl Default for AiSettings {
     fn default() -> Self {

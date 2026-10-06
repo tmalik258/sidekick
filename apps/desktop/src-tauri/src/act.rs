@@ -648,7 +648,7 @@ async fn find_on_screen(app: &AppHandle, want: &str) -> Result<(i32, i32, &'stat
         return Ok((ox + x + w / 2, oy + y + h / 2, "read on screen"));
     }
     let vision = ai.vision_model.trim().to_owned();
-    if vision.is_empty() {
+    if vision.is_empty() || vision.eq_ignore_ascii_case("off") {
         return Err(match found {
             Err(e) => format!("could not read the screen ({e})"),
             Ok(_) => format!("\"{want}\" is not on the screen as text"),

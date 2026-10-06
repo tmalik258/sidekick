@@ -228,6 +228,15 @@ pub async fn setup_apply(app: AppHandle, plan: Plan) -> CmdResult<Vec<String>> {
     if !plan.install.is_empty() {
         done.extend(crate::setup::run_many(&app, &plan.install).await?);
     }
+    // Vision may already be pulled, or just finished via install above.
+    let base = lock(&app.state::<AppState>().settings)
+        .ai
+        .local
+        .base_url
+        .clone();
+    if let Some(models) = crate::setup::ollama_models(&base).await {
+        crate::setup::maybe_select_vision(&app, &models);
+    }
     crate::search::reindex_folders(&app);
     Ok(done)
 }
