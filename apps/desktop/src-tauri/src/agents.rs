@@ -1,7 +1,8 @@
 //! Coding agents: Claude Code and OpenAI's Codex CLI. Either one (or both)
 //! can finish what the local model cannot, get Sidekick's tools, and tell
 //! the island when a turn is done. Settings > AI picks which one gets the
-//! handoff; "auto" takes Claude Code when it is installed, else Codex.
+//! handoff; "auto" prefers whichever of Claude Code / Codex appears higher
+//! in the AI provider list and is installed.
 
 use std::path::{Path, PathBuf};
 
@@ -49,14 +50,30 @@ impl Agent {
     }
 }
 
-/// The agent that gets handoffs, given what is installed.
-pub fn pick(choice: &str, claude: bool, codex: bool) -> Option<Agent> {
-    match (choice, claude, codex) {
-        ("codex", _, true) => Some(Agent::Codex),
-        ("claude_code", true, _) => Some(Agent::ClaudeCode),
-        (_, true, _) => Some(Agent::ClaudeCode),
-        (_, _, true) => Some(Agent::Codex),
-        _ => None,
+/// The agent that gets handoffs, given what is installed and (for auto) order.
+pub fn pick(choice: &str, claude: bool, codex: bool, order: &[String]) -> Option<Agent> {
+    match choice {
+        "codex" if codex => Some(Agent::Codex),
+        "claude_code" if claude => Some(Agent::ClaudeCode),
+        // Preferred missing: use the other rather than fail.
+        "codex" if claude => Some(Agent::ClaudeCode),
+        "claude_code" if codex => Some(Agent::Codex),
+        _ => {
+            for id in order {
+                match id.as_str() {
+                    "codex" if codex => return Some(Agent::Codex),
+                    "claude_code" if claude => return Some(Agent::ClaudeCode),
+                    _ => {}
+                }
+            }
+            if claude {
+                Some(Agent::ClaudeCode)
+            } else if codex {
+                Some(Agent::Codex)
+            } else {
+                None
+            }
+        }
     }
 }
 
@@ -65,6 +82,7 @@ pub fn chosen(s: &Settings) -> Option<Agent> {
         &s.ai.coding_agent,
         Agent::ClaudeCode.resolve(s).is_some(),
         Agent::Codex.resolve(s).is_some(),
+        &s.ai.order,
     )
 }
 
@@ -84,7 +102,7 @@ pub fn status(s: &Settings) -> Agents {
     Agents {
         claude_code: claude,
         codex,
-        handoff: pick(&s.ai.coding_agent, claude, codex).map(|a| a.name().to_owned()),
+        handoff: pick(&s.ai.coding_agent, claude, codex, &s.ai.order).map(|a| a.name().to_owned()),
     }
 }
 
@@ -199,11 +217,18 @@ pub async fn hand_off(
 fn launch(dir: &Path, exe: &Path, args: &[String], env: &[(String, String)]) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+    if !exe.is_file() {
+        return Err(format!(
+            "could not find {}. Install the coding agent or set its path in Settings > AI.",
+            exe.display()
+        ));
+    }
     let q = |s: &str| format!("'{}'", s.replace('\'', "''"));
+    let exe_q = q(&exe.to_string_lossy());
     let mut cmd = format!(
-        "Set-Location -LiteralPath {}; & {}",
+        "Set-Location -LiteralPath {}; $exe = {}; if (-not (Test-Path -LiteralPath $exe)) {{ Write-Host \"Could not find $exe. Install the coding agent or set its path in Settings > AI.\"; exit 1 }}; & $exe",
         q(&dir.to_string_lossy()),
-        q(&exe.to_string_lossy())
+        exe_q
     );
     for a in args {
         cmd.push(' ');
@@ -240,13 +265,30 @@ mod tests {
 
     #[test]
     fn picks_the_agent_that_is_there() {
-        assert_eq!(pick("auto", true, true), Some(Agent::ClaudeCode));
-        assert_eq!(pick("auto", false, true), Some(Agent::Codex));
-        assert_eq!(pick("codex", true, true), Some(Agent::Codex));
+        let claude_first = ["claude_code".into(), "codex".into()];
+        let codex_first = ["local".into(), "codex".into(), "claude_code".into()];
+        assert_eq!(
+            pick("auto", true, true, &claude_first),
+            Some(Agent::ClaudeCode)
+        );
+        assert_eq!(pick("auto", true, true, &codex_first), Some(Agent::Codex));
+        assert_eq!(pick("auto", false, true, &claude_first), Some(Agent::Codex));
+        assert_eq!(pick("codex", true, true, &claude_first), Some(Agent::Codex));
         // The chosen one is missing: use the other rather than fail.
-        assert_eq!(pick("codex", true, false), Some(Agent::ClaudeCode));
-        assert_eq!(pick("claude_code", false, true), Some(Agent::Codex));
-        assert_eq!(pick("auto", false, false), None);
+        assert_eq!(
+            pick("codex", true, false, &codex_first),
+            Some(Agent::ClaudeCode)
+        );
+        assert_eq!(
+            pick("claude_code", false, true, &claude_first),
+            Some(Agent::Codex)
+        );
+        assert_eq!(pick("auto", false, false, &codex_first), None);
+        // Neither coding agent in order: Claude then Codex.
+        assert_eq!(
+            pick("auto", true, true, &["local".into(), "anthropic".into()]),
+            Some(Agent::ClaudeCode)
+        );
     }
 
     #[test]

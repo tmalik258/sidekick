@@ -186,20 +186,40 @@ pub fn mcp_added(claude_json: &str, url: &str) -> bool {
 }
 
 /// The vision model suggested when none is set: small enough for a 4 GB GPU.
-const VISION_MODEL: &str = "moondream";
+pub const VISION_MODEL: &str = "moondream";
 
 /// Ollama names models `name:tag`; `nomic-embed-text` matches
 /// `nomic-embed-text:latest`.
 pub fn has_model(models: &[String], wanted: &str) -> bool {
+    resolve_model_tag(models, wanted).is_some()
+}
+
+/// The actual Ollama tag for `wanted` (e.g. `moondream` → `moondream:latest`).
+pub fn resolve_model_tag(models: &[String], wanted: &str) -> Option<String> {
     let base = |m: &str| m.split(':').next().unwrap_or(m).to_ascii_lowercase();
     let wanted_has_tag = wanted.contains(':');
-    models.iter().any(|m| {
-        if wanted_has_tag {
+    models.iter().find_map(|m| {
+        let matched = if wanted_has_tag {
             m.eq_ignore_ascii_case(wanted)
         } else {
             base(m) == base(wanted)
-        }
+        };
+        matched.then(|| m.clone())
     })
+}
+
+/// When vision is unset (empty) and the suggested model is installed, save its tag.
+/// Leaves an explicit Off (`"off"`) or any other non-empty choice alone.
+pub fn maybe_select_vision(app: &AppHandle, models: &[String]) {
+    let mut settings = lock(&app.state::<AppState>().settings).clone();
+    if !settings.ai.local.vision_model.trim().is_empty() {
+        return;
+    }
+    let Some(tag) = resolve_model_tag(models, VISION_MODEL) else {
+        return;
+    };
+    settings.ai.local.vision_model = tag;
+    let _ = crate::commands::apply_settings(app, settings);
 }
 
 fn read(path: &Path) -> String {
@@ -295,7 +315,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     // setx writes the user env; pick the key up without asking for a restart.
     refresh_user_env("ANTHROPIC_API_KEY");
     let state = app.state::<AppState>();
-    let settings = lock(&state.settings).clone();
+    let mut settings = lock(&state.settings).clone();
     let base_url = settings.ai.local.base_url.clone();
 
     // Independent probes run together so wall time ≈ the slowest one.
@@ -426,9 +446,15 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     items.push(embed);
 
     // Optional: a small model that sees pictures, for screen questions
-    // without text. Off by default; OCR covers text on screen.
+    // without text. Empty means unset (auto-pick when installed); "off" is
+    // an explicit OCR-only choice. Pull still targets moondream when unset/off.
+    if let Some(list) = models.as_ref() {
+        maybe_select_vision(app, list);
+        // Re-read after a possible auto-pick.
+        settings = lock(&app.state::<AppState>().settings).clone();
+    }
     let vision = settings.ai.local.vision_model.trim();
-    let vision_model = if vision.is_empty() {
+    let vision_model = if vision.is_empty() || vision.eq_ignore_ascii_case("off") {
         VISION_MODEL
     } else {
         vision
@@ -1075,11 +1101,19 @@ mod tests {
 
     #[test]
     fn matches_ollama_models() {
-        let models = vec!["nomic-embed-text:latest".to_owned(), "qwen3:4b".to_owned()];
+        let models = vec![
+            "nomic-embed-text:latest".to_owned(),
+            "qwen3:4b".to_owned(),
+            "moondream:latest".to_owned(),
+        ];
         assert!(has_model(&models, "nomic-embed-text"));
         assert!(has_model(&models, "qwen3:4b"));
         assert!(!has_model(&models, "qwen3:8b"));
         assert!(!has_model(&models, "llama3.2"));
+        assert_eq!(
+            resolve_model_tag(&models, "moondream").as_deref(),
+            Some("moondream:latest")
+        );
         assert!(sidekick_ai::is_embedding_model("nomic-embed-text:latest"));
         assert!(!sidekick_ai::is_embedding_model("qwen3:4b"));
     }

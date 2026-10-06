@@ -138,10 +138,11 @@ pub fn chat_delete(state: State<'_, AppState>, id: String) -> CmdResult<()> {
 pub struct LocalModels {
     reachable: bool,
     chat: Vec<String>,
+    vision: Vec<String>,
     embed: Vec<String>,
 }
 
-/// Models on the local AI server, split into chat and search models.
+/// Models on the local AI server, split into chat, vision, and search models.
 #[tauri::command]
 pub async fn local_models(app: AppHandle) -> LocalModels {
     let base = lock(&app.state::<AppState>().settings)
@@ -153,15 +154,53 @@ pub async fn local_models(app: AppHandle) -> LocalModels {
         return LocalModels {
             reachable: false,
             chat: Vec::new(),
+            vision: Vec::new(),
             embed: Vec::new(),
         };
     };
-    let (embed, chat) = models
-        .into_iter()
-        .partition(|m| sidekick_ai::is_embedding_model(m));
+    // Auto-pick vision when the suggested model is installed but unset.
+    crate::setup::maybe_select_vision(&app, &models);
+    split_local_models(models, true)
+}
+
+fn split_local_models(models: Vec<String>, reachable: bool) -> LocalModels {
+    let mut chat = Vec::new();
+    let mut vision = Vec::new();
+    let mut embed = Vec::new();
+    for m in models {
+        if sidekick_ai::is_embedding_model(&m) {
+            embed.push(m);
+        } else if sidekick_ai::is_vision_model(&m) {
+            vision.push(m);
+        } else if sidekick_ai::is_chat_model(&m) {
+            chat.push(m);
+        }
+    }
     LocalModels {
-        reachable: true,
+        reachable,
         chat,
+        vision,
         embed,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_local_models;
+
+    #[test]
+    fn local_models_keep_moondream_out_of_chat() {
+        let models = split_local_models(
+            vec![
+                "moondream:latest".into(),
+                "qwen3:4b".into(),
+                "nomic-embed-text".into(),
+            ],
+            true,
+        );
+        assert_eq!(models.chat, ["qwen3:4b"]);
+        assert_eq!(models.vision, ["moondream:latest"]);
+        assert_eq!(models.embed, ["nomic-embed-text"]);
+        assert!(!models.chat.iter().any(|m| m.contains("moondream")));
     }
 }

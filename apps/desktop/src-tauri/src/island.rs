@@ -36,13 +36,8 @@ const TOP_EVERY: Duration = Duration::from_secs(1);
 /// Shown yet: the window stays hidden until the page has drawn, so an
 /// empty webview never flashes black.
 static SHOWN: AtomicBool = AtomicBool::new(false);
-/// Set when click-through must be applied again even if nothing changed:
-/// Windows can drop it while the page loads.
-static REAPPLY: AtomicBool = AtomicBool::new(false);
 /// Shown anyway after this, in case the page never says it is ready.
 const SHOW_AT_LATEST: Duration = Duration::from_secs(5);
-/// How often click-through is applied again regardless.
-const REAPPLY_EVERY: Duration = Duration::from_secs(2);
 
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     let window = app
@@ -69,8 +64,36 @@ pub fn reveal(window: &WebviewWindow) {
         log::warn!("could not show the island: {err}");
     }
     let _ = window.set_ignore_cursor_events(true);
-    REAPPLY.store(true, Ordering::SeqCst);
 }
+
+/// Makes sure the window really lets clicks through. tao remembers the last
+/// value it was given and skips the write when asked for the same value again,
+/// so once Windows drops the style (it can while WebView2 loads the page, or
+/// after a display change) asking tao again does nothing. Only a change wrote
+/// it back, which is why hovering the island used to fix it and nothing else
+/// did. So read the window's actual style and restore it when it is missing.
+#[cfg(windows)]
+fn ensure_click_through(window: &WebviewWindow) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GWL_EXSTYLE, GetWindowLongPtrW, SetWindowLongPtrW, WS_EX_LAYERED, WS_EX_TRANSPARENT,
+    };
+    let Ok(hwnd) = window.hwnd() else {
+        return;
+    };
+    let want = (WS_EX_TRANSPARENT | WS_EX_LAYERED) as isize;
+    // SAFETY: a valid window handle from Tauri, owned by this process; only
+    // the two click-through bits of the extended style change.
+    unsafe {
+        let style = GetWindowLongPtrW(hwnd.0 as _, GWL_EXSTYLE);
+        if style & want != want {
+            log::debug!("click-through was dropped; restoring it");
+            SetWindowLongPtrW(hwnd.0 as _, GWL_EXSTYLE, style | want);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn ensure_click_through(_window: &WebviewWindow) {}
 
 fn position_top_center(window: &WebviewWindow) -> tauri::Result<()> {
     match window.primary_monitor()? {
@@ -216,6 +239,7 @@ pub fn follow_fullscreen(app: &AppHandle, payload: &serde_json::Value) {
     // fades out instead, and the hover tracker keeps it click-through.
     if fullscreen && SHOWN.load(Ordering::SeqCst) {
         let _ = window.set_ignore_cursor_events(true);
+        ensure_click_through(&window);
     }
     let _ = app.emit_to(LABEL, VISIBLE_EVENT, !fullscreen);
 }
@@ -232,19 +256,11 @@ fn spawn_hover_tracker(app: AppHandle, window: WebviewWindow) {
         let mut applied: Option<(bool, bool, bool)> = None;
         let mut last: Option<CursorPos> = None;
         let mut wait = CURSOR_POLL;
-        let mut reapplied = std::time::Instant::now();
         loop {
             tokio::time::sleep(wait).await;
             // Hidden until the page has drawn; nothing to track yet.
             if !SHOWN.load(Ordering::SeqCst) {
                 continue;
-            }
-            // Windows can drop click-through (while the page loads, after a
-            // display change), and it was only set again on a change, so the
-            // island blocked clicks until hovered. Apply it again regularly.
-            if REAPPLY.swap(false, Ordering::SeqCst) || reapplied.elapsed() >= REAPPLY_EVERY {
-                applied = None;
-                reapplied = std::time::Instant::now();
             }
             let Some(pos) = cursor_in_window(&app, &window) else {
                 continue;
@@ -273,6 +289,11 @@ fn spawn_hover_tracker(app: AppHandle, window: WebviewWindow) {
                 if let Err(err) = window.set_ignore_cursor_events(now_through) {
                     log::warn!("could not toggle click-through: {err}");
                 }
+            }
+            // tao only writes on a change, so check what the window really has
+            // (a cheap read) and put click-through back if it was dropped.
+            if now_through {
+                ensure_click_through(&window);
             }
             let now_inside = rect.contains(pos.x, pos.y);
             if now_inside == inside {

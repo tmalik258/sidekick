@@ -611,7 +611,12 @@ commands.extension_install = (a) => {
     ],
   };
 };
-commands.local_models = () => ({ reachable: true, chat: ["qwen3:1.7b", "llama3.2:3b"], embed: ["nomic-embed-text"] });
+commands.local_models = () => ({
+  reachable: true,
+  chat: ["qwen3:1.7b", "llama3.2:3b"],
+  vision: ["moondream:latest"],
+  embed: ["nomic-embed-text"],
+});
 commands.running_apps = () => ["code.exe", "chrome.exe", "slack.exe", "windowsterminal.exe", "keepassxc.exe"];
 commands.suggestion_always = (a) => commands.suggestion_choose?.(a);
 let laterItems = [
