@@ -257,6 +257,42 @@ body {
   transform: none;
 }
 
+/* Talking: the mouth opens and closes in an uneven, speech-like rhythm. */
+.orb-life[data-life="talk"] {
+  animation: orb-breathe 4.8s ease-in-out infinite;
+}
+.orb-life[data-life="talk"] .orb-mouth {
+  width: 0.3em;
+  height: 0.15em;
+  margin-left: -0.15em;
+  top: 61%;
+}
+.orb-life[data-life="talk"] .orb-mouth[data-on="true"] {
+  transform-origin: 50% 30%;
+  animation: orb-talk 0.9s ease-in-out infinite;
+}
+@keyframes orb-talk {
+  0%,
+  100% {
+    scale: 1 0.5;
+  }
+  18% {
+    scale: 1 1;
+  }
+  34% {
+    scale: 1 0.55;
+  }
+  52% {
+    scale: 1 0.95;
+  }
+  70% {
+    scale: 1 0.35;
+  }
+  84% {
+    scale: 1 0.8;
+  }
+}
+
 .orb-cheek {
   position: absolute;
   top: 60%;
@@ -654,5 +690,128 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .rise-in {
     animation: fade-in 120ms ease-out both;
+  }
+}
+
+/* ---------- Ask: key badges, menus, voice ---------- */
+
+/* Shown on each control while Alt is held. */
+.key-hint {
+  opacity: 0;
+  scale: 0.85;
+  transition:
+    opacity 120ms ease,
+    scale 160ms var(--ease-out-strong);
+}
+.key-hint[data-show="true"] {
+  opacity: 1;
+  scale: 1;
+}
+
+/* Menus: Graphite, frosted, anchored to their button. */
+.menu {
+  background: rgb(30 30 36 / 0.94);
+  box-shadow:
+    inset 0 0.5px 0 rgb(255 255 255 / 0.1),
+    0 0 0 0.5px rgb(255 255 255 / 0.12),
+    0 16px 40px -8px rgb(0 0 0 / 0.6);
+  transform-origin: var(--menu-origin, top right);
+  animation: menu-in 160ms var(--ease-out-strong) both;
+}
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    scale: 0.96;
+    filter: blur(2px);
+  }
+}
+.menu-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 2px 12px;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 9px;
+  text-align: left;
+  color: rgb(255 255 255 / 0.88);
+}
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: rgb(255 255 255 / 0.09);
+  outline: none;
+}
+.menu-item small {
+  grid-column: 1;
+  font-size: 11.5px;
+  color: rgb(235 235 245 / 0.45);
+}
+
+/* The voice: rainbow bars that follow the level. */
+.voice-bars {
+  display: flex;
+  align-items: center;
+  gap: 2.5px;
+  height: 18px;
+}
+.voice-bars i {
+  width: 3px;
+  height: 4px;
+  border-radius: 2px;
+  animation: voice-bar 0.9s ease-in-out infinite;
+}
+.voice-bars i:nth-child(1) {
+  background: #ff7a45;
+  animation-delay: -0.1s;
+}
+.voice-bars i:nth-child(2) {
+  background: #f45e8a;
+  animation-delay: -0.45s;
+}
+.voice-bars i:nth-child(3) {
+  background: #e14bff;
+  animation-delay: -0.2s;
+}
+.voice-bars i:nth-child(4) {
+  background: #a96cff;
+  animation-delay: -0.6s;
+}
+.voice-bars i:nth-child(5) {
+  background: #7a7cff;
+  animation-delay: -0.3s;
+}
+.voice-bars i:nth-child(6) {
+  background: #4d8bff;
+  animation-delay: -0.75s;
+}
+@keyframes voice-bar {
+  0%,
+  100% {
+    height: 4px;
+  }
+  50% {
+    height: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-bars i {
+    animation: none;
+    height: 8px;
+  }
+}
+
+/* Answers that were just written settle in from a slight blur. */
+.settle {
+  animation: settle 220ms ease-out both;
+}
+@keyframes settle {
+  from {
+    opacity: 0;
+    filter: blur(3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .settle {
+    animation: fade-in 160ms ease-out both;
   }
 }

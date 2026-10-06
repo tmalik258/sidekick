@@ -285,6 +285,8 @@ pub fn refresh(app: &AppHandle) {
     });
 }
 
+/// True while Sidekick's voice plays, false when it stops.
+pub const SPEAKING_EVENT: &str = "voice://speaking";
 /// How often the echo guard checks whether Sidekick is speaking.
 const ECHO_CHECK: std::time::Duration = std::time::Duration::from_millis(50);
 /// The room still rings a moment after the speakers go quiet.
@@ -302,9 +304,21 @@ pub fn start_echo_guard(app: &AppHandle) {
             let mut quiet_since: Option<std::time::Instant> = None;
             // The listener told last, and what it was told.
             let mut told: Option<(usize, bool)> = None;
+            // What the island was told about Sidekick talking.
+            let mut said_speaking = false;
             loop {
                 std::thread::sleep(ECHO_CHECK);
                 let v = voice(&app);
+                let talking = lock(&v.greeter).as_ref().is_some_and(Speaker::busy)
+                    || lock(&v.runtime)
+                        .as_ref()
+                        .and_then(|r| r.speaker.as_ref())
+                        .is_some_and(Speaker::busy);
+                if talking != said_speaking {
+                    said_speaking = talking;
+                    // The mascot talks along.
+                    let _ = app.emit(SPEAKING_EVENT, talking);
+                }
                 let greeting = lock(&v.greeter).as_ref().is_some_and(Speaker::busy);
                 let runtime = lock(&v.runtime);
                 let Some(listener) = runtime.as_ref().and_then(|r| r.listener.as_ref()) else {

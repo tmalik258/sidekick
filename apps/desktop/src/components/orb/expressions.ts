@@ -38,7 +38,7 @@ export type MouthShape = keyof typeof MOUTHS;
 /** One physical nudge when an expression starts. */
 export type Accent = "hop" | "hop2" | "jump" | "nod" | "lift" | "sink" | "shiver" | "hello" | "wink";
 /** The only loops: slow and tiny. */
-export type Life = "breathe" | "breatheSlow" | "pulse" | "sway" | "still";
+export type Life = "breathe" | "breatheSlow" | "pulse" | "sway" | "still" | "talk";
 export type Effect = "glints" | "heart" | "zzz" | "zzzSoft" | "dots" | "offline";
 
 export interface Look {
@@ -109,6 +109,8 @@ export const EXPRESSIONS = {
     life: "breathe",
   },
   wink: { eyes: "pill", mouth: "smile", pose: { tilt: -6 }, accent: "wink", life: "breathe" },
+  /** Reading an answer aloud: soft eyes and a smile that opens on syllables. */
+  speak: { eyes: "big", mouth: "grin", halo: AI, haloOpacity: 0.45, spin: 1.2, life: "talk" },
   curious: {
     eyes: ["big", "pill"],
     halo: ["#ff9f0a", "#ffd60a", "#ff9f0a"],

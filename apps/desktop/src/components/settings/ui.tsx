@@ -381,7 +381,7 @@ export function Select({
           id={listId}
           role="listbox"
           aria-label={label}
-          className="island-scroll absolute top-[calc(100%+4px)] right-0 z-30 max-h-56 w-max min-w-full max-w-64 overflow-y-auto rounded-xl bg-[#1c1c24] py-1 shadow-[0_12px_40px_rgb(0_0_0/0.55)] ring-1 ring-inset ring-white/15"
+          className="menu island-scroll absolute top-[calc(100%+4px)] right-0 z-30 max-h-56 w-max min-w-full max-w-64 overflow-y-auto rounded-[14px] p-1"
         >
           {list.map(([v, l], i) => {
             const selected = v === value;
@@ -396,8 +396,8 @@ export function Select({
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") pick(v);
                 }}
-                className={`flex w-full cursor-default items-center px-3 py-1.5 text-left text-[13px] ${
-                  i === active || selected ? "bg-white/12 text-white" : "text-white/80"
+                className={`flex w-full cursor-default items-center rounded-[9px] px-2.5 py-1.5 text-left text-[13px] ${
+                  i === active || selected ? "bg-white/[0.09] text-white" : "text-white/80"
                 } ${selected ? "font-medium" : ""}`}
               >
                 <span className="truncate">{l}</span>

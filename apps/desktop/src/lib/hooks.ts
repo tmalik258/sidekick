@@ -3,6 +3,30 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./bridge";
 
+/** True while Alt is held on its own: key badges show, like Windows ribbons. */
+export function useAltHeld(): boolean {
+  const [held, setHeld] = useState(false);
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === "Alt") setHeld(true);
+      else if (!e.altKey) setHeld(false);
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.key === "Alt" || !e.altKey) setHeld(false);
+    };
+    const off = () => setHeld(false);
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", off);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", off);
+    };
+  }, []);
+  return held;
+}
+
 /** Re-renders every `ms` so time-based labels (pause countdown) stay fresh. */
 export function useNow(ms: number): number {
   const [now, setNow] = useState(() => Date.now());

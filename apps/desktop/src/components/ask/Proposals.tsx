@@ -1,4 +1,5 @@
 "use client";
+import { motion } from "motion/react";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
 import { runProposal, sendChat, useSidekick } from "@/lib/store";
@@ -111,17 +112,28 @@ export function Proposals({ items, keys }: { items: Proposal[]; keys: boolean })
             )}
           </div>
         ) : (
-          <button
+          <motion.button
             key={p.id}
             type="button"
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, delay: pending.indexOf(p) * 0.04, ease: [0.23, 1, 0.32, 1] }}
             onClick={() => void runProposal(p.id)}
-            className="chip flex min-h-8 items-center gap-2 self-start rounded-full bg-white px-3.5 py-1.5 text-[13px] font-medium text-black hover:bg-white/90"
+            className={`chip flex min-h-8 items-center gap-2 self-start rounded-full px-3.5 py-1.5 text-[13px] font-medium ${
+              pending.indexOf(p) === 0 && !many
+                ? "bg-white text-black hover:bg-white/90"
+                : "bg-white/[0.12] text-white hover:bg-white/[0.2]"
+            }`}
           >
             {p.label}
             {keys && pending.indexOf(p) < 9 && (
-              <kbd className="shrink-0 font-sans text-[11px] text-black/40">Alt {pending.indexOf(p) + 1}</kbd>
+              <kbd
+                className={`shrink-0 font-sans text-[11px] ${pending.indexOf(p) === 0 && !many ? "text-black/40" : "text-white/35"}`}
+              >
+                Alt {pending.indexOf(p) + 1}
+              </kbd>
             )}
-          </button>
+          </motion.button>
         ),
       )}
     </div>
@@ -156,25 +168,35 @@ export function UndoProposal({
 }
 
 /** Next steps the answer offers: click one or press its Alt number to ask it. */
-export function AnswerOptions({ options, start }: { options: string[]; start: number }) {
+export function AnswerOptions({ options: all, start }: { options: string[]; start: number }) {
+  // Three actions at most with the buttons above, so the next step is a
+  // glance, not a menu. Only the first action of all is solid.
+  const options = all.slice(0, Math.max(1, 3 - start));
   const shown = Math.max(0, Math.min(options.length, 9 - start));
   useAltDigits(shown, start, (n) => sendChat(options[n]));
   return (
     <div className="mt-2 flex flex-wrap gap-1.5">
       {options.map((o, i) => (
-        <button
+        <motion.button
           key={o}
           type="button"
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2, delay: i * 0.04, ease: [0.23, 1, 0.32, 1] }}
           onClick={() => sendChat(o)}
           className={`chip flex min-h-8 max-w-full items-center gap-2 rounded-full px-3 py-1.5 text-left text-[13px] font-medium ${
-            i === 0 ? "bg-white text-black hover:bg-white/90" : "bg-white/[0.12] text-white hover:bg-white/[0.2]"
+            i === 0 && start === 0
+              ? "bg-white text-black hover:bg-white/90"
+              : "bg-white/[0.12] text-white hover:bg-white/[0.2]"
           }`}
         >
           <span className="leading-snug">{o}</span>
-          <kbd className={`shrink-0 font-sans text-[11px] ${i === 0 ? "text-black/40" : "text-white/35"}`}>
+          <kbd
+            className={`shrink-0 font-sans text-[11px] ${i === 0 && start === 0 ? "text-black/40" : "text-white/35"}`}
+          >
             {i < shown ? `Alt ${start + i + 1}` : ""}
           </kbd>
-        </button>
+        </motion.button>
       ))}
     </div>
   );

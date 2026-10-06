@@ -6,6 +6,7 @@ import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
+import { useNow } from "@/lib/hooks";
 import { Markdown } from "@/lib/markdown";
 import { splitOptions } from "@/lib/options";
 import { useReveal } from "@/lib/reveal";
@@ -73,10 +74,10 @@ export function Chat({ turns }: { turns: Turn[] }) {
                   live={i === turns.length - 1 && !!t.streaming}
                 />
               ) : t.streaming ? (
-                <LiveStep step={t.tool ?? null} />
+                <LiveStep step={t.tool ?? null} since={t.startedAt} />
               ) : null}
               {(t.steps?.length ?? 0) > 1 ? (
-                <Steps steps={t.steps ?? []} running={!!t.streaming} />
+                <Steps steps={t.steps ?? []} running={!!t.streaming} tookMs={t.tookMs} />
               ) : (
                 t.streaming &&
                 t.content &&
@@ -88,9 +89,17 @@ export function Chat({ turns }: { turns: Turn[] }) {
               {t.error && !t.streaming && i === turns.length - 1 && <Retry />}
               {skillMode && !t.streaming && yamlBlock(t.content) && <AddSkill yaml={yamlBlock(t.content) ?? ""} />}
               {!t.streaming && t.provider && (
-                <p className="mt-0.5 flex items-center gap-2 text-[11px] text-[rgb(235_235_245/0.35)] opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
-                  {PROVIDER_LABELS[t.provider] ?? t.provider}
-                  {i === turns.length - 1 && i > 0 && !skillMode && <SaveRecipe prompt={turns[i - 1]?.content ?? ""} />}
+                <p className="mt-1 flex items-center gap-2 text-[11px] text-[rgb(235_235_245/0.38)]">
+                  {/* Who answered and how fast. */}
+                  <span>
+                    {PROVIDER_LABELS[t.provider] ?? t.provider}
+                    {t.tookMs !== undefined && ` · ${seconds(t.tookMs)}`}
+                  </span>
+                  <span className="opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
+                    {i === turns.length - 1 && i > 0 && !skillMode && (
+                      <SaveRecipe prompt={turns[i - 1]?.content ?? ""} />
+                    )}
+                  </span>
                 </p>
               )}
               {t.proposals && t.proposals.length > 0 && <Proposals items={t.proposals} keys={i === turns.length - 1} />}
@@ -132,7 +141,7 @@ export function SaveRecipe({ prompt }: { prompt: string }) {
 
 /** The steps of a multi-step task: done ones ticked, the current one live.
  * Folds to one line once the answer is in. */
-export function Steps({ steps, running }: { steps: string[]; running: boolean }) {
+export function Steps({ steps, running, tookMs }: { steps: string[]; running: boolean; tookMs?: number }) {
   const [open, setOpen] = useState(false);
   if (!running && !open) {
     return (
@@ -141,7 +150,7 @@ export function Steps({ steps, running }: { steps: string[]; running: boolean })
         onClick={() => setOpen(true)}
         className="chip mt-1 text-[11.5px] text-[rgb(235_235_245/0.45)] hover:text-white"
       >
-        {steps.length} steps
+        {steps.length} steps{tookMs !== undefined && ` · ${seconds(tookMs)}`} ›
       </button>
     );
   }
@@ -237,20 +246,32 @@ export function Handoff({ turns, reason }: { turns: Turn[]; reason: string | nul
 /** An answer as it arrives: word by word at a reading pace. */
 export function Answer({ text, live }: { text: string; live: boolean }) {
   const shown = useReveal(text, live);
-  // The first words fade in; after that, words stream without animation.
+  // The first words settle in from a slight blur; after that, words stream.
   return (
-    <div className="fade-in">
+    <div className="settle">
       <Markdown text={shown} />
     </div>
   );
 }
 
-/** Before the first words: what Sidekick is doing, or "Thinking". */
-export function LiveStep({ step }: { step: string | null }) {
-  if (!step) return <Thinking />;
+/** "1.2 s", or "850 ms" under a second. */
+export function seconds(ms: number): string {
+  return ms < 1000 ? `${Math.round(ms / 10) * 10} ms` : `${(ms / 1000).toFixed(1)} s`;
+}
+
+/** Before the first words: one shimmering line saying what Sidekick is
+ * doing, with a timer. */
+export function LiveStep({ step, since }: { step: string | null; since?: number }) {
+  const now = useNow(100);
+  const elapsed = since ? Math.max(0, now - since) : null;
   return (
-    <p className="shimmer-text py-1.5 text-[13px] text-[rgb(235_235_245/0.6)]" role="status">
-      {step}...
+    <p className="flex items-center gap-2 py-1.5 text-[13px]" role="status" aria-live="polite">
+      <span className="shimmer-text text-[rgb(235_235_245/0.6)]">{step ? `${step}...` : "Thinking..."}</span>
+      {elapsed !== null && elapsed > 400 && (
+        <span className="text-[11px] text-[rgb(235_235_245/0.35)] tabular-nums" aria-hidden="true">
+          {(elapsed / 1000).toFixed(1)} s
+        </span>
+      )}
     </p>
   );
 }

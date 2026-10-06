@@ -14,7 +14,7 @@ import type { NetNotice } from "@/lib/net";
 import { playSound } from "@/lib/sound";
 import { connect, notePick, setHovered, uiVolume, useSidekick, watchWaiting } from "@/lib/store";
 import { isPaused, type MascotState, type Suggestion } from "@/lib/types";
-import { ASK_ORB, AskPanel } from "./AskPanel";
+import { ASK_ORB, AskPanel, VoiceBars } from "./AskPanel";
 import { Icon } from "./Icon";
 import { Glance, RoundButton } from "./IslandGlance";
 import { IslandGuide, useGuide } from "./IslandGuide";
@@ -180,7 +180,14 @@ export function Island() {
   // A mood (thanks, Claude finished) shows for a moment; offline and at
   // rest, the mascot looks a little lost.
   const mood = useSidekick((s) => s.mood);
-  const face = mood?.id ?? (!online && (mascot === "idle" || mascot === "sleeping") ? "offline" : null);
+  const speaking = useSidekick((s) => s.speaking);
+  const face =
+    mood?.id ??
+    (speaking && mascot !== "listening"
+      ? "speak"
+      : !online && (mascot === "idle" || mascot === "sleeping")
+        ? "offline"
+        : null);
   const contentEl = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => connect({ sounds: true }), []);
@@ -439,20 +446,7 @@ function VoicePill({ text, thinking, working }: { text: string; thinking: boolea
       >
         {label}
       </span>
-      {thinking ? (
-        <Activity />
-      ) : (
-        <span className="flex h-3.5 items-center gap-[3px]" role="img" aria-label="Listening">
-          {[0, 1, 2, 3].map((i) => (
-            <motion.span
-              key={i}
-              className="w-[3px] rounded-full bg-[#30d158]"
-              animate={{ height: [3, 12, 3] }}
-              transition={{ duration: 0.8, repeat: Number.POSITIVE_INFINITY, delay: i * 0.12, ease: "easeInOut" }}
-            />
-          ))}
-        </span>
-      )}
+      {thinking ? <Activity /> : <VoiceBars />}
     </motion.div>
   );
 }

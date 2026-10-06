@@ -64,6 +64,8 @@ interface SidekickState {
   voiceQuestion: string | null;
   /** Where the conversation is saved, so it can be picked up later. */
   conversation: string;
+  /** Sidekick's voice is playing; the mascot talks along. */
+  speaking: boolean;
   /** Voice: what is being heard right now, while listening. */
   hearing: string | null;
   voiceStatus: VoiceStatus | null;
@@ -176,6 +178,7 @@ export const useSidekick = create<SidekickState>(() => ({
   voiceQuestion: null,
   conversation: crypto.randomUUID(),
   hearing: null,
+  speaking: false,
   voiceStatus: null,
   later: 0,
   waiting: null,
@@ -517,7 +520,11 @@ export function sendChat(prompt: string, attach?: { clipboard?: boolean; screen?
   const auto = autoContext(q, ask);
   useSidekick.setState({
     chatId: id,
-    turns: [...turns, { role: "user", content: q, screen }, { role: "assistant", content: "", streaming: true }],
+    turns: [
+      ...turns,
+      { role: "user", content: q, screen },
+      { role: "assistant", content: "", streaming: true, startedAt: Date.now() },
+    ],
   });
   void api.aiChat(
     id,
@@ -642,6 +649,10 @@ export function newChat() {
   });
 }
 
+/** Reopening Ask within this long keeps the last chat. */
+const RESUME_MS = 10 * 60_000;
+let askClosedAt = Date.now();
+
 function updateLastTurn(id: string, fn: (t: Turn) => Turn) {
   const { chatId, turns } = useSidekick.getState();
   const last = turns[turns.length - 1];
@@ -730,6 +741,9 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       }),
       listen(EVENTS.askOpen, (open) => {
         const seq = (useSidekick.getState().ask?.seq ?? 0) + 1;
+        // Back within 10 minutes: the last chat is still there. Later, a new one.
+        const { turns, chatId } = useSidekick.getState();
+        if (turns.length > 0 && chatId === null && Date.now() - askClosedAt > RESUME_MS) newChat();
         const clip = open.clipboard && !open.context.clipboardSecret;
         if (open.page) {
           newChat();
@@ -753,6 +767,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         if (open.ask && open.prompt) sendChat(open.prompt, { clipboard: clip });
       }),
       listen(EVENTS.askClose, (payload) => {
+        askClosedAt = Date.now();
         if (useSidekick.getState().hearing !== null) stopListening();
         useSidekick.setState({ ask: null });
         // Hide parks welcome; do not fight the park with ensure_welcome.
@@ -768,6 +783,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           void api.askEnsureWelcome();
         }
       }),
+      listen(EVENTS.voiceSpeaking, (speaking) => useSidekick.setState({ speaking })),
       listen(EVENTS.voiceHeard, ({ text, final, byVoice }) => {
         if (!final) {
           useSidekick.setState({ hearing: text });
@@ -812,7 +828,15 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       ),
       listen(EVENTS.aiDone, ({ id, provider, error, handoff }) => {
         if (useSidekick.getState().voiceQuestion !== null) useSidekick.setState({ voiceQuestion: null });
-        updateLastTurn(id, (t) => ({ ...t, provider, error, handoff, tool: null, streaming: false }));
+        updateLastTurn(id, (t) => ({
+          ...t,
+          provider,
+          error,
+          handoff,
+          tool: null,
+          streaming: false,
+          tookMs: t.startedAt ? Date.now() - t.startedAt : undefined,
+        }));
         if (useSidekick.getState().chatId === id) {
           useSidekick.setState({ chatId: null });
           if (sounds && !useSidekick.getState().chatSkill) saveChat();
