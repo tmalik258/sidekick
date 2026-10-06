@@ -14,15 +14,6 @@ import { type Material, OrbEngine } from "./orb/engine";
 import { type Expression, FOR_STATE } from "./orb/expressions";
 
 export const THEME_STYLES: Record<ThemeName, Material & { label: string }> = {
-  // Brushed titanium with a faint iridescent rim.
-  graphite: {
-    label: "Graphite",
-    body: ["#141418", "#9a9ca6"],
-    halo: ["#8fa3c8", "#d9c8ee", "#9fd4e4"],
-    haloOpacity: 0.32,
-    eye: "#ffffff",
-    eyeGlow: "rgb(255 255 255 / 0.55)",
-  },
   // Pearl white with pastel light around it.
   pearl: {
     label: "Pearl",
@@ -32,14 +23,60 @@ export const THEME_STYLES: Record<ThemeName, Material & { label: string }> = {
     eye: "#1c1c1e",
     eyeGlow: "rgb(0 0 0 / 0)",
   },
-  // Deep navy glass with a cool cyan edge.
-  midnight: {
-    label: "Midnight",
-    body: ["#050816", "#4a64b0"],
-    halo: ["#5ac8fa", "#5e5ce6", "#64d2ff"],
-    haloOpacity: 0.42,
+  // Pearl with a soft rainbow sheen, like the voice halo.
+  aurora: {
+    label: "Aurora",
+    body: ["#a99fd6", "#ffffff"],
+    halo: ["#ffb3d9", "#b9c8ff", "#b3f0e0"],
+    haloOpacity: 0.55,
+    eye: "#1b1630",
+    eyeGlow: "rgb(0 0 0 / 0)",
+    sheen:
+      "conic-gradient(from 210deg at 58% 62%, rgb(255 185 222 / 0.5), rgb(198 182 255 / 0.5), rgb(168 214 255 / 0.5), rgb(182 245 226 / 0.5), rgb(255 226 186 / 0.5), rgb(255 185 222 / 0.5))",
+  },
+  // Liquid metal.
+  chrome: {
+    label: "Chrome",
+    body: ["#6f7584", "#f4f6fa"],
+    halo: ["#c9d2e3", "#ffffff", "#9fb4d8"],
+    haloOpacity: 0.4,
+    eye: "#0f1116",
+    eyeGlow: "rgb(0 0 0 / 0)",
+    sheen:
+      "linear-gradient(168deg, rgb(255 255 255 / 0.45) 0%, rgb(255 255 255 / 0) 30%, rgb(36 40 52 / 0.32) 48%, rgb(255 255 255 / 0.22) 62%, rgb(255 255 255 / 0) 80%)",
+  },
+  peach: {
+    label: "Peach",
+    body: ["#e8767c", "#fff3ea"],
+    halo: ["#ffb199", "#ffd6a5", "#ff9fb2"],
+    haloOpacity: 0.5,
+    eye: "#3a1716",
+    eyeGlow: "rgb(0 0 0 / 0)",
+  },
+  mint: {
+    label: "Mint",
+    body: ["#4eb29b", "#f2fffb"],
+    halo: ["#9ff0d4", "#b9f6ff", "#d4ffb8"],
+    haloOpacity: 0.48,
+    eye: "#0e2a23",
+    eyeGlow: "rgb(0 0 0 / 0)",
+  },
+  lilac: {
+    label: "Lilac",
+    body: ["#8a71df", "#fbf8ff"],
+    halo: ["#cdb8ff", "#ffc8f0", "#b8d0ff"],
+    haloOpacity: 0.5,
+    eye: "#1d1440",
+    eyeGlow: "rgb(0 0 0 / 0)",
+  },
+  // Glossy black with white eyes and a cool rim.
+  onyx: {
+    label: "Onyx",
+    body: ["#060608", "#3c3c48"],
+    halo: ["#8fa3c8", "#d9c8ee", "#9fd4e4"],
+    haloOpacity: 0.34,
     eye: "#ffffff",
-    eyeGlow: "rgb(100 210 255 / 0.6)",
+    eyeGlow: "rgb(255 255 255 / 0.5)",
   },
 };
 

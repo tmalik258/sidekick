@@ -9,6 +9,7 @@ pub mod cleanup;
 mod convert;
 pub mod dev;
 pub mod dnd;
+mod editors;
 mod files;
 pub mod office;
 pub mod pc;
@@ -21,6 +22,7 @@ use std::time::Duration;
 
 pub use capabilities::{Browser, Capabilities, default_browser};
 pub use convert::TextBox;
+pub use editors::Editor;
 use serde::Serialize;
 use serde_json::Value;
 

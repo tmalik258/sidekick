@@ -18,6 +18,12 @@ pub fn ai_chat(
     ai::chat(&app, id, messages, attach, local_only);
 }
 
+/// Installed code editors and the one projects open in.
+#[tauri::command]
+pub fn editors_list(app: AppHandle) -> crate::editors::Editors {
+    crate::editors::list(&app)
+}
+
 /// Starts Claude Code or Codex in a project, inside the island.
 #[tauri::command]
 pub async fn agent_start(
@@ -106,6 +112,22 @@ pub fn agent_terminal(app: AppHandle, id: String) -> CmdResult<()> {
 #[tauri::command]
 pub fn ai_cancel(app: AppHandle, id: String) {
     ai::cancel(&app, &id);
+}
+
+/// Shows an answer that was started early, at a pause in speech.
+#[tauri::command]
+pub fn ai_release(id: String) {
+    ai::release(&id);
+}
+
+#[tauri::command]
+pub fn timing_record(app: AppHandle, name: String, ms: u64) {
+    crate::timings::record(&app, &name, ms);
+}
+
+#[tauri::command]
+pub fn timings_recent(app: AppHandle) -> Vec<crate::timings::Timing> {
+    crate::timings::recent(&app, 60)
 }
 
 /// Turns the island into Ask mode, optionally with a prompt.

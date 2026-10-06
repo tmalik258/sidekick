@@ -94,6 +94,9 @@ pub struct Open {
     /// A tool to start with: "screen" asks about the screen, "clipboard"
     /// shows clipboard history.
     pub tool: Option<&'static str>,
+    /// When the open was asked for (ms since 1970), for the open-to-ready
+    /// timing.
+    pub sent_at: i64,
 }
 
 pub fn is_open(app: &AppHandle) -> bool {
@@ -234,6 +237,7 @@ pub fn open(app: &AppHandle, mut open: Open) {
     if let Ok(mut t) = OPENED_AT.lock() {
         *t = Some(Instant::now());
     }
+    open.sent_at = chrono::Utc::now().timestamp_millis();
     KEEP_ON_BLUR.store(sticky_welcome(open.view), Ordering::SeqCst);
     let state = app.state::<AppState>();
     state.ask_open.store(true, Ordering::SeqCst);
@@ -245,6 +249,8 @@ pub fn open(app: &AppHandle, mut open: Open) {
     let _ = window.emit(OPEN_EVENT, open);
     if welcome {
         crate::voice::welcome_greet(app);
+    } else {
+        ai::warm_up(app);
     }
     if let Err(err) = window.set_focus() {
         log::warn!("could not focus the island: {err}");

@@ -4,6 +4,40 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Faster Ask
+
+- Claude Code and Codex keep a session warm per chat: one starts when Ask opens, and follow-up messages go into it instead of starting the CLI again (Codex through `codex app-server`, older Codex versions fall back to `codex exec`). Idle sessions close after 10 minutes, at most three per agent.
+- The local model loads while you type (Ollama `keep_alive`), and the Composio connection and its tool list are kept between messages.
+- The system prompt keeps its fixed rules first and the changing context last, so a local server reuses its cache.
+- The local model gets about eight tools picked by meaning instead of twenty, and tools that only read run at the same time.
+- The screen text is read in the background when Ask opens, for questions about the screen.
+- Streamed answers update the screen once per frame.
+
+### Faster voice
+
+- The answer starts 0.6 s after you stop talking instead of 0.9 s, and can start at a short pause before that; it stays hidden and silent, and can only look things up, until the question is final.
+- The first part of a spoken answer (up to the first comma) is spoken on its own, so the voice starts sooner.
+- Talk over an answer to stop it and ask something else (Settings > Voice > Interrupt by talking; best with headphones).
+
+### Timings
+
+- Ask measures open to ready, Enter to first word and end of speech to first sound, keeps them in `timings.log` on this PC, and shows them in Ask with Ctrl+Alt+Shift+T.
+
+### Appearance
+
+- A new Appearance tab in Settings for the mascot, the island and how the island behaves.
+- Mascot colours: Pearl, Aurora, Chrome, Peach, Mint, Lilac and Onyx. Graphite and Midnight become Onyx.
+- Island colours: Black glass (the new default, a deep tint with a light rim), Graphite, Midnight, Smoke, Warm graphite and Solid black.
+
+### Code editor
+
+- Sidekick finds Cursor, VS Code, Antigravity, Windsurf, VSCodium, Zed, JetBrains IDEs and Visual Studio, and opens projects in the one you used most this week. Settings > Apps > Code editor picks one for good.
+- Buttons name your editor: "Open in Cursor" instead of "Open in VS Code".
+
+### Morning setup
+
+- Routines are now Morning setup, under Settings > Skills, with one switch: Ask first, Open by itself or Off. Click an app or site to take it out.
+
 ### Agents
 
 - Ask has three tabs: Ask, Agents and History (Ctrl Tab). History holds past chats and agent sessions.

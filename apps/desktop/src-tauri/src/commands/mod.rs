@@ -288,6 +288,10 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
     let next = next.sanitized();
     let now = Utc::now();
     let previous = lock(&state.settings).clone();
+    if next.ai != previous.ai {
+        // Warm sessions were started with the old models and paths.
+        crate::ai::close_sessions();
+    }
 
     if next.launch_at_login != previous.launch_at_login {
         let autolaunch = app.autolaunch();
@@ -360,6 +364,9 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
 
     if let Err(err) = app.emit(SETTINGS_CHANGED, &next) {
         log::warn!("could not emit settings change: {err}");
+    }
+    if next.code_editor != previous.code_editor {
+        crate::editors::refresh(app);
     }
     Ok(next)
 }

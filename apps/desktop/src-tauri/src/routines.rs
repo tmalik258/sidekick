@@ -470,6 +470,14 @@ pub fn set_auto(app: &AppHandle, on: bool) -> Result<String, String> {
 }
 
 /// Forgets every routine (Settings > Privacy).
+/// Takes one app or site out of the morning setup; it comes back only if
+/// it becomes a habit again.
+pub fn remove(app: &AppHandle, kind: &str, key: &str) -> Result<usize, String> {
+    lock(&app.state::<AppState>().storage)
+        .clear_open(kind, key)
+        .map_err(|e| e.to_string())
+}
+
 pub fn forget(app: &AppHandle) -> Result<usize, String> {
     save(app, &Memory::default());
     lock(&app.state::<AppState>().storage)

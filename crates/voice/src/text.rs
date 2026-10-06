@@ -284,11 +284,16 @@ fn strip_links(line: &str) -> String {
 #[derive(Debug, Default)]
 pub struct Sentences {
     buf: String,
+    /// A piece was handed out. Until then the first clause (up to a comma)
+    /// is enough, so the voice starts sooner.
+    started: bool,
 }
 
 /// Shortest piece worth synthesizing on its own (very short clips sound
 /// choppy).
 const MIN_SENTENCE: usize = 24;
+/// Shortest first clause spoken on its own.
+const MIN_CLAUSE: usize = 12;
 
 impl Sentences {
     pub fn push(&mut self, text: &str) -> Vec<String> {
@@ -299,6 +304,7 @@ impl Sentences {
             let sentence = sentence.trim();
             if !sentence.is_empty() {
                 out.push(sentence.to_owned());
+                self.started = true;
             }
         }
         out
@@ -320,10 +326,11 @@ impl Sentences {
             if c == '\n' {
                 return Some(i + 1);
             }
-            if i + 1 < MIN_SENTENCE {
+            let clause = !self.started && c == ',' && i + 1 >= MIN_CLAUSE;
+            if i + 1 < MIN_SENTENCE && !clause {
                 continue;
             }
-            let ends = matches!(c, '.' | '!' | '?' | ':' | ';');
+            let ends = clause || matches!(c, '.' | '!' | '?' | ':' | ';');
             if ends
                 && bytes
                     .get(i + c.len_utf8())
@@ -431,5 +438,24 @@ mod tests {
         assert_eq!(s.finish().as_deref(), Some("Anything else for e.g"));
         assert_eq!(s.finish(), None);
         assert_eq!(s.push("Hi\n```rust\n"), vec!["Hi", "```rust"]);
+    }
+
+    #[test]
+    fn the_first_clause_is_spoken_on_its_own() {
+        let mut s = Sentences::default();
+        assert!(s.push("Yes, it").is_empty(), "too short for a clause");
+        let mut s = Sentences::default();
+        assert_eq!(
+            s.push("Your next meeting, the design review, starts"),
+            vec!["Your next meeting,"]
+        );
+        assert!(
+            s.push(" soon").is_empty(),
+            "later commas wait for the whole sentence"
+        );
+        assert_eq!(
+            s.push(" at three. Then"),
+            vec!["the design review, starts soon at three."]
+        );
     }
 }

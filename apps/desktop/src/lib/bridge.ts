@@ -19,6 +19,7 @@ import type {
   ChatMessage,
   ChatSummary,
   ComposioStatus,
+  EditorList,
   ExtensionGuide,
   FileChange,
   Found,
@@ -38,6 +39,7 @@ import type {
   SkillInfo,
   StoredEvent,
   Suggestion,
+  Timing,
   Transition,
   Turn,
   UpdateInfo,
@@ -76,6 +78,7 @@ export const EVENTS = {
   voiceWelcome: "voice://welcome",
   netStatus: "net://status",
   updateAvailable: "update://available",
+  timing: "timing://recorded",
 } as const;
 
 export interface EventPayloads {
@@ -107,6 +110,7 @@ export interface EventPayloads {
   [EVENTS.browsersChanged]: null;
   [EVENTS.guideKey]: number;
   [EVENTS.voiceWelcome]: WelcomeSpeech;
+  [EVENTS.timing]: Timing;
 }
 
 export function isTauri(): boolean {
@@ -156,6 +160,7 @@ export const api = {
   choicesReset: () => invoke<number>("choices_reset"),
   routinesToday: () => invoke<RoutineItem[]>("routines_today"),
   routinesForget: () => invoke<number>("routines_forget"),
+  routinesRemove: (kind: string, key: string) => invoke<number>("routines_remove", { kind, key }),
   actionsRecent: (limit = 30) => invoke<ActionRecord[]>("actions_recent", { limit }),
   revealPath: (path: string) => invoke<void>("reveal_path", { path }),
   aiStatus: () => invoke<ProviderStatus[]>("ai_status"),
@@ -171,10 +176,15 @@ export const api = {
       speak?: boolean;
       /** Provider picked in Ask mode; null lets Sidekick choose. */
       prefer?: string | null;
+      /** Started early at a pause in speech: hidden until aiRelease. */
+      hold?: boolean;
     },
     localOnly: boolean,
   ) => invoke<void>("ai_chat", { id, messages, attach, localOnly }),
   aiCancel: (id: string) => invoke<void>("ai_cancel", { id }),
+  aiRelease: (id: string) => invoke<void>("ai_release", { id }),
+  timingRecord: (name: Timing["name"], ms: number) => invoke<void>("timing_record", { name, ms }),
+  timingsRecent: () => invoke<Timing[]>("timings_recent"),
   askClose: () => invoke<void>("ask_close"),
   browserInfo: () => invoke<BrowserInfo>("browser_info"),
   timeToday: () => invoke<AppTime[]>("time_today"),
@@ -188,6 +198,7 @@ export const api = {
   clipboardCopy: (text: string) => invoke<void>("clipboard_copy", { text }),
   projectsList: () => invoke<{ name: string; path: string }[]>("projects_list"),
   projectLaunch: (path: string) => invoke<string>("project_launch", { path }),
+  editorsList: () => invoke<EditorList>("editors_list"),
   aiHandoff: (messages: ChatMessage[], reason: string | null) => invoke<string>("ai_handoff", { messages, reason }),
   aiRunProposal: (id: string) =>
     invoke<{ ok: boolean; message: string; undoId: number | null; path: string | null }>("ai_run_proposal", { id }),

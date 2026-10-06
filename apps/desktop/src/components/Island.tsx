@@ -331,6 +331,7 @@ export function Island() {
       <motion.div
         className="island-shell relative overflow-hidden text-white"
         data-bare={bare}
+        data-color={settings.islandColor}
         initial={false}
         animate={{ width, height, borderRadius: radius }}
         transition={transition}

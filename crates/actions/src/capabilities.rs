@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
+use crate::editors::Editor;
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Browser {
     pub id: String,
@@ -124,8 +126,9 @@ pub struct Capabilities {
     pub soffice: Option<PathBuf>,
     pub pandoc: Option<PathBuf>,
     pub tar: Option<PathBuf>,
-    /// The code editor for opening projects: VS Code or a fork of it
-    /// (Cursor, Windsurf), whichever was used last.
+    /// Every code editor found, the most recently used first.
+    pub editors: Vec<Editor>,
+    /// The editor projects open in (see [`Capabilities::use_editor`]).
     pub code: Option<PathBuf>,
     /// Its name, e.g. "Cursor".
     pub code_name: Option<String>,
@@ -148,7 +151,8 @@ impl Capabilities {
                 })
             })
             .collect();
-        let editor = find_editor();
+        let editors = crate::editors::detect();
+        let editor = editors.first().map(|e| (e.name.clone(), e.exe.clone()));
         Self {
             browsers,
             ffmpeg: which::which("ffmpeg").ok(),
@@ -159,10 +163,20 @@ impl Capabilities {
             pandoc: which::which("pandoc").ok(),
             tar: which::which("tar").ok(),
             code: editor.as_ref().map(|e| e.1.clone()),
-            code_name: editor.map(|e| e.0.to_owned()),
+            code_name: editor.map(|e| e.0),
+            editors,
             tesseract: which::which("tesseract").ok().or_else(find_tesseract),
             pdftotext: which::which("pdftotext").ok(),
         }
+    }
+
+    /// Sets the editor projects open in: `choice` is an editor id, or
+    /// "auto" for the one used most (`minutes` per app name this week).
+    pub fn use_editor(&mut self, choice: &str, minutes: &[(String, i64)]) {
+        let picked = crate::editors::choose(&self.editors, choice, minutes)
+            .map(|e| (e.exe.clone(), e.name.clone()));
+        self.code = picked.as_ref().map(|p| p.0.clone());
+        self.code_name = picked.map(|p| p.1);
     }
 
     pub fn browser(&self, id: &str) -> Option<&Browser> {
@@ -220,91 +234,6 @@ fn find_tesseract() -> Option<PathBuf> {
 
 #[cfg(not(windows))]
 fn find_tesseract() -> Option<PathBuf> {
-    None
-}
-
-/// VS Code and its forks: name, install paths under LOCALAPPDATA or
-/// ProgramFiles, command on PATH, and settings folder (for when it was last
-/// used). They all open a folder or file passed as the argument.
-const EDITORS: &[(&str, &[&str], &str, &str)] = &[
-    (
-        "Cursor",
-        &[r"Programs\cursor\Cursor.exe"],
-        "cursor",
-        "Cursor",
-    ),
-    (
-        "VS Code",
-        &[
-            r"Programs\Microsoft VS Code\Code.exe",
-            r"Microsoft VS Code\Code.exe",
-        ],
-        "code",
-        "Code",
-    ),
-    (
-        "Windsurf",
-        &[r"Programs\Windsurf\Windsurf.exe"],
-        "windsurf",
-        "Windsurf",
-    ),
-    (
-        "VS Code Insiders",
-        &[r"Programs\Microsoft VS Code Insiders\Code - Insiders.exe"],
-        "code-insiders",
-        "Code - Insiders",
-    ),
-];
-
-/// The installed editor used most recently (its state file changes as it
-/// is used); with no history, the first one in [`EDITORS`].
-fn find_editor() -> Option<(&'static str, PathBuf)> {
-    let installed = EDITORS.iter().filter_map(|(name, installs, cli, config)| {
-        let exe = editor_exe(installs).or_else(|| which::which(cli).ok())?;
-        let used = dirs::config_dir()
-            .map(|c| {
-                c.join(config)
-                    .join("User")
-                    .join("globalStorage")
-                    .join("storage.json")
-            })
-            .and_then(|p| std::fs::metadata(p).ok())
-            .and_then(|m| m.modified().ok());
-        Some((*name, exe, used))
-    });
-    pick_editor(installed.collect())
-}
-
-/// Most recently used first; ties keep the list order.
-fn pick_editor(
-    found: Vec<(&'static str, PathBuf, Option<std::time::SystemTime>)>,
-) -> Option<(&'static str, PathBuf)> {
-    let mut best: Option<(&'static str, PathBuf, Option<std::time::SystemTime>)> = None;
-    for f in found {
-        if best.as_ref().is_none_or(|b| f.2 > b.2) {
-            best = Some(f);
-        }
-    }
-    best.map(|(name, exe, _)| (name, exe))
-}
-
-/// Prefers the editor's own .exe over the .cmd wrapper on PATH.
-#[cfg(windows)]
-fn editor_exe(installs: &[&str]) -> Option<PathBuf> {
-    installs
-        .iter()
-        .flat_map(|rest| {
-            [
-                env_path("LOCALAPPDATA", rest),
-                env_path("ProgramFiles", rest),
-            ]
-        })
-        .flatten()
-        .find(|p| p.is_file())
-}
-
-#[cfg(not(windows))]
-fn editor_exe(_installs: &[&str]) -> Option<PathBuf> {
     None
 }
 
@@ -462,23 +391,6 @@ mod tests {
         .unwrap();
         assert_eq!(last_profile(&dir), None, "a deleted profile is skipped");
         let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn picks_the_editor_used_last() {
-        use std::time::{Duration, SystemTime};
-        let t = |s| Some(SystemTime::UNIX_EPOCH + Duration::from_secs(s));
-        let found = vec![
-            ("Cursor", PathBuf::from("cursor"), t(100)),
-            ("VS Code", PathBuf::from("code"), t(200)),
-        ];
-        assert_eq!(pick_editor(found).unwrap().0, "VS Code");
-        let unused = vec![
-            ("Cursor", PathBuf::from("cursor"), None),
-            ("VS Code", PathBuf::from("code"), None),
-        ];
-        assert_eq!(pick_editor(unused).unwrap().0, "Cursor");
-        assert!(pick_editor(Vec::new()).is_none());
     }
 
     #[test]

@@ -10,5 +10,5 @@ suggestion:
   title: "Claude needs you in {{project}}"
   detail: "{{message}}"
   options:
-    - { label: Open in VS Code, action: open_in_editor, args: { path: "{{cwd}}" }, requires: ["tool:code"] }
+    - { label: "Open in {{editor}}", action: open_in_editor, args: { path: "{{cwd}}" }, requires: ["tool:code"] }
     - { label: Got it, action: noop, args: { message: "OK" } }

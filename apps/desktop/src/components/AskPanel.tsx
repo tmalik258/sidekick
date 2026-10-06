@@ -31,6 +31,7 @@ import { ModelPicker } from "./ask/ModelPicker";
 import { ago, KeyHint, scrollIfActive } from "./ask/parts";
 import type { Command } from "./ask/Starters";
 import { ContextLine, contextStarters, soonestMeeting } from "./ask/Starters";
+import { Timings } from "./ask/Timings";
 import { Icon } from "./Icon";
 import { SETTINGS_TABS } from "./SettingsPanel";
 import { SetupSpinner } from "./SetupChecklistRow";
@@ -749,6 +750,7 @@ export function AskPanel() {
 
       {handoffError && <p className="ak-err">{handoffError}</p>}
       {footer}
+      <Timings />
     </div>
   );
 }
