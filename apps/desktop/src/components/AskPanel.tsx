@@ -634,10 +634,7 @@ export function AskPanel() {
         {providersData === null && !best ? (
           <SetupSpinner className="text-white/50" />
         ) : (
-          <span
-            className={`size-1.5 rounded-full ${best ? "bg-[#30d158]" : "bg-[#ffd60a]"}`}
-            aria-hidden="true"
-          />
+          <span className={`size-1.5 rounded-full ${best ? "bg-[#30d158]" : "bg-[#ffd60a]"}`} aria-hidden="true" />
         )}
         {best ? (
           <ModelPicker choices={choices} best={best} picked={pickedModel} />
