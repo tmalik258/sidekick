@@ -52,6 +52,20 @@ fn git(root: &Path, args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// Like `git`, for output that may not be text (a file's stored bytes).
+fn git_bytes(root: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
+    let mut cmd = Command::new("git");
+    cmd.args(args).current_dir(root);
+    hide_console(&mut cmd);
+    let out = cmd
+        .output()
+        .map_err(|e| format!("could not run git: {e}"))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_owned());
+    }
+    Ok(out.stdout)
+}
+
 #[cfg(windows)]
 fn hide_console(cmd: &mut Command) {
     use std::os::windows::process::CommandExt;
@@ -163,7 +177,8 @@ pub fn parse(diff: &str) -> Vec<FileChange> {
     files
 }
 
-/// Puts one hunk back as it was.
+/// Puts one hunk back as it was. Done here rather than with `git apply`,
+/// which rewrites line endings on Windows (core.autocrlf); the file keeps its own.
 pub fn undo_hunk(b: &Baseline, path: &str, index: usize) -> Result<(), String> {
     let files = changes(b)?;
     let file = files
@@ -177,19 +192,57 @@ pub fn undo_hunk(b: &Baseline, path: &str, index: usize) -> Result<(), String> {
         .hunks
         .get(index)
         .ok_or("That change is not there any more.")?;
-    let patch = format!(
-        "diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n{}\n{}\n",
-        hunk.header,
-        hunk.lines.join("\n")
-    );
-    let tmp = std::env::temp_dir().join(format!("sidekick-undo-{}.patch", std::process::id()));
-    std::fs::write(&tmp, patch).map_err(|e| e.to_string())?;
-    let tmp_s = tmp.to_string_lossy().into_owned();
-    let result = git(&b.root, &["apply", "-R", "--whitespace=nowarn", &tmp_s]);
-    let _ = std::fs::remove_file(&tmp);
-    result
-        .map(|_| ())
-        .map_err(|e| format!("Could not undo that change (the file changed again since): {e}"))
+    let full = b.root.join(path);
+    let text = std::fs::read_to_string(&full).map_err(|e| format!("Could not read {path}: {e}"))?;
+    let undone = reverse_hunk(&text, hunk)
+        .ok_or("Could not undo that change (the file changed again since).")?;
+    std::fs::write(&full, undone).map_err(|e| format!("Could not write {path}: {e}"))
+}
+
+/// The text with one hunk taken back out, or None when its lines are gone.
+fn reverse_hunk(text: &str, hunk: &Hunk) -> Option<String> {
+    let eol = if text.contains("\r\n") { "\r\n" } else { "\n" };
+    let ends_with_eol = text.ends_with('\n');
+    let mut lines: Vec<&str> = text.lines().collect();
+    let (mut now, mut before) = (Vec::new(), Vec::new());
+    for l in &hunk.lines {
+        match l.split_at_checked(1) {
+            Some((" ", rest)) => {
+                now.push(rest);
+                before.push(rest);
+            }
+            Some(("+", rest)) => now.push(rest),
+            Some(("-", rest)) => before.push(rest),
+            _ => {}
+        }
+    }
+    // Where the hunk says it starts in the current file ("+c,d").
+    let start = hunk
+        .header
+        .split_whitespace()
+        .find_map(|p| p.strip_prefix('+'))
+        .and_then(|p| p.split(',').next())
+        .and_then(|n| n.parse::<usize>().ok())
+        .map_or(0, |n| n.saturating_sub(1));
+    let matches = |at: usize| {
+        lines
+            .get(at..at + now.len())
+            .is_some_and(|w| w == now.as_slice())
+    };
+    // Its own place first, else the nearest place the same lines are.
+    let at = if matches(start) {
+        start
+    } else {
+        (0..=lines.len().saturating_sub(now.len()))
+            .filter(|&i| matches(i))
+            .min_by_key(|&i| i.abs_diff(start))?
+    };
+    lines.splice(at..at + now.len(), before);
+    let mut out = lines.join(eol);
+    if ends_with_eol && !out.is_empty() {
+        out.push_str(eol);
+    }
+    Some(out)
 }
 
 /// Puts a whole file back; a file the agent created goes to the Recycle Bin.
@@ -204,7 +257,19 @@ pub fn undo_file(b: &Baseline, path: &str) -> Result<(), String> {
     )
     .is_ok();
     if existed {
-        git(&b.root, &["checkout", &b.commit, "--", path])?;
+        if !full.exists() {
+            git(&b.root, &["checkout", &b.commit, "--", path])?;
+            return Ok(());
+        }
+        // The stored copy has LF endings; a CRLF file gets its CRLF back.
+        let mut old = git_bytes(&b.root, &["show", &format!("{}:{path}", b.commit)])?;
+        let crlf = std::fs::read(&full).is_ok_and(|now| now.windows(2).any(|w| w == b"\r\n"));
+        if crlf && !old.windows(2).any(|w| w == b"\r\n") {
+            old = String::from_utf8(old)
+                .map(|t| t.replace('\n', "\r\n").into_bytes())
+                .unwrap_or_else(|e| e.into_bytes());
+        }
+        std::fs::write(&full, old).map_err(|e| format!("Could not write {path}: {e}"))?;
         return Ok(());
     }
     if full.exists() {
@@ -313,6 +378,23 @@ new file mode 100644
         assert!(!dir.join("new.txt").exists());
         assert!(changes(&b).unwrap().is_empty());
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn reverses_a_hunk_and_keeps_the_files_line_endings() {
+        let hunk = Hunk {
+            header: "@@ -1,3 +1,3 @@".into(),
+            lines: vec![" a".into(), "-b".into(), "+B".into(), " c".into()],
+        };
+        assert_eq!(
+            reverse_hunk("a\r\nB\r\nc\r\nd\r\n", &hunk).unwrap(),
+            "a\r\nb\r\nc\r\nd\r\n"
+        );
+        assert_eq!(reverse_hunk("a\nB\nc", &hunk).unwrap(), "a\nb\nc");
+        // Moved down by an edit above it: found nearby.
+        assert_eq!(reverse_hunk("x\na\nB\nc\n", &hunk).unwrap(), "x\na\nb\nc\n");
+        // Its lines are gone: nothing to undo.
+        assert!(reverse_hunk("a\nb\nc\n", &hunk).is_none());
     }
 
     #[test]
