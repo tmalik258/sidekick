@@ -434,6 +434,12 @@ function VoiceSection({ voice, onError }: { voice: VoiceSettings; onError: (e: s
         onChange={(speakAnswers) => void set({ speakAnswers })}
       />
       <Toggle
+        label="Interrupt by talking"
+        hint="Talk over an answer to stop it. Works best with headphones."
+        checked={voice.interrupt}
+        onChange={(interrupt) => void set({ interrupt })}
+      />
+      <Toggle
         label="Keep the conversation going"
         hint="Listen for your reply after an answer"
         checked={voice.conversation}

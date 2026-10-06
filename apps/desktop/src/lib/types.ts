@@ -82,6 +82,8 @@ export interface VoiceSettings {
   conversation: boolean;
   /** Read suggestions aloud and take a spoken choice. */
   speakSuggestions: boolean;
+  /** Talking over a spoken answer stops it and listens. */
+  interrupt: boolean;
   voice: string;
   speed: number;
   /** Which voice model the voice was picked for (3 = Supertonic 3). */
@@ -116,6 +118,8 @@ export interface WelcomeSpeech {
 export interface VoiceHeard {
   text: string;
   final: boolean;
+  /** The words settled for a moment: an answer may start early. */
+  pause?: boolean;
   byVoice: boolean;
 }
 
@@ -215,6 +219,14 @@ export interface AskOpen {
   view?: "ask" | "settings" | "welcome";
   /** A tool to start with: "screen" or "clipboard". */
   tool?: "screen" | "clipboard" | null;
+  /** When the open was asked for (ms since 1970), for the timings. */
+  sentAt?: number;
+}
+
+/** One measured moment, for the timings overlay. */
+export interface Timing {
+  name: "open_to_ready" | "enter_to_first_word" | "speech_to_first_sound";
+  ms: number;
 }
 
 export interface SearchHit {
@@ -348,6 +360,7 @@ export const DEFAULT_SETTINGS: Settings = {
     speakAnswers: true,
     conversation: true,
     speakSuggestions: true,
+    interrupt: true,
     voice: "f5",
     speed: 1,
   },

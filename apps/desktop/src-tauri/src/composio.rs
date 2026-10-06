@@ -430,7 +430,7 @@ struct ToolNote<'a> {
 
 /// Runs Composio tools for one chat.
 pub struct Runner {
-    client: Option<McpClient>,
+    client: Option<Arc<McpClient>>,
     app: AppHandle,
     chat_id: String,
     handoff: Arc<Mutex<Option<String>>>,
@@ -484,10 +484,21 @@ impl ToolRunner for Runner {
                 text
             }
             Err(err) => {
+                // The kept connection may have expired; the next chat opens a new one.
+                forget_chat_client().await;
                 log_call(&self.app, name, false, &err.to_string());
                 format!("Error: {err}")
             }
         }
+    }
+
+    fn parallel(&self, name: &str) -> bool {
+        if crate::ask_tools::is_own(name) || name == HANDOFF_TOOL {
+            return crate::ask_tools::reads_only(name);
+        }
+        // A Composio tool that only reads (no meta tool that runs others).
+        let upper = name.to_ascii_uppercase();
+        !plumbing(name) && !is_write(name) && !upper.contains("EXECUTE") && !upper.contains("BASH")
     }
 }
 
@@ -556,6 +567,17 @@ impl AiProvider for LocalWithTools {
         self.inner.available().await
     }
 
+    /// Loads the model and opens the Composio connection while the user types.
+    async fn warm(&self) {
+        let model = self.inner.warm();
+        let tools = async {
+            if let Some(server) = &self.server {
+                let _ = connect(server, &CancellationToken::new()).await;
+            }
+        };
+        tokio::join!(model, tools);
+    }
+
     async fn chat(
         &self,
         req: &ChatRequest,
@@ -573,7 +595,7 @@ impl AiProvider for LocalWithTools {
             .find(|m| m.role == sidekick_ai::Role::User)
             .map(|m| m.content.as_str())
             .unwrap_or_default();
-        let mut defs = crate::ask_tools::defs();
+        let mut defs = crate::ask_tools::pick(&self.app, question, crate::ask_tools::defs()).await;
         if self.offline {
             defs.retain(|d| !crate::ask_tools::is_web(&d.name));
         }
@@ -583,7 +605,12 @@ impl AiProvider for LocalWithTools {
             defs.push(handoff_tool());
         }
         let mut with_tools = req.clone();
-        with_tools.system.push_str(TOOLS_SYSTEM);
+        // Right after the fixed rules, so the start of the prompt stays the
+        // same from message to message and the local server reuses its cache.
+        match with_tools.system.find(crate::ai::FIXED_END) {
+            Some(at) => with_tools.system.insert_str(at, TOOLS_SYSTEM),
+            None => with_tools.system.push_str(TOOLS_SYSTEM),
+        }
         // A screenshot: a vision model sees it when one is set; otherwise
         // the text model gets the screen's text, read here with OCR.
         if let Some(png) = req.image.as_ref() {
@@ -597,7 +624,11 @@ impl AiProvider for LocalWithTools {
                 return vision.chat(req, sink, cancel).await;
             }
             with_tools.image = None;
-            match crate::ask_tools::screen_text(&self.app, png).await {
+            let text = match crate::ask_tools::cached_screen(&self.app) {
+                Some(text) => Ok(text),
+                None => crate::ask_tools::screen_text(&self.app, png).await,
+            };
+            match text {
                 Ok(text) if !text.is_empty() => with_tools.system.push_str(&format!(
                     "\n\nText on the user's screen (read with OCR, layout lost):\n```\n{text}\n```"
                 )),
@@ -639,22 +670,66 @@ impl AiProvider for LocalWithTools {
     }
 }
 
-/// Connects to Composio for one chat. Unreachable is not an error: the
-/// chat goes on with Sidekick's own tools.
+/// The chat connection and its tool list, kept between messages: (link,
+/// connected at, client, tools).
+type ChatClient = (String, std::time::Instant, Arc<McpClient>, Vec<McpTool>);
+static CHAT_CLIENT: tokio::sync::Mutex<Option<ChatClient>> = tokio::sync::Mutex::const_new(None);
+/// After this the tool list is refreshed in the background.
+const TOOLS_FRESH: Duration = Duration::from_secs(5 * 60);
+
+async fn forget_chat_client() {
+    *CHAT_CLIENT.lock().await = None;
+}
+
+async fn open_chat_client(
+    url: &str,
+    headers: &[(String, String)],
+) -> Result<(Arc<McpClient>, Vec<McpTool>), AiError> {
+    let client = McpClient::connect(url, headers.to_vec()).await?;
+    let tools = client.list_tools().await?;
+    Ok((Arc::new(client), tools))
+}
+
+/// Connects to Composio for a chat, reusing the last connection. Unreachable
+/// is not an error: the chat goes on with Sidekick's own tools.
 async fn connect(
     (url, headers): &(String, Vec<(String, String)>),
     cancel: &CancellationToken,
-) -> Result<(Option<McpClient>, Vec<McpTool>), AiError> {
-    let connect = tokio::time::timeout(CONNECT_TIMEOUT, async {
-        let client = McpClient::connect(url, headers.clone()).await?;
-        let tools = client.list_tools().await?;
-        Ok::<_, AiError>((client, tools))
-    });
+) -> Result<(Option<Arc<McpClient>>, Vec<McpTool>), AiError> {
+    {
+        let cached = CHAT_CLIENT.lock().await;
+        if let Some((u, at, client, tools)) = cached.as_ref()
+            && u == url
+            && at.elapsed() < CLIENT_TTL
+        {
+            if at.elapsed() > TOOLS_FRESH {
+                let (url, headers) = (url.clone(), headers.clone());
+                tauri::async_runtime::spawn(async move {
+                    if let Ok(Ok((c, t))) =
+                        tokio::time::timeout(CONNECT_TIMEOUT, open_chat_client(&url, &headers))
+                            .await
+                    {
+                        *CHAT_CLIENT.lock().await = Some((url, std::time::Instant::now(), c, t));
+                    }
+                });
+            }
+            return Ok((Some(client.clone()), tools.clone()));
+        }
+    }
+    let connect = tokio::time::timeout(CONNECT_TIMEOUT, open_chat_client(url, headers));
     match tokio::select! {
         _ = cancel.cancelled() => return Err(AiError::Cancelled),
         r = connect => r,
     } {
-        Ok(Ok((client, tools))) => Ok((Some(client), tools)),
+        Ok(Ok((client, tools))) => {
+            *CHAT_CLIENT.lock().await = Some((
+                url.clone(),
+                std::time::Instant::now(),
+                client.clone(),
+                tools.clone(),
+            ));
+            Ok((Some(client), tools))
+        }
         Ok(Err(err)) => {
             log::warn!("Composio not reachable, using local tools only: {err}");
             Ok((None, Vec::new()))

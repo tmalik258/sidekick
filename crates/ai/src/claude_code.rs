@@ -1,14 +1,19 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
-use crate::{AiError, AiProvider, CancellationToken, ChatRequest, Sink, hide_console, transcript};
+use crate::pool::Pool;
+use crate::{
+    AiError, AiProvider, CancellationToken, ChatRequest, Message, Role, Sink, hide_console,
+    transcript,
+};
 
 /// Chat through the user's own Claude Code install (`claude -p`), so answers
-/// come from their subscription. Sidekick never reads Claude Code's
+/// come from their subscription. One session per chat is kept warm. Sidekick never reads Claude Code's
 /// credential files; it only runs the CLI the user already signed in to.
 pub struct ClaudeCode {
     /// Explicit path to `claude`; otherwise it is looked up on PATH.
@@ -123,6 +128,151 @@ fn parse_line(line: &str) -> Line {
     }
 }
 
+/// One running `claude -p --input-format stream-json`: it takes a message
+/// per line on stdin and answers each with a stream ending in `result`.
+struct Session {
+    _child: tokio::process::Child,
+    stdin: tokio::process::ChildStdin,
+    lines: tokio::io::Lines<BufReader<tokio::process::ChildStdout>>,
+    stderr: Arc<Mutex<String>>,
+}
+
+static SESSIONS: Pool<Session> = Pool::new();
+
+/// Closes every warm Claude Code session.
+pub fn close_sessions() {
+    SESSIONS.clear();
+}
+
+pub(crate) fn sweep_sessions() {
+    SESSIONS.sweep();
+}
+
+impl ClaudeCode {
+    fn key(&self, exe: &Path) -> String {
+        format!(
+            "{}|{}|{}",
+            exe.display(),
+            self.args().join(" "),
+            self.workdir.display()
+        )
+    }
+
+    fn spawn(&self, exe: &Path) -> Result<Session, AiError> {
+        let _ = std::fs::create_dir_all(&self.workdir);
+        let mut cmd = tokio::process::Command::new(exe);
+        // Messages go in on stdin, never as arguments, so no text from the
+        // user or the screen ever reaches a command line.
+        cmd.args(self.args())
+            .args(["--input-format", "stream-json"])
+            .current_dir(&self.workdir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+        hide_console(&mut cmd);
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| AiError::Failed(format!("could not start Claude Code: {e}")))?;
+        let stdin = child.stdin.take().expect("piped stdin");
+        let lines = BufReader::new(child.stdout.take().expect("piped stdout")).lines();
+        let stderr = Arc::new(Mutex::new(String::new()));
+        let mut err = child.stderr.take().expect("piped stderr");
+        let keep = stderr.clone();
+        tokio::spawn(async move {
+            let mut buf = [0u8; 1024];
+            while let Ok(n) = err.read(&mut buf).await {
+                if n == 0 {
+                    break;
+                }
+                let mut s = keep.lock().unwrap_or_else(|e| e.into_inner());
+                s.push_str(&String::from_utf8_lossy(&buf[..n]));
+                if s.len() > 4096 {
+                    let cut = s.len() - 4096;
+                    let cut = (cut..s.len()).find(|i| s.is_char_boundary(*i)).unwrap_or(0);
+                    s.drain(..cut);
+                }
+            }
+        });
+        Ok(Session {
+            _child: child,
+            stdin,
+            lines,
+            stderr,
+        })
+    }
+}
+
+/// The stream-json line for one user message.
+fn user_line(text: &str) -> String {
+    let mut line = serde_json::json!({
+        "type": "user",
+        "message": { "role": "user", "content": [{ "type": "text", "text": text }] },
+    })
+    .to_string();
+    line.push('\n');
+    line
+}
+
+/// Sends one message and streams the answer. An error leaves the session
+/// unusable, so the caller drops it.
+async fn turn(
+    s: &mut Session,
+    text: &str,
+    sink: &Sink,
+    cancel: &CancellationToken,
+) -> Result<String, AiError> {
+    s.stdin
+        .write_all(user_line(text).as_bytes())
+        .await
+        .map_err(|e| AiError::Failed(format!("Claude Code stopped: {e}")))?;
+    s.stdin
+        .flush()
+        .await
+        .map_err(|e| AiError::Failed(e.to_string()))?;
+    let mut full = String::new();
+    loop {
+        let line = tokio::select! {
+            _ = cancel.cancelled() => return Err(AiError::Cancelled),
+            line = s.lines.next_line() => line,
+        };
+        let Ok(Some(line)) = line else { break };
+        match parse_line(&line) {
+            Line::Delta(text) => {
+                sink.send(&text);
+                full.push_str(&text);
+            }
+            Line::Message(text) if full.is_empty() => {
+                sink.send(&text);
+                full.push_str(&text);
+            }
+            Line::Done(text) => {
+                if full.is_empty() {
+                    sink.send(&text);
+                    full = text;
+                }
+                return Ok(full);
+            }
+            Line::Error(msg) => return Err(AiError::Failed(msg)),
+            Line::Message(_) | Line::Other => {}
+        }
+    }
+    if !full.is_empty() {
+        return Ok(full);
+    }
+    let detail = s
+        .stderr
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("no output")
+        .trim()
+        .to_owned();
+    Err(AiError::Failed(format!("Claude Code failed: {detail}")))
+}
+
 #[async_trait]
 impl AiProvider for ClaudeCode {
     fn id(&self) -> &'static str {
@@ -137,6 +287,20 @@ impl AiProvider for ClaudeCode {
         self.resolve().is_some()
     }
 
+    /// Starts a session in the background, so the first message does not
+    /// wait for the CLI to load.
+    async fn warm(&self) {
+        let Some(exe) = self.resolve() else { return };
+        let key = self.key(&exe);
+        if SESSIONS.has_spare(&key) {
+            return;
+        }
+        match self.spawn(&exe) {
+            Ok(s) => SESSIONS.put(key, Vec::new(), s),
+            Err(err) => log::warn!("could not warm Claude Code: {err}"),
+        }
+    }
+
     async fn chat(
         &self,
         req: &ChatRequest,
@@ -146,97 +310,56 @@ impl AiProvider for ClaudeCode {
         let exe = self
             .resolve()
             .ok_or_else(|| AiError::Failed("Claude Code (claude) is not installed".into()))?;
-        let _ = std::fs::create_dir_all(&self.workdir);
-        let mut cmd = tokio::process::Command::new(&exe);
-        // The prompt goes in on stdin, never as an argument, so no text from
-        // the user or the screen ever reaches a command line.
-        cmd.args(self.args())
-            .current_dir(&self.workdir)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        hide_console(&mut cmd);
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| AiError::Failed(format!("could not start Claude Code: {e}")))?;
-
-        let mut prompt = transcript(req);
+        let key = self.key(&exe);
+        let earlier = &req.messages[..req.messages.len().saturating_sub(1)];
+        let latest = req
+            .messages
+            .last()
+            .map(|m| m.content.as_str())
+            .unwrap_or_default();
         if let Some(png) = &req.image {
             // Claude Code reads images from files; it runs in this folder.
+            let _ = std::fs::create_dir_all(&self.workdir);
             std::fs::write(self.workdir.join(SCREENSHOT), png)
                 .map_err(|e| AiError::Failed(format!("could not save the screenshot: {e}")))?;
-            prompt = format!(
-                "A screenshot of the user's screen is saved as {SCREENSHOT} in the current folder. Read it first.\n\n{prompt}"
-            );
         }
-        let mut stdin = child.stdin.take().expect("piped stdin");
-        stdin
-            .write_all(prompt.as_bytes())
-            .await
-            .map_err(|e| AiError::Failed(e.to_string()))?;
-        drop(stdin);
-
-        let mut stderr = child.stderr.take().expect("piped stderr");
-        let err_task = tokio::spawn(async move {
-            let mut s = String::new();
-            let _ = stderr.read_to_string(&mut s).await;
-            s
-        });
-
-        let mut lines = BufReader::new(child.stdout.take().expect("piped stdout")).lines();
-        let mut full = String::new();
-        let mut result: Option<Result<String, AiError>> = None;
-        loop {
-            let line = tokio::select! {
-                _ = cancel.cancelled() => {
-                    let _ = child.kill().await;
-                    return Err(AiError::Cancelled);
-                }
-                line = lines.next_line() => line,
+        let prompt = |continuing: bool| {
+            // A session that already has the chat only needs the new message.
+            let text = if continuing {
+                latest.to_owned()
+            } else {
+                transcript(req)
             };
-            let Ok(Some(line)) = line else { break };
-            match parse_line(&line) {
-                Line::Delta(text) => {
-                    sink.send(&text);
-                    full.push_str(&text);
-                }
-                Line::Message(text) if full.is_empty() => {
-                    sink.send(&text);
-                    full.push_str(&text);
-                }
-                Line::Done(text) => {
-                    if full.is_empty() {
-                        sink.send(&text);
-                        full = text;
-                    }
-                    result = Some(Ok(full.clone()));
-                }
-                Line::Error(msg) => result = Some(Err(AiError::Failed(msg))),
-                Line::Message(_) | Line::Other => {}
+            if req.image.is_some() {
+                format!(
+                    "A screenshot of the user's screen is saved as {SCREENSHOT} in the current folder. Read it first.\n\n{text}"
+                )
+            } else {
+                text
             }
-        }
-        let status = child.wait().await.ok();
-        let stderr = err_task.await.unwrap_or_default();
-        match result {
-            Some(r) => r,
-            None if !full.is_empty() => Ok(full),
-            None => {
-                let detail = stderr
-                    .lines()
-                    .last()
-                    .unwrap_or("no output")
-                    .trim()
-                    .to_owned();
-                let code = status
-                    .and_then(|s| s.code())
-                    .map(|c| format!(" (exit {c})"))
-                    .unwrap_or_default();
-                Err(AiError::Failed(format!(
-                    "Claude Code failed{code}: {detail}"
-                )))
+        };
+        let pooled = SESSIONS.take(&key, earlier);
+        let from_pool = pooled.is_some();
+        let (mut session, continuing) = match pooled {
+            Some(p) => p,
+            None => (self.spawn(&exe)?, false),
+        };
+        let answer = match turn(&mut session, &prompt(continuing), sink, cancel).await {
+            // A kept session may have died while it waited: start over once.
+            Err(AiError::Failed(err)) if from_pool && !sink.has_sent() => {
+                log::info!("warm Claude Code session failed, starting a new one: {err}");
+                session = self.spawn(&exe)?;
+                turn(&mut session, &prompt(false), sink, cancel).await?
             }
-        }
+            other => other?,
+        };
+        let mut history = req.messages.clone();
+        history.push(Message {
+            role: Role::Assistant,
+            content: answer.clone(),
+        });
+        SESSIONS.put(key, history, session);
+        Ok(answer)
     }
 }
 
@@ -282,6 +405,15 @@ mod tests {
             args.windows(2)
                 .any(|pair| pair == ["--model", "claude-haiku-4-5-20251001"])
         );
+    }
+
+    #[test]
+    fn user_messages_are_one_json_line() {
+        let line = user_line("two\nlines");
+        assert!(line.ends_with('\n'));
+        assert_eq!(line.matches('\n').count(), 1);
+        let v: Value = serde_json::from_str(line.trim()).unwrap();
+        assert_eq!(v["message"]["content"][0]["text"], "two\nlines");
     }
 
     #[test]
