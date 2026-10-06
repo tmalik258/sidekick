@@ -167,7 +167,7 @@ pub(crate) fn embedder(app: &AppHandle) -> Option<(sidekick_ai::OpenAiCompat, St
 }
 
 /// nomic-embed-text and similar models want a task prefix.
-fn prefixed(model: &str, kind: &str, text: &str) -> String {
+pub(crate) fn prefixed(model: &str, kind: &str, text: &str) -> String {
     if model.contains("nomic") {
         format!("{kind}: {text}")
     } else {

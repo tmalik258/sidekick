@@ -42,7 +42,7 @@ gh auth login
 | --- | --- | --- |
 | GitHub CLI | `GitHub.cli` | Open PRs in the morning brief |
 | Git | `Git.Git` | Repo status and unsaved work |
-| VS Code | `Microsoft.VisualStudioCode` | Open projects and files in your editor |
+| Code editor | `Microsoft.VisualStudioCode` | Open projects and files in your editor. Cursor, VS Code, Antigravity, Windsurf, VSCodium, Zed, JetBrains IDEs and Visual Studio are found on their own; pick one in Settings > Apps > Code editor |
 | Tesseract | `UB-Mannheim.TesseractOCR` | Copy text out of screenshots |
 | Poppler (optional) | `oschwartz10612.Poppler` | Summarize PDFs |
 | Pandoc (optional) | `JohnMacFarlane.Pandoc` | Summarize Word files, convert documents |

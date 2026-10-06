@@ -330,6 +330,8 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         .write()
         .unwrap_or_else(std::sync::PoisonError::into_inner) =
         std::sync::Arc::new(sidekick_actions::Executor::new(caps.clone()));
+    crate::editors::refresh(app);
+    let caps = executor(&state).capabilities().clone();
     let home = dirs::home_dir().unwrap_or_default();
     let mut items = Vec::new();
 
@@ -666,7 +668,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         "vscode",
         Group::Tools,
         "Code editor",
-        "Opens your projects and files. VS Code, Cursor or Windsurf.",
+        "Opens your projects and files: Cursor, VS Code, Antigravity, PyCharm and others.",
     )
     .recommended();
     items.push(match caps.code_name.as_deref() {

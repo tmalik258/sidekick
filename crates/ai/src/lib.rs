@@ -11,6 +11,7 @@ mod codex;
 mod decide;
 mod mcp;
 mod openai;
+mod pool;
 mod router;
 mod sse;
 
@@ -18,8 +19,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 pub use anthropic::Anthropic;
 use async_trait::async_trait;
-pub use claude_code::ClaudeCode;
-pub use codex::Codex;
+pub use claude_code::{ClaudeCode, close_sessions as close_claude_sessions};
+pub use codex::{Codex, close_sessions as close_codex_sessions};
 pub use decide::{Decider, Decision, DecisionOption, LocalDecider, Ranked, SemIf};
 pub use mcp::{McpClient, McpTool};
 pub use openai::{
@@ -130,6 +131,11 @@ pub trait ToolRunner: Send + Sync {
     async fn run(&self, name: &str, arguments: &serde_json::Value) -> String;
     /// Called once per tool call, before it runs, for progress text.
     fn started(&self, _name: &str, _arguments: &serde_json::Value) {}
+    /// The tool only reads, so it may run at the same time as others the
+    /// model asked for in the same round.
+    fn parallel(&self, _name: &str) -> bool {
+        false
+    }
 }
 
 #[async_trait]
@@ -140,6 +146,9 @@ pub trait AiProvider: Send + Sync {
     fn is_local(&self) -> bool;
     /// Cheap check that the provider can answer right now.
     async fn available(&self) -> bool;
+    /// Gets ready for a question (loads a model, starts a session) while
+    /// the user is still typing. Nothing by default.
+    async fn warm(&self) {}
     /// Streams the answer into `sink` and returns the full text.
     async fn chat(
         &self,
@@ -147,6 +156,13 @@ pub trait AiProvider: Send + Sync {
         sink: &Sink,
         cancel: &CancellationToken,
     ) -> Result<String, AiError>;
+}
+
+/// Closes warm agent sessions that have been idle too long. Call it now
+/// and then (every minute or so).
+pub fn sweep_sessions() {
+    claude_code::sweep_sessions();
+    codex::sweep_sessions();
 }
 
 /// Flattens a conversation into one prompt for providers that take a single

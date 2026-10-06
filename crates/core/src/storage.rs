@@ -439,6 +439,16 @@ impl Storage {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
+    /// Seconds per app from `day` on (days are `YYYY-MM-DD`), largest first.
+    pub fn time_by_app_since(&self, day: &str) -> Result<Vec<(String, i64)>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT app, SUM(secs) AS total FROM app_time WHERE day >= ?1
+             GROUP BY app ORDER BY total DESC",
+        )?;
+        let rows = stmt.query_map([day], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
     pub fn clear_time(&self) -> Result<usize, StorageError> {
         Ok(self.conn.execute("DELETE FROM app_time", [])?)
     }
@@ -830,6 +840,14 @@ impl Storage {
         })
     }
 
+    /// Forgets one app or site from morning setup's history.
+    pub fn clear_open(&self, kind: &str, key: &str) -> Result<usize, StorageError> {
+        Ok(self.conn.execute(
+            "DELETE FROM routine_opens WHERE kind = ?1 AND key = ?2",
+            params![kind, key],
+        )?)
+    }
+
     pub fn count_events(&self) -> Result<u64, StorageError> {
         let count: i64 = self
             .conn
@@ -1032,6 +1050,14 @@ mod tests {
         );
         assert_eq!(day[1].secs, 30);
         assert_eq!(day.len(), 2);
+        assert_eq!(
+            s.time_by_app_since("2026-10-01").unwrap(),
+            vec![("Code".to_owned(), 155), ("Chrome".to_owned(), 30)]
+        );
+        assert_eq!(
+            s.time_by_app_since("2026-10-02").unwrap(),
+            vec![("Code".to_owned(), 5)]
+        );
         assert_eq!(s.clear_time().unwrap(), 3);
     }
 

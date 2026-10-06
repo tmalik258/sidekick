@@ -80,6 +80,7 @@ fn now_ms() -> u64 {
 #[derive(Debug, Clone, PartialEq)]
 struct Key {
     wake_word: bool,
+    interrupt: bool,
     voice: String,
     speed: f32,
     /// The microphone opens only once onboarding is done; until then
@@ -180,6 +181,8 @@ struct HeardPayload {
     text: String,
     #[serde(rename = "final")]
     done: bool,
+    /// The words have settled for a moment; an answer may start early.
+    pause: bool,
     /// Ask mode was opened by the wake word.
     by_voice: bool,
 }
@@ -249,6 +252,7 @@ pub fn refresh(app: &AppHandle) {
     }
     let key = Key {
         wake_word: settings.wake_word,
+        interrupt: settings.interrupt,
         voice: settings.voice.clone(),
         speed: settings.speed,
         listen: onboarded,
@@ -492,6 +496,21 @@ fn speech_events(app: &AppHandle) -> sidekick_voice::SpeechEvents {
     let app = app.clone();
     std::sync::Arc::new(move |event| {
         let v = voice(&app);
+        // The first sound of an answer to a spoken question: how long after
+        // the question ended.
+        if let SpeechEvent::Piece {
+            utterance,
+            starts_in,
+            ..
+        } = &event
+            && lock(&v.speaking)
+                .as_ref()
+                .is_some_and(|(_, u)| u == utterance)
+            && let Some(ended) = lock(&SPEECH_ENDED).take()
+        {
+            let ms = (ended.elapsed() + *starts_in).as_millis() as u64;
+            crate::timings::record(&app, crate::timings::SPEECH_TO_FIRST_SOUND, ms);
+        }
         let mut w = lock(&v.welcome);
         match event {
             SpeechEvent::Piece {
@@ -617,6 +636,7 @@ fn build(app: &AppHandle, key: Key, settings: &VoiceSettings) -> Runtime {
             ListenerConfig {
                 models: v.models.clone(),
                 wake_word: settings.wake_word,
+                interrupt: settings.interrupt,
             },
             move |heard| on_heard(&handle, heard),
         ) {
@@ -660,6 +680,14 @@ fn on_heard(app: &AppHandle, heard: Heard) {
             emit_heard(app, String::new(), false);
         }
         Heard::Partial(text) => emit_heard(app, strip_wake(&text), false),
+        // A choice ("open", "not now") is taken when it is final.
+        Heard::Pause(text) if lock(&v.choosing).is_none() => {
+            let text = strip_wake(&text);
+            if sidekick_voice::text::looks_like_request(&text) {
+                emit_pause(app, text);
+            }
+        }
+        Heard::Pause(_) => {}
         Heard::Final(text) => {
             let mut text = strip_wake(&text);
             let pushed = v.pushed.swap(false, Ordering::SeqCst);
@@ -684,6 +712,7 @@ fn on_heard(app: &AppHandle, heard: Heard) {
                 text.clear();
             }
             mascot::dispatch(app, MascotEvent::Cancelled);
+            *lock(&SPEECH_ENDED) = (!text.is_empty()).then(std::time::Instant::now);
             emit_heard(app, text, true);
             v.opened_by_voice.store(false, Ordering::SeqCst);
         }
@@ -716,6 +745,23 @@ fn emit_heard(app: &AppHandle, text: String, done: bool) {
         HeardPayload {
             text,
             done,
+            pause: false,
+            by_voice,
+        },
+    );
+}
+
+/// When the last spoken question ended, until its answer is first heard.
+static SPEECH_ENDED: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+
+fn emit_pause(app: &AppHandle, text: String) {
+    let by_voice = voice(app).opened_by_voice.load(Ordering::SeqCst);
+    let _ = app.emit(
+        HEARD_EVENT,
+        HeardPayload {
+            text,
+            done: false,
+            pause: true,
             by_voice,
         },
     );

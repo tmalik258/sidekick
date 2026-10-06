@@ -30,6 +30,7 @@ import { ModelPicker } from "./ask/ModelPicker";
 import { Kbd, KeyHint, Pill, Row } from "./ask/parts";
 import type { Command } from "./ask/Starters";
 import { ContextLine, contextStarters, soonestMeeting } from "./ask/Starters";
+import { Timings } from "./ask/Timings";
 import { Icon } from "./Icon";
 import { SETTINGS_TABS } from "./SettingsPanel";
 import { SetupSpinner } from "./SetupChecklistRow";
@@ -710,6 +711,7 @@ export function AskPanel() {
           </div>
         )
       )}
+      <Timings />
     </div>
   );
 }

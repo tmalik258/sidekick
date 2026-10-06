@@ -111,6 +111,17 @@ impl OpenAiCompat {
     }
 }
 
+/// Warming the same model again within this time does nothing.
+const WARM_AGAIN: Duration = Duration::from_secs(60);
+static LAST_WARM: std::sync::Mutex<Option<(String, std::time::Instant)>> =
+    std::sync::Mutex::new(None);
+
+/// Ollama's own API root (without `/v1`), when the URL looks like Ollama.
+fn ollama_root(base_url: &str) -> Option<&str> {
+    let root = base_url.strip_suffix("/v1")?;
+    root.contains(":11434").then_some(root)
+}
+
 /// The model to chat with when none is chosen: the first one listed (Ollama
 /// lists the newest first) that can chat: not embedding, not vision-only.
 pub fn first_chat_model(models: &[String]) -> Option<&str> {
@@ -204,18 +215,50 @@ impl OpenAiCompat {
                     "content": msg["content"].as_str().unwrap_or_default(),
                     "tool_calls": wanted,
                 }));
-                for (i, call) in wanted.iter().enumerate() {
-                    let name = call["function"]["name"].as_str().unwrap_or_default();
-                    let args = parse_arguments(&call["function"]["arguments"]);
-                    let id = call["id"]
-                        .as_str()
-                        .map_or_else(|| format!("call_{step}_{i}"), str::to_owned);
-                    runner.started(name, &args);
-                    calls.push(name.to_owned());
-                    let result = tokio::select! {
+                let parsed: Vec<(String, String, Value)> = wanted
+                    .iter()
+                    .enumerate()
+                    .map(|(i, call)| {
+                        let name = call["function"]["name"].as_str().unwrap_or_default();
+                        let id = call["id"]
+                            .as_str()
+                            .map_or_else(|| format!("call_{step}_{i}"), str::to_owned);
+                        (
+                            id,
+                            name.to_owned(),
+                            parse_arguments(&call["function"]["arguments"]),
+                        )
+                    })
+                    .collect();
+                // Reads asked for together run together; anything that acts
+                // runs one after another, in order.
+                let together =
+                    parsed.len() > 1 && parsed.iter().all(|(_, n, _)| runner.parallel(n));
+                let results: Vec<String> = if together {
+                    for (_, name, args) in &parsed {
+                        runner.started(name, args);
+                        calls.push(name.clone());
+                    }
+                    let all = futures_util::future::join_all(
+                        parsed.iter().map(|(_, name, args)| runner.run(name, args)),
+                    );
+                    tokio::select! {
                         _ = cancel.cancelled() => return Err(AiError::Cancelled),
-                        r = runner.run(name, &args) => r,
-                    };
+                        r = all => r,
+                    }
+                } else {
+                    let mut out = Vec::with_capacity(parsed.len());
+                    for (_, name, args) in &parsed {
+                        runner.started(name, args);
+                        calls.push(name.clone());
+                        out.push(tokio::select! {
+                            _ = cancel.cancelled() => return Err(AiError::Cancelled),
+                            r = runner.run(name, args) => r,
+                        });
+                    }
+                    out
+                };
+                for ((id, name, _), result) in parsed.iter().zip(results) {
                     let result: String = result.chars().take(MAX_TOOL_RESULT).collect();
                     messages.push(json!({
                         "role": "tool", "tool_call_id": id, "name": name, "content": result,
@@ -545,6 +588,37 @@ impl AiProvider for OpenAiCompat {
         self.models().await.is_some_and(|m| !m.is_empty())
     }
 
+    /// Ollama unloads a model after a few idle minutes; this loads it (and
+    /// keeps it for half an hour) while the user types.
+    async fn warm(&self) {
+        let Some(root) = ollama_root(&self.base_url) else {
+            return;
+        };
+        let Ok(model) = self.pick_model().await else {
+            return;
+        };
+        {
+            let mut last = LAST_WARM.lock().unwrap_or_else(|e| e.into_inner());
+            if last
+                .as_ref()
+                .is_some_and(|(m, at)| *m == model && at.elapsed() < WARM_AGAIN)
+            {
+                return;
+            }
+            *last = Some((model.clone(), std::time::Instant::now()));
+        }
+        let sent = self
+            .client
+            .post(format!("{root}/api/generate"))
+            .json(&json!({ "model": model, "keep_alive": "30m" }))
+            .timeout(Duration::from_secs(120))
+            .send()
+            .await;
+        if let Err(err) = sent {
+            log::debug!("could not warm {model}: {err}");
+        }
+    }
+
     async fn chat(
         &self,
         req: &ChatRequest,
@@ -578,6 +652,16 @@ impl AiProvider for OpenAiCompat {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn warms_only_ollama() {
+        assert_eq!(
+            ollama_root("http://localhost:11434/v1"),
+            Some("http://localhost:11434")
+        );
+        assert_eq!(ollama_root("http://localhost:1234/v1"), None);
+        assert_eq!(ollama_root("http://localhost:11434"), None);
+    }
     use crate::Message;
     use async_trait::async_trait;
 
@@ -750,9 +834,13 @@ mod tests {
                         .as_array()
                         .is_some_and(|m| m.iter().any(|m| m["role"] == "tool"));
                     // Streamed like a real server, in pieces.
-                    let deltas: Vec<Value> = if body.get("tools").is_some()
-                        && (stubborn || !has_result)
-                    {
+                    let two = body["messages"].to_string().contains("two at once");
+                    let deltas: Vec<Value> = if two && !has_result {
+                        vec![json!({ "tool_calls": [
+                            { "index": 0, "id": "a", "type": "function", "function": { "name": "LIST", "arguments": "{\"n\":1}" } },
+                            { "index": 1, "id": "b", "type": "function", "function": { "name": "LIST", "arguments": "{\"n\":2}" } },
+                        ] })]
+                    } else if body.get("tools").is_some() && (stubborn || !has_result) {
                         vec![
                             json!({ "tool_calls": [{ "index": 0, "id": "c1", "type": "function", "function": { "name": "LIST", "arguments": "{\"state\":" } }] }),
                             json!({ "tool_calls": [{ "index": 0, "function": { "arguments": "\"open\"}" } }] }),
@@ -844,6 +932,63 @@ mod tests {
             .unwrap();
         assert_eq!(tool_msg["tool_call_id"], "c1");
         assert_eq!(tool_msg["content"], "3 issues");
+    }
+
+    /// Takes a while per call; reads may run together.
+    struct Slow(bool);
+
+    #[async_trait]
+    impl ToolRunner for Slow {
+        async fn run(&self, _name: &str, arguments: &Value) -> String {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            format!("result {}", arguments["n"])
+        }
+        fn parallel(&self, _name: &str) -> bool {
+            self.0
+        }
+    }
+
+    async fn run_two(parallel: bool) -> (Duration, Vec<Value>) {
+        let (url, seen) = fake_model(false).await;
+        let model = OpenAiCompat::new(Some(url), Some("m".into()));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let started = std::time::Instant::now();
+        model
+            .chat_with_tools(
+                &ChatRequest {
+                    system: String::new(),
+                    messages: vec![Message::user("two at once")],
+                    image: None,
+                },
+                &list_tool(),
+                &Slow(parallel),
+                &Sink::new(tx),
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        let took = started.elapsed();
+        let seen = seen.lock().unwrap();
+        let tools = seen[1]["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|m| m["role"] == "tool")
+            .cloned()
+            .collect();
+        (took, tools)
+    }
+
+    #[tokio::test]
+    async fn reads_run_together_and_keep_their_order() {
+        let (took, tools) = run_two(true).await;
+        assert!(took < Duration::from_millis(550), "took {took:?}");
+        assert_eq!(tools[0]["tool_call_id"], "a");
+        assert_eq!(tools[0]["content"], "result 1");
+        assert_eq!(tools[1]["tool_call_id"], "b");
+        assert_eq!(tools[1]["content"], "result 2");
+        let (took, _) = run_two(false).await;
+        assert!(took >= Duration::from_millis(600), "actions run one by one");
     }
 
     #[tokio::test]

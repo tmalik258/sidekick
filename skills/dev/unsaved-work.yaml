@@ -9,5 +9,5 @@ suggestion:
   title: "{{count}} repos have unsaved work"
   detail: "{{names}}"
   options:
-    - { label: "Open {{first}} in VS Code", action: open_in_editor, args: { path: "{{first_path}}" }, requires: ["tool:code"] }
+    - { label: "Open {{first}} in {{editor}}", action: open_in_editor, args: { path: "{{first_path}}" }, requires: ["tool:code"] }
     - { label: "Open {{first}}", action: open_folder, args: { path: "{{first_path}}" } }

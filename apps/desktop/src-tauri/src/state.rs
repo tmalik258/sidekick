@@ -228,6 +228,10 @@ impl Env for AppEnv<'_> {
         lock(self.storage).choice_counts(key).unwrap_or_default()
     }
 
+    fn editor_name(&self) -> Option<String> {
+        self.caps.code_name.clone()
+    }
+
     fn default_browser_id(&self) -> Option<String> {
         sidekick_actions::default_browser()
             .filter(|id| self.caps.browser(id).is_some())
