@@ -811,7 +811,11 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         }
       }),
       listen(EVENTS.aiDelta, ({ id, text }) => {
-        updateLastTurn(id, (t) => ({ ...t, content: t.content + text }));
+        updateLastTurn(id, (t) => ({
+          ...t,
+          content: t.content + text,
+          firstMs: t.firstMs ?? (t.startedAt ? Date.now() - t.startedAt : undefined),
+        }));
         // The first words of a spoken question's answer: open to show it.
         if (sounds && useSidekick.getState().voiceQuestion !== null) {
           useSidekick.setState({ voiceQuestion: null });

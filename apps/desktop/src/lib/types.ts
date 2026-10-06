@@ -189,6 +189,8 @@ export interface Turn extends ChatMessage {
   /** When the question was sent (ms since 1970), and how long the answer took. */
   startedAt?: number;
   tookMs?: number;
+  /** How long until the first word showed. */
+  firstMs?: number;
 }
 
 export interface Proposal {

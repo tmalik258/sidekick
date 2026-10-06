@@ -33,6 +33,9 @@ export interface Session extends AgentStarted {
   question: { id: string; label: string; detail: string } | null;
   error: string | null;
   startedAt: number;
+  /** When the current turn began, and how long the last one took. */
+  turnAt: number;
+  tookMs: number | null;
   /** Files changed when it ended, from Rust. */
   changes: number;
 }
@@ -73,6 +76,8 @@ function addSession(started: AgentStarted, title: string, mode: AgentMode, first
     question: null,
     error: null,
     startedAt: Date.now(),
+    turnAt: Date.now(),
+    tookMs: null,
     changes: 0,
   };
   useAgents.setState((st) => ({ sessions: [session, ...st.sessions], current: started.id, tab: "agents" }));
@@ -87,7 +92,13 @@ export async function handOff(messages: { role: "user" | "assistant"; content: s
 }
 
 export function sendToSession(id: string, text: string) {
-  update(id, (s) => ({ ...s, entries: [...s.entries, { kind: "you", text }], status: "working" }));
+  update(id, (s) => ({
+    ...s,
+    entries: [...s.entries, { kind: "you", text }],
+    status: "working",
+    turnAt: Date.now(),
+    tookMs: null,
+  }));
   void api.agentSend(id, text).catch((e: unknown) => update(id, (s) => ({ ...s, error: String(e) })));
 }
 
@@ -169,11 +180,13 @@ function onEvent(e: { session: string; kind: string } & Record<string, unknown>)
         ...s,
         status: e.error ? "failed" : "idle",
         error: e.error ? String(e.error) : null,
+        tookMs: Date.now() - s.turnAt,
       }));
     case "ended":
       return update(id, (s) => ({
         ...s,
         status: e.error ? "failed" : "ended",
+        tookMs: s.tookMs ?? Date.now() - s.turnAt,
         error: e.error ? String(e.error) : s.error,
         changes: Number(e.changes ?? 0),
         question: null,

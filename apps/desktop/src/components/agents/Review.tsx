@@ -1,29 +1,39 @@
 "use client";
 
-// Keep or undo what an agent changed: every file with its +/- counts; open
-// one to see each change and undo just that change, the file, or all of it.
-// Nothing is final until Done. Keys: arrows move, U undoes, K keeps.
+// Keep or undo what an agent changed: every change shown, each with Keep and
+// Undo, a whole file at once, or everything. Nothing is final until Done.
+// Keys: arrows move between changes, K keeps, U undoes.
 
 import { useCallback, useEffect, useState } from "react";
 import type { Session } from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import type { FileChange } from "@/lib/types";
-import { Kbd } from "../ask/parts";
 
-export function Review({
-  session,
-  keys,
-  maxHeight,
-  onDone,
-}: {
-  session: Session;
-  keys: boolean;
-  maxHeight: number;
-  onDone: () => void;
-}) {
+type Hunk = FileChange["hunks"][number];
+
+/** Lines of a hunk with the line number each one has in its file. */
+function numbered(h: Hunk): { n: number; kind: "add" | "del" | "ctxl"; text: string }[] {
+  const m = h.header.match(/-(\d+)(?:,\d+)? \+(\d+)/);
+  let old = m ? Number(m[1]) : 1;
+  let now = m ? Number(m[2]) : 1;
+  const out: { n: number; kind: "add" | "del" | "ctxl"; text: string }[] = [];
+  for (const l of h.lines) {
+    if (l.startsWith("\\")) continue;
+    if (l.startsWith("+")) out.push({ n: now++, kind: "add", text: l });
+    else if (l.startsWith("-")) out.push({ n: old++, kind: "del", text: l });
+    else {
+      out.push({ n: now, kind: "ctxl", text: l });
+      old++;
+      now++;
+    }
+  }
+  return out;
+}
+
+export function Review({ session, maxHeight, onDone }: { session: Session; maxHeight: number; onDone: () => void }) {
   const [files, setFiles] = useState<FileChange[] | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
   const [active, setActive] = useState(0);
+  // Changes kept, by "path:header". Undone ones leave the diff.
   const [kept, setKept] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
@@ -48,160 +58,141 @@ export function Review({
   );
 
   const list = files ?? [];
-  const shown = list.filter((f) => !kept.has(f.path));
+  // Every change still waiting for a decision, in order.
+  const open = list.flatMap((f) =>
+    f.hunks.map((h, n) => ({ f, h, n, key: `${f.path}:${h.header}` })).filter((x) => !kept.has(x.key)),
+  );
+  const sel = open[Math.min(active, open.length - 1)];
+  const keepAll = useCallback(() => {
+    setKept(new Set(list.flatMap((f) => f.hunks.map((h) => `${f.path}:${h.header}`))));
+    onDone();
+  }, [list, onDone]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey || e.altKey || (e.target as HTMLElement)?.tagName === "INPUT") return;
-      const f = shown[Math.min(active, shown.length - 1)];
+      if ((e.target as HTMLElement)?.tagName === "INPUT") return;
+      if (e.altKey && !e.ctrlKey && (e.key === "1" || e.key === "2")) {
+        e.preventDefault();
+        if (e.key === "1") keepAll();
+        else undo(null, null);
+        return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey || !sel) return;
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
-        setActive((a) => (shown.length ? (a + (e.key === "ArrowDown" ? 1 : -1) + shown.length) % shown.length : 0));
-      } else if (e.key === "Enter" && f) {
+        setActive((a) => (a + (e.key === "ArrowDown" ? 1 : -1) + open.length) % open.length);
+      } else if (e.key.toLowerCase() === "u") {
         e.preventDefault();
-        setOpen((o) => (o === f.path ? null : f.path));
-      } else if (e.key.toLowerCase() === "u" && f) {
+        undo(sel.f.path, sel.n);
+      } else if (e.key.toLowerCase() === "k") {
         e.preventDefault();
-        undo(f.path, null);
-      } else if (e.key.toLowerCase() === "k" && f) {
-        e.preventDefault();
-        setKept((k) => new Set(k).add(f.path));
+        setKept((k) => new Set(k).add(sel.key));
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [shown, active, undo]);
+  }, [sel, open.length, undo, keepAll]);
 
-  const added = list.reduce((n, f) => n + f.added, 0);
-  const removed = list.reduce((n, f) => n + f.removed, 0);
+  const changes = list.reduce((n, f) => n + f.hunks.length, 0);
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2 text-[12.5px]">
-        <span className="font-medium text-white">
-          {files === null ? "Loading changes..." : `${list.length} ${list.length === 1 ? "file" : "files"} changed`}
+    <div className="ak-tl ak-in">
+      <div className="ak-rv-head">
+        <b>Review changes</b>
+        <span className="sub2">
+          {files === null
+            ? "Loading..."
+            : `${list.length} ${list.length === 1 ? "file" : "files"} · ${changes} ${changes === 1 ? "change" : "changes"}`}
         </span>
-        {files !== null && (
-          <span className="text-[rgb(235_235_245/0.5)]">
-            <span className="text-[#30d158]">+{added}</span> <span className="text-[#ff6961]">-{removed}</span>
-          </span>
-        )}
-        <span className="ml-auto flex gap-1.5">
-          {list.length > 0 && (
-            <button
-              type="button"
-              onClick={() => undo(null, null)}
-              className="chip rounded-full bg-white/[0.12] px-3 py-1 text-[12px] text-white/90"
-            >
-              Undo all
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onDone}
-            className="chip rounded-full bg-white px-3 py-1 text-[12px] font-medium text-black"
-          >
-            Done
-          </button>
-        </span>
+        <span className="keys mono">↑↓ move · K keep · U undo</span>
       </div>
-      {error && <p className="text-[12px] text-[#ffb4ae]">{error}</p>}
-      <ul className="ask-scroll flex flex-col gap-1 overflow-y-auto pr-1" style={{ maxHeight }}>
-        {shown.map((f, i) => (
-          <li key={f.path} className={`rounded-xl ${i === active ? "bg-white/[0.08]" : "bg-white/[0.03]"}`}>
-            <div className="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px]">
-              <button
-                type="button"
-                onClick={() => {
-                  setActive(i);
-                  setOpen((o) => (o === f.path ? null : f.path));
-                }}
-                className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                aria-expanded={open === f.path}
-              >
-                <span className="truncate font-mono text-[12px] text-white/90">{f.path}</span>
-                {f.status !== "modified" && (
-                  <span className="shrink-0 text-[11px] text-[rgb(235_235_245/0.45)]">{f.status}</span>
-                )}
-                <span className="shrink-0 text-[11px]">
-                  <span className="text-[#30d158]">+{f.added}</span>{" "}
-                  <span className="text-[#ff6961]">-{f.removed}</span>
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setKept((k) => new Set(k).add(f.path))}
-                className="chip rounded-full bg-white/[0.1] px-2 py-0.5 text-[11.5px] text-white/85"
-              >
-                Keep
-              </button>
-              <button
-                type="button"
-                onClick={() => undo(f.path, null)}
-                className="chip rounded-full bg-white/[0.1] px-2 py-0.5 text-[11.5px] text-white/85"
-              >
-                Undo
-              </button>
+      {error && <p className="ak-err">{error}</p>}
+      <div className="ak-tl ak-scroll" style={{ maxHeight: maxHeight - 50 }}>
+        {list.map((f) => (
+          <div key={f.path} className="ak-rv-file">
+            <div className="ak-rv-fh">
+              <span className="mono">{f.path}</span>
+              {f.status !== "modified" && <span>{f.status}</span>}
+              {f.added > 0 && <span className="add-n mono">+{f.added}</span>}
+              {f.removed > 0 && <span className="del-n mono">−{f.removed}</span>}
+              <span className="acts">
+                <button
+                  type="button"
+                  onClick={() => setKept((k) => new Set([...k, ...f.hunks.map((h) => `${f.path}:${h.header}`)]))}
+                  className="ak-rv-btn chip"
+                >
+                  Keep file
+                </button>
+                <button type="button" onClick={() => undo(f.path, null)} className="ak-rv-btn chip">
+                  Undo file
+                </button>
+              </span>
             </div>
-            {open === f.path && (
-              <div className="flex flex-col gap-1.5 px-2.5 pb-2">
-                {f.hunks.map((h, n) => (
-                  <div key={h.header} className="overflow-hidden rounded-lg bg-black/40">
-                    <div className="flex items-center justify-between px-2 py-1 text-[11px] text-[rgb(235_235_245/0.45)]">
-                      <span className="font-mono">{h.header}</span>
-                      {f.hunks.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => undo(f.path, n)}
-                          className="chip rounded-full bg-white/[0.1] px-2 py-0.5 text-white/85"
-                        >
-                          Undo this change
-                        </button>
-                      )}
-                    </div>
-                    <pre className="overflow-x-auto px-2 pb-1.5 font-mono text-[11px] leading-[1.45]">
-                      {h.lines.slice(0, 80).map((l, k) => (
-                        <div
-                          // biome-ignore lint/suspicious/noArrayIndexKey: lines of one hunk
-                          key={k}
-                          className={
-                            l.startsWith("+")
-                              ? "bg-[#30d158]/10 text-[#9cf0b0]"
-                              : l.startsWith("-")
-                                ? "bg-[#ff453a]/10 text-[#ffb4ae]"
-                                : "text-white/55"
-                          }
-                        >
-                          {l}
+            {f.hunks.map((h, n) => {
+              const key = `${f.path}:${h.header}`;
+              if (kept.has(key)) {
+                return (
+                  <div key={key} className="ak-rv-hunk">
+                    <p className="ak-rv-res">
+                      <span className="k">✓ Kept</span>
+                      <span className="mono truncate">
+                        {h.lines
+                          .find((l) => l.startsWith("+"))
+                          ?.slice(1)
+                          .trim()}
+                      </span>
+                    </p>
+                  </div>
+                );
+              }
+              return (
+                // biome-ignore lint/a11y/noStaticElementInteractions: a click picks the change; keys act on it
+                // biome-ignore lint/a11y/useKeyWithClickEvents: arrows move between changes
+                <div
+                  key={key}
+                  className="ak-rv-hunk"
+                  data-sel={sel?.key === key}
+                  onClick={() => setActive(open.findIndex((x) => x.key === key))}
+                >
+                  <pre className="mono">
+                    {numbered(h)
+                      .slice(0, 60)
+                      .map((l, k) => (
+                        // biome-ignore lint/suspicious/noArrayIndexKey: lines of one hunk
+                        <div key={k}>
+                          <span className="ln">{l.n}</span>
+                          <span className={l.kind}>{l.text}</span>
                         </div>
                       ))}
-                    </pre>
+                  </pre>
+                  <div className="ha">
+                    <button
+                      type="button"
+                      onClick={() => setKept((k) => new Set(k).add(key))}
+                      className="ak-rv-btn chip"
+                    >
+                      Keep <kbd>K</kbd>
+                    </button>
+                    <button type="button" onClick={() => undo(f.path, n)} className="ak-rv-btn chip">
+                      Undo <kbd>U</kbd>
+                    </button>
                   </div>
-                ))}
-              </div>
-            )}
-          </li>
+                </div>
+              );
+            })}
+          </div>
         ))}
-        {files !== null && shown.length === 0 && (
-          <li className="py-2 text-[12.5px] text-[rgb(235_235_245/0.55)]">
-            {list.length ? "Everything kept." : "No changes left."}
-          </li>
+        {files !== null && list.length === 0 && <p className="ak-done">No changes left.</p>}
+      </div>
+      <div className="ak-chips">
+        <button type="button" onClick={keepAll} className="ak-chip primary chip">
+          {open.length === 0 ? "Done" : "Keep all"} <kbd>Alt 1</kbd>
+        </button>
+        {list.length > 0 && (
+          <button type="button" onClick={() => undo(null, null)} className="ak-chip chip">
+            Undo all <kbd>Alt 2</kbd>
+          </button>
         )}
-      </ul>
-      {keys && (
-        <p className="flex gap-3 text-[11px] text-[rgb(235_235_245/0.5)]">
-          <span>
-            <Kbd>↑↓</Kbd> move
-          </span>
-          <span>
-            <Kbd>Enter</Kbd> show
-          </span>
-          <span>
-            <Kbd>K</Kbd> keep
-          </span>
-          <span>
-            <Kbd>U</Kbd> undo
-          </span>
-        </p>
-      )}
+      </div>
     </div>
   );
 }

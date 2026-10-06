@@ -4,8 +4,7 @@
 // step by step, answer its questions here, steer it, and keep or undo each
 // change when it is done.
 
-import { AnimatePresence, motion } from "motion/react";
-import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   answerQuestion,
   closeSession,
@@ -35,52 +34,47 @@ export function AgentsTab({ keys, maxHeight }: { keys: boolean; maxHeight: numbe
   const sessions = useAgents((s) => s.sessions);
   const current = useAgents((s) => s.current);
   const session = sessions.find((s) => s.id === current) ?? null;
+  return session ? (
+    <SessionView key={session.id} session={session} sessions={sessions} keys={keys} maxHeight={maxHeight} />
+  ) : (
+    <NewSession sessions={sessions} />
+  );
+}
+
+/** Every session as a chip, then + New. */
+function SessionChips({ sessions, current }: { sessions: Session[]; current: string | null }) {
+  if (sessions.length === 0) return null;
   return (
-    <div className="mt-2 flex flex-col gap-2">
-      {sessions.length > 0 && (
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
-          {sessions.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              aria-pressed={s.id === current}
-              onClick={() => useAgents.setState({ current: s.id })}
-              className={`chip flex max-w-44 shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] ${
-                s.id === current ? "bg-white/[0.16] text-white" : "bg-white/[0.06] text-white/65 hover:bg-white/[0.1]"
-              }`}
-            >
-              <StatusDot status={s.status} />
-              <span className="truncate">{s.project || s.title}</span>
-            </button>
-          ))}
-          <button
-            type="button"
-            aria-pressed={current === null}
-            onClick={() => useAgents.setState({ current: null })}
-            className="chip flex shrink-0 items-center gap-1 rounded-full bg-white/[0.06] px-2.5 py-1 text-[12px] text-white/65 hover:bg-white/[0.1]"
-          >
-            <Icon name="plus" size={12} /> New
-          </button>
-        </div>
-      )}
-      {session ? <SessionView key={session.id} session={session} keys={keys} maxHeight={maxHeight} /> : <NewSession />}
+    <div className="ak-sess">
+      {sessions.map((s) => (
+        <button
+          key={s.id}
+          type="button"
+          aria-pressed={s.id === current}
+          onClick={() => useAgents.setState({ current: s.id })}
+          className="ak-sp chip max-w-56"
+        >
+          <span className="ak-sd" data-s={s.status} role="img" aria-label={s.status} />
+          <span className="truncate">{s.title}</span>
+          <em>
+            {s.project}
+            {s.agent === "Codex" ? " · Codex" : ""}
+          </em>
+        </button>
+      ))}
+      <button
+        type="button"
+        aria-pressed={false}
+        onClick={() => useAgents.setState({ current: null })}
+        className="ak-sp chip text-[rgb(235_235_245/0.36)]"
+      >
+        + New
+      </button>
     </div>
   );
 }
 
-function StatusDot({ status }: { status: Session["status"] }) {
-  const color =
-    status === "working"
-      ? "bg-[#0a84ff] animate-pulse"
-      : status === "waiting"
-        ? "bg-[#ff9f0a]"
-        : status === "failed"
-          ? "bg-[#ff453a]"
-          : "bg-[#30d158]";
-  return <span className={`size-1.5 shrink-0 rounded-full ${color}`} role="img" aria-label={status} />;
-}
-
-function NewSession() {
+function NewSession({ sessions }: { sessions: Session[] }) {
   const { data: agents } = useCached<Agents>("agents", api.agentsStatus);
   const { data: projects } = useCached<{ name: string; path: string }[]>("projects", api.projectsList);
   const [agent, setAgent] = useState<string>("");
@@ -89,7 +83,7 @@ function NewSession() {
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const choices = [
     ...(agents?.claudeCode ? [{ id: "claude_code", name: "Claude Code" }] : []),
     ...(agents?.codex ? [{ id: "codex", name: "Codex" }] : []),
@@ -99,13 +93,6 @@ function NewSession() {
   useEffect(() => {
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
-  if (agents && choices.length === 0) {
-    return (
-      <p className="py-2 text-[13px] text-[rgb(235_235_245/0.6)]">
-        Install Claude Code or Codex to run agents here. Settings &gt; AI shows how.
-      </p>
-    );
-  }
   const go = () => {
     if (!prompt.trim() || !pickedPath || busy) return;
     setBusy(true);
@@ -115,78 +102,83 @@ function NewSession() {
       .catch((e: unknown) => setError(String(e)))
       .finally(() => setBusy(false));
   };
-  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      go();
-    }
-  };
   return (
-    <div className="flex flex-col gap-2 rounded-2xl bg-white/[0.05] p-2.5">
-      <textarea
-        ref={inputRef}
-        value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
-        onKeyDown={onKey}
-        rows={2}
-        placeholder="What should it do?"
-        className="w-full resize-none bg-transparent text-[14px] text-white outline-none placeholder:text-[rgb(235_235_245/0.4)]"
-      />
-      <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
-        <select
-          aria-label="Project"
-          value={pickedPath}
-          onChange={(e) => setPath(e.target.value)}
-          className="chip max-w-40 truncate rounded-full bg-white/[0.1] px-2.5 py-1 text-white/85 outline-none"
-        >
-          {(projects ?? []).map((p) => (
-            <option key={p.path} value={p.path}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        {choices.length > 1 && (
-          <select
-            aria-label="Agent"
-            value={pickedAgent}
-            onChange={(e) => setAgent(e.target.value)}
-            className="chip rounded-full bg-white/[0.1] px-2.5 py-1 text-white/85 outline-none"
-          >
-            {choices.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        )}
-        <ModeSwitch mode={mode} onChange={setMode} />
-        <button
-          type="button"
-          disabled={!prompt.trim() || !pickedPath || busy}
-          onClick={go}
-          className="chip ml-auto rounded-full bg-white px-3 py-1 text-[12.5px] font-medium text-black disabled:opacity-40"
-        >
-          {busy ? "Starting..." : "Start"}
-        </button>
+    <>
+      <div className="ak-head">
+        <span className="ak-title">New session</span>
       </div>
-      {error && <p className="text-[12px] text-[#ffb4ae]">{error}</p>}
-    </div>
+      <SessionChips sessions={sessions} current={null} />
+      {agents && choices.length === 0 ? (
+        <p className="ak-group py-1 text-[13px]">
+          Install Claude Code or Codex to run agents here. Settings &gt; AI shows how.
+        </p>
+      ) : (
+        <>
+          <div className="ak-meta">
+            {choices.length > 1 ? (
+              <select
+                aria-label="Agent"
+                value={pickedAgent}
+                onChange={(e) => setAgent(e.target.value)}
+                className="ak-mi b chip"
+              >
+                {choices.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="ak-mi b">{choices[0]?.name ?? "Claude Code"}</span>
+            )}
+            <select
+              aria-label="Project"
+              value={pickedPath}
+              onChange={(e) => setPath(e.target.value)}
+              className="ak-mi chip max-w-44 truncate"
+            >
+              {(projects ?? []).map((p) => (
+                <option key={p.path} value={p.path}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <ModeSwitch mode={mode} onChange={setMode} />
+          </div>
+          <div className="ak-composer">
+            <input
+              ref={inputRef}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  go();
+                }
+              }}
+              placeholder="What should it do?"
+            />
+            <span className="ckeys mono">{busy ? "Starting..." : "Enter start"}</span>
+          </div>
+          {error && <p className="ak-err">{error}</p>}
+        </>
+      )}
+    </>
   );
 }
 
-function ModeSwitch({ mode, onChange }: { mode: AgentMode; onChange: (m: AgentMode) => void }) {
+function ModeSwitch({ mode, onChange }: { mode: AgentMode; onChange?: (m: AgentMode) => void }) {
   return (
-    <fieldset aria-label="Mode" className="flex rounded-full bg-white/[0.08] p-0.5">
+    <fieldset aria-label="Mode" className="ak-seg border-0">
       {MODES.map((m) => (
         <button
           key={m.id}
           type="button"
           title={m.note}
           aria-pressed={mode === m.id}
-          onClick={() => onChange(m.id)}
-          className={`chip rounded-full px-2 py-0.5 text-[11.5px] font-medium ${
-            mode === m.id ? "bg-white text-black" : "text-white/65 hover:text-white"
-          }`}
+          disabled={!onChange}
+          onClick={() => onChange?.(m.id)}
+          className="chip"
         >
           {m.label}
         </button>
@@ -195,40 +187,38 @@ function ModeSwitch({ mode, onChange }: { mode: AgentMode; onChange: (m: AgentMo
   );
 }
 
-/** A ring showing how much of the context window is used. */
+/** How much of the context window is used, as a small ring. */
 function ContextRing({ used, window }: { used: number; window: number }) {
-  const p = Math.min(1, used / window);
-  const r = 7;
-  const c = 2 * Math.PI * r;
+  const p = Math.round(Math.min(1, used / window) * 100);
   return (
-    <span
-      className="flex items-center gap-1 text-[11px] text-[rgb(235_235_245/0.45)]"
-      title={`${Math.round(p * 100)}% of the context used`}
-    >
-      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-        <circle cx="9" cy="9" r={r} fill="none" stroke="rgb(255 255 255 / 0.12)" strokeWidth="2" />
-        <circle
-          cx="9"
-          cy="9"
-          r={r}
-          fill="none"
-          stroke={p > 0.85 ? "#ff9f0a" : "#f5f5f7"}
-          strokeWidth="2"
-          strokeDasharray={`${c * p} ${c}`}
-          transform="rotate(-90 9 9)"
-          strokeLinecap="round"
-        />
-      </svg>
-      {Math.round(p * 100)}%
+    <span className="ak-ring mono" title={`${p}% of the context used`}>
+      <i style={{ "--p": p } as CSSProperties} aria-hidden="true" />
+      {p}%
     </span>
   );
 }
 
-function SessionView({ session: s, keys, maxHeight }: { session: Session; keys: boolean; maxHeight: number }) {
+/** "1:12", or "8 s" under a minute. */
+function clock(ms: number): string {
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function SessionView({
+  session: s,
+  sessions,
+  keys,
+  maxHeight,
+}: {
+  session: Session;
+  sessions: Session[];
+  keys: boolean;
+  maxHeight: number;
+}) {
   const [text, setText] = useState("");
   const [reviewing, setReviewing] = useState(false);
   const scroll = useRef<HTMLDivElement>(null);
-  const now = useNow(1000);
+  const now = useNow(250);
   const working = s.status === "working" || s.status === "waiting";
   const done = s.status === "idle" || s.status === "ended" || s.status === "failed";
   const current = useMemo(() => {
@@ -239,19 +229,24 @@ function SessionView({ session: s, keys, maxHeight }: { session: Session; keys: 
   useEffect(() => {
     const el = scroll.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [s.entries.length]);
+  }, [s.entries.length, s.plan.length, s.question, s.status]);
 
-  // Alt T: carry on in a terminal.
+  // Alt 1 reviews, Alt 2 (or Alt T) carries on in a terminal.
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.altKey && !e.ctrlKey && e.key.toLowerCase() === "t") {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "t" || (k === "2" && done)) {
         e.preventDefault();
         void api.agentTerminal(s.id);
+      } else if (k === "1" && done && s.reviewable && s.changes !== 0) {
+        e.preventDefault();
+        setReviewing(true);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [s.id]);
+  }, [s.id, done, s.reviewable, s.changes]);
 
   // Alt A, Y, N answer a question while one waits.
   useEffect(() => {
@@ -268,224 +263,191 @@ function SessionView({ session: s, keys, maxHeight }: { session: Session; keys: 
     return () => window.removeEventListener("keydown", onKey);
   }, [s.id, s.question]);
 
-  if (reviewing) {
-    return <Review session={s} keys={keys} maxHeight={maxHeight} onDone={() => setReviewing(false)} />;
-  }
   const send = () => {
     const t = text.trim();
     if (!t) return;
     sendToSession(s.id, t);
     setText("");
   };
+  const planDone = s.plan.filter((p) => p.status === "completed").length;
+  const planAt = Math.min(planDone + 1, s.plan.length);
+  // The plan reads after the first thing said, where the agent made it.
+  const firstSaid = s.entries.findIndex((e) => e.kind === "text");
+  const planAfter = firstSaid >= 0 ? firstSaid : 0;
+  const usedPct = s.usage ? Math.round(Math.min(1, s.usage.used / s.usage.window) * 100) : null;
+
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2 text-[12px] text-[rgb(235_235_245/0.55)]">
-        <span className="truncate font-medium text-white/85">{s.project}</span>
-        {s.branch && <span className="truncate">· {s.branch}</span>}
-        <span>· {s.agent}</span>
-        <span>· {MODES.find((m) => m.id === s.mode)?.label}</span>
-        <span className="ml-auto flex shrink-0 items-center gap-2">
-          {s.usage && <ContextRing used={s.usage.used} window={s.usage.window} />}
-          {working && <span className="tabular-nums">{Math.round((now - s.startedAt) / 1000)} s</span>}
-        </span>
-      </div>
-
-      {s.plan.length > 0 && (
-        <ol className="flex flex-col gap-0.5 rounded-xl bg-white/[0.04] px-2.5 py-1.5 text-[12px]">
-          {s.plan.map((p) => (
-            <li
-              key={p.text}
-              className={`flex items-center gap-1.5 ${
-                p.status === "completed"
-                  ? "text-[rgb(235_235_245/0.45)] line-through"
-                  : p.status === "in_progress"
-                    ? "text-white"
-                    : "text-white/65"
-              }`}
-            >
-              <span aria-hidden="true">{p.status === "completed" ? "✓" : p.status === "in_progress" ? "›" : "·"}</span>
-              {p.text}
-            </li>
-          ))}
-        </ol>
-      )}
-
-      <div ref={scroll} className="ask-scroll flex flex-col gap-1.5 overflow-y-auto pr-1" style={{ maxHeight }}>
-        {s.entries.map((e, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: entries only ever append
-          <EntryRow key={i} entry={e} />
-        ))}
-      </div>
-
-      {working && (
-        <p className="shimmer-text text-[12.5px] text-[rgb(235_235_245/0.6)]" role="status" aria-live="polite">
-          {s.question ? "Waiting for you" : current ? `${current}...` : "Working..."}
-        </p>
-      )}
-
-      <AnimatePresence>
-        {s.question && (
-          <motion.div
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="flex flex-col gap-2 rounded-2xl bg-[#ff9f0a]/[0.12] p-2.5 ring-1 ring-[#ff9f0a]/30 ring-inset"
-            role="alertdialog"
-            aria-label={`${s.agent} asks`}
-          >
-            <p className="text-[13px] text-white">
-              {s.agent} wants to: <span className="font-medium">{s.question.label}</span>
-            </p>
-            {s.question.detail && (
-              <code className="block truncate rounded-lg bg-black/30 px-2 py-1 font-mono text-[11.5px] text-white/80">
-                {s.question.detail}
-              </code>
-            )}
-            <div className="flex gap-1.5">
-              <AnswerButton solid label="Allow" hint="Alt A" keys onClick={() => answerQuestion(s.id, "allow")} />
-              <AnswerButton label="Always" hint="Alt Y" keys onClick={() => answerQuestion(s.id, "always")} />
-              <AnswerButton label="No" hint="Alt N" keys onClick={() => answerQuestion(s.id, "deny")} />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {s.error && <p className="rounded-xl bg-[#ff453a]/15 px-3 py-2 text-[12.5px] text-[#ffb4ae]">{s.error}</p>}
-
-      {done && s.reviewable && (
-        <button
-          type="button"
-          onClick={() => setReviewing(true)}
-          className="chip self-start rounded-full bg-white px-3.5 py-1.5 text-[13px] font-medium text-black"
-        >
-          Review changes
-        </button>
-      )}
-
-      <div className="flex items-center gap-1.5">
-        {s.status !== "ended" && (
-          <input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                send();
-              }
-            }}
-            placeholder={working ? "Steer it" : "Ask for more"}
-            className="min-w-0 flex-1 rounded-full bg-white/[0.08] px-3 py-1.5 text-[13px] text-white outline-none placeholder:text-[rgb(235_235_245/0.4)]"
-          />
-        )}
-        {working && (
-          <button
-            type="button"
-            onClick={() => void api.agentStop(s.id)}
-            className="chip rounded-full bg-white/[0.12] px-3 py-1.5 text-[12.5px] text-white/90"
-          >
-            Stop
+    <>
+      <div className="ak-head">
+        <span className="ak-title">{s.title}</span>
+        {s.usage && <ContextRing used={s.usage.used} window={s.usage.window} />}
+        {working ? (
+          <button type="button" onClick={() => void api.agentStop(s.id)} className="ak-stop chip">
+            Stop <kbd>Esc</kbd>
           </button>
-        )}
-        <span className="relative">
-          <button
-            type="button"
-            title="Carry on in a terminal"
-            onClick={() => void api.agentTerminal(s.id)}
-            className="chip rounded-full bg-white/[0.08] px-3 py-1.5 text-[12.5px] text-white/80"
-          >
-            Open in terminal
-          </button>
-          <KeyHint show={keys}>Alt T</KeyHint>
-        </span>
-        {!working && (
+        ) : (
           <button
             type="button"
             aria-label="Close session"
             title="Close session"
             onClick={() => closeSession(s.id)}
-            className="chip grid size-7 place-items-center rounded-full bg-white/[0.08] text-white/70"
+            className="ak-ibtn chip"
           >
-            <Icon name="close" size={12} />
+            <Icon name="close" size={13} />
           </button>
         )}
       </div>
-    </div>
+      <SessionChips sessions={sessions} current={s.id} />
+      <div className="ak-meta">
+        <span className="ak-mi b">{s.agent}</span>
+        <span className="ak-mi">{s.project}</span>
+        {s.branch && <span className="ak-mi">⎇ {s.branch}</span>}
+        <ModeSwitch mode={s.mode} />
+      </div>
+
+      {reviewing ? (
+        <Review session={s} maxHeight={maxHeight} onDone={() => setReviewing(false)} />
+      ) : (
+        <>
+          <div ref={scroll} className="ak-tl ak-scroll" style={{ maxHeight: maxHeight - 40 }}>
+            {s.entries.map((e, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: entries only ever append
+              <Fragment key={i}>
+                <EntryRow entry={e} />
+                {i === planAfter && s.plan.length > 0 && (
+                  <div className="ak-todo ak-in">
+                    <div className="h">
+                      <span>Plan</span>
+                      <span>
+                        {planAt} of {s.plan.length}
+                      </span>
+                    </div>
+                    {s.plan.map((p) => (
+                      <div key={p.text} className="ak-td" data-s={p.status}>
+                        <span className="ak-cb" aria-hidden="true" />
+                        {p.text}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Fragment>
+            ))}
+
+            {working && !s.question && (
+              <p className="ak-status" role="status" aria-live="polite">
+                <span className="shimmer-text text-[rgb(235_235_245/0.6)]">
+                  {current ? `${current}...` : "Working..."}
+                </span>
+                <span className="ak-timer mono">{clock(now - s.turnAt)}</span>
+              </p>
+            )}
+
+            {s.question && (
+              <div className="ak-ask ak-in" role="alertdialog" aria-label={`${s.agent} asks`}>
+                <p>
+                  {s.agent} wants to: <span className="font-medium text-white">{s.question.label}</span>
+                </p>
+                {s.question.detail && <code className="mono">{s.question.detail}</code>}
+                <div className="ak-chips">
+                  <button type="button" onClick={() => answerQuestion(s.id, "allow")} className="ak-chip primary chip">
+                    Allow <kbd>Alt A</kbd>
+                  </button>
+                  <button type="button" onClick={() => answerQuestion(s.id, "always")} className="ak-chip chip">
+                    Always <kbd>Alt Y</kbd>
+                  </button>
+                  <button type="button" onClick={() => answerQuestion(s.id, "deny")} className="ak-chip chip">
+                    No <kbd>Alt N</kbd>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {s.error && <p className="ak-err">{s.error}</p>}
+
+            {done && !s.error && (
+              <p className="ak-done ak-in">
+                <span className="ok">✓</span>
+                {[
+                  s.tookMs !== null ? `Done in ${clock(s.tookMs)}` : "Done",
+                  s.changes > 0 ? `${s.changes} ${s.changes === 1 ? "file" : "files"} changed` : null,
+                  usedPct !== null ? `${usedPct}% of context used` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            )}
+            {done && (
+              <div className="ak-chips">
+                {s.reviewable && (
+                  <button type="button" onClick={() => setReviewing(true)} className="ak-chip primary chip">
+                    {s.changes > 0 ? `Review ${s.changes} ${s.changes === 1 ? "change" : "changes"}` : "Review changes"}
+                    <kbd>Alt 1</kbd>
+                  </button>
+                )}
+                <button type="button" onClick={() => void api.agentTerminal(s.id)} className="ak-chip chip">
+                  Open in terminal <kbd>Alt 2</kbd>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {s.status !== "ended" && (
+            <div className="ak-composer">
+              <input
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
+                placeholder={working ? "Steer it, it reads this next" : "Ask for more"}
+              />
+              <span className="ckeys mono">{working ? "Esc interrupt" : "Enter send"}</span>
+              <KeyHint show={keys}>Alt T</KeyHint>
+            </div>
+          )}
+        </>
+      )}
+    </>
   );
 }
 
-function AnswerButton({
-  label,
-  hint,
-  solid,
-  keys,
-  onClick,
-}: {
-  label: string;
-  hint: string;
-  solid?: boolean;
-  keys: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`chip flex items-center gap-1.5 rounded-full px-3 py-1 text-[12.5px] font-medium ${
-        solid ? "bg-white text-black" : "bg-white/[0.12] text-white"
-      }`}
-    >
-      {label}
-      {keys && <kbd className={`font-sans text-[11px] ${solid ? "text-black/45" : "text-white/40"}`}>{hint}</kbd>}
-    </button>
-  );
-}
-
-const STEP_ICON: Record<string, string> = {
-  Read: "↗",
-  Edit: "✎",
-  MultiEdit: "✎",
-  Write: "✎",
-  Bash: "›_",
-  Grep: "⌕",
-  Glob: "⌕",
-  WebSearch: "⌕",
-  WebFetch: "↗",
+/** The short tag in front of each step, as in a terminal log. */
+const STEP_TAG: Record<string, string> = {
+  Read: "Read",
+  Edit: "Edit",
+  MultiEdit: "Edit",
+  Write: "Write",
+  NotebookEdit: "Edit",
+  Bash: "Run",
+  Grep: "Find",
+  Glob: "Find",
+  WebSearch: "Web",
+  WebFetch: "Web",
+  Task: "Agent",
+  TodoWrite: "Plan",
+  command: "Run",
+  fileChange: "Edit",
+  webSearch: "Web",
 };
 
 function EntryRow({ entry: e }: { entry: Entry }) {
-  if (e.kind === "you") {
-    return (
-      <div className="self-end rounded-[16px] rounded-br-md bg-white/[0.14] px-3 py-1.5 text-[13px] whitespace-pre-wrap">
-        {e.text}
-      </div>
-    );
-  }
+  if (e.kind === "you") return <div className="ak-um ak-in">{e.text}</div>;
   if (e.kind === "text") {
     return (
-      <div className="text-[13px] leading-relaxed text-white/90">
+      <div className="ak-ans ak-in px-0">
         <Markdown text={e.text} />
       </div>
     );
   }
   const st = e.step;
   return (
-    <div className="flex min-w-0 items-center gap-2 text-[12px]">
-      <span
-        className={`grid size-5 shrink-0 place-items-center rounded-md font-mono text-[10px] ${
-          st.state === "failed"
-            ? "bg-[#ff453a]/20 text-[#ffb4ae]"
-            : st.state === "running"
-              ? "bg-[#0a84ff]/25 text-white"
-              : "bg-white/[0.08] text-white/60"
-        }`}
-        aria-hidden="true"
-      >
-        {STEP_ICON[st.tool] ?? "•"}
-      </span>
-      <span className={`truncate ${st.state === "running" ? "text-white" : "text-white/65"}`}>{st.label}</span>
-      {st.detail && (
-        <code className="min-w-0 truncate font-mono text-[11px] text-[rgb(235_235_245/0.4)]">{st.detail}</code>
-      )}
+    <div className="ak-tg ak-in" data-s={st.state}>
+      <span className="ak-k mono">{STEP_TAG[st.tool] ?? st.tool.slice(0, 5)}</span>
+      <span className={`shrink-0 ${st.state === "running" ? "text-white" : ""}`}>{st.label}</span>
+      {st.detail && <span className="d mono">{st.detail}</span>}
     </div>
   );
 }
