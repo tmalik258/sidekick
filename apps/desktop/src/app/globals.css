@@ -895,6 +895,7 @@ body {
 }
 .ak-q::placeholder {
   color: var(--i3);
+  text-overflow: ellipsis;
 }
 .ak-q[data-asked="true"]::placeholder {
   color: var(--i2);

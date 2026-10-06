@@ -673,7 +673,14 @@ export function AskPanel() {
                   Stop <kbd>Esc</kbd>
                 </button>
               ) : (
-                best && <ModelPicker choices={choices} best={best} picked={pickedModel} keys={alt} />
+                <>
+                  {best && <ModelPicker choices={choices} best={best} picked={pickedModel} keys={alt} />}
+                  {inChat && (
+                    <IconButton label="New chat (Esc)" keys={alt} hint="Esc" onClick={resetChat}>
+                      <Icon name="plus" size={15} />
+                    </IconButton>
+                  )}
+                </>
               )}
             </>
           )}
