@@ -15,6 +15,10 @@ type Handler = (payload: unknown) => void;
 
 const handlers = new Map<string, Set<Handler>>();
 let settings: Settings = structuredClone(DEFAULT_SETTINGS);
+// `?onboarded` in the preview URL skips the welcome.
+if (typeof location !== "undefined" && new URLSearchParams(location.search).has("onboarded")) {
+  settings.onboarded = true;
+}
 let mascot: MascotState = "idle";
 let suggestion: Suggestion | null = null;
 let epoch = 0;
@@ -152,6 +156,7 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
     { kind: "app", key: "slack.exe", label: "Slack", target: "", browser: "", days: 3 },
   ],
   routines_forget: () => 12,
+  routines_remove: () => 1,
   ai_open_link: (a) => `Opened ${String(a.target)}`,
   agents_status: () => ({ claudeCode: true, codex: true, handoff: "Claude Code" }),
   codex_add_notify: () => "C:\\Users\\you\\.codex\\config.toml.sidekick-backup-20261002",
@@ -668,6 +673,15 @@ commands.projects_list = () => [
   { name: "sidekick", path: "C:/Users/you/code/sidekick" },
   { name: "falconxoft-api", path: "C:/Users/you/code/falconxoft-api" },
 ];
+commands.editors_list = () => ({
+  editors: [
+    { id: "cursor", name: "Cursor", minutes: 840 },
+    { id: "antigravity", name: "Antigravity", minutes: 180 },
+    { id: "vscode", name: "VS Code", minutes: 40 },
+    { id: "pycharm", name: "PyCharm", minutes: 0 },
+  ],
+  current: "Cursor",
+});
 commands.project_launch = () => "Opened sidekick in VS Code and a terminal";
 commands.search_status = () => ({ items: 1240, embedded: 1240, embedError: null });
 commands.calendar_today = () => ({

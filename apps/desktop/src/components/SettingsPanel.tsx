@@ -5,6 +5,7 @@ import { friendlyError } from "@/lib/friendly";
 import { useScrollEdge } from "@/lib/hooks";
 import { useSidekick } from "@/lib/store";
 import { AiTab } from "./settings/AiTab";
+import { AppearanceTab } from "./settings/AppearanceTab";
 import { ConnectionsTab } from "./settings/ConnectionsTab";
 import { HomeTab } from "./settings/HomeTab";
 import { PrivacyTab } from "./settings/PrivacyTab";
@@ -13,6 +14,7 @@ import { SettingsQuery } from "./settings/ui";
 
 export const SETTINGS_TABS = [
   { id: "home", label: "Home" },
+  { id: "appearance", label: "Appearance" },
   { id: "ai", label: "AI" },
   { id: "connections", label: "Apps" },
   { id: "privacy", label: "Privacy" },
@@ -178,6 +180,7 @@ export function SettingsPanel() {
           className="settings-scroll -mr-3 flex min-h-0 flex-auto flex-col gap-5 overflow-y-auto pr-3 pl-0.5 pb-3"
         >
           {show("home") && <HomeTab onError={report} onOpenTab={open} />}
+          {show("appearance") && <AppearanceTab onError={report} />}
           {show("ai") && <AiTab onError={report} />}
           {show("connections") && <ConnectionsTab onError={report} />}
           {show("privacy") && <PrivacyTab onError={report} />}

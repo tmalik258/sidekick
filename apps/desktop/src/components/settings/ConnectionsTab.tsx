@@ -7,7 +7,14 @@ import { useCallback, useEffect, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { installExtension, startWaiting, updateSettings, useSidekick } from "@/lib/store";
-import type { BrowserInfo, BrowserStatus, CalendarToday, ComposioStatus, ExtensionGuide } from "@/lib/types";
+import type {
+  BrowserInfo,
+  BrowserStatus,
+  CalendarToday,
+  ComposioStatus,
+  EditorList,
+  ExtensionGuide,
+} from "@/lib/types";
 import { ComposioApps } from "./ComposioApps";
 import { Button, CopyButton, Field, Section, Select, TextField, Toggle } from "./ui";
 
@@ -27,7 +34,47 @@ export function ConnectionsTab({ onError }: { onError: (e: string) => void }) {
       >
         <BrowserCard />
       </Section>
+      <Section
+        title="Code editor"
+        hint="Buttons say its name, like Open in Cursor."
+        keywords="editor ide vs code vscode cursor antigravity windsurf zed pycharm intellij webstorm visual studio open project"
+      >
+        <EditorPicker onError={onError} />
+      </Section>
     </>
+  );
+}
+
+function hours(minutes: number): string {
+  if (minutes <= 0) return "not used this week";
+  if (minutes < 60) return `${minutes} min this week`;
+  return `${Math.round(minutes / 60)} h this week`;
+}
+
+function EditorPicker({ onError }: { onError: (e: string) => void }) {
+  const choice = useSidekick((s) => s.settings.codeEditor);
+  const { data, refresh } = useCached<EditorList>("editors", api.editorsList);
+  const editors = data?.editors ?? [];
+  if (data && editors.length === 0) {
+    return <p className="text-[13px] text-(--muted)">No code editor found on this PC.</p>;
+  }
+  const options: [string, string][] = [
+    ["auto", `Auto${data?.current ? ` · ${data.current}` : ""}`],
+    ...editors.map((e): [string, string] => [e.id, `${e.name} · ${hours(e.minutes)}`]),
+  ];
+  return (
+    <Field label="Open projects and files in">
+      <Select
+        label="Open projects and files in"
+        value={editors.some((e) => e.id === choice) ? choice : "auto"}
+        options={options}
+        onChange={(codeEditor) =>
+          void updateSettings({ codeEditor })
+            .then(() => refresh())
+            .catch((e) => onError(String(e)))
+        }
+      />
+    </Field>
   );
 }
 

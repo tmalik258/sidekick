@@ -4,6 +4,21 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Appearance
+
+- A new Appearance tab in Settings for the mascot, the island and how the island behaves.
+- Mascot colours: Pearl, Aurora, Chrome, Peach, Mint, Lilac and Onyx. Graphite and Midnight become Onyx.
+- Island colours: Black glass (the new default, a deep tint with a light rim), Graphite, Midnight, Smoke, Warm graphite and Solid black.
+
+### Code editor
+
+- Sidekick finds Cursor, VS Code, Antigravity, Windsurf, VSCodium, Zed, JetBrains IDEs and Visual Studio, and opens projects in the one you used most this week. Settings > Apps > Code editor picks one for good.
+- Buttons name your editor: "Open in Cursor" instead of "Open in VS Code".
+
+### Morning setup
+
+- Routines are now Morning setup, under Settings > Skills, with one switch: Ask first, Open by itself or Off. Click an app or site to take it out.
+
 ## [0.1.0] - Unreleased
 
 The first public release.

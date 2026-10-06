@@ -18,6 +18,12 @@ pub fn ai_chat(
     ai::chat(&app, id, messages, attach, local_only);
 }
 
+/// Installed code editors and the one projects open in.
+#[tauri::command]
+pub fn editors_list(app: AppHandle) -> crate::editors::Editors {
+    crate::editors::list(&app)
+}
+
 #[tauri::command]
 pub fn ai_cancel(app: AppHandle, id: String) {
     ai::cancel(&app, &id);

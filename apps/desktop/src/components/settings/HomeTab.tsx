@@ -1,6 +1,6 @@
 "use client";
 
-// Home: setup, today, appearance, shortcuts, sound, history and the app
+// Home: setup, today, shortcuts, sound, history and the app
 // itself. Everything here is picked or recorded; nothing needs typing.
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -23,23 +23,13 @@ import {
   type NotifyLevel,
   SHORTCUT_ACTIONS,
   type StoredEvent,
-  THEMES,
 } from "@/lib/types";
-import { Orb, THEME_STYLES } from "../Orb";
 import { SetupChecklist, usePendingByTab } from "../SetupChecklist";
 import { Button, ChipList, Field, FolderPicker, Section, Select, ShortcutRecorder, Slider, Toggle } from "./ui";
 
 const SOUND_KITS: [string, string][] = [
   [SYNTH_KIT, "Sidekick"],
   ["01", "Classic"],
-];
-
-const COLLAPSE_OPTIONS: [string, string][] = [
-  ["4", "4 seconds"],
-  ["6", "6 seconds"],
-  ["15", "15 seconds"],
-  ["30", "30 seconds"],
-  ["60", "1 minute"],
 ];
 
 const END_OF_DAY: [string, string][] = [16, 17, 18, 19, 20, 21, 22].map((h) => [
@@ -72,44 +62,6 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
       </Section>
       <Section title="Today" keywords="time tracking hours apps">
         <TimeToday />
-      </Section>
-      <Section title="Appearance" keywords="theme orb color look fullscreen hide alive mascot idle">
-        <div className="grid grid-cols-3 gap-3">
-          {THEMES.map((t) => (
-            <button
-              key={t}
-              type="button"
-              aria-pressed={settings.theme === t}
-              onClick={() => save({ theme: t })}
-              className={`chip flex flex-col items-center gap-2.5 rounded-xl bg-black py-4 text-[13px] font-medium text-white/90 ${
-                settings.theme === t ? "ring-2 ring-inset ring-[#0a84ff]" : "ring-1 ring-inset ring-white/10"
-              }`}
-            >
-              <Orb state="idle" size={40} theme={t} magnetic={false} />
-              {THEME_STYLES[t].label}
-            </button>
-          ))}
-        </div>
-        <Field label="Close suggestions after">
-          <Select
-            label="Close suggestions after"
-            value={String(settings.collapseAfterSecs)}
-            options={COLLAPSE_OPTIONS}
-            onChange={(v) => save({ collapseAfterSecs: Number(v) })}
-          />
-        </Field>
-        <Toggle
-          label="Alive mode"
-          hint="While nothing is happening, Sidekick glances around, blinks and smiles now and then. No sounds."
-          checked={settings.alive}
-          onChange={(alive) => save({ alive })}
-        />
-        <Toggle
-          label="Hide while fullscreen"
-          hint="Keeps the island out of videos, slides and games. Hover the top edge to bring it back."
-          checked={settings.hideInFullscreen}
-          onChange={(hideInFullscreen) => save({ hideInFullscreen })}
-        />
       </Section>
       <Section
         collapsible

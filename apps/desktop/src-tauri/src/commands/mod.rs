@@ -361,6 +361,9 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
     if let Err(err) = app.emit(SETTINGS_CHANGED, &next) {
         log::warn!("could not emit settings change: {err}");
     }
+    if next.code_editor != previous.code_editor {
+        crate::editors::refresh(app);
+    }
     Ok(next)
 }
 

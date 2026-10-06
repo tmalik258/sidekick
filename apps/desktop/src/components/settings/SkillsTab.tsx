@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
 import type { SkillInfo } from "@/lib/types";
 import { Agent } from "./Agent";
+import { MorningSetup } from "./MorningSetup";
 import { Recipes } from "./Recipes";
 import { Button, Section, Segmented } from "./ui";
 
@@ -46,6 +47,13 @@ export function SkillsTab({ onError }: { onError: (e: string) => void }) {
         keywords="agent autonomy allow ask never permission trust confirm tap sites apps"
       >
         <Agent onError={onError} />
+      </Section>
+      <Section
+        title="Morning setup"
+        hint="The apps and sites you open first on most mornings, ready in one click."
+        keywords="routine routines morning start my day usual open all habits setup"
+      >
+        <MorningSetup onError={onError} />
       </Section>
       <Section title="Automations" hint="These act without asking, with Undo." keywords="auto always automatic rules">
         {automations.length === 0 ? (

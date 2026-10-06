@@ -36,6 +36,9 @@ export interface Settings {
   sensors: Record<string, boolean>;
   pause: Pause;
   theme: Theme;
+  /** An editor id, or "auto" for the one used most this week. */
+  codeEditor: string;
+  islandColor: IslandColor;
   soundKit: string;
   skills?: Record<string, { enabled?: boolean | null; auto?: boolean | null }>;
   paletteHotkey: string;
@@ -242,8 +245,16 @@ export interface BrowserInfo {
   port: number;
 }
 
-export const THEMES = ["pearl", "graphite", "midnight"] as const;
+export const THEMES = ["pearl", "aurora", "chrome", "peach", "mint", "lilac", "onyx"] as const;
 export type Theme = (typeof THEMES)[number];
+export interface EditorList {
+  editors: { id: string; name: string; minutes: number }[];
+  /** The editor projects open in now. */
+  current: string | null;
+}
+
+export const ISLAND_COLORS = ["black_glass", "graphite", "midnight", "smoke", "warm_graphite", "solid_black"] as const;
+export type IslandColor = (typeof ISLAND_COLORS)[number];
 
 export interface Suggestion {
   id: string;
@@ -294,6 +305,8 @@ export const DEFAULT_SETTINGS: Settings = {
   sensors: {},
   pause: { kind: "none" },
   theme: "pearl",
+  codeEditor: "auto",
+  islandColor: "black_glass",
   soundKit: "sidekick",
   paletteHotkey: "Ctrl+Space",
   shortcuts: {

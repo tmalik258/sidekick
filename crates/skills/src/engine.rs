@@ -27,6 +27,10 @@ pub trait Env {
     fn choice_counts(&self, key: &str) -> HashMap<String, u32>;
     /// OS default browser id when that browser is installed (e.g. `"zen"`).
     fn default_browser_id(&self) -> Option<String>;
+    /// The code editor projects open in ("Cursor"), for `{{editor}}`.
+    fn editor_name(&self) -> Option<String> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -93,7 +97,10 @@ impl Engine {
 
     /// Returns a proposal for this event, or `None` when no skill applies.
     pub fn evaluate(&mut self, event: &Event, env: &dyn Env, now: Instant) -> Option<Proposal> {
-        let base_vars = vars_from(&event.payload);
+        let mut base_vars = vars_from(&event.payload);
+        base_vars
+            .entry("editor".into())
+            .or_insert_with(|| env.editor_name().unwrap_or_else(|| "your editor".into()));
         let mut proposal: Option<Proposal> = None;
 
         for skill in self.skills.iter().filter(|s| s.trigger.event == event.kind) {
@@ -345,6 +352,9 @@ mod tests {
         fn default_browser_id(&self) -> Option<String> {
             self.default_browser.map(|id| id.to_string())
         }
+        fn editor_name(&self) -> Option<String> {
+            self.caps.contains(&"tool:code").then(|| "Cursor".into())
+        }
     }
 
     fn env() -> TestEnv {
@@ -437,6 +447,31 @@ suggestion:
         ]);
         let p = e3.evaluate(&event(0, "", ""), &env(), now).unwrap();
         assert_eq!(labels(p), ["Copy"]);
+    }
+
+    #[test]
+    fn buttons_name_the_users_editor() {
+        let claude = crate::builtin()
+            .into_iter()
+            .find(|s| s.id == "dev.claude-finished")
+            .unwrap();
+        let mut e = Engine::new(vec![claude]);
+        let env = TestEnv {
+            caps: vec!["tool:code"],
+            counts: HashMap::new(),
+            default_browser: None,
+        };
+        let event = Event::new(
+            "claude.stop",
+            "claude",
+            serde_json::json!({ "project": "sidekick", "cwd": "C:\\code\\sidekick", "session": "s", "message": "" }),
+        );
+        let p = e.evaluate(&event, &env, Instant::now()).unwrap();
+        assert!(
+            p.options.iter().any(|o| o.label == "Open in Cursor"),
+            "{:?}",
+            p.options
+        );
     }
 
     #[test]
