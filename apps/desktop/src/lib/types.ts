@@ -575,6 +575,26 @@ export interface RoutineItem {
 }
 
 /** Coding agents on this PC, and which one gets handoffs. */
+/** How much an agent may do without asking. */
+export type AgentMode = "plan" | "ask" | "edit" | "full";
+
+export interface AgentStarted {
+  id: string;
+  agent: string;
+  project: string;
+  branch: string | null;
+  /** Changes can be reviewed and undone (the project uses git). */
+  reviewable: boolean;
+}
+
+export interface FileChange {
+  path: string;
+  status: "added" | "deleted" | "modified";
+  added: number;
+  removed: number;
+  hunks: { header: string; lines: string[] }[];
+}
+
 export interface Agents {
   claudeCode: boolean;
   codex: boolean;

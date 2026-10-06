@@ -106,7 +106,7 @@ pub fn status(s: &Settings) -> Agents {
     }
 }
 
-const HANDOFF_PROMPT: &str =
+pub const HANDOFF_PROMPT: &str =
     "Read conversation.md in this folder. It is a conversation from Sidekick; continue it.";
 
 /// Whether Codex already has a Composio server in its own settings.
@@ -147,6 +147,23 @@ pub fn codex_composio_args(
     (args, env)
 }
 
+/// Saves the conversation for an agent to pick up; returns its folder.
+pub fn write_handoff(
+    app: &AppHandle,
+    messages: &[sidekick_ai::Message],
+    reason: Option<&str>,
+) -> Result<PathBuf, String> {
+    let dir = app.state::<AppState>().ai_workdir.join("handoff");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("could not make the handoff folder: {e}"))?;
+    let context = crate::ai::context(app);
+    std::fs::write(
+        dir.join("conversation.md"),
+        crate::composio::handoff_markdown(messages, reason, &context),
+    )
+    .map_err(|e| format!("could not save the conversation: {e}"))?;
+    Ok(dir)
+}
+
 /// Opens the chosen agent in a new terminal with the conversation so far,
 /// in a folder holding only that conversation (and Composio when the agent
 /// does not have it yet). The folder stays the same, so the agent asks to
@@ -163,14 +180,7 @@ pub async fn hand_off(
     let exe = agent
         .resolve(&settings)
         .ok_or_else(|| format!("{} is not installed", agent.name()))?;
-    let dir = state.ai_workdir.join("handoff");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("could not make the handoff folder: {e}"))?;
-    let context = crate::ai::context(app);
-    std::fs::write(
-        dir.join("conversation.md"),
-        crate::composio::handoff_markdown(messages, reason, &context),
-    )
-    .map_err(|e| format!("could not save the conversation: {e}"))?;
+    let dir = write_handoff(app, messages, reason)?;
     // Do not leave an old copy of a key behind.
     let _ = std::fs::remove_file(dir.join("composio-mcp.json"));
 
@@ -211,6 +221,22 @@ pub async fn hand_off(
     args.push(HANDOFF_PROMPT.into());
     launch(&dir, &exe, &args, &env)?;
     Ok(agent.name().to_owned())
+}
+
+/// Opens `exe args` in a new terminal in `dir`.
+pub fn open_terminal(dir: &Path, exe: &Path, args: &[String]) -> Result<(), String> {
+    launch(dir, exe, args, &[])
+}
+
+/// Keeps a console window from flashing up for a background process.
+pub fn hide_console(cmd: &mut tokio::process::Command) {
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    let _ = cmd;
 }
 
 #[cfg(windows)]

@@ -325,6 +325,111 @@ commands.ai_run_proposal = () => ({
   path: "C:/Users/you/Documents/Invoices/invoice-sept.pdf",
 });
 commands.ai_cancel = () => undefined;
+
+// Agent sessions: a short simulated run with a plan, steps, one question
+// and two changed files to review.
+let mockChanges = [
+  {
+    path: "src/api/client.ts",
+    status: "modified",
+    added: 9,
+    removed: 2,
+    hunks: [
+      {
+        header: "@@ -12,6 +12,13 @@ export async function get(url: string) {",
+        lines: [
+          " export async function get(url: string) {",
+          "-  const res = await fetch(url);",
+          "-  return res.json();",
+          "+  for (let attempt = 0; attempt < 3; attempt++) {",
+          "+    const res = await fetch(url);",
+          "+    if (res.ok) return res.json();",
+          "+    await sleep(250 * 2 ** attempt);",
+          "+  }",
+          "+  throw new Error('GET failed: ' + url);",
+          " }",
+        ],
+      },
+    ],
+  },
+  {
+    path: "src/api/client.test.ts",
+    status: "added",
+    added: 3,
+    removed: 0,
+    hunks: [
+      {
+        header: "@@ -0,0 +1,3 @@",
+        lines: ["+test('retries', async () => {", "+  expect(await get('/flaky')).toEqual({ ok: true });", "+});"],
+      },
+    ],
+  },
+];
+commands.agent_start = (a) => {
+  const id = `s${Date.now()}`;
+  const ev = (kind: string, data: Record<string, unknown> = {}) =>
+    emit("agent://event", { session: id, kind, ...data });
+  const at = (ms: number, f: () => void) => setTimeout(f, ms);
+  at(300, () =>
+    ev("plan", {
+      items: [
+        { text: "Read the API client", status: "in_progress" },
+        { text: "Add retries with backoff", status: "pending" },
+        { text: "Run the tests", status: "pending" },
+      ],
+    }),
+  );
+  at(600, () => ev("step", { id: "t1", tool: "Read", label: "Read client.ts", detail: "", state: "running" }));
+  at(1100, () => ev("step", { id: "t1", state: "done" }));
+  at(1300, () => ev("text", { text: "The client calls fetch once. I'll add three tries with a growing wait." }));
+  at(1700, () => ev("step", { id: "t2", tool: "Edit", label: "Edit client.ts", detail: "", state: "running" }));
+  at(2200, () => {
+    ev("step", { id: "t2", state: "done" });
+    ev("plan", {
+      items: [
+        { text: "Read the API client", status: "completed" },
+        { text: "Add retries with backoff", status: "completed" },
+        { text: "Run the tests", status: "in_progress" },
+      ],
+    });
+  });
+  at(2500, () => ev("ask", { question: `q${id}`, label: "Run a command", detail: "pnpm test src/api" }));
+  pendingAgentAnswer = () => {
+    ev("answered", { question: `q${id}` });
+    ev("step", { id: "t3", tool: "Bash", label: "Run a command", detail: "pnpm test src/api", state: "running" });
+    at(900, () => {
+      ev("step", { id: "t3", state: "done" });
+      ev("usage", { used: 46000, window: 200000 });
+      ev("text", { text: "\n\nDone. Requests retry up to three times, and a new test covers it." });
+      ev("turn", { error: null });
+    });
+  };
+  return {
+    id,
+    agent: a.agent === "codex" ? "Codex" : "Claude Code",
+    project:
+      String(a.path ?? "")
+        .split(/[\\/]/)
+        .pop() ?? "project",
+    branch: "main",
+    reviewable: true,
+  };
+};
+let pendingAgentAnswer: (() => void) | null = null;
+commands.agent_handoff = () =>
+  (commands.agent_start as (a: Record<string, unknown>) => unknown)({ agent: "claude_code", path: "handoff" });
+commands.agent_answer = () => {
+  pendingAgentAnswer?.();
+  pendingAgentAnswer = null;
+};
+commands.agent_send = () => undefined;
+commands.agent_stop = () => undefined;
+commands.agent_close = () => undefined;
+commands.agent_terminal = () => undefined;
+commands.agent_changes = () => structuredClone(mockChanges);
+commands.agent_undo = (a) => {
+  mockChanges = a.path ? mockChanges.filter((f) => f.path !== a.path) : [];
+};
 let welcomeDeferred = false;
 commands.ask_close = () => {
   if (!settings.onboarded && !welcomeDeferred) {

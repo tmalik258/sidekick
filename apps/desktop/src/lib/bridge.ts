@@ -6,6 +6,8 @@ import { mock } from "./mock";
 import type {
   ActionRecord,
   ActionResult,
+  AgentMode,
+  AgentStarted,
   Agents,
   AppInfo,
   AppTime,
@@ -18,6 +20,7 @@ import type {
   ChatSummary,
   ComposioStatus,
   ExtensionGuide,
+  FileChange,
   Found,
   HitRect,
   InboxStatus,
@@ -64,6 +67,7 @@ export const EVENTS = {
   voiceState: "voice://state",
   voiceHeard: "voice://heard",
   voiceSpeaking: "voice://speaking",
+  agentEvent: "agent://event",
   voiceDownload: "voice://download",
   suggestionLater: "suggestion://later",
   composioChanged: "composio://changed",
@@ -96,6 +100,7 @@ export interface EventPayloads {
   [EVENTS.voiceState]: VoiceStatus;
   [EVENTS.voiceHeard]: VoiceHeard;
   [EVENTS.voiceSpeaking]: boolean;
+  [EVENTS.agentEvent]: { session: string; kind: string } & Record<string, unknown>;
   [EVENTS.voiceDownload]: VoiceDownload;
   [EVENTS.suggestionLater]: number;
   [EVENTS.composioChanged]: { ok: boolean; message: string };
@@ -193,6 +198,18 @@ export const api = {
   composioConnect: (slug: string) => invoke<void>("composio_connect", { slug }),
   composioUseKey: (key: string) => invoke<string>("composio_use_key", { key }),
   agentsStatus: () => invoke<Agents>("agents_status"),
+  agentStart: (agent: string, path: string, prompt: string, mode: AgentMode) =>
+    invoke<AgentStarted>("agent_start", { agent, path, prompt, mode }),
+  agentHandoff: (messages: ChatMessage[], reason: string | null) =>
+    invoke<AgentStarted>("agent_handoff", { messages, reason }),
+  agentSend: (id: string, text: string) => invoke<void>("agent_send", { id, text }),
+  agentStop: (id: string) => invoke<void>("agent_stop", { id }),
+  agentAnswer: (question: string, answer: "allow" | "always" | "deny") =>
+    invoke<void>("agent_answer", { question, answer }),
+  agentChanges: (id: string) => invoke<FileChange[]>("agent_changes", { id }),
+  agentUndo: (id: string, path: string | null, hunk: number | null) => invoke<void>("agent_undo", { id, path, hunk }),
+  agentClose: (id: string) => invoke<void>("agent_close", { id }),
+  agentTerminal: (id: string) => invoke<void>("agent_terminal", { id }),
   aiOpenLink: (target: string) => invoke<string>("ai_open_link", { target }),
   codexAddNotify: () => invoke<string | null>("codex_add_notify"),
   codexAddMcp: () => invoke<string | null>("codex_add_mcp"),

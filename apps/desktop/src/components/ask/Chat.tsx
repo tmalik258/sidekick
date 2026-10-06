@@ -4,6 +4,7 @@
 
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
+import { handOff } from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { useNow } from "@/lib/hooks";
@@ -217,13 +218,12 @@ export function Handoff({ turns, reason }: { turns: Turn[]; reason: string | nul
   const go = () => {
     setState("opening");
     const messages = turns.filter((t) => !t.error && t.content.trim()).map(({ role, content }) => ({ role, content }));
-    api
-      .aiHandoff(messages, reason)
+    handOff(messages, reason)
       .then(() => setState("opened"))
       .catch((e) => setState(String(e)));
   };
   if (state === "opened") {
-    return <p className="mt-1.5 text-[12px] text-[rgb(235_235_245/0.55)]">Opened in {agent} with this conversation.</p>;
+    return <p className="mt-1.5 text-[12px] text-[rgb(235_235_245/0.55)]">{agent} carries on in the Agents tab.</p>;
   }
   return (
     <div className="mt-1.5 flex flex-col gap-1">

@@ -7,6 +7,7 @@
 
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "motion/react";
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { useAgents } from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
 import { ISLAND_TOP, PANEL_PAD } from "@/lib/islandSize";
@@ -95,11 +96,21 @@ export function Island() {
   const waiting = useSidekick((s) => (s.ask ? null : s.waiting));
   const justDone = useSidekick((s) => s.justDone);
   // A task still running after Ask closed: its current step, small.
-  const working = useSidekick((s) => {
+  const chatWorking = useSidekick((s) => {
     const last = s.turns[s.turns.length - 1];
     if (!s.chatId || !last?.streaming) return null;
     return last.tool ? `${last.tool}...` : "Working...";
   });
+  // Agents keep working with Ask closed: a small pill says so, and says
+  // when one needs an answer. Hovering it opens Ask.
+  const agentWorking = useAgents((s) => {
+    const waiting = s.sessions.find((x) => x.status === "waiting");
+    if (waiting) return `${waiting.agent} needs you`;
+    const busy = s.sessions.filter((x) => x.status === "working");
+    if (busy.length > 1) return `${busy.length} agents working`;
+    return busy[0] ? `${busy[0].agent}: ${busy[0].project}` : null;
+  });
+  const working = useSidekick((s) => (s.ask ? null : (chatWorking ?? agentWorking)));
   const guide = useGuide(waiting);
   // Voice with Ask closed: a compact pill while listening and thinking; the
   // island opens only when the answer starts.
@@ -172,8 +183,10 @@ export function Island() {
   useEffect(() => {
     if (!intent || quiet || asking || !settings.onboarded) return;
     if (voiceQuestion === null && working === null) return;
+    // An agent's pill opens the Agents tab.
+    if (chatWorking === null && agentWorking !== null) useAgents.setState({ tab: "agents" });
     void api.askOpen();
-  }, [intent, quiet, asking, settings.onboarded, voiceQuestion, working]);
+  }, [intent, quiet, asking, settings.onboarded, voiceQuestion, working, chatWorking, agentWorking]);
 
   const [contentHeight, setContentHeight] = useState(0);
   const bump = useMotionValue(1);

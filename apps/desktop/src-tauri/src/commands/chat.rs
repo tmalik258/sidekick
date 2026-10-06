@@ -18,6 +18,91 @@ pub fn ai_chat(
     ai::chat(&app, id, messages, attach, local_only);
 }
 
+/// Starts Claude Code or Codex in a project, inside the island.
+#[tauri::command]
+pub async fn agent_start(
+    app: AppHandle,
+    agent: String,
+    path: String,
+    prompt: String,
+    mode: crate::sessions::Mode,
+) -> CmdResult<crate::sessions::Started> {
+    let agent = match agent.as_str() {
+        "codex" => crate::agents::Agent::Codex,
+        "claude_code" => crate::agents::Agent::ClaudeCode,
+        _ => {
+            let settings = lock(&app.state::<AppState>().settings).clone();
+            crate::agents::chosen(&settings)
+                .ok_or("Install Claude Code or Codex first (Settings > AI).")?
+        }
+    };
+    crate::sessions::start(&app, agent, std::path::Path::new(&path), &prompt, mode).await
+}
+
+/// Continues an Ask conversation in Claude Code or Codex, inside the island.
+#[tauri::command]
+pub async fn agent_handoff(
+    app: AppHandle,
+    messages: Vec<sidekick_ai::Message>,
+    reason: Option<String>,
+) -> CmdResult<crate::sessions::Started> {
+    let settings = lock(&app.state::<AppState>().settings).clone();
+    let agent = crate::agents::chosen(&settings)
+        .ok_or("Install Claude Code or Codex first (Settings > AI).")?;
+    let dir = crate::agents::write_handoff(&app, &messages, reason.as_deref())?;
+    crate::sessions::start(
+        &app,
+        agent,
+        &dir,
+        crate::agents::HANDOFF_PROMPT,
+        crate::sessions::Mode::Ask,
+    )
+    .await
+}
+
+/// A follow-up, or a steer while it works.
+#[tauri::command]
+pub fn agent_send(id: String, text: String) -> CmdResult<()> {
+    crate::sessions::send(&id, &text)
+}
+
+#[tauri::command]
+pub fn agent_stop(id: String) {
+    crate::sessions::stop(&id);
+}
+
+#[tauri::command]
+pub fn agent_answer(question: String, answer: crate::sessions::Answer) -> CmdResult<()> {
+    crate::sessions::answer(&question, answer)
+}
+
+/// What the session changed, by file and hunk.
+#[tauri::command]
+pub async fn agent_changes(id: String) -> CmdResult<Vec<crate::review::FileChange>> {
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::changes(&id))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Undoes one hunk, one file, or everything (no path).
+#[tauri::command]
+pub async fn agent_undo(id: String, path: Option<String>, hunk: Option<usize>) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::undo(&id, path.as_deref(), hunk))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub fn agent_close(id: String) {
+    crate::sessions::close(&id);
+}
+
+/// Carries on in the CLI itself, in a terminal.
+#[tauri::command]
+pub fn agent_terminal(app: AppHandle, id: String) -> CmdResult<()> {
+    crate::sessions::open_terminal(&app, &id)
+}
+
 #[tauri::command]
 pub fn ai_cancel(app: AppHandle, id: String) {
     ai::cancel(&app, &id);

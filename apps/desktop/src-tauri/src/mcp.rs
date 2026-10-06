@@ -215,6 +215,19 @@ fn own_tools() -> Value {
             }
         },
         {
+            "name": "sidekick_permission",
+            "description": "Used by Claude Code itself to ask the user before a step in a Sidekick session. Never call it yourself.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tool_name": { "type": "string" },
+                    "input": { "type": "object" },
+                    "tool_use_id": { "type": "string" }
+                },
+                "required": ["tool_name", "input"]
+            }
+        },
+        {
             "name": "sidekick_time_today",
             "description": "How the user's time at the computer was spent today, per app and project.",
             "inputSchema": { "type": "object", "properties": {} }
@@ -291,6 +304,7 @@ async fn call(app: &AppHandle, name: &str, args: &Value) -> Value {
         };
     }
     match name {
+        "sidekick_permission" => text(crate::sessions::claude_permission(app, args).await),
         "sidekick_search" => {
             let query = args["query"].as_str().unwrap_or_default();
             let limit = args["limit"].as_u64().unwrap_or(8).clamp(1, 20) as u32;
@@ -415,6 +429,7 @@ mod tests {
                 "sidekick_search",
                 "sidekick_notify",
                 "sidekick_open_url",
+                "sidekick_permission",
                 "sidekick_time_today",
                 "sidekick_find_files",
                 "sidekick_show_in_folder",

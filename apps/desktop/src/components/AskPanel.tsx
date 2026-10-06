@@ -7,6 +7,7 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type AskTab, activeCount, handOff, listenToAgents, setTab, useAgents } from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { useAltHeld } from "@/lib/hooks";
@@ -24,6 +25,7 @@ import {
   useSidekick,
 } from "@/lib/store";
 import { type CalendarToday, type ChatSummary, isPaused, type ProviderStatus, type SearchHit } from "@/lib/types";
+import { AgentsTab } from "./agents/AgentsTab";
 import { Chat, useAgentName } from "./ask/Chat";
 import { ChatHistory, Clips, Results } from "./ask/Lists";
 import { ModelPicker } from "./ask/ModelPicker";
@@ -57,6 +59,9 @@ export function AskPanel() {
   const settings = useSidekick((s) => s.settings);
   const [text, setText] = useState(ask?.prompt ?? "");
   const alt = useAltHeld();
+  const tab = useAgents((s) => s.tab);
+  const working = useAgents((s) => activeCount(s.sessions));
+  useEffect(listenToAgents, []);
   const speak = useSidekick((s) => s.settings.voice.speakAnswers);
   const toggleSpeak = useCallback(() => {
     const voice = useSidekick.getState().settings.voice;
@@ -67,6 +72,12 @@ export function AskPanel() {
   const altKeys = useRef<Record<string, () => void>>({});
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
+      // Ctrl Tab moves between Ask, Agents and History.
+      if (e.ctrlKey && e.key === "Tab") {
+        e.preventDefault();
+        altKeys.current.tab?.();
+        return;
+      }
       if (!e.altKey || e.ctrlKey || e.metaKey || e.repeat) return;
       const run = altKeys.current[e.key.toLowerCase()];
       if (!run) return;
@@ -345,11 +356,24 @@ export function AskPanel() {
   const pickedModel = choices.find((p) => p.id === askModel) ?? null;
   const best = pickedModel ?? choices[0];
 
+  const goTab = (next: AskTab) => {
+    setTab(next);
+    if (next === "history") {
+      if (!historyOpen) openHistory();
+    } else if (historyOpen) {
+      setHistoryOpen(false);
+    }
+  };
+
   altKeys.current = {
     s: toggleSpeak,
     v: () => (hearing !== null ? stopListening() : voiceReady && !streaming && startListening()),
     p: () => setAsk({ localOnly: !ask.localOnly }),
-    h: () => !streaming && openHistory(),
+    h: () => !streaming && goTab(tab === "history" ? "ask" : "history"),
+    tab: () => {
+      const order: AskTab[] = ["ask", "agents", "history"];
+      goTab(order[(order.indexOf(tab) + 1) % order.length]);
+    },
     m: () => {
       if (choices.length < 2) return;
       // Auto, then each model that can answer now.
@@ -452,10 +476,8 @@ export function AskPanel() {
       if (messages.length === 0) return;
       setText("");
       setHandoffError(null);
-      void api
-        .aiHandoff(messages, null)
-        .then(() => api.askClose())
-        .catch((err: unknown) => setHandoffError(String(err)));
+      // It carries on in the Agents tab, step by step.
+      void handOff(messages, null).catch((err: unknown) => setHandoffError(String(err)));
     } else if (e.key === "Enter") {
       e.preventDefault();
       // In a conversation Enter sends the follow-up.
@@ -473,9 +495,54 @@ export function AskPanel() {
     nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
   };
 
+  const tabs = (
+    <div className="flex h-[30px] items-center gap-1" style={{ paddingLeft: ASK_ORB + 6 }} role="tablist">
+      {(
+        [
+          ["ask", "Ask", null],
+          ["agents", "Agents", working],
+          ["history", "History", "Alt H"],
+        ] as const
+      ).map(([id, label, extra]) => (
+        <span key={id} className="relative">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            onClick={() => goTab(id)}
+            className={`chip flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12.5px] font-medium ${
+              tab === id ? "bg-white/[0.14] text-white" : "text-[rgb(235_235_245/0.5)] hover:text-white/80"
+            }`}
+          >
+            {label}
+            {typeof extra === "number" && extra > 0 && (
+              <span className="grid min-w-4 place-items-center rounded-full bg-[#0a84ff] px-1 text-[10px] text-white">
+                {extra}
+              </span>
+            )}
+          </button>
+          {typeof extra === "string" && <KeyHint show={alt}>{extra}</KeyHint>}
+        </span>
+      ))}
+      <span className="ml-auto text-[11px] text-[rgb(235_235_245/0.3)]">
+        <Kbd>Ctrl Tab</Kbd>
+      </span>
+    </div>
+  );
+
+  if (tab === "agents") {
+    return (
+      <div className="flex flex-col">
+        {tabs}
+        <AgentsTab keys={alt} maxHeight={scrollMax - 60} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col">
-      <div className="flex h-[30px] items-center gap-2" style={{ paddingLeft: ASK_ORB + 10 }}>
+      {tabs}
+      <div className="mt-1 flex h-[30px] items-center gap-2" style={{ paddingLeft: 10 }}>
         {hearing !== null ? (
           <Hearing text={hearing} />
         ) : (
@@ -513,17 +580,6 @@ export function AskPanel() {
                 <Icon name="mic" size={14} />
               </IconButton>
             )}
-            {!streaming && (
-              <IconButton
-                label="Chat history (Alt H)"
-                pressed={historyOpen}
-                keys={alt}
-                hint="Alt H"
-                onClick={openHistory}
-              >
-                <Icon name="history" size={14} />
-              </IconButton>
-            )}
             {best && <ModelPicker choices={choices} best={best} picked={pickedModel} keys={alt} />}
             {streaming ? (
               <Pill onClick={cancelChat}>Stop</Pill>
@@ -538,7 +594,7 @@ export function AskPanel() {
         )}
       </div>
 
-      <ContextLine keys={alt} />
+      {!historyOpen && <ContextLine keys={alt} />}
 
       <AnimatePresence initial={false} mode="popLayout">
         {showClips && clips ? (
@@ -578,6 +634,7 @@ export function AskPanel() {
               }}
               onDelete={removeChat}
             />
+            <AgentHistory />
           </motion.div>
         ) : showHits && hits ? (
           <motion.div
@@ -788,6 +845,34 @@ export function Hearing({ text }: { text: string }) {
       >
         {text || "Listening..."}
       </span>
+    </div>
+  );
+}
+
+/** Agent sessions in History: each opens in the Agents tab. */
+function AgentHistory() {
+  const sessions = useAgents((s) => s.sessions);
+  if (sessions.length === 0) return null;
+  return (
+    <div className="mt-2">
+      <p className="px-1.5 pb-1 text-[11px] font-medium text-[rgb(235_235_245/0.4)]">Agent sessions</p>
+      <ul className="-mx-1.5">
+        {sessions.map((s) => (
+          <li key={s.id}>
+            <button
+              type="button"
+              onClick={() => useAgents.setState({ current: s.id, tab: "agents" })}
+              className="flex w-full items-center gap-2.5 rounded-[14px] px-1.5 py-1.5 text-left text-[13.5px] text-white/80 hover:bg-white/[0.08]"
+            >
+              <span className="grid size-6 place-items-center rounded-full bg-white/[0.12] text-[11px] text-white/85">
+                {s.agent === "Codex" ? "Cx" : "CC"}
+              </span>
+              <span className="min-w-0 flex-1 truncate">{s.title}</span>
+              <span className="text-[12px] text-[rgb(235_235_245/0.4)]">{s.project}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
