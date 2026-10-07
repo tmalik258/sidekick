@@ -1165,6 +1165,11 @@ body {
   display: grid;
   gap: 0;
 }
+/* Grid children may not grow past the island for long titles. */
+.ak > *,
+.ak-list > li {
+  min-width: 0;
+}
 .ak-row {
   display: flex;
   align-items: center;
@@ -1195,6 +1200,12 @@ body {
   font-size: 12px;
   color: var(--i3);
   white-space: nowrap;
+  /* A long project path gives way before the title does. */
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ak-key {
   margin-left: auto;
@@ -1332,6 +1343,7 @@ body {
   color: #ffb4ae;
 }
 .ak-scroll {
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;

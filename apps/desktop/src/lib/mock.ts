@@ -792,7 +792,7 @@ commands.extension_install = (a) => {
   };
 };
 commands.local_models = () => ({
-  reachable: true,
+  reachable: !previewFlag("nomodel"),
   chat: ["qwen3:1.7b", "llama3.2:3b"],
   vision: ["moondream:latest"],
   embed: ["nomic-embed-text"],

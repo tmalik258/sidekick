@@ -100,7 +100,7 @@ function NewSession({ sessions }: { sessions: Session[] }) {
   const pickedAgent = agent || choices[0]?.id || "";
   const pickedPath = path || projects?.[0]?.path || "";
   useEffect(() => {
-    requestAnimationFrame(() => inputRef.current?.focus());
+    requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
   }, []);
   const go = () => {
     if (!prompt.trim() || !pickedPath || busy) return;
@@ -791,7 +791,7 @@ function Composer({
   const pickFile = (f: string) => {
     if (!mention) return;
     setText(`${text.slice(0, text.length - mention[2].length - 1)}@${f} `);
-    inputRef.current?.focus();
+    inputRef.current?.focus({ preventScroll: true });
   };
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (count && (e.key === "ArrowDown" || e.key === "ArrowUp")) {

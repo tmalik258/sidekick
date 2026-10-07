@@ -6,7 +6,7 @@ import { Reorder, useDragControls } from "motion/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { CLAUDE_MODELS, CODEX_MODELS, explicitModel, FAST_CLAUDE_MODEL, FAST_CODEX_MODEL } from "@/lib/ai-models";
 import { api, EVENTS, listen } from "@/lib/bridge";
-import { useCached } from "@/lib/cache";
+import { SETUP_STATUS_CACHE_KEY, useCached } from "@/lib/cache";
 import { updateSettings, useSidekick } from "@/lib/store";
 import {
   AI_PROVIDERS,
@@ -15,6 +15,7 @@ import {
   type LocalModels,
   PROVIDER_LABELS,
   type ProviderStatus,
+  type SetupStatus,
   type VoiceDownload,
   type VoiceSettings,
 } from "@/lib/types";
@@ -77,6 +78,27 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
   // Last known answers paint at once; dots and lists only change when the data does.
   const { data: status, refresh: reloadStatus } = useCached<ProviderStatus[]>("ai-status", api.aiStatus);
   const { data: models, refresh: reloadModels } = useCached<LocalModels>("local-models", api.localModels);
+  const { data: setup } = useCached<SetupStatus>(SETUP_STATUS_CACHE_KEY, api.setupStatus);
+  const ollama = setup?.items.find((i) => i.id === "ollama");
+  const [starting, setStarting] = useState<string | null>(null);
+  // Start (or install) Ollama from here, then wait for it to answer.
+  const startOllama = async () => {
+    setStarting(ollama?.opensApp ? "Starting..." : "Installing...");
+    try {
+      await api.setupRun("ollama");
+      for (let i = 0; i < 40; i++) {
+        await new Promise((r) => setTimeout(r, 1500));
+        const m = await api.localModels();
+        if (m.reachable) break;
+      }
+    } catch {
+      setStarting("Could not start it. Try again");
+      return;
+    }
+    setStarting(null);
+    reloadModels();
+    reloadStatus();
+  };
   const first = useRef(true);
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-check when the local server address changes
   useEffect(() => {
@@ -221,12 +243,19 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
                             : "Ollama is not running"
                       }
                     >
-                      <Select
-                        label="Local model"
-                        value={ai.local.model}
-                        options={chatModels}
-                        onChange={(model) => void save({ local: { ...ai.local, model } })}
-                      />
+                      {models && !models.reachable ? (
+                        <Button primary onClick={() => void startOllama()} disabled={starting?.endsWith("...")}>
+                          {starting ??
+                            (ollama && !ollama.opensApp && ollama.runnable ? "Install Ollama" : "Start Ollama")}
+                        </Button>
+                      ) : (
+                        <Select
+                          label="Local model"
+                          value={ai.local.model}
+                          options={chatModels}
+                          onChange={(model) => void save({ local: { ...ai.local, model } })}
+                        />
+                      )}
                     </Field>
                     <Field label="Vision model" hint="For pictures without text">
                       <Select
