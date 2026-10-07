@@ -324,7 +324,7 @@ function mockChat(a: Record<string, unknown>) {
       emit("ai://done", {
         id,
         provider: null,
-        error: "error sending request for url (http://localhost:11434/v1/chat/completions)",
+        error: "error sending request for url (http://127.0.0.1:11434/v1/chat/completions)",
         handoff: null,
       }),
     );

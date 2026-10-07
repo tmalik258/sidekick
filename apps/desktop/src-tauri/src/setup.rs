@@ -31,7 +31,7 @@ pub struct SetupItem {
     pub group: Group,
     pub title: &'static str,
     /// What it unlocks, in a few words.
-    pub why: &'static str,
+    pub why: String,
     pub done: bool,
     /// Short state, for example "Ready" or "Ollama is not running".
     pub status: String,
@@ -52,12 +52,12 @@ pub struct SetupItem {
 }
 
 impl SetupItem {
-    fn new(id: &'static str, group: Group, title: &'static str, why: &'static str) -> Self {
+    fn new(id: &'static str, group: Group, title: &'static str, why: impl Into<String>) -> Self {
         Self {
             id,
             group,
             title,
-            why,
+            why: why.into(),
             done: false,
             status: String::new(),
             command: None,
@@ -188,6 +188,35 @@ pub fn mcp_added(claude_json: &str, url: &str) -> bool {
 /// The vision model suggested when none is set: small enough for a 4 GB GPU.
 pub const VISION_MODEL: &str = "moondream";
 
+/// The chat model to download for this PC.
+#[derive(Debug, PartialEq)]
+pub struct ChatPick {
+    pub model: String,
+    pub size: &'static str,
+}
+
+/// The biggest Qwen 3 that answers quickly here: a graphics card holds the
+/// whole model, otherwise it runs on the processor, where a small one keeps
+/// answers fast.
+pub fn chat_model_for(graphics: u64, memory: u64) -> ChatPick {
+    const GB: u64 = 1 << 30;
+    let (model, size) = if graphics >= 8 * GB {
+        ("qwen3:8b", "5.2 GB")
+    } else if graphics >= 4 * GB || memory >= 15 * GB {
+        ("qwen3:4b", "2.5 GB")
+    } else {
+        ("qwen3:1.7b", "1.4 GB")
+    };
+    ChatPick {
+        model: model.to_owned(),
+        size,
+    }
+}
+
+/// Starts the Ollama app if it is not running and waits until it answers,
+/// so `ollama pull` right after an install works.
+const OLLAMA_START: &str = "$app = Join-Path (Split-Path (Get-Command ollama).Source) 'ollama app.exe'; if (-not (Get-Process 'ollama app' -ErrorAction SilentlyContinue) -and (Test-Path $app)) { Start-Process $app }; foreach ($i in 1..60) { try { Invoke-RestMethod http://127.0.0.1:11434/api/version -TimeoutSec 2 | Out-Null; break } catch { Start-Sleep 1 } }";
+
 /// Ollama names models `name:tag`; `nomic-embed-text` matches
 /// `nomic-embed-text:latest`.
 pub fn has_model(models: &[String], wanted: &str) -> bool {
@@ -232,7 +261,10 @@ pub async fn ollama_models(base_url: &str) -> Option<Vec<String>> {
         .build()
         .ok()?;
     let resp = client
-        .get(format!("{}/models", base_url.trim_end_matches('/')))
+        .get(format!(
+            "{}/models",
+            sidekick_ai::loopback(base_url.trim_end_matches('/'))
+        ))
         .send()
         .await
         .ok()?;
@@ -371,6 +403,16 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     );
 
     let ollama_installed = found("ollama");
+    let picked = if settings.ai.local.model.trim().is_empty() {
+        let gpu = sidekick_sensors::graphics_memory().unwrap_or(0);
+        chat_model_for(gpu, sidekick_sensors::total_memory())
+    } else {
+        ChatPick {
+            model: settings.ai.local.model.trim().to_owned(),
+            size: "",
+        }
+    };
+    let pull_chat = format!("ollama pull {}", picked.model);
     let ollama = SetupItem::new(
         "ollama",
         Group::Ai,
@@ -381,43 +423,49 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         match (&models, ollama_installed) {
             (Some(_), _) => ollama.done(true, "Running", ""),
             (None, true) => ollama.done(false, "", "Installed, not running").opens_app(),
-            (None, false) => ollama
-                .done(false, "", "Not installed")
-                .run(winget("Ollama.Ollama")),
+            // Install, start it, and download the chat model in one go.
+            (None, false) => ollama.done(false, "", "Not installed").run(chain(&[
+                winget("Ollama.Ollama"),
+                OLLAMA_START.to_owned(),
+                pull_chat.clone(),
+            ])),
         }
         .recommended(),
     );
 
-    let chat_model = if settings.ai.local.model.trim().is_empty() {
-        "qwen3:4b".to_owned()
-    } else {
-        settings.ai.local.model.trim().to_owned()
-    };
     let has_chat = models.as_ref().is_some_and(|m| {
         if settings.ai.local.model.trim().is_empty() {
             m.iter().any(|x| sidekick_ai::is_chat_model(x))
         } else {
-            has_model(m, &chat_model)
+            has_model(m, &picked.model)
         }
     });
+    // The model and its size, so the user knows what downloads.
+    let wanted = if picked.size.is_empty() {
+        picked.model.clone()
+    } else {
+        format!("{}, {}", picked.model, picked.size)
+    };
     let mut chat = SetupItem::new(
         "ollama_chat",
         Group::Ai,
         "Local chat model",
-        "Private answers on this PC. About 2.5 GB.",
+        "Private answers on this PC, from a model that suits it.",
     )
     .done(
         has_chat,
         "Downloaded",
-        if models.is_some() {
-            "Not downloaded"
-        } else {
-            "Needs Ollama running"
+        &match (&models, ollama_installed) {
+            (Some(_), _) => format!("Not downloaded ({wanted})"),
+            (None, true) => format!("Ollama is not running ({wanted})"),
+            (None, false) => format!("Needs Ollama ({wanted})"),
         },
     );
     if models.is_some() {
+        chat = chat.run(pull_chat).action("Download");
+    } else if ollama_installed {
         chat = chat
-            .run(format!("ollama pull {chat_model}"))
+            .run(chain(&[OLLAMA_START.to_owned(), pull_chat]))
             .action("Download");
     }
     items.push(chat);
@@ -1126,6 +1174,15 @@ mod tests {
             merge_path(r"C:\Windows;C:\Tools\", r"c:\windows;C:\Tools;D:\Own"),
             r"C:\Windows;C:\Tools\;D:\Own"
         );
+    }
+
+    #[test]
+    fn picks_a_chat_model_for_the_pc() {
+        const GB: u64 = 1 << 30;
+        assert_eq!(chat_model_for(12 * GB, 32 * GB).model, "qwen3:8b");
+        assert_eq!(chat_model_for(6 * GB, 16 * GB).model, "qwen3:4b");
+        assert_eq!(chat_model_for(512 << 20, 16 * GB).model, "qwen3:4b");
+        assert_eq!(chat_model_for(0, 8 * GB).model, "qwen3:1.7b");
     }
 
     #[test]
