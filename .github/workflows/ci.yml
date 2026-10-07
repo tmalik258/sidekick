@@ -77,7 +77,9 @@ jobs:
       # A WebDriver that matches this runner's WebView2.
       - run: msedgedriver-tool
         working-directory: apps/desktop
-      - run: pnpm --filter desktop tauri build --debug --no-bundle
+      # The test build leaves out the window's own WebView2 arguments: they
+      # would replace the debugging port msedgedriver attaches through.
+      - run: pnpm --filter desktop tauri build --debug --no-bundle --config src-tauri/tauri.e2e.conf.json
       - name: Start tauri-driver
         shell: pwsh
         run: Start-Process tauri-driver -ArgumentList '--native-driver', "$PWD\apps\desktop\msedgedriver.exe" -WindowStyle Hidden

@@ -3,7 +3,7 @@
 // fails on a broken flow, a page error, a slow step or a frozen UI thread.
 // No dependencies: it speaks WebDriver over HTTP.
 //
-//   pnpm --filter desktop tauri build --debug --no-bundle
+//   pnpm --filter desktop tauri build --debug --no-bundle --config src-tauri/tauri.e2e.conf.json
 //   tauri-driver --native-driver .\msedgedriver.exe   (in another window)
 //   pnpm --filter desktop e2e
 
