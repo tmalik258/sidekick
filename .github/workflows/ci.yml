@@ -72,33 +72,9 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: cargo install tauri-driver --locked
-      - run: cargo install --git https://github.com/chippers/msedgedriver-tool
-      # A WebDriver that matches this runner's WebView2.
-      - run: msedgedriver-tool
-        working-directory: apps/desktop
-      # The test build leaves out the window's own WebView2 arguments: they
-      # would replace the debugging port msedgedriver attaches through.
+      # The test build leaves out the window's own WebView2 arguments, so the
+      # debugging port the test opens is not replaced.
       - run: pnpm --filter desktop tauri build --debug --no-bundle --config src-tauri/tauri.e2e.conf.json
-      # Does the test build stay up on its own? Prints its output, log and
-      # last crash, so a failed start says why.
-      - name: Start the app alone
-        shell: pwsh
-        run: |
-          $dir = "$env:APPDATA\app.sidekick.desktop"
-          New-Item -ItemType Directory -Force $dir | Out-Null
-          '{"onboarded":true,"voice":{"enabled":false}}' | Set-Content "$dir\settings.json"
-          $p = Start-Process target\debug\sidekick-desktop.exe -PassThru -RedirectStandardOutput out.txt -RedirectStandardError err.txt
-          Start-Sleep 15
-          if ($p.HasExited) { "Exited with code $($p.ExitCode)" } else { "Still running after 15 s"; Stop-Process $p -Force }
-          Get-Content out.txt -Tail 40 -ErrorAction SilentlyContinue
-          Get-Content err.txt -Tail 40 -ErrorAction SilentlyContinue
-          Get-ChildItem "$env:LOCALAPPDATA\app.sidekick.desktop\logs" -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName -Tail 40 }
-          Get-Content "$dir\last-crash.txt" -ErrorAction SilentlyContinue
-          Start-Sleep 2
-      - name: Start tauri-driver
-        shell: pwsh
-        run: Start-Process tauri-driver -ArgumentList '--native-driver', "$PWD\apps\desktop\msedgedriver.exe" -WindowStyle Hidden
       - run: pnpm --filter desktop e2e
       - uses: actions/upload-artifact@v4
         if: always()
