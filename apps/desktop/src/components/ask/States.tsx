@@ -72,6 +72,19 @@ export function explain(error: string, provider: string | null | undefined): Fai
       },
     };
   }
+  if (/claude code usage limit/.test(e)) {
+    return {
+      title: "Claude Code's usage is used up",
+      detail: "Sidekick tried your other models too. Ask the model on this PC, or try again once it resets.",
+      fix: {
+        label: "Ask the local model",
+        run: async () => {
+          setAskModel("local");
+          retryLast();
+        },
+      },
+    };
+  }
   if (/rate limit|429|usage limit|quota|overloaded|529/.test(e)) {
     return {
       title: "That model is busy or out of quota",
@@ -150,7 +163,10 @@ export function FailureCard({ turn, turns }: { turn: Turn; turns: Turn[] }) {
           </button>
         )}
         <button type="button" onClick={() => retryLast()} className="ak-chip chip">
-          Retry <kbd>Alt R</kbd>
+          Retry{" "}
+          <kbd>
+            <i className="alt-pre">Alt </i>R
+          </kbd>
         </button>
       </div>
     </div>

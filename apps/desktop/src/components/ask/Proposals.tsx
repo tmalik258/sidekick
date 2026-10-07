@@ -96,7 +96,11 @@ export function Proposals({ items, keys }: { items: Proposal[]; keys: boolean })
               className="ak-chip primary chip ak-in"
             >
               {p.label}
-              {keys && <kbd>Alt 1</kbd>}
+              {keys && (
+                <kbd>
+                  <i className="alt-pre">Alt </i>1
+                </kbd>
+              )}
             </button>
           ),
         )}
@@ -119,7 +123,12 @@ export function Proposals({ items, keys }: { items: Proposal[]; keys: boolean })
           >
             <span className="ak-cb" aria-hidden="true" />
             <span className="min-w-0 flex-1 truncate">{p.ran && !p.ran.ok ? p.ran.message : p.label}</span>
-            {!p.ran && keys && pending.indexOf(p) < 9 && <kbd>Alt {pending.indexOf(p) + 1}</kbd>}
+            {!p.ran && keys && pending.indexOf(p) < 9 && (
+              <kbd>
+                <i className="alt-pre">Alt </i>
+                {pending.indexOf(p) + 1}
+              </kbd>
+            )}
           </button>
         ))}
       </div>
@@ -127,7 +136,11 @@ export function Proposals({ items, keys }: { items: Proposal[]; keys: boolean })
         {pending.length > 0 && (
           <button type="button" disabled={busy} onClick={() => void doAll()} className="ak-chip primary chip">
             {busy ? "Working..." : `Do all ${pending.length}`}
-            {keys && !busy && <kbd>Alt A</kbd>}
+            {keys && !busy && (
+              <kbd>
+                <i className="alt-pre">Alt </i>A
+              </kbd>
+            )}
           </button>
         )}
         {undoable && <UndoProposal proposal={undoable} buttonRef={keys ? undoRef : undefined} />}
@@ -174,7 +187,11 @@ export function UndoProposal({
       className="ak-chip chip"
     >
       Undo
-      {buttonRef && <kbd>Alt U</kbd>}
+      {buttonRef && (
+        <kbd>
+          <i className="alt-pre">Alt </i>U
+        </kbd>
+      )}
     </button>
   );
 }
@@ -197,7 +214,12 @@ export function AnswerOptions({ options: all, start }: { options: string[]; star
           style={{ animationDelay: `${i * 40}ms` }}
         >
           <span className="leading-snug">{o}</span>
-          {i < shown && <kbd>Alt {start + i + 1}</kbd>}
+          {i < shown && (
+            <kbd>
+              <i className="alt-pre">Alt </i>
+              {start + i + 1}
+            </kbd>
+          )}
         </button>
       ))}
     </div>
@@ -307,7 +329,10 @@ function Plan({ items, keys }: { items: Proposal[]; keys: boolean }) {
           )}
           {undoable.length > 0 && state === "ready" && (
             <button type="button" onClick={() => void undoAll()} className="ak-chip chip">
-              Undo all <kbd>Alt Z</kbd>
+              Undo all{" "}
+              <kbd>
+                <i className="alt-pre">Alt </i>Z
+              </kbd>
             </button>
           )}
         </div>

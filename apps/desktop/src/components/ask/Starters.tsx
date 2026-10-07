@@ -48,9 +48,8 @@ export function ContextLine({ keys }: { keys: boolean }) {
   return (
     <div className="ak-ctx">
       {offline && <span className="ak-offl">Offline</span>}
-      {items.map((it, n) => (
-        <span key={it.id} className={`flex min-w-0 items-center gap-1.5 ${it.id === "clip" ? "shrink" : "shrink-0"}`}>
-          {(n > 0 || offline) && <span className="ak-ctx-sep" aria-hidden="true" />}
+      {items.map((it) => (
+        <span key={it.id} className={`flex min-w-0 items-center ${it.id === "clip" ? "shrink" : "shrink-0"}`}>
           <button
             type="button"
             aria-pressed={it.on}
@@ -60,7 +59,8 @@ export function ContextLine({ keys }: { keys: boolean }) {
             onClick={it.toggle}
             className={`ak-ctx-i chip ${it.id === "clip" ? "cpy" : ""}`}
           >
-            {it.label}
+            <Icon name={it.on ? "check" : "plus"} size={10} />
+            <span className="truncate">{it.label}</span>
           </button>
         </span>
       ))}
@@ -73,7 +73,7 @@ export function ContextLine({ keys }: { keys: boolean }) {
           onClick={() => setAsk({ localOnly: !ask.localOnly })}
           className="ak-pc chip"
         >
-          <Icon name="lock" size={10} />
+          <Icon name={ask.localOnly ? "check" : "lock"} size={10} />
           This PC only
         </button>
         <KeyHint show={keys} side="right">

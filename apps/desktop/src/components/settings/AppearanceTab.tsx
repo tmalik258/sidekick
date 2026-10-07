@@ -60,7 +60,9 @@ export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
               onClick={() => save({ theme: t })}
               className={tile(settings.theme === t)}
             >
-              <Orb state="idle" size={34} theme={t} magnetic={false} />
+              <span className="orb-still">
+                <Orb state="idle" size={34} theme={t} magnetic={false} simple active={false} />
+              </span>
               {THEME_STYLES[t].label}
             </button>
           ))}
@@ -91,7 +93,9 @@ export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
                       : "inset 0 0.5px 0 rgb(255 255 255 / 0.18), 0 0 0 0.5px rgb(255 255 255 / 0.14)",
                 }}
               >
-                <Orb state="idle" size={15} theme={settings.theme} magnetic={false} />
+                <span className="orb-still">
+                  <Orb state="idle" size={15} theme={settings.theme} magnetic={false} simple active={false} />
+                </span>
                 <span className="h-[4px] w-[26px] rounded-full bg-white/55" />
               </span>
               {ISLAND_COLOR_LABELS[c]}

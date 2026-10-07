@@ -6,6 +6,7 @@
 // column under the mascot.
 
 import type { ReactNode } from "react";
+import { ChipKeys } from "./ask/parts";
 
 /** Pulls a block left under the mascot so it spans the card. */
 const FULL = { marginLeft: "calc(var(--orb-indent, 0px) * -1)", width: "calc(100% + var(--orb-indent, 0px))" };
@@ -108,7 +109,7 @@ export function CardChips({ options, quiet }: { options: CardOption[]; quiet?: C
             <kbd
               className={`shrink-0 self-center font-sans text-[11px] leading-none ${i === 0 ? "text-black/40" : "text-white/45"}`}
             >
-              {o.keys}
+              <ChipKeys keys={o.keys} />
             </kbd>
           )}
         </button>
@@ -120,7 +121,11 @@ export function CardChips({ options, quiet }: { options: CardOption[]; quiet?: C
           className="chip rounded-full px-2.5 py-1.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
         >
           {quiet.label}
-          {quiet.keys && <kbd className="ml-1.5 font-sans text-[11px] text-white/45">{quiet.keys}</kbd>}
+          {quiet.keys && (
+            <kbd className="ml-1.5 font-sans text-[11px] text-white/45">
+              <ChipKeys keys={quiet.keys} />
+            </kbd>
+          )}
         </button>
       )}
     </div>

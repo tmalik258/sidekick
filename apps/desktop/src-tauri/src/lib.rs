@@ -211,6 +211,7 @@ pub fn run() {
             commands::instant_find,
             commands::app_launch,
             commands::windows_settings_open,
+            commands::pc_switch,
             commands::file_open,
             commands::agent_start,
             commands::agent_handoff,

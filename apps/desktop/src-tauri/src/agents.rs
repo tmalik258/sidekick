@@ -78,10 +78,11 @@ pub fn pick(choice: &str, claude: bool, codex: bool, order: &[String]) -> Option
 }
 
 pub fn chosen(s: &Settings) -> Option<Agent> {
+    let codex = Agent::Codex.resolve(s).is_some();
     pick(
         &s.ai.coding_agent,
-        Agent::ClaudeCode.resolve(s).is_some(),
-        Agent::Codex.resolve(s).is_some(),
+        usable(Agent::ClaudeCode.resolve(s).is_some(), codex),
+        codex,
         &s.ai.order,
     )
 }
@@ -102,8 +103,19 @@ pub fn status(s: &Settings) -> Agents {
     Agents {
         claude_code: claude,
         codex,
-        handoff: pick(&s.ai.coding_agent, claude, codex, &s.ai.order).map(|a| a.name().to_owned()),
+        handoff: pick(
+            &s.ai.coding_agent,
+            usable(claude, codex),
+            codex,
+            &s.ai.order,
+        )
+        .map(|a| a.name().to_owned()),
     }
+}
+
+/// Claude Code out of usage counts as missing while Codex can take over.
+fn usable(claude: bool, codex: bool) -> bool {
+    claude && !(codex && sidekick_ai::claude_code_limited())
 }
 
 pub const HANDOFF_PROMPT: &str =

@@ -411,6 +411,32 @@ pub async fn windows_settings_open(page: String) -> CmdResult<()> {
     .map_err(|e| e.to_string())
 }
 
+/// Switches picked from Ask's instant results, without asking a model.
+const PC_SWITCHES: &[&str] = &[
+    "wifi",
+    "bluetooth",
+    "hotspot",
+    "airplane",
+    "night_light",
+    "dnd",
+    "dark_mode",
+];
+
+/// Turns a Windows switch on or off from Ask's instant results; returns
+/// what happened, in words.
+#[tauri::command]
+pub async fn pc_switch(name: String, on: bool) -> CmdResult<String> {
+    if !PC_SWITCHES.contains(&name.as_str()) {
+        return Err(format!("{name} is not a switch"));
+    }
+    let what = format!("{name}_{}", if on { "on" } else { "off" });
+    tauri::async_runtime::spawn_blocking(move || sidekick_actions::pc::control(&what, None, None))
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|o| o.message)
+        .map_err(|e| e.to_string())
+}
+
 /// Opens a file or folder picked from Ask's instant results. Programs and
 /// scripts are shown in their folder instead of run.
 #[tauri::command]

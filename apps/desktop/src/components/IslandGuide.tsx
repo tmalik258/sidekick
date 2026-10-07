@@ -120,7 +120,10 @@ export function IslandGuide({ waiting, guide }: { waiting: Waiting; guide: Guide
           onClick={cancelWaiting}
           className="chip ml-auto rounded-full px-2.5 py-1.5 text-[12.5px] text-[rgb(235_235_245/0.6)] hover:text-white"
         >
-          Cancel <kbd className="ml-1 font-sans text-[11px] text-white/45">Alt 0</kbd>
+          Cancel{" "}
+          <kbd className="ml-1 font-sans text-[11px] text-white/45">
+            <i className="alt-pre">Alt </i>0
+          </kbd>
         </button>
       </div>
     </div>

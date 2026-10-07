@@ -119,6 +119,24 @@ export function ago(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
+/** While Alt is held only the letter is needed, like Windows KeyTips: "Alt M" is "M". */
+export function keyLetter(keys: string): string {
+  return keys.replace(/^Alt[ +]/, "");
+}
+
+/** Keys inside a chip: "Alt 1" drops "Alt " while Alt is held. */
+export function ChipKeys({ keys }: { keys: string }) {
+  const letter = keyLetter(keys);
+  return letter === keys ? (
+    keys
+  ) : (
+    <>
+      <i className="alt-pre">Alt </i>
+      {letter}
+    </>
+  );
+}
+
 /** A key badge that shows on its control while Alt is held. */
 export function KeyHint({
   show,
@@ -137,7 +155,7 @@ export function KeyHint({
       }`}
       data-show={show}
     >
-      {children}
+      {typeof children === "string" ? keyLetter(children) : children}
     </span>
   );
 }

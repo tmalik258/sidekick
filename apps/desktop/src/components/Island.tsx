@@ -777,7 +777,9 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
         className="chip rounded-full px-2.5 py-1.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
       >
         Not now
-        <kbd className="ml-1.5 font-sans text-[11px] text-white/45">Alt 0</kbd>
+        <kbd className="ml-1.5 font-sans text-[11px] text-white/45">
+          <i className="alt-pre">Alt </i>0
+        </kbd>
       </motion.button>
     </div>
   );
