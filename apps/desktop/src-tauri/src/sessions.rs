@@ -970,6 +970,20 @@ pub fn claude_events(v: &Value) -> Vec<Value> {
             }
         }
         Some("assistant") => {
+            // What this call read is how full the context is now. The
+            // result's usage adds up every call in the turn, so it reads high.
+            let u = &v["message"]["usage"];
+            let used = [
+                "input_tokens",
+                "cache_read_input_tokens",
+                "cache_creation_input_tokens",
+            ]
+            .iter()
+            .filter_map(|k| u[k].as_u64())
+            .sum::<u64>();
+            if used > 0 {
+                out.push(json!({ "kind": "usage", "used": used, "window": CLAUDE_WINDOW }));
+            }
             for b in v["message"]["content"].as_array().into_iter().flatten() {
                 if b["type"] != "tool_use" {
                     continue;
@@ -1013,19 +1027,21 @@ pub fn claude_events(v: &Value) -> Vec<Value> {
                 }
             }
         }
-        Some("result") => {
-            let u = &v["usage"];
-            let used = [
-                "input_tokens",
-                "cache_read_input_tokens",
-                "cache_creation_input_tokens",
-            ]
-            .iter()
-            .filter_map(|k| u[k].as_u64())
-            .sum::<u64>();
-            if used > 0 {
-                out.push(json!({ "kind": "usage", "used": used, "window": CLAUDE_WINDOW }));
+        // The plan's usage limits: "allowed", "allowed_warning" near the
+        // limit, "rejected" at it.
+        Some("rate_limit_event") => {
+            let r = &v["rate_limit_info"];
+            if let Some(status) = r["status"].as_str() {
+                out.push(json!({
+                    "kind": "limit",
+                    "status": status,
+                    "window": r["rateLimitType"],
+                    "resetsAt": r["resetsAt"],
+                    "used": r["utilization"],
+                }));
             }
+        }
+        Some("result") => {
             let failed = v["is_error"].as_bool().unwrap_or(false);
             out.push(json!({
                 "kind": "turn",
@@ -1491,14 +1507,28 @@ mod tests {
         .unwrap();
         assert_eq!(claude_events(&result)[0]["state"], "failed");
 
+        let said: Value = serde_json::from_str(
+            r#"{"type":"assistant","message":{"content":[],"usage":{"input_tokens":10,"cache_read_input_tokens":90}}}"#,
+        )
+        .unwrap();
+        assert_eq!(claude_events(&said)[0]["used"], 100);
+
         let done: Value = serde_json::from_str(
             r#"{"type":"result","is_error":false,"result":"x","usage":{"input_tokens":10,"cache_read_input_tokens":90}}"#,
         )
         .unwrap();
         let ev = claude_events(&done);
-        assert_eq!(ev[0]["used"], 100);
-        assert_eq!(ev[1]["kind"], "turn");
-        assert!(ev[1]["error"].is_null());
+        assert_eq!(ev[0]["kind"], "turn");
+        assert!(ev[0]["error"].is_null());
+
+        let limit: Value = serde_json::from_str(
+            r#"{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","rateLimitType":"five_hour","resetsAt":1760000000,"utilization":0.8}}"#,
+        )
+        .unwrap();
+        let ev = claude_events(&limit);
+        assert_eq!(ev[0]["kind"], "limit");
+        assert_eq!(ev[0]["status"], "allowed_warning");
+        assert_eq!(ev[0]["window"], "five_hour");
     }
 
     #[test]

@@ -185,11 +185,17 @@ export function Review({ session, maxHeight, onDone }: { session: Session; maxHe
       </div>
       <div className="ak-chips">
         <button type="button" onClick={keepAll} className="ak-chip primary chip">
-          {open.length === 0 ? "Done" : "Keep all"} <kbd>Alt 1</kbd>
+          {open.length === 0 ? "Done" : "Keep all"}{" "}
+          <kbd>
+            <i className="alt-pre">Alt </i>1
+          </kbd>
         </button>
         {list.length > 0 && (
           <button type="button" onClick={() => undo(null, null)} className="ak-chip chip">
-            Undo all <kbd>Alt 2</kbd>
+            Undo all{" "}
+            <kbd>
+              <i className="alt-pre">Alt </i>2
+            </kbd>
           </button>
         )}
       </div>

@@ -11,8 +11,9 @@ import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { useNow } from "@/lib/hooks";
 import type { InboxStatus } from "@/lib/types";
+import { limitNote } from "./agents/AgentsTab";
 import { Icon } from "./Icon";
-import { CardChips, CardHead, CardList, type CardRow } from "./IslandCard";
+import { CardChips, CardHead, CardList, CardNote, type CardRow } from "./IslandCard";
 import { RoundButton } from "./IslandGlance";
 
 /** Away this long before the island shows what happened meanwhile. */
@@ -104,6 +105,7 @@ export function AgentsGlance({ sessions }: { sessions: Session[] }) {
   const deny = waiting ? () => answerQuestion(waiting.id, "deny") : undefined;
   const open = () => openSession(lead?.id ?? "");
   useKeys({ Enter: allow, "Alt N": deny });
+  const limited = sessions.find((x) => x.limit);
   return (
     <div className="flex flex-col">
       <CardHead
@@ -116,6 +118,7 @@ export function AgentsGlance({ sessions }: { sessions: Session[] }) {
         }
       />
       <CardList rows={rows} />
+      {limited?.limit && <CardNote>{limitNote(limited.agent, limited.limit)}</CardNote>}
       {waiting && allow && deny ? (
         <CardChips
           options={[
@@ -205,7 +208,10 @@ export function AwayCard() {
         label="Since you last looked"
         action={
           <button type="button" onClick={markSeen} className="chip hover:text-white">
-            Clear all <kbd className="ml-1 font-sans text-[11px] text-white/45">Alt X</kbd>
+            Clear all{" "}
+            <kbd className="ml-1 font-sans text-[11px] text-white/45">
+              <i className="alt-pre">Alt </i>X
+            </kbd>
           </button>
         }
         rows={rows}

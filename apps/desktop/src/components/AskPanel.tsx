@@ -64,14 +64,26 @@ function askScrollMax(): number {
 }
 
 /** Windows Settings pages Ask can open by name, with the words people type. */
-const WINDOWS_PAGES: { page: string; label: string; words: string[] }[] = [
+const WINDOWS_PAGES: { page: string; label: string; words: string[]; switch?: string }[] = [
   { page: "display", label: "Display", words: ["display", "screen", "resolution", "brightness", "scale"] },
-  { page: "nightlight", label: "Night light", words: ["night", "nightlight", "blue light"] },
+  {
+    page: "nightlight",
+    label: "Night light",
+    words: ["night", "nightlight", "night light", "blue light"],
+    switch: "night_light",
+  },
   { page: "sound", label: "Sound", words: ["sound", "audio", "speaker", "microphone", "volume"] },
   { page: "notifications", label: "Notifications", words: ["notifications"] },
-  { page: "focus", label: "Focus", words: ["focus", "do not disturb", "dnd"] },
-  { page: "bluetooth", label: "Bluetooth & devices", words: ["bluetooth", "devices", "headphones"] },
-  { page: "wifi", label: "Wi-Fi", words: ["wifi", "wi-fi", "wireless"] },
+  { page: "focus", label: "Do Not Disturb", words: ["focus", "do not disturb", "dnd"], switch: "dnd" },
+  { page: "bluetooth", label: "Bluetooth", words: ["bluetooth", "devices", "headphones"], switch: "bluetooth" },
+  { page: "wifi", label: "Wi-Fi", words: ["wifi", "wi-fi", "wireless"], switch: "wifi" },
+  {
+    page: "hotspot",
+    label: "Mobile hotspot",
+    words: ["hotspot", "mobile hotspot", "tethering", "share internet"],
+    switch: "hotspot",
+  },
+  { page: "airplane", label: "Airplane mode", words: ["airplane", "aeroplane", "flight mode"], switch: "airplane" },
   { page: "network", label: "Network & internet", words: ["network", "internet", "ethernet", "vpn", "proxy"] },
   { page: "battery", label: "Battery saver", words: ["battery", "saver"] },
   { page: "power", label: "Power & sleep", words: ["power", "sleep"] },
@@ -79,7 +91,12 @@ const WINDOWS_PAGES: { page: string; label: string; words: string[] }[] = [
   { page: "apps", label: "Installed apps", words: ["apps", "uninstall", "programs"] },
   { page: "default_apps", label: "Default apps", words: ["default"] },
   { page: "startup_apps", label: "Startup apps", words: ["startup"] },
-  { page: "colors", label: "Colors", words: ["colors", "colours", "dark mode", "theme", "transparency"] },
+  {
+    page: "colors",
+    label: "Dark mode",
+    words: ["dark mode", "dark", "light mode", "colors", "colours", "theme"],
+    switch: "dark_mode",
+  },
   { page: "background", label: "Background", words: ["background", "wallpaper"] },
   { page: "mouse", label: "Mouse & touchpad", words: ["mouse", "touchpad", "trackpad"] },
   { page: "keyboard", label: "Keyboard", words: ["keyboard"] },
@@ -405,18 +422,49 @@ export function AskPanel() {
             run: () => void api.fileOpen(f.path),
           });
         }
-        const wq = q.replace(/^(open\s+)?(windows\s+)?settings?\s*/, "").trim();
+        // "turn on hotspot", "hotspot off", "open bluetooth settings".
+        const want = /\b(on|enable|start)\b/.test(q) ? true : /\b(off|disable|stop)\b/.test(q) ? false : null;
+        const wq = q
+          .replace(/^(open\s+)?(windows\s+)?settings?\s*/, "")
+          .replace(/\b(turn|switch|set|please|the|my|on|off|enable|disable|start|stop)\b/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        const pages = (
+          wq.length >= 3 ? WINDOWS_PAGES.filter((p) => p.words.some((w) => w.startsWith(wq) || wq.startsWith(w))) : []
+        ).slice(0, 2);
         named(
           "Windows settings",
-          (wq.length >= 3 ? WINDOWS_PAGES.filter((p) => p.words.some((w) => w.startsWith(wq) || wq.startsWith(w))) : [])
-            .slice(0, 3)
-            .map((p) => ({
+          pages.flatMap((p) => {
+            const open: Command = {
               id: `winset:${p.page}`,
-              label: p.label,
+              label: `${p.label} settings`,
               hint: "Windows Settings",
               icon: "settings" as const,
               run: () => void api.windowsSettingsOpen(p.page),
-            })),
+            };
+            const name = p.switch;
+            if (!name) return [open];
+            const flip = (on: boolean): Command => ({
+              id: `switch:${name}:${on}`,
+              label: `Turn ${p.label.replace(/^Do Not/, "do not")} ${on ? "on" : "off"}`,
+              hint: "This PC",
+              icon: "settings" as const,
+              stay: true,
+              run: () => {
+                const asked = `Turn ${p.label} ${on ? "on" : "off"}`;
+                const say = (content: string, error?: string) =>
+                  useSidekick.setState((st) => ({
+                    turns: [...st.turns, { role: "user", content: asked }, { role: "assistant", content, error }],
+                  }));
+                void api.pcSwitch(name, on).then(
+                  (done) => say(`${done}.`),
+                  (e: unknown) => say("", String(e)),
+                );
+              },
+            });
+            const flips = want === null ? [flip(true), flip(false)] : [flip(want)];
+            return [...flips, open];
+          }),
         );
         named(
           "Settings",
@@ -498,7 +546,9 @@ export function AskPanel() {
   }
   const rows = items.length;
   // A short name ("slack", "settings") picks its match; a question picks Ask.
-  const intentRow = asking && rows > 3 && looksLikeName(text) ? 1 : 0;
+  // "turn on hotspot" picks the switch itself.
+  const switchRow = /\b(on|off|enable|disable)\b/i.test(text) ? items.findIndex((i) => i.id.startsWith("switch:")) : -1;
+  const intentRow = asking && switchRow > 0 ? switchRow : asking && rows > 3 && looksLikeName(text) ? 1 : 0;
   const active = Math.min(selected === INTENT_PENDING ? intentRow : selected, Math.max(rows - 1, 0));
   // Models that can answer now; the picked one (if still there) goes first.
   const choices = providers.filter((p) => p.available && (!ask.localOnly || p.local) && p.id !== "semif");
@@ -662,8 +712,6 @@ export function AskPanel() {
     );
   }
 
-  const lastQuestion = turns.findLast((t) => t.role === "user")?.content ?? "";
-  const askedInBar = inChat && !text && !inHistory;
   // No model yet: the first-run card says how to add one, so the footer
   // keeps its usual line.
   const firstRun = !best && providersData !== null && !inChat && !asking && !slash && !inHistory && !showClips;
@@ -724,8 +772,7 @@ export function AskPanel() {
               setPick(0);
             }}
             onKeyDown={onKey}
-            data-asked={askedInBar}
-            placeholder={inHistory ? "Search history" : askedInBar ? lastQuestion : "Ask anything"}
+            placeholder={inHistory ? "Search history" : inChat ? "Ask a follow-up" : "Ask anything"}
             spellCheck={false}
             className="ak-q"
           />
@@ -810,7 +857,7 @@ export function AskPanel() {
         </div>
       ) : showChat && !(asking && rows > 0 && !inChat) ? (
         <div key="chat" ref={chatRef} onScroll={onScroll} className="ak-scroll" style={{ maxHeight: scrollMax }}>
-          <Chat turns={turns} askedInBar={askedInBar} />
+          <Chat turns={turns} />
         </div>
       ) : firstRun ? (
         <FirstRun />

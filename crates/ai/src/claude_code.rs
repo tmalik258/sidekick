@@ -72,6 +72,54 @@ fn valid_model(m: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_' | '[' | ']'))
 }
 
+/// Until when Claude Code is out of usage: Auto skips it and asks the next
+/// model instead of failing every question.
+static LIMITED_UNTIL: Mutex<Option<std::time::SystemTime>> = Mutex::new(None);
+
+/// How long to skip Claude Code when its message gives no reset time.
+const LIMIT_PAUSE: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+
+/// Claude Code's "out of usage" messages ("Claude AI usage limit reached",
+/// "You've hit your limit · resets 3pm", "Credit balance is too low").
+pub fn is_usage_limit(text: &str) -> bool {
+    let t = text.to_ascii_lowercase();
+    t.len() < 400
+        && [
+            "usage limit",
+            "hit your limit",
+            "limit reached",
+            "rate limit",
+            "out of extra usage",
+            "credit balance is too low",
+            "weekly limit",
+            "5-hour limit",
+        ]
+        .iter()
+        .any(|k| t.contains(k))
+}
+
+fn mark_limited(resets_at: Option<u64>) {
+    let now = std::time::SystemTime::now();
+    let until = resets_at
+        .map(|secs| std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs))
+        .filter(|t| *t > now)
+        .unwrap_or(now + LIMIT_PAUSE);
+    *LIMITED_UNTIL.lock().unwrap_or_else(|e| e.into_inner()) = Some(until);
+}
+
+/// Claude Code is out of usage for now (see [`LIMITED_UNTIL`]).
+pub fn limited() -> bool {
+    LIMITED_UNTIL
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_some_and(|t| t > std::time::SystemTime::now())
+}
+
+/// The error for a full plan, which the router answers with the next model.
+fn limit_error(text: &str) -> AiError {
+    AiError::Failed(format!("Claude Code usage limit: {}", text.trim()))
+}
+
 /// What one line of `--output-format stream-json` means for us.
 #[derive(Debug, PartialEq)]
 enum Line {
@@ -80,6 +128,8 @@ enum Line {
     Message(String),
     Done(String),
     Error(String),
+    /// The plan's usage is used up; the reset time, when given.
+    Limited(Option<u64>),
     Other,
 }
 
@@ -108,6 +158,9 @@ fn parse_line(line: &str) -> Line {
                 })
                 .unwrap_or_default();
             Line::Message(text)
+        }
+        Some("rate_limit_event") if v["rate_limit_info"]["status"] == "rejected" => {
+            Line::Limited(v["rate_limit_info"]["resetsAt"].as_u64())
         }
         Some("result") => {
             let text = v["result"].as_str().unwrap_or_default().to_owned();
@@ -242,6 +295,19 @@ async fn turn(
                 sink.send(&text);
                 full.push_str(&text);
             }
+            // Not an answer: say nothing so Auto can ask the next model.
+            Line::Limited(resets) => {
+                mark_limited(resets);
+                return Err(limit_error("the plan's usage is used up"));
+            }
+            Line::Message(text) | Line::Done(text) if full.is_empty() && is_usage_limit(&text) => {
+                mark_limited(None);
+                return Err(limit_error(&text));
+            }
+            Line::Error(msg) if is_usage_limit(&msg) => {
+                mark_limited(None);
+                return Err(limit_error(&msg));
+            }
             Line::Message(text) if full.is_empty() => {
                 sink.send(&text);
                 full.push_str(&text);
@@ -284,7 +350,7 @@ impl AiProvider for ClaudeCode {
     }
 
     async fn available(&self) -> bool {
-        self.resolve().is_some()
+        !limited() && self.resolve().is_some()
     }
 
     /// Starts a session in the background, so the first message does not
@@ -379,6 +445,21 @@ mod tests {
             parse_line(r#"{"type":"result","subtype":"success","is_error":false,"result":"Hi"}"#),
             Line::Done("Hi".into())
         );
+        assert_eq!(
+            parse_line(
+                r#"{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":1760000000}}"#
+            ),
+            Line::Limited(Some(1_760_000_000))
+        );
+        assert!(is_usage_limit("Claude AI usage limit reached|1760000000"));
+        assert!(is_usage_limit(
+            "You've hit your limit · resets 3pm (Asia/Karachi)"
+        ));
+        assert!(!is_usage_limit(
+            "Here is how rate limiting works in nginx: ..."
+                .repeat(20)
+                .as_str()
+        ));
         assert_eq!(
             parse_line(r#"{"type":"result","subtype":"error_during_execution","is_error":true}"#),
             Line::Error("error_during_execution".into())

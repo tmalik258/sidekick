@@ -238,6 +238,7 @@ export const api = {
   agentTerminal: (id: string) => invoke<void>("agent_terminal", { id }),
   agentResume: (id: string) => invoke<void>("agent_resume", { id }),
   windowsSettingsOpen: (page: string) => invoke<void>("windows_settings_open", { page }),
+  pcSwitch: (name: string, on: boolean) => invoke<string>("pc_switch", { name, on }),
   agentMemory: (id: string) => invoke<number | null>("agent_memory", { id }),
   agentOpenEditor: (id: string) => invoke<void>("agent_open_editor", { id }),
   agentRewindPreview: (id: string, index: number) => invoke<number>("agent_rewind_preview", { id, index }),

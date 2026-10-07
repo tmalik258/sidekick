@@ -756,6 +756,17 @@ body {
   }
 }
 
+/* Previews in Settings: fourteen live mascots made scrolling stutter, so
+   these stand still and paint once. */
+.orb-still {
+  display: inline-flex;
+  contain: layout paint;
+}
+.orb-still * {
+  animation: none !important;
+  transition: none !important;
+}
+
 /* ---------- Ask: key badges, menus, voice ---------- */
 
 /* Shown on each control while Alt is held. */
@@ -769,6 +780,20 @@ body {
 .key-hint[data-show="true"] {
   opacity: 1;
   scale: 1;
+}
+
+/* While Alt is held, keys in chips show only their letter, lit like the badges. */
+.alt-pre {
+  font-style: normal;
+}
+:root[data-alt] .alt-pre {
+  display: none;
+}
+:root[data-alt] kbd:has(> .alt-pre) {
+  border-radius: 5px;
+  background: #fff;
+  padding-inline: 4px;
+  color: #000;
 }
 
 /* Menus: Graphite, frosted, anchored to their button. */
@@ -1007,9 +1032,6 @@ body {
   color: var(--i3);
   text-overflow: ellipsis;
 }
-.ak-q[data-asked="true"]::placeholder {
-  color: var(--i2);
-}
 .ak-right {
   display: flex;
   align-items: center;
@@ -1079,24 +1101,40 @@ body {
   margin-top: -6px;
   min-width: 0;
 }
+/* Context toggles: filled with a tick when it goes with the question,
+   an outline with + when left out. */
 .ak-ctx-i {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
   min-width: 0;
   flex-shrink: 0;
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--i3);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
 }
 .ak-ctx-i.cpy {
   flex-shrink: 1;
 }
+.ak-ctx-i svg,
+.ak-pc svg {
+  flex: none;
+}
 .ak-ctx-i[aria-pressed="true"] {
-  color: var(--i2);
+  background: rgb(255 255 255 / 0.1);
+  color: var(--ink);
+  box-shadow: none;
 }
 .ak-ctx-i:hover {
-  color: var(--i2);
-}
-.ak-ctx-sep::before {
-  content: "·";
+  background: rgb(255 255 255 / 0.14);
+  color: var(--ink);
 }
 .ak-pc {
   margin-left: auto;
@@ -1104,11 +1142,15 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 8px;
+  padding: 3px 9px 3px 7px;
   border-radius: 999px;
   font-size: 11.5px;
   color: var(--i3);
-  box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.14);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16);
+}
+.ak-pc:hover {
+  background: rgb(255 255 255 / 0.14);
+  color: var(--ink);
 }
 .ak-pc[aria-pressed="true"] {
   background: rgb(255 255 255 / 0.1);

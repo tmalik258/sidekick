@@ -399,13 +399,17 @@ pub fn defs() -> Vec<ToolDef> {
             name: PC.into(),
             description: "Change an everyday Windows setting right away: volume_up, volume_down, \
                 mute, set_volume {level}, brightness {level}, dark_mode_on, dark_mode_off, \
-                bluetooth_on, bluetooth_off, wifi_on, wifi_off, dnd_on, dnd_off (Do Not Disturb), lock, \
+                bluetooth_on, bluetooth_off, wifi_on, wifi_off, dnd_on, dnd_off (Do Not Disturb), \
+                hotspot_on, hotspot_off (this PC's own Mobile hotspot, sharing its internet; \
+                \"hotspot\" always means this PC's, never a phone's), airplane_on, airplane_off, \
+                night_light_on, night_light_off, lock, \
                 audio_outputs (lists speakers and headphones), audio_output {page: device name} \
                 plays sound there, display {page: internal|clone|extend|external} sets screens, \
                 open_settings {page} (no page opens Windows Settings itself). Pages: home, display, nightlight, sound, notifications, focus \
                 (Do Not Disturb), bluetooth, wifi, network, battery, power, storage, apps, \
                 default_apps, startup_apps, colors, background, mouse, keyboard, printers, updates, \
-                privacy, accounts, time, language, about. Night light has no switch: open its page."
+                privacy, accounts, time, language, about, hotspot, airplane. Switch a setting \
+                instead of opening its page when the user asks to turn it on or off."
                 .into(),
             parameters: json!({
                 "type": "object",
@@ -413,7 +417,9 @@ pub fn defs() -> Vec<ToolDef> {
                     "what": { "type": "string", "enum": [
                         "volume_up", "volume_down", "mute", "set_volume", "brightness",
                         "dark_mode_on", "dark_mode_off", "bluetooth_on", "bluetooth_off",
-                        "wifi_on", "wifi_off", "dnd_on", "dnd_off", "lock", "open_settings",
+                        "wifi_on", "wifi_off", "dnd_on", "dnd_off", "hotspot_on", "hotspot_off",
+                        "airplane_on", "airplane_off", "night_light_on", "night_light_off",
+                        "lock", "open_settings",
                         "audio_outputs", "audio_output", "display"
                     ] },
                     "level": { "type": "integer", "minimum": 0, "maximum": 100 },
@@ -493,6 +499,8 @@ pub fn step_label(name: &str, args: &Value) -> String {
                 "dnd" => "Do Not Disturb".to_owned(),
                 "wifi" => "Wi-Fi".to_owned(),
                 "bluetooth" => "Bluetooth".to_owned(),
+                "hotspot" => "Mobile hotspot".to_owned(),
+                "airplane" => "airplane mode".to_owned(),
                 other => other.replace('_', " "),
             };
             if let Some(k) = what.strip_suffix("_on") {

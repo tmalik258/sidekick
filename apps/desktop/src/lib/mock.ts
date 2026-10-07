@@ -872,6 +872,7 @@ commands.instant_find = (a) => {
 };
 commands.app_launch = () => undefined;
 commands.windows_settings_open = () => undefined;
+commands.pc_switch = (a) => `${String(a?.name)} ${a?.on ? "on" : "off"}`;
 commands.file_open = () => undefined;
 commands.project_launch = () => "Opened sidekick in VS Code and a terminal";
 commands.search_status = () => ({ items: 1240, embedded: 1240, embedError: null });

@@ -45,7 +45,15 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 - Projects without git can be reviewed, undone and rewound too: Sidekick keeps a private copy in its own data folder and never adds git to the project.
 - Windows High contrast mode is followed, sounds stay quiet in Do Not Disturb, and the halo stops turning while the island is at rest.
 
-### Local model setup
+### Ask and agents, after first use on Windows
+
+- After you send, the input clears ("Ask a follow-up") and your question shows above the answer.
+- The app, what you copied and This PC only look like toggles again: a tick when on, an outline with + when left out.
+- Holding Alt shows only the letter on each control, like Windows KeyTips.
+- Ask turns Wi-Fi, Bluetooth, Mobile hotspot, airplane mode, Night light, Do Not Disturb and dark mode on or off. Typing "turn on hotspot" shows the switch as the first result, with no model involved, and "hotspot" always means this PC's own.
+- In Auto, a Claude Code plan that is used up no longer ends the answer: Sidekick asks Codex or the next model, skips Claude Code until it resets, and hands coding work to Codex meanwhile.
+- Agents shows how much of the 5-hour or weekly limit is used, in the session and on the island, and offers Compact (Alt K) once Claude Code's context is half full.
+- Settings > Appearance scrolls smoothly; its mascot previews stand still.
 
 - Sidekick reaches Ollama on `127.0.0.1` instead of `localhost`. Windows tried IPv6 first, and a fresh Ollama only listens on IPv4, so it looked stopped until "Expose Ollama to the network" was turned on.
 - Installing Ollama from Sidekick also starts it and downloads the chat model, in one PowerShell window.

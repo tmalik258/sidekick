@@ -20,7 +20,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 pub use anthropic::Anthropic;
 use async_trait::async_trait;
-pub use claude_code::{ClaudeCode, close_sessions as close_claude_sessions};
+pub use claude_code::{
+    ClaudeCode, close_sessions as close_claude_sessions, limited as claude_code_limited,
+};
 pub use codex::{Codex, close_sessions as close_codex_sessions};
 pub use decide::{Decider, Decision, DecisionOption, LocalDecider, Ranked, SemIf};
 pub use mcp::{McpClient, McpTool};

@@ -25,6 +25,10 @@ export function useAltHeld(): boolean {
       window.removeEventListener("blur", off);
     };
   }, []);
+  // Chips drop "Alt " from their keys while it is held (see .alt-pre).
+  useEffect(() => {
+    document.documentElement.toggleAttribute("data-alt", held);
+  }, [held]);
   return held;
 }
 

@@ -7,7 +7,9 @@
 import { type CSSProperties, Fragment, type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   answerQuestion,
+  COMPACT_AT,
   closeSession,
+  dismissCompact,
   type Entry,
   messageIndex,
   resumeSession,
@@ -316,6 +318,24 @@ function SessionView({
     return () => window.removeEventListener("keydown", onKey);
   }, [s.id, done, s.reviewable, s.changes, editor]);
 
+  // Half the context used: offer /compact (Alt K), Claude Code only.
+  const offerCompact =
+    s.agent === "Claude Code" &&
+    done &&
+    !s.compactDismissed &&
+    !!s.usage &&
+    s.usage.used / s.usage.window >= COMPACT_AT;
+  useEffect(() => {
+    if (!offerCompact) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey || e.key.toLowerCase() !== "k") return;
+      e.preventDefault();
+      sendToSession(s.id, "/compact");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [s.id, offerCompact]);
+
   // Alt A, Y, N answer a question while one waits.
   useEffect(() => {
     if (!s.question) return;
@@ -442,13 +462,22 @@ function SessionView({
                 {s.question.detail && <code className="mono">{s.question.detail}</code>}
                 <div className="ak-chips">
                   <button type="button" onClick={() => answerQuestion(s.id, "allow")} className="ak-chip primary chip">
-                    Allow <kbd>Alt A</kbd>
+                    Allow{" "}
+                    <kbd>
+                      <i className="alt-pre">Alt </i>A
+                    </kbd>
                   </button>
                   <button type="button" onClick={() => answerQuestion(s.id, "always")} className="ak-chip chip">
-                    Allow this session <kbd>Alt Y</kbd>
+                    Allow this session{" "}
+                    <kbd>
+                      <i className="alt-pre">Alt </i>Y
+                    </kbd>
                   </button>
                   <button type="button" onClick={() => answerQuestion(s.id, "deny")} className="ak-chip chip">
-                    Deny <kbd>Alt N</kbd>
+                    Deny{" "}
+                    <kbd>
+                      <i className="alt-pre">Alt </i>N
+                    </kbd>
                   </button>
                 </div>
               </div>
@@ -473,19 +502,51 @@ function SessionView({
                 {s.reviewable && (
                   <button type="button" onClick={() => setReviewing(true)} className="ak-chip primary chip">
                     {s.changes > 0 ? `Review ${s.changes} ${s.changes === 1 ? "change" : "changes"}` : "Review changes"}
-                    <kbd>Alt 1</kbd>
+                    <kbd>
+                      <i className="alt-pre">Alt </i>1
+                    </kbd>
                   </button>
                 )}
                 <button type="button" onClick={() => void api.agentTerminal(s.id)} className="ak-chip chip">
-                  Open in terminal <kbd>Alt 2</kbd>
+                  Open in terminal{" "}
+                  <kbd>
+                    <i className="alt-pre">Alt </i>2
+                  </kbd>
                 </button>
                 {editor && (
                   <button type="button" onClick={() => void api.agentOpenEditor(s.id)} className="ak-chip chip">
-                    Open in {editor} <kbd>Alt 3</kbd>
+                    Open in {editor}{" "}
+                    <kbd>
+                      <i className="alt-pre">Alt </i>3
+                    </kbd>
                   </button>
                 )}
               </div>
             )}
+            {offerCompact && s.usage && (
+              <div className="ak-ask ak-in" role="status">
+                <p>
+                  Context is {Math.round((s.usage.used / s.usage.window) * 100)}% full. Compacting now keeps {s.agent}{" "}
+                  quick and on track.
+                </p>
+                <div className="ak-chips">
+                  <button
+                    type="button"
+                    onClick={() => sendToSession(s.id, "/compact")}
+                    className="ak-chip primary chip"
+                  >
+                    Compact{" "}
+                    <kbd>
+                      <i className="alt-pre">Alt </i>K
+                    </kbd>
+                  </button>
+                  <button type="button" onClick={() => dismissCompact(s.id)} className="ak-chip chip">
+                    Not now
+                  </button>
+                </div>
+              </div>
+            )}
+            {s.limit && <p className="ak-note ak-in">{limitNote(s.agent, s.limit)}</p>}
             {notice && <p className="ak-note ak-in">{notice}</p>}
           </div>
 
@@ -813,4 +874,17 @@ function Composer({
       </div>
     </>
   );
+}
+
+/** "You have used 85% of Claude Code's 5-hour limit. It resets at 3:40 PM." */
+export function limitNote(agent: string, l: NonNullable<Session["limit"]>): string {
+  const span =
+    l.window === "five_hour" ? "5-hour limit" : l.window.startsWith("seven_day") ? "weekly limit" : "usage limit";
+  const resets = l.resetsAt
+    ? ` It resets at ${new Date(l.resetsAt * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`
+    : "";
+  if (l.status === "rejected")
+    return `${agent} has used up its ${span}.${resets} Ask mode uses another model meanwhile.`;
+  const pct = l.used !== null ? `${Math.round(l.used <= 1 ? l.used * 100 : l.used)}% of ` : "most of ";
+  return `You have used ${pct}${agent}'s ${span}.${resets}`;
 }

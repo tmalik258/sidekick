@@ -32,6 +32,10 @@ export interface Session extends AgentStarted {
   entries: Entry[];
   plan: PlanItem[];
   usage: { used: number; window: number } | null;
+  /** The plan's usage limit, when the agent says it is close or reached. */
+  limit?: { status: string; window: string; resetsAt: number | null; used: number | null } | null;
+  /** "Not now" on the compact offer, until the context is compacted. */
+  compactDismissed?: boolean;
   /** A permission question waiting for the user. */
   question: { id: string; label: string; detail: string } | null;
   error: string | null;
@@ -45,6 +49,14 @@ export interface Session extends AgentStarted {
   note?: string | null;
   /** Cut off by a restart: nothing runs until Resume. */
   restored?: boolean;
+}
+
+/** Half the context used: Claude Code works best compacted from here. */
+export const COMPACT_AT = 0.5;
+
+/** "Not now" on the compact offer. */
+export function dismissCompact(id: string) {
+  update(id, (s) => ({ ...s, compactDismissed: true }));
 }
 
 export type AskTab = "ask" | "agents" | "history";
@@ -243,7 +255,25 @@ function onEvent(e: { session: string; kind: string } & Record<string, unknown>)
     case "plan":
       return update(id, (s) => ({ ...s, plan: (e.items as PlanItem[]) ?? [] }));
     case "usage":
-      return update(id, (s) => ({ ...s, usage: { used: Number(e.used), window: Number(e.window) } }));
+      return update(id, (s) => {
+        const usage = { used: Number(e.used), window: Number(e.window) };
+        // After a compact the offer may come back the next time it fills up.
+        const compactDismissed = s.compactDismissed && usage.used / usage.window >= COMPACT_AT;
+        return { ...s, usage, compactDismissed };
+      });
+    case "limit":
+      return update(id, (s) => ({
+        ...s,
+        limit:
+          e.status === "allowed"
+            ? null
+            : {
+                status: String(e.status),
+                window: String(e.window ?? ""),
+                resetsAt: typeof e.resetsAt === "number" ? e.resetsAt : null,
+                used: typeof e.used === "number" ? e.used : null,
+              },
+      }));
     case "ask":
       return update(id, (s) => ({
         ...s,

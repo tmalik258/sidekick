@@ -40,18 +40,15 @@ export function AddSkill({ yaml }: { yaml: string }) {
   );
 }
 
-export function Chat({ turns, askedInBar }: { turns: Turn[]; askedInBar: boolean }) {
+export function Chat({ turns }: { turns: Turn[] }) {
   const skillMode = useSidekick((s) => s.chatSkill);
   const ai = useSidekick((s) => s.settings.ai);
   const last = turns.at(-1);
   const options = last?.role === "assistant" && !last.streaming ? splitOptions(last.content).options : [];
-  // The newest question reads in the input line; only earlier ones show here.
-  const lastAsk = turns.findLastIndex((t) => t.role === "user");
   return (
     <div className="ak-body py-0.5">
       {turns.map((t, i) => {
         if (t.role === "user") {
-          if (askedInBar && i === lastAsk) return null;
           return (
             // biome-ignore lint/suspicious/noArrayIndexKey: turns only ever append
             <div key={i} className="ak-um ak-in">
@@ -211,7 +208,9 @@ export function Retry() {
   return (
     <button type="button" onClick={() => retryLast()} className="ak-chip chip justify-self-start">
       Try again
-      <kbd>Alt R</kbd>
+      <kbd>
+        <i className="alt-pre">Alt </i>R
+      </kbd>
     </button>
   );
 }
@@ -309,7 +308,10 @@ function OfflineChips() {
   return (
     <div className="ak-chips">
       <button type="button" onClick={askWhenOnline} className="ak-chip primary chip">
-        Ask when I'm back online <kbd>Alt O</kbd>
+        Ask when I'm back online{" "}
+        <kbd>
+          <i className="alt-pre">Alt </i>O
+        </kbd>
       </button>
     </div>
   );
