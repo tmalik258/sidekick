@@ -15,7 +15,12 @@ pub struct OpenAiCompat {
     /// Empty means "the first model the server lists".
     pub model: String,
     client: reqwest::Client,
+    /// The loaded model's context in tokens, once Ollama has said (by model).
+    context: std::sync::Mutex<Option<(String, usize)>>,
 }
+
+/// Ollama's own default when it does not say; smaller than most prompts with tools.
+const DEFAULT_CONTEXT: usize = 4_096;
 
 impl OpenAiCompat {
     pub fn new(base_url: Option<String>, model: Option<String>) -> Self {
@@ -31,7 +36,56 @@ impl OpenAiCompat {
                 .connect_timeout(Duration::from_secs(3))
                 .build()
                 .unwrap_or_default(),
+            context: std::sync::Mutex::new(None),
         }
+    }
+
+    /// How many tokens `model` can take, from Ollama's list of loaded models;
+    /// the default when the server is not Ollama or has not loaded it yet.
+    async fn context_tokens(&self, model: &str) -> usize {
+        if let Ok(c) = self.context.lock()
+            && let Some((m, n)) = c.as_ref()
+            && m == model
+        {
+            return *n;
+        }
+        let root = self.base_url.trim_end_matches("/v1");
+        let found = async {
+            let v: Value = self
+                .client
+                .get(format!("{root}/api/ps"))
+                .timeout(Duration::from_millis(800))
+                .send()
+                .await
+                .ok()?
+                .json()
+                .await
+                .ok()?;
+            v["models"]
+                .as_array()?
+                .iter()
+                .find(|m| m["name"] == model || m["model"] == model)
+                .and_then(|m| m["context_length"].as_u64())
+        }
+        .await;
+        match found {
+            Some(n) => {
+                let n = usize::try_from(n).unwrap_or(DEFAULT_CONTEXT);
+                if let Ok(mut c) = self.context.lock() {
+                    *c = Some((model.to_owned(), n));
+                }
+                n
+            }
+            None => DEFAULT_CONTEXT,
+        }
+    }
+
+    /// Characters the messages may take, after the tools and the answer.
+    async fn budget(&self, model: &str, tools_chars: usize) -> usize {
+        let tokens = self.context_tokens(model).await;
+        (tokens.saturating_sub(crate::fit::ANSWER_TOKENS) * crate::fit::CHARS_PER_TOKEN)
+            .saturating_sub(tools_chars)
+            .max(2_000)
     }
 
     /// Models the server offers, or None when it is not reachable.
@@ -192,10 +246,17 @@ impl OpenAiCompat {
                 }})
             })
             .collect();
+        let budget = self
+            .budget(
+                &model,
+                serde_json::to_string(&tool_json).map_or(0, |s| s.len()),
+            )
+            .await;
         let mut calls = Vec::new();
         let mut shown = String::new();
         for step in 0..=MAX_TOOL_STEPS {
             let last = step == MAX_TOOL_STEPS;
+            crate::fit::fit(&mut messages, budget);
             let mut body = json!({ "model": model, "stream": true, "messages": messages });
             // On the last round the model has to answer, not call more tools.
             if !last && !tool_json.is_empty() {
@@ -626,10 +687,15 @@ impl AiProvider for OpenAiCompat {
         cancel: &CancellationToken,
     ) -> Result<String, AiError> {
         let model = self.pick_model().await?;
+        let mut body = Self::body(&model, req, true);
+        let budget = self.budget(&model, 0).await;
+        if let Some(messages) = body["messages"].as_array_mut() {
+            crate::fit::fit(messages, budget);
+        }
         let send = self
             .client
             .post(format!("{}/chat/completions", self.base_url))
-            .json(&Self::body(&model, req, true))
+            .json(&body)
             .send();
         let resp = tokio::select! {
             _ = cancel.cancelled() => return Err(AiError::Cancelled),
@@ -826,6 +892,13 @@ mod tests {
                         }
                     }
                     let t = String::from_utf8_lossy(&got).to_string();
+                    // Not Ollama: no list of loaded models.
+                    if t.starts_with("GET ") {
+                        let _ = sock
+                            .write_all(b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\n\r\n")
+                            .await;
+                        return;
+                    }
                     let body: Value =
                         serde_json::from_str(t.split_once("\r\n\r\n").map_or("", |x| x.1))
                             .unwrap_or(Value::Null);

@@ -25,6 +25,7 @@ import type {
   Found,
   HitRect,
   InboxStatus,
+  InstantResults,
   LaterItem,
   LocalModels,
   MascotState,
@@ -95,7 +96,7 @@ export interface EventPayloads {
   [EVENTS.aiDelta]: { id: string; text: string };
   [EVENTS.aiDone]: { id: string; provider: string | null; error: string | null; handoff: string | null };
   [EVENTS.aiTool]: { id: string; name: string; label?: string };
-  [EVENTS.aiProposal]: { chatId: string; id: string; label: string };
+  [EVENTS.aiProposal]: { chatId: string; id: string; label: string; step?: boolean };
   [EVENTS.askOpen]: AskOpen;
   [EVENTS.askClose]: { reason: "close" | "defer" };
   [EVENTS.actionResult]: ActionResult;
@@ -199,6 +200,9 @@ export const api = {
   projectsList: () => invoke<{ name: string; path: string }[]>("projects_list"),
   projectLaunch: (path: string) => invoke<string>("project_launch", { path }),
   editorsList: () => invoke<EditorList>("editors_list"),
+  instantFind: (query: string) => invoke<InstantResults>("instant_find", { query }),
+  appLaunch: (id: string) => invoke<void>("app_launch", { id }),
+  fileOpen: (path: string) => invoke<void>("file_open", { path }),
   aiHandoff: (messages: ChatMessage[], reason: string | null) => invoke<string>("ai_handoff", { messages, reason }),
   aiRunProposal: (id: string) =>
     invoke<{ ok: boolean; message: string; undoId: number | null; path: string | null }>("ai_run_proposal", { id }),

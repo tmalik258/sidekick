@@ -20,7 +20,7 @@ dirs = "7"
 sha2 = "0.10"
 which = "8"
 getrandom = "0.3"
-sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+sysinfo = { version = "0.39", default-features = false, features = ["system", "disk"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 regex = "1"
 log.workspace = true

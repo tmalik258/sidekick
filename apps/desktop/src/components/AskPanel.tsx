@@ -23,7 +23,14 @@ import {
   updateSettings,
   useSidekick,
 } from "@/lib/store";
-import { type CalendarToday, type ChatSummary, isPaused, type ProviderStatus, type SearchHit } from "@/lib/types";
+import {
+  type CalendarToday,
+  type ChatSummary,
+  type InstantResults,
+  isPaused,
+  type ProviderStatus,
+  type SearchHit,
+} from "@/lib/types";
 import { AgentsTab } from "./agents/AgentsTab";
 import { Chat, useAgentName } from "./ask/Chat";
 import { Clips, Results } from "./ask/Lists";
@@ -116,6 +123,26 @@ export function AskPanel() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   const [projects, setProjects] = useState<{ name: string; path: string }[]>([]);
+  // Apps and files named like what is typed: no model, answers in a blink.
+  const [instant, setInstant] = useState<InstantResults>({ apps: [], files: [] });
+  useEffect(() => {
+    const q = text.trim();
+    if (q.length < 2 || q.startsWith("/") || useSidekick.getState().turns.length > 0) {
+      setInstant({ apps: [], files: [] });
+      return;
+    }
+    let live = true;
+    const id = setTimeout(() => {
+      void api
+        .instantFind(q)
+        .then((r) => live && setInstant(r))
+        .catch(() => undefined);
+    }, 60);
+    return () => {
+      live = false;
+      clearTimeout(id);
+    };
+  }, [text]);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -309,6 +336,16 @@ export function AskPanel() {
         const named = (group: string, list: Command[]) => {
           for (const [n, c] of list.entries()) items.push({ ...commandItem(c), group: n === 0 ? group : undefined });
         };
+        for (const [n, a] of instant.apps.entries()) {
+          items.push({
+            id: `app:${a.id}`,
+            group: n === 0 ? "Apps" : undefined,
+            icon: <span className="text-[11px] font-bold text-white">{a.name.slice(0, 1).toUpperCase()}</span>,
+            label: a.name,
+            hint: a.minutes >= 60 ? `${Math.round(a.minutes / 60)} h this week` : undefined,
+            run: () => void api.appLaunch(a.id),
+          });
+        }
         named(
           "Commands",
           commands.filter((c) => c.label.toLowerCase().includes(q)),
@@ -326,6 +363,16 @@ export function AskPanel() {
               run: () => void api.projectLaunch(p.path),
             })),
         );
+        for (const [n, f] of instant.files.entries()) {
+          items.push({
+            id: `file:${f.path}`,
+            group: n === 0 ? "Files" : undefined,
+            icon: <Icon name={f.folder ? "folder" : "file"} size={12} />,
+            label: f.name,
+            hint: f.place,
+            run: () => void api.fileOpen(f.path),
+          });
+        }
         named(
           "Settings",
           SETTINGS_TABS.filter((t) => t.label.toLowerCase().includes(q.replace(/^settings?\s*/, "")))

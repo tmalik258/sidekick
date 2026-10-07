@@ -203,6 +203,8 @@ export interface Turn extends ChatMessage {
 export interface Proposal {
   id: string;
   label: string;
+  /** One step of a task: shown with the others as a plan, run in order. */
+  step?: boolean;
   /** Set once tapped: what happened, and Undo if it can be undone. */
   ran?: { ok: boolean; message: string; undoId: number | null; path: string | null; undone?: boolean };
 }
@@ -693,4 +695,10 @@ export interface AgentSettings {
   ask: AgentAsk;
   /** Per app or site ("whatsapp", "mail.google.com"). */
   places: Record<string, PlaceRule>;
+}
+
+/** Ask's instant results: apps and files named like what is typed, no AI. */
+export interface InstantResults {
+  apps: { name: string; id: string; minutes: number }[];
+  files: { name: string; path: string; folder: boolean; place: string }[];
 }

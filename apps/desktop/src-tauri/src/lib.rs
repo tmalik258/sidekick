@@ -15,6 +15,7 @@ mod decide;
 #[cfg(test)]
 mod decisions_test;
 mod detect;
+mod disk;
 #[cfg(test)]
 mod drift_test;
 mod editors;
@@ -24,6 +25,7 @@ mod files;
 mod find;
 mod health;
 mod inbox;
+mod instant;
 mod island;
 mod layout;
 mod learn;
@@ -202,6 +204,9 @@ pub fn run() {
             commands::timing_record,
             commands::timings_recent,
             commands::editors_list,
+            commands::instant_find,
+            commands::app_launch,
+            commands::file_open,
             commands::agent_start,
             commands::agent_handoff,
             commands::agent_send,

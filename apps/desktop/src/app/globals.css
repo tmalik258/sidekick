@@ -1698,3 +1698,46 @@ select.ak-mi option {
 .del-n {
   color: #ff6961;
 }
+/* Plan first: a task's steps, run in order with one Run */
+.ak-plan {
+  border-radius: 16px;
+  background: rgb(255 255 255 / 0.05);
+  padding: 10px 12px;
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+}
+.ak-plan .head {
+  font-weight: 600;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.ak-plan .head .ak-timer {
+  font-weight: 400;
+}
+.ak-st {
+  display: flex;
+  gap: 10px;
+  color: var(--i2);
+  align-items: baseline;
+}
+.ak-st .n {
+  font-size: 11px;
+  color: var(--i3);
+  width: 16px;
+  flex: none;
+}
+.ak-st[data-s="running"] {
+  color: var(--ink);
+}
+.ak-st[data-s="done"] .n {
+  color: #30d158;
+}
+.ak-st[data-s="failed"] {
+  color: #ffb4ae;
+}
+.ak-st[data-s="undone"] {
+  color: var(--i3);
+  text-decoration: line-through;
+}
