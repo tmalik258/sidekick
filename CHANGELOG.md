@@ -59,6 +59,7 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 - The copied pill names what you copied ("Copied: stack trace"); hover shows the text.
 - History rows no longer run past the island: long titles and project paths are cut short.
 - Settings > AI shows Start Ollama (or Install Ollama) when Ollama is not running, instead of an empty model list.
+- A model that cannot be used yet shows why ("No key", "Not installed", "Not running", "Out of usage") instead of an On switch that did nothing.
 
 - Sidekick reaches Ollama on `127.0.0.1` instead of `localhost`. Windows tried IPv6 first, and a fresh Ollama only listens on IPv4, so it looked stopped until "Expose Ollama to the network" was turned on.
 - Installing Ollama from Sidekick also starts it and downloads the chat model, in one PowerShell window.

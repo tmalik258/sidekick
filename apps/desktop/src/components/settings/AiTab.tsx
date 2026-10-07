@@ -22,6 +22,14 @@ import {
 import { SetupItems } from "../SetupChecklist";
 import { Button, Field, Section, Segmented, Select, StatusDot, Switch, TextField, Toggle } from "./ui";
 
+/** Shown instead of On/Off while a model cannot be used. */
+const NOT_READY: Record<AiProviderId, string> = {
+  local: "Not running",
+  claude_code: "Not installed",
+  codex: "Not installed",
+  anthropic: "No key",
+};
+
 export function AiTab({ onError }: { onError: (e: string) => void }) {
   const ai = useSidekick((s) => s.settings.ai);
   const voice = useSidekick((s) => s.settings.voice);
@@ -164,7 +172,16 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
                     </p>
                     <p className="text-[12px] text-(--muted)">{PROVIDER_HINTS[id]}</p>
                   </div>
-                  <Switch checked={enabled(id)} onChange={(on) => setEnabled(id, on)} label={PROVIDER_LABELS[id]} />
+                  {status !== null && !available(id) ? (
+                    // Nothing to switch on yet: the step below sets it up.
+                    <span className="shrink-0 text-[12.5px] text-(--muted)">
+                      {id === "claude_code" && setup?.items.find((x) => x.id === "claude_code")?.done
+                        ? "Out of usage"
+                        : NOT_READY[id]}
+                    </span>
+                  ) : (
+                    <Switch checked={enabled(id)} onChange={(on) => setEnabled(id, on)} label={PROVIDER_LABELS[id]} />
+                  )}
                 </div>
                 <SetupItems ids={PROVIDER_SETUP[id]} />
                 {id === "claude_code" && (
