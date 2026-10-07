@@ -133,6 +133,7 @@ pub fn timings_recent(app: AppHandle) -> Vec<crate::timings::Timing> {
 /// Turns the island into Ask mode, optionally with a prompt.
 #[tauri::command]
 pub fn ask_open(app: AppHandle, prompt: Option<String>, ask: bool) {
+    crate::instant::refresh();
     ask::open(
         &app,
         ask::Open {
@@ -310,4 +311,38 @@ mod tests {
         assert_eq!(models.embed, ["nomic-embed-text"]);
         assert!(!models.chat.iter().any(|m| m.contains("moondream")));
     }
+}
+
+/// Installed apps and files named like what is typed in Ask, no model.
+#[tauri::command]
+pub async fn instant_find(app: AppHandle, query: String) -> crate::instant::Results {
+    tauri::async_runtime::spawn_blocking(move || crate::instant::find(&app, &query))
+        .await
+        .unwrap_or_default()
+}
+
+/// Starts an app picked from Ask's instant results.
+#[tauri::command]
+pub async fn app_launch(id: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || sidekick_actions::pc::launch_app_id(&id))
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Opens a file or folder picked from Ask's instant results. Programs and
+/// scripts are shown in their folder instead of run.
+#[tauri::command]
+pub async fn file_open(app: AppHandle, path: String) -> CmdResult<()> {
+    let action = if crate::ask_tools::runs_code(&path) {
+        "reveal_path"
+    } else {
+        "open_path"
+    };
+    crate::state::executor(&app.state::<AppState>())
+        .run(action, &serde_json::json!({ "path": path }))
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }

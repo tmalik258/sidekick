@@ -3,6 +3,8 @@
 //! things. They answer in short plain text a small model can use.
 
 use serde::Serialize;
+use std::path::Path;
+
 use serde_json::{Value, json};
 use sidekick_ai::ToolDef;
 use sidekick_core::ActionRecord;
@@ -22,6 +24,7 @@ const PROPOSE: &str = "propose";
 const FIND: &str = "find_files";
 const REVEAL: &str = "show_in_folder";
 const PC_STATUS: &str = "pc_status";
+const STORAGE: &str = "storage";
 const PC: &str = "pc_control";
 const WINDOWS: &str = "windows";
 const WEB_SEARCH: &str = "web_search";
@@ -75,6 +78,7 @@ const ASK_ACTIONS: &[&str] = &[
     "close_app",
     "sleep_pc",
     "empty_recycle_bin",
+    "trash_download",
 ];
 
 /// An action waiting for a tap, from one chat.
@@ -94,6 +98,8 @@ struct ProposalNote<'a> {
     chat_id: &'a str,
     id: &'a str,
     label: &'a str,
+    /// One step of a task, shown with the others as a plan to run in order.
+    step: bool,
 }
 
 /// What a tapped action did, for the answer it belongs to.
@@ -177,15 +183,20 @@ pub fn defs() -> Vec<ToolDef> {
                 {path, to}, zip {paths, name}, convert {path, to: png|jpg|webp|pdf|mp3|mp4}, \
                 extract_archive {path}, extract_text {path}, open_path {path}, reveal_path {path}, \
                 open_url {url}, launch_project {path}, git_pull {path}, install_deps {path}, \
-                close_app {name}, sleep_pc {}, empty_recycle_bin {}. \
-                Use full paths from search. Nothing happens until they tap it."
+                close_app {name}, sleep_pc {}, empty_recycle_bin {}, \
+                trash_download {path} (a file in Downloads, to the Recycle Bin), \
+                open_system_page {page}. \
+                Use full paths from search. Nothing happens until they tap it. For a task \
+                that takes several actions in order (move files, then zip them), offer each \
+                one with step: true, in order; they show as a plan with one Run."
                 .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "action": { "type": "string", "enum": ASK_ACTIONS },
                     "args": { "type": "object" },
-                    "label": { "type": "string", "description": "Button text, e.g. Move invoice.pdf to Invoices" }
+                    "label": { "type": "string", "description": "Button text, e.g. Move invoice.pdf to Invoices" },
+                    "step": { "type": "boolean", "description": "One step of a task, run in order with the other steps" }
                 },
                 "required": ["action", "args", "label"],
             }),
@@ -377,6 +388,14 @@ pub fn defs() -> Vec<ToolDef> {
             parameters: json!({ "type": "object", "properties": {} }),
         },
         ToolDef {
+            name: STORAGE.into(),
+            description: "What is taking space on this PC and what can be cleared: free space \
+                on each drive, the biggest folders and files, old files and installers in \
+                Downloads. Use for low disk space, a full drive, or what to delete."
+                .into(),
+            parameters: json!({ "type": "object", "properties": {} }),
+        },
+        ToolDef {
             name: PC.into(),
             description: "Change an everyday Windows setting right away: volume_up, volume_down, \
                 mute, set_volume {level}, brightness {level}, dark_mode_on, dark_mode_off, \
@@ -468,6 +487,7 @@ pub fn step_label(name: &str, args: &Value) -> String {
         SCREEN => "Reading your screen".into(),
         NOTIFS => "Checking your notifications".into(),
         PC_STATUS => "Checking your PC".into(),
+        STORAGE => "Measuring what takes space".into(),
         PC => {
             let what = arg("what").unwrap_or_default();
             let thing = |k: &str| match k {
@@ -540,7 +560,16 @@ pub fn step_label(name: &str, args: &Value) -> String {
 pub fn reads_only(name: &str) -> bool {
     matches!(
         name,
-        SEARCH | FIND | TODAY | RECENT | SCREEN | PC_STATUS | WEB_SEARCH | READ_PAGE | NOTIFS
+        SEARCH
+            | FIND
+            | TODAY
+            | RECENT
+            | SCREEN
+            | PC_STATUS
+            | STORAGE
+            | WEB_SEARCH
+            | READ_PAGE
+            | NOTIFS
     )
 }
 
@@ -557,6 +586,7 @@ pub fn is_own(name: &str) -> bool {
             | FIND
             | REVEAL
             | PC_STATUS
+            | STORAGE
             | PC
             | WINDOWS
             | WEB_SEARCH
@@ -689,6 +719,9 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
             .await
             .unwrap_or_else(|e| format!("Error: {e}")),
         PC_STATUS => blocking(|| Ok(pc::describe(&pc::read_state()))).await,
+        STORAGE => tokio::task::spawn_blocking(crate::disk::report)
+            .await
+            .unwrap_or_else(|e| format!("Error: {e}")),
         PC => {
             let what = args["what"].as_str().unwrap_or_default().to_owned();
             let level = args["level"].as_u64().and_then(|v| u8::try_from(v).ok());
@@ -784,7 +817,19 @@ fn propose(app: &AppHandle, chat_id: &str, args: &Value) -> String {
     if !ASK_ACTIONS.contains(&action) {
         return format!("Error: {action} is not something you can offer.");
     }
-    let action_args = args["args"].clone();
+    let mut action_args = args["args"].clone();
+    for key in ["path", "to"] {
+        if let Some(p) = action_args[key].as_str() {
+            action_args[key] = json!(normalize_target(p));
+        }
+    }
+    if let Some(paths) = action_args["paths"].as_array_mut() {
+        for p in paths.iter_mut() {
+            if let Some(s) = p.as_str() {
+                *p = json!(normalize_target(s));
+            }
+        }
+    }
     // Models sometimes pass the action's own name ("close_app") as the text.
     let label: String = args["label"]
         .as_str()
@@ -797,8 +842,17 @@ fn propose(app: &AppHandle, chat_id: &str, args: &Value) -> String {
     if action == "open_path" && action_args["path"].as_str().is_some_and(runs_code) {
         return "Refused: that file runs a program. Tell the user to open it themselves.".into();
     }
-    offer(app, chat_id, action, action_args, &label);
-    format!("Shown to the user as a button \"{label}\". Say in one short sentence what it will do.")
+    let step = args["step"].as_bool().unwrap_or(false);
+    offer_as(app, chat_id, action, action_args, &label, step);
+    if step {
+        format!(
+            "Added to the plan as \"{label}\". Offer the other steps, then say in one sentence what the plan does."
+        )
+    } else {
+        format!(
+            "Shown to the user as a button \"{label}\". Say in one short sentence what it will do."
+        )
+    }
 }
 
 /// Readable button text for an action offered without one.
@@ -827,6 +881,7 @@ fn button_text(action: &str, args: &Value) -> String {
         "install_deps" => "Install packages",
         "sleep_pc" => "Put the PC to sleep",
         "empty_recycle_bin" => "Empty the Recycle Bin",
+        "trash_download" => "Remove",
         other => return other.replace('_', " "),
     };
     if what.is_empty() {
@@ -866,6 +921,18 @@ fn save_proposals(app: &AppHandle, all: &mut HashMap<String, Proposed>) {
 }
 
 pub fn offer(app: &AppHandle, chat_id: &str, action: &str, action_args: Value, label: &str) {
+    offer_as(app, chat_id, action, action_args, label, false);
+}
+
+/// Like `offer`; a step shows with the other steps as a plan, run in order.
+fn offer_as(
+    app: &AppHandle,
+    chat_id: &str,
+    action: &str,
+    action_args: Value,
+    label: &str,
+    step: bool,
+) {
     let label: String = label.chars().take(60).collect();
     let id = ulid::Ulid::new().to_string();
     {
@@ -895,6 +962,7 @@ pub fn offer(app: &AppHandle, chat_id: &str, action: &str, action_args: Value, l
             chat_id,
             id: &id,
             label: &label,
+            step,
         },
     );
 }
@@ -1138,15 +1206,27 @@ async fn find(app: &AppHandle, args: &Value) -> String {
 }
 
 async fn reveal(app: &AppHandle, path: &str) -> String {
-    let path = path.trim();
+    let path = normalize_target(path);
+    let path = path.as_str();
     if path.is_empty() {
         return "Error: no path.".into();
+    }
+    if !Path::new(path).exists() {
+        return missing(path);
     }
     let exec = executor(&app.state::<AppState>());
     match exec.run("reveal_path", &json!({ "path": path })).await {
         Ok(o) => o.message,
         Err(e) => format!("Error: {e}"),
     }
+}
+
+/// A path the model made up or guessed: tell it to look, not the user.
+fn missing(path: &str) -> String {
+    format!(
+        "Error: {path} does not exist. Get real paths from find_files (or storage) and try \
+         again; do not mention this error to the user."
+    )
 }
 
 /// Opens a file, folder or link the user clicked in an answer.
@@ -1176,7 +1256,83 @@ pub fn normalize_target(target: &str) -> String {
     } else {
         t
     };
-    t.replace("%20", " ")
+    expand_home(&expand_vars(&t.replace("%20", " ")))
+}
+
+/// What models write for the user's folders, made real: ~, %VAR%, $VAR,
+/// $(VAR) and ${VAR} (USERPROFILE, HOME, USERNAME, APPDATA...).
+pub fn expand_vars(t: &str) -> String {
+    let var = |name: &str| -> Option<String> {
+        let n = name.trim();
+        std::env::var(n).ok().or_else(|| {
+            (n.eq_ignore_ascii_case("home") || n.eq_ignore_ascii_case("userprofile"))
+                .then(|| dirs::home_dir().map(|h| h.display().to_string()))
+                .flatten()
+        })
+    };
+    let mut out = String::with_capacity(t.len());
+    let mut rest = t;
+    if let Some(r) = rest.strip_prefix('~')
+        && (r.is_empty() || r.starts_with(['/', '\\']))
+        && let Some(home) = dirs::home_dir()
+    {
+        out.push_str(&home.display().to_string());
+        rest = r;
+    }
+    while let Some(i) = rest.find(['%', '$']) {
+        out.push_str(&rest[..i]);
+        let tail = &rest[i..];
+        let (name, used) = if let Some(t) = tail.strip_prefix('%') {
+            t.find('%').map_or((None, 1), |j| (Some(&t[..j]), j + 2))
+        } else if let Some(t) = tail.strip_prefix("$(").or_else(|| tail.strip_prefix("${")) {
+            t.find([')', '}'])
+                .map_or((None, 2), |j| (Some(&t[..j]), j + 3))
+        } else {
+            let t = &tail[1..];
+            let j = t
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .unwrap_or(t.len());
+            ((j > 0).then(|| &t[..j]), j + 1)
+        };
+        match name.and_then(var) {
+            Some(v) => out.push_str(&v),
+            None => out.push_str(&tail[..used.min(tail.len())]),
+        }
+        rest = &tail[used.min(tail.len())..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// A made-up user folder (C:\\Users\\John, C:\\Users\\<username>) becomes the
+/// real one when the made-up one does not exist.
+pub fn expand_home(t: &str) -> String {
+    let b = t.as_bytes();
+    if b.len() < 10 || !b[0].is_ascii_alphabetic() || b[1] != b':' {
+        return t.to_owned();
+    }
+    let rest = &t[3..];
+    let Some(after) = rest
+        .strip_prefix("Users")
+        .or_else(|| rest.strip_prefix("users"))
+    else {
+        return t.to_owned();
+    };
+    let after = after.trim_start_matches(['/', '\\']);
+    let (user, tail) = after.split_once(['/', '\\']).unwrap_or((after, ""));
+    let Some(home) = dirs::home_dir() else {
+        return t.to_owned();
+    };
+    let shared = ["public", "default", "all users"].contains(&user.to_ascii_lowercase().as_str());
+    let users = Path::new(&t[..3]).join("Users");
+    if user.is_empty() || shared || !users.is_dir() || users.join(user).exists() {
+        return t.to_owned();
+    }
+    if tail.is_empty() {
+        home.display().to_string()
+    } else {
+        home.join(tail).display().to_string()
+    }
 }
 
 async fn open(app: &AppHandle, target: &str) -> String {
@@ -1188,7 +1344,11 @@ async fn open(app: &AppHandle, target: &str) -> String {
     if runs_code(target) {
         return "Refused: that file runs a program. Tell the user to open it themselves.".into();
     }
-    let (action, args) = if target.starts_with("http://") || target.starts_with("https://") {
+    let web = target.starts_with("http://") || target.starts_with("https://");
+    if !web && !Path::new(target).exists() {
+        return missing(target);
+    }
+    let (action, args) = if web {
         ("open_url", json!({ "url": target }))
     } else {
         ("open_path", json!({ "path": target }))
@@ -1202,7 +1362,7 @@ async fn open(app: &AppHandle, target: &str) -> String {
 
 /// Files that run something when opened. The model only opens documents,
 /// folders and pages; a program starts only when the user starts it.
-fn runs_code(target: &str) -> bool {
+pub fn runs_code(target: &str) -> bool {
     const RUNS: &[&str] = &[
         "exe", "msi", "bat", "cmd", "com", "ps1", "vbs", "vbe", "js", "jse", "wsf", "wsh", "scr",
         "lnk", "url", "hta", "cpl", "msc", "jar", "reg", "appx", "msix",
@@ -1219,6 +1379,20 @@ fn runs_code(target: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn made_up_user_folders_become_the_real_one() {
+        let home = dirs::home_dir().unwrap();
+        let t = expand_home("C:/Users/NoSuchUserX9/Documents");
+        if std::path::Path::new("C:/Users").is_dir() {
+            assert_eq!(t, home.join("Documents").display().to_string());
+        }
+        assert_eq!(
+            expand_home("C:/Users/Public/Documents"),
+            "C:/Users/Public/Documents"
+        );
+        assert_eq!(expand_home("D:/work/x"), "D:/work/x");
+    }
 
     #[test]
     fn every_tool_is_known_and_reads_are_marked() {
@@ -1301,6 +1475,13 @@ mod tests {
         assert_eq!(normalize_target("file:///C:/a%20b/x.pdf"), "C:/a b/x.pdf");
         assert_eq!(normalize_target("<https://x.dev>"), "https://x.dev");
         assert_eq!(normalize_target("C:\\x"), "C:\\x");
+        // Folders the model writes as variables become the real ones.
+        let home = dirs::home_dir().unwrap().display().to_string();
+        assert_eq!(expand_vars("~/Videos"), format!("{home}/Videos"));
+        assert_eq!(expand_vars("$(USERPROFILE)/Music"), format!("{home}/Music"));
+        assert_eq!(expand_vars("${HOME}/a"), format!("{home}/a"));
+        assert_eq!(expand_vars("100% done $5"), "100% done $5");
+        assert_eq!(expand_vars("%NO_SUCH_VAR_X%/a"), "%NO_SUCH_VAR_X%/a");
     }
 
     #[test]
@@ -1320,7 +1501,7 @@ mod tests {
             [
                 SEARCH, FIND, REVEAL, TODAY, RECENT, SCREEN, PROPOSE, WEB_SEARCH, READ_PAGE,
                 BROWSER, APP_ACTION, DESKTOP, APPS, OFFICE, RECIPES, REMEMBER, NOTIFS, PC_STATUS,
-                PC, WINDOWS, OPEN
+                STORAGE, PC, WINDOWS, OPEN
             ]
         );
     }

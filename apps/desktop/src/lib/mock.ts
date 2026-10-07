@@ -314,7 +314,19 @@ function mockChat(a: Record<string, unknown>) {
       later(250 * (n + 1), () => emit("ai://tool", { id, name }));
     }
   }
-  later(1200, () => emit("ai://proposal", { chatId: id, id: `p-${id}`, label: "Move invoice-sept.pdf to Invoices" }));
+  if (/\bzip\b/i.test(last)) {
+    // A task with several actions comes back as a plan.
+    const plan = [
+      "Create Downloads\\Invoices October",
+      "Move 7 invoice PDFs into it",
+      "Zip it as Invoices-October.zip",
+    ];
+    for (const [n, label] of plan.entries()) {
+      later(1000 + n * 60, () => emit("ai://proposal", { chatId: id, id: `p-${id}-${n}`, label, step: true }));
+    }
+  } else {
+    later(1200, () => emit("ai://proposal", { chatId: id, id: `p-${id}`, label: "Move invoice-sept.pdf to Invoices" }));
+  }
   setTimeout(tick, 900);
 }
 
@@ -795,6 +807,21 @@ commands.editors_list = () => ({
   ],
   current: "Cursor",
 });
+commands.instant_find = (a) => {
+  const q = String(a.query ?? "").toLowerCase();
+  const apps = [
+    { name: "Cursor", id: "cursor", minutes: 840 },
+    { name: "Slack", id: "slack", minutes: 120 },
+    { name: "Spotify", id: "spotify", minutes: 0 },
+  ].filter((x) => x.name.toLowerCase().includes(q.split(" ")[0] ?? ""));
+  const files = [
+    { name: "cursor-rules.md", path: "C:/Users/you/Documents/cursor-rules.md", folder: false, place: "Documents" },
+    { name: "invoice-oct.pdf", path: "C:/Users/you/Downloads/invoice-oct.pdf", folder: false, place: "Downloads" },
+  ].filter((x) => x.name.includes(q.split(" ")[0] ?? ""));
+  return { apps, files };
+};
+commands.app_launch = () => undefined;
+commands.file_open = () => undefined;
 commands.project_launch = () => "Opened sidekick in VS Code and a terminal";
 commands.search_status = () => ({ items: 1240, embedded: 1240, embedError: null });
 commands.calendar_today = () => ({

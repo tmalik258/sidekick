@@ -4,6 +4,18 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Steadier answers on this PC
+
+- The local model gets a prompt that fits its context: older turns, long tool results and attached text are trimmed first, so it no longer forgets the rules or your question, and answers start sooner.
+- Paths like `%USERPROFILE%`, `$(USERPROFILE)`, `~` or a made-up `C:\Users\John` become your real folders, and a path that does not exist sends the model back to look it up instead of showing you the error.
+- A new storage check answers "what is taking space": free space per drive, the biggest folders and files, and old files and installers in Downloads, with buttons to clear them to the Recycle Bin.
+- Answers no longer talk about Sidekick's own tools or ask you for paths it can find.
+
+### Plan first and instant results
+
+- A task with several steps shows its plan first: Run (Enter) does the steps in order and ticks each off, and Undo all (Alt Z) puts them back.
+- Typing in Ask shows installed apps and files by name before any model runs, the apps you use most first.
+
 ### Faster Ask
 
 - Claude Code and Codex keep a session warm per chat: one starts when Ask opens, and follow-up messages go into it instead of starting the CLI again (Codex through `codex app-server`, older Codex versions fall back to `codex exec`). Idle sessions close after 10 minutes, at most three per agent.

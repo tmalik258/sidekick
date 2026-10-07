@@ -9,6 +9,7 @@ mod anthropic;
 mod claude_code;
 mod codex;
 mod decide;
+pub mod fit;
 mod mcp;
 mod openai;
 mod pool;

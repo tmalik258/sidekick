@@ -435,6 +435,27 @@ export async function runProposal(id: string) {
   }
 }
 
+/** Undoes what a tapped action did; marks it so Undo does not show again. */
+export async function undoProposal(id: string): Promise<string> {
+  const p = useSidekick
+    .getState()
+    .turns.flatMap((t) => t.proposals ?? [])
+    .find((x) => x.id === id);
+  if (!p?.ran?.undoId) return "Nothing to undo.";
+  const message = await api.actionUndo(p.ran.undoId);
+  useSidekick.setState({
+    turns: useSidekick.getState().turns.map((t) =>
+      t.proposals?.some((x) => x.id === id)
+        ? {
+            ...t,
+            proposals: t.proposals.map((x) => (x.id === id && x.ran ? { ...x, ran: { ...x.ran, undone: true } } : x)),
+          }
+        : t,
+    ),
+  });
+  return message;
+}
+
 export const setAsk = (patch: Partial<AskState>) => {
   const ask = useSidekick.getState().ask;
   if (ask) useSidekick.setState({ ask: { ...ask, ...patch } });
@@ -541,7 +562,7 @@ interface EarlyChat {
   id: string;
   q: string;
   tools: { name: string; label?: string }[];
-  proposals: { id: string; label: string }[];
+  proposals: { id: string; label: string; step?: boolean }[];
 }
 let early: EarlyChat | null = null;
 
@@ -921,12 +942,12 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         const step = label || toolStatus(name).replace(/\.\.\.$/, "");
         updateLastTurn(id, (t) => ({ ...t, tool: step, steps: [...(t.steps ?? []), step] }));
       }),
-      listen(EVENTS.aiProposal, ({ chatId, id, label }) => {
+      listen(EVENTS.aiProposal, ({ chatId, id, label, step }) => {
         if (early?.id === chatId) {
-          early.proposals.push({ id, label });
+          early.proposals.push({ id, label, step });
           return;
         }
-        updateLastTurn(chatId, (t) => ({ ...t, proposals: [...(t.proposals ?? []), { id, label }] }));
+        updateLastTurn(chatId, (t) => ({ ...t, proposals: [...(t.proposals ?? []), { id, label, step }] }));
       }),
       listen(EVENTS.aiDone, ({ id, provider, error, handoff }) => {
         flushText();

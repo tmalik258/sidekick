@@ -709,6 +709,23 @@ pub fn close_window(q: &str) -> Result<Outcome, ActionError> {
 }
 
 /// Installed apps from the Start menu, as (name, AppID).
+/// Every app in the Start menu as (name, app id).
+pub fn installed_apps() -> Result<Vec<(String, String)>, ActionError> {
+    start_apps()
+}
+
+/// Starts an app by its Start menu id, from a list the user picked from.
+pub fn launch_app_id(id: &str) -> Result<Outcome, ActionError> {
+    if id.is_empty() || id.chars().any(|c| c.is_control() || c == '"') {
+        return Err(ActionError::Invalid("not an app id".into()));
+    }
+    powershell(
+        "Start-Process \"shell:AppsFolder\\$env:SIDEKICK_APP_ID\"",
+        &[("SIDEKICK_APP_ID", id)],
+    )?;
+    Ok(Outcome::msg("Opened"))
+}
+
 fn start_apps() -> Result<Vec<(String, String)>, ActionError> {
     let out = powershell(
         "Get-StartApps | ForEach-Object { \"$($_.Name)`t$($_.AppID)\" }",
