@@ -662,7 +662,7 @@ impl AiProvider for OpenAiCompat {
     }
 
     /// Ollama unloads a model after a few idle minutes; this loads it (and
-    /// keeps it for half an hour) while the user types.
+    /// keeps it for 10 minutes) while the user types. Every Ask open renews it.
     async fn warm(&self) {
         let Some(root) = ollama_root(&self.base_url) else {
             return;
