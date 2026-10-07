@@ -83,6 +83,8 @@ export interface VoiceSettings {
   enabled: boolean;
   wakeWord: boolean;
   speakAnswers: boolean;
+  /** While you talk: one slim line, or a waveform and larger words. */
+  listeningStyle: "compact" | "full";
   /** After a spoken answer, listen for a reply without the wake word. */
   conversation: boolean;
   /** Read suggestions aloud and take a spoken choice. */
@@ -195,6 +197,8 @@ export interface Turn extends ChatMessage {
   steps?: string[];
   /** Actions offered as buttons; each runs on a tap. */
   proposals?: Proposal[];
+  /** What the answer cost in US dollars (Anthropic API only). */
+  cost?: number;
   /** When the question was sent (ms since 1970), and how long the answer took. */
   startedAt?: number;
   tookMs?: number;
@@ -383,6 +387,7 @@ export const DEFAULT_SETTINGS: Settings = {
     enabled: true,
     wakeWord: true,
     speakAnswers: true,
+    listeningStyle: "compact",
     conversation: true,
     speakSuggestions: true,
     interrupt: true,

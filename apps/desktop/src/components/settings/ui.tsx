@@ -13,6 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 
 /** The settings search text; empty shows everything. */
 export const SettingsQuery = createContext("");
@@ -107,16 +108,17 @@ export function Button({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`chip shrink-0 rounded-full font-medium transition-colors disabled:opacity-40 ${
-        primary ? "bg-white text-black hover:bg-white/90" : "bg-white/[0.1] text-white/90 hover:bg-white/[0.16]"
-      } ${small ? "px-2.5 py-1 text-[12px]" : "px-3.5 py-1.5 text-[13px]"} ${active ? "ring-1 ring-white/40" : ""}`}
+      className={`chip shrink-0 rounded-full font-medium transition-[background-color,transform] duration-150 active:scale-[0.96] disabled:opacity-40 disabled:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff] ${
+        primary ? "bg-[#f5f5f7] text-black hover:bg-white" : "bg-white/[0.09] text-white hover:bg-white/[0.15]"
+      } ${small ? "px-2.5 py-[5px] text-[12px]" : "px-3 py-[7px] text-[13px]"} ${active ? "shadow-[inset_0_0_0_1.5px_#0a84ff]" : ""}`}
     >
       {children}
     </button>
   );
 }
 
-/** A few choices side by side, one picked (Off, Ask, Auto). */
+/** A few choices side by side, one picked (Off, Ask, Auto): the plan's
+ * segmented control, a white pill on the picked one. */
 export function Segmented<T extends string>({
   value,
   options,
@@ -131,7 +133,7 @@ export function Segmented<T extends string>({
   disabled?: boolean;
 }) {
   return (
-    <fieldset aria-label={label} className="flex shrink-0 rounded-full bg-white/[0.08] p-0.5">
+    <fieldset aria-label={label} className="flex shrink-0 gap-0.5 rounded-[10px] bg-white/[0.08] p-[3px]">
       {options.map(([v, text]) => (
         <button
           key={v}
@@ -139,8 +141,8 @@ export function Segmented<T extends string>({
           aria-pressed={value === v}
           disabled={disabled}
           onClick={() => onChange(v)}
-          className={`chip rounded-full px-2.5 py-0.5 text-[12px] font-medium transition-colors disabled:opacity-40 ${
-            value === v ? "bg-white text-black" : "text-white/70 hover:text-white"
+          className={`chip rounded-[8px] px-2.5 py-[5px] text-[12.5px] leading-none transition-colors duration-150 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#0a84ff] ${
+            value === v ? "bg-[#f5f5f7] font-semibold text-black" : "text-[rgb(235_235_245/0.62)] hover:text-white"
           }`}
         >
           {text}
@@ -172,6 +174,7 @@ export function Toggle({
   );
 }
 
+/** On or off, as the plan's two-part switch. */
 export function Switch({
   checked,
   onChange,
@@ -182,21 +185,17 @@ export function Switch({
   label: string;
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={`relative h-[26px] w-[44px] shrink-0 rounded-full transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff] ${
-        checked ? "bg-[#30d158]" : "bg-black/15 dark:bg-white/20"
-      }`}
-    >
-      <span
-        className="absolute top-[2px] left-[2px] size-[22px] rounded-full bg-white shadow-[0_2px_6px_rgb(0_0_0/0.2)] transition-transform duration-[260ms] ease-(--ease-out-strong)"
-        style={{ transform: checked ? "translateX(18px)" : "translateX(0)" }}
-      />
-    </button>
+    <Segmented
+      label={label}
+      value={checked ? "on" : "off"}
+      options={[
+        ["on", "On"],
+        ["off", "Off"],
+      ]}
+      onChange={(v) => {
+        if ((v === "on") !== checked) onChange(v === "on");
+      }}
+    />
   );
 }
 
@@ -269,38 +268,75 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   );
 }
 
-/** A dropdown. `options` are [value, label]; the current value is kept even if not listed. */
+/** One choice in a dropdown: a value and its label, or a richer row with a
+ * line under it, a letter icon and a separator before it. */
+export type SelectOption =
+  | [string, string]
+  | { value: string; label: string; sub?: string; icon?: string; color?: string; sepBefore?: boolean };
+
+interface Row {
+  value: string;
+  label: string;
+  sub?: string;
+  icon?: string;
+  color?: string;
+  sepBefore?: boolean;
+}
+
+const toRow = (o: SelectOption): Row => (Array.isArray(o) ? { value: o[0], label: o[1] } : o);
+
+/** A dropdown in the plan's style: a quiet chip that opens a graphite menu
+ * with a tick on the current choice. The current value is kept even if not
+ * listed. */
 export function Select({
   value,
   options,
   onChange,
   label,
   className = "",
+  group,
+  current: currentLabel,
+  variant = "chip",
+  portal,
 }: {
   value: string;
-  options: [string, string][];
+  options: SelectOption[];
   onChange: (v: string) => void;
   label: string;
   className?: string;
+  /** A small heading over the choices ("Open with"). */
+  group?: string;
+  /** What the closed chip says, when not the option's label. */
+  current?: string;
+  /** "plain": text with a chevron, for a line of details (Agents). */
+  variant?: "chip" | "plain";
+  /** Shows the menu in this element, in the page's flow, so a panel that
+   * fits its content grows to fit the menu instead of cutting it off. */
+  portal?: HTMLElement | null;
 }) {
+  const rows = options.map(toRow);
   // Keep an unknown current value visible, but never invent a second row that
   // matches an existing option (empty/"Default" aliases, same label).
-  const list = (() => {
-    if (options.some(([v]) => v === value)) return options;
+  const list: Row[] = (() => {
+    if (rows.some((r) => r.value === value)) return rows;
     const labelFor = value || "Default";
-    if (options.some(([v, l]) => v === "" || l.toLowerCase() === labelFor.toLowerCase())) return options;
-    return [[value, labelFor] as [string, string], ...options];
+    if (rows.some((r) => r.value === "" || r.label.toLowerCase() === labelFor.toLowerCase())) return rows;
+    return [{ value, label: labelFor }, ...rows];
   })();
-  const current = list.find(([v]) => v === value)?.[1] ?? (value || "Default");
+  const current = currentLabel ?? list.find((r) => r.value === value)?.label ?? (value || "Default");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(() =>
     Math.max(
       0,
-      list.findIndex(([v]) => v === value),
+      list.findIndex((r) => r.value === value),
     ),
   );
   const root = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const listId = useId();
+  const rich = list.some((r) => r.sub || r.icon);
+  // Opens upward when the panel has no room below the chip.
+  const [up, setUp] = useState(false);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: list is rebuilt every render; reseat from value when opened
   useEffect(() => {
@@ -308,15 +344,25 @@ export function Select({
     setActive(
       Math.max(
         0,
-        list.findIndex(([v]) => v === value),
+        list.findIndex((r) => r.value === value),
       ),
     );
+    const el = root.current;
+    if (el && !portal) {
+      let box: Element | null = el.parentElement;
+      while (box && box !== document.body && getComputedStyle(box).overflowY === "visible") box = box.parentElement;
+      const limit = box && box !== document.body ? box.getBoundingClientRect().bottom : window.innerHeight;
+      const want = Math.min(288, list.length * (rich ? 44 : 32) + (group ? 30 : 0) + 16);
+      const r = el.getBoundingClientRect();
+      setUp(limit - r.bottom < want && r.top - want > 0);
+    }
     const onDoc = (e: MouseEvent) => {
-      if (root.current && !root.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (!root.current?.contains(t) && !menu.current?.contains(t)) setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
-  }, [open, value]); // list identity changes every render; reseat from value when opened
+  }, [open, value]);
 
   const pick = (v: string) => {
     onChange(v);
@@ -346,12 +392,81 @@ export function Select({
         return;
       }
       const next = list[active];
-      if (next) pick(next[0]);
+      if (next) pick(next.value);
     }
   };
 
+  const menuList = (
+    <div
+      id={listId}
+      role="listbox"
+      aria-label={label}
+      ref={menu}
+      className={`menu island-scroll z-30 max-h-72 overflow-y-auto rounded-[15px] p-1.5 ${
+        portal
+          ? "mt-1.5 w-full max-w-[296px] [--menu-origin:top_left]"
+          : `absolute ${variant === "plain" ? "left-0" : "right-0"} ${
+              up ? "bottom-[calc(100%+4px)] [--menu-origin:bottom_right]" : "top-[calc(100%+4px)]"
+            } ${rich ? "w-[296px]" : "w-max min-w-full max-w-64"}`
+      }`}
+    >
+      {group && (
+        <div className="px-[9px] pt-2 pb-[3px] text-[10.5px] tracking-[0.06em] text-white/45 uppercase">{group}</div>
+      )}
+      {list.map((r, i) => {
+        const selected = r.value === value;
+        return (
+          <div key={r.value || "__default"}>
+            {r.sepBefore && <div className="mx-[9px] my-[5px] h-px scale-y-50 bg-white/12" />}
+            <div
+              role="option"
+              tabIndex={-1}
+              aria-selected={selected}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => pick(r.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") pick(r.value);
+              }}
+              className={`grid w-full cursor-default items-center gap-2.5 rounded-[9px] px-[9px] py-1.5 text-left text-[13px] transition-colors duration-100 ${
+                r.icon ? "grid-cols-[24px_1fr_auto]" : "grid-cols-[1fr_auto]"
+              } ${i === active ? "bg-white/[0.09] text-white" : "text-white/85"}`}
+            >
+              {r.icon && (
+                <span
+                  className="grid size-6 place-items-center rounded-[7px] text-[10.5px] font-bold text-white shadow-[inset_0_0_0_0.5px_rgb(255_255_255/0.12)]"
+                  style={{ background: r.color ?? "#2b2b30" }}
+                  aria-hidden="true"
+                >
+                  {r.icon}
+                </span>
+              )}
+              <span className="grid min-w-0">
+                <span className={`truncate ${r.sub ? "font-medium" : ""}`}>{r.label}</span>
+                {r.sub && <span className="truncate text-[11.5px] text-white/62">{r.sub}</span>}
+              </span>
+              <svg
+                viewBox="0 0 16 16"
+                aria-hidden="true"
+                className={`size-3.5 transition-opacity duration-100 ${selected ? "opacity-100" : "opacity-0"}`}
+              >
+                <path
+                  d="M3.5 8.5 6.5 11.5 12.5 4.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
   return (
-    <div ref={root} className={`relative max-w-52 ${className}`}>
+    <div ref={root} className={`relative max-w-56 ${className}`}>
       <button
         type="button"
         aria-label={label}
@@ -360,52 +475,30 @@ export function Select({
         aria-controls={listId}
         onClick={() => setOpen((o) => !o)}
         onKeyDown={onKey}
-        className={`chip flex w-full items-center gap-2 rounded-xl bg-(--surface) px-3 py-1.5 text-left text-[13px] outline-none ring-1 ring-inset transition-colors ${
-          open ? "ring-(--accent)" : "ring-(--border) hover:bg-(--hover)"
-        } focus-visible:ring-(--accent)`}
+        className={`chip flex w-full items-center gap-1.5 text-left whitespace-nowrap transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#0a84ff] ${
+          variant === "plain"
+            ? `rounded-md px-1 py-0.5 text-[inherit] ${open ? "bg-white/[0.1]" : "hover:bg-white/[0.06]"}`
+            : `rounded-[10px] px-2.5 py-1.5 text-[13px] ${open ? "bg-white/[0.14]" : "bg-white/[0.08] hover:bg-white/[0.11]"}`
+        }`}
       >
         <span className="min-w-0 flex-1 truncate">{current}</span>
         <svg
           aria-hidden="true"
-          viewBox="0 0 12 12"
-          className={`size-3 shrink-0 text-(--muted) transition-transform ${open ? "rotate-180" : ""}`}
+          viewBox="0 0 10 10"
+          className={`size-[9px] shrink-0 transition-[transform,opacity] duration-150 ${open ? "rotate-180 opacity-90" : "opacity-55"}`}
         >
           <path
-            fill="currentColor"
-            d="M2.2 4.2a.75.75 0 0 1 1.06 0L6 6.94l2.74-2.74a.75.75 0 1 1 1.06 1.06l-3.27 3.27a.75.75 0 0 1-1.06 0L2.2 5.26a.75.75 0 0 1 0-1.06Z"
+            d="M2 3.5 5 6.5 8 3.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           />
         </svg>
       </button>
-      {open && (
-        <div
-          id={listId}
-          role="listbox"
-          aria-label={label}
-          className="menu island-scroll absolute top-[calc(100%+4px)] right-0 z-30 max-h-56 w-max min-w-full max-w-64 overflow-y-auto rounded-[14px] p-1"
-        >
-          {list.map(([v, l], i) => {
-            const selected = v === value;
-            return (
-              <div
-                key={v || "__default"}
-                role="option"
-                tabIndex={-1}
-                aria-selected={selected}
-                onMouseEnter={() => setActive(i)}
-                onClick={() => pick(v)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") pick(v);
-                }}
-                className={`flex w-full cursor-default items-center rounded-[9px] px-2.5 py-1.5 text-left text-[13px] ${
-                  i === active || selected ? "bg-white/[0.09] text-white" : "text-white/80"
-                } ${selected ? "font-medium" : ""}`}
-              >
-                <span className="truncate">{l}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {open && !portal && menuList}
+      {open && portal && createPortal(menuList, portal)}
     </div>
   );
 }

@@ -93,6 +93,7 @@ export function Chat({ turns, askedInBar }: { turns: Turn[]; askedInBar: boolean
                   {modelOf(ai, t.provider) && ` · ${modelOf(ai, t.provider)}`}
                 </b>
                 {t.firstMs !== undefined && <span>first word {seconds(t.firstMs)}</span>}
+                {t.cost !== undefined && <span>{t.cost < 0.01 ? "under 1¢" : `$${t.cost.toFixed(2)}`}</span>}
                 <span className="ml-auto opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
                   {isLast && i > 0 && !skillMode && <SaveRecipe prompt={turns[i - 1]?.content ?? ""} />}
                 </span>

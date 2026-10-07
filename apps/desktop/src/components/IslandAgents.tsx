@@ -124,7 +124,7 @@ export function AgentsGlance({ sessions }: { sessions: Session[] }) {
               keys: "Enter",
               run: allow,
             },
-            { label: "No", keys: "Alt N", run: deny },
+            { label: "Deny", keys: "Alt N", run: deny },
           ]}
         />
       ) : null}

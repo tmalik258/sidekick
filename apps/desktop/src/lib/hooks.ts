@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./bridge";
+import { setDndQuiet } from "./sound";
 
 /** True while Alt is held on its own: key badges show, like Windows ribbons. */
 export function useAltHeld(): boolean {
@@ -90,7 +91,10 @@ export function useDnd(opts?: { onError?: (e: string) => void; autoEnable?: bool
       .dndSet(want)
       .catch((e) => onErrorRef.current?.(String(e)))
       .then(() => api.dndGet())
-      .then((now) => setOn(now ?? want))
+      .then((now) => {
+        setOn(now ?? want);
+        setDndQuiet((now ?? want) === true);
+      })
       .finally(() => {
         busyRef.current = false;
         setBusy(false);

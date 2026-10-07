@@ -93,6 +93,8 @@ impl From<reqwest::Error> for AiError {
 pub struct Sink {
     tx: UnboundedSender<String>,
     sent: AtomicBool,
+    /// What the answer cost in US dollars, for paid APIs that report usage.
+    cost: std::sync::Mutex<Option<f64>>,
 }
 
 impl Sink {
@@ -100,7 +102,18 @@ impl Sink {
         Self {
             tx,
             sent: AtomicBool::new(false),
+            cost: std::sync::Mutex::new(None),
         }
+    }
+
+    pub fn set_cost(&self, usd: f64) {
+        if let Ok(mut c) = self.cost.lock() {
+            *c = Some(usd);
+        }
+    }
+
+    pub fn cost(&self) -> Option<f64> {
+        self.cost.lock().ok().and_then(|c| *c)
     }
 
     pub fn send(&self, text: &str) {

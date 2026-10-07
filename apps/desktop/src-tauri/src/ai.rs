@@ -460,6 +460,8 @@ struct Done {
     error: Option<String>,
     /// Why the local model suggests continuing in Claude Code, if it does.
     handoff: Option<String>,
+    /// What the answer cost, only for the Anthropic API.
+    cost: Option<f64>,
 }
 
 /// Starts a streamed chat. Text arrives as `ai://delta`, the end as `ai://done`.
@@ -510,6 +512,7 @@ pub fn chat(
                             provider: None,
                             error: Some(format!("Could not capture the screen: {err}")),
                             handoff: None,
+                            cost: None,
                         },
                     );
                     return;
@@ -574,6 +577,7 @@ pub fn chat(
         };
         let sink = Sink::new(tx);
         let result = router.chat(&req, &sink, &cancel, local_only).await;
+        let cost = sink.cost();
         drop(sink);
         let Some(speak) = forward.await.ok().flatten() else {
             // Dropped before it was ever shown: nothing to report.
@@ -589,12 +593,14 @@ pub fn chat(
             Ok(answer) => Done {
                 id,
                 handoff: handoff.filter(|_| answer.provider == "local"),
+                cost: cost.filter(|_| answer.provider == "anthropic"),
                 provider: Some(answer.provider),
                 error: None,
             },
             Err(err) => Done {
                 id,
                 provider: None,
+                cost: None,
                 handoff,
                 error: Some(match err {
                     sidekick_ai::AiError::NoProvider => no_provider_hint(local_only),

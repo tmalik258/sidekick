@@ -124,6 +124,15 @@ struct Saved {
 const SAVED_FILE: &str = "agent-sessions.json";
 static SAVE_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
 
+/// Where projects without git get their private snapshot repositories.
+fn shadow_root() -> Option<PathBuf> {
+    SAVE_DIR
+        .lock()
+        .ok()
+        .and_then(|d| d.clone())
+        .map(|d| d.join("snapshots"))
+}
+
 /// Writes every session to disk (called after anything that matters changes).
 fn save() {
     let Some(dir) = SAVE_DIR.lock().ok().and_then(|d| d.clone()) else {
@@ -239,7 +248,7 @@ pub async fn start(
     let id = ulid::Ulid::new().to_string();
     let baseline = {
         let path = path.to_owned();
-        tokio::task::spawn_blocking(move || review::snapshot(&path))
+        tokio::task::spawn_blocking(move || review::snapshot(&path, shadow_root().as_deref()))
             .await
             .ok()
             .flatten()
@@ -407,7 +416,10 @@ fn review_count(id: &str) -> usize {
 /// of the project so Rewind can come back to this point.
 pub fn send(id: &str, text: &str) -> Result<(), String> {
     let path = with(&SESSIONS, |s| s.get(id).map(|h| h.path.clone()));
-    if let Some(snap) = path.as_deref().and_then(review::snapshot) {
+    if let Some(snap) = path
+        .as_deref()
+        .and_then(|p| review::snapshot(p, shadow_root().as_deref()))
+    {
         with(&SESSIONS, |s| {
             if let Some(h) = s.get_mut(id) {
                 h.checkpoints.push(snap);
@@ -443,8 +455,9 @@ pub fn answer(question: &str, answer: Answer) -> Result<(), String> {
 }
 
 fn baseline(id: &str) -> Result<Baseline, String> {
-    with(&SESSIONS, |s| s.get(id).and_then(|h| h.baseline.clone()))
-        .ok_or_else(|| "Changes can only be reviewed in a git project.".to_owned())
+    with(&SESSIONS, |s| s.get(id).and_then(|h| h.baseline.clone())).ok_or_else(|| {
+        "This project was too big to track, so its changes cannot be reviewed here.".to_owned()
+    })
 }
 
 /// The changes to review, with secrets in them masked. Undo reads the files
@@ -536,7 +549,7 @@ fn checkpoint(id: &str, index: usize) -> Result<Baseline, String> {
     with(&SESSIONS, |s| {
         s.get(id).and_then(|h| h.checkpoints.get(index).cloned())
     })
-    .ok_or_else(|| "Rewind needs a git project.".to_owned())
+    .ok_or_else(|| "This project was too big to track, so it cannot be rewound.".to_owned())
 }
 
 /// Files in the session's project whose path has every word of `query`,
@@ -733,6 +746,44 @@ async fn ask(app: &AppHandle, session: &str, label: &str, detail: &str) -> Answe
 
 // ---------- Claude Code ----------
 
+/// Each running session's CLI process, for its memory use.
+static PIDS: Mutex<Option<HashMap<String, u32>>> = Mutex::new(None);
+
+/// Memory the session's CLI uses, with the processes it started, in bytes.
+pub fn memory(id: &str) -> Option<u64> {
+    let root = with(&PIDS, |p| p.get(id).copied())?;
+    let mut sys = sysinfo::System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    let procs = sys.processes();
+    procs.get(&sysinfo::Pid::from_u32(root))?;
+    // The CLI and everything under it (node, shells, test runners).
+    let under = |mut pid: sysinfo::Pid| {
+        for _ in 0..16 {
+            if pid.as_u32() == root {
+                return true;
+            }
+            match procs.get(&pid).and_then(|p| p.parent()) {
+                Some(parent) => pid = parent,
+                None => return false,
+            }
+        }
+        false
+    };
+    Some(
+        procs
+            .iter()
+            .filter(|(pid, _)| under(**pid))
+            .map(|(_, p)| p.memory())
+            .sum(),
+    )
+}
+
+/// Tools the user allowed for the rest of a Claude Code session, by session.
+/// Codex keeps this itself (acceptForSession). Never saved: a restart asks
+/// again.
+static SESSION_ALLOWED: Mutex<Option<HashMap<String, std::collections::HashSet<String>>>> =
+    Mutex::new(None);
+
 /// What Claude Code's permission prompt tool gets: called by the CLI (not
 /// the model) through Sidekick's MCP server.
 pub async fn claude_permission(app: &AppHandle, args: &Value) -> String {
@@ -746,9 +797,21 @@ pub async fn claude_permission(app: &AppHandle, args: &Value) -> String {
         return json!({ "behavior": "deny", "message": "No Sidekick session is waiting for this." })
             .to_string();
     };
+    // Allowed for this session already (Allow this session).
+    if with(&SESSION_ALLOWED, |a| {
+        a.get(&session).is_some_and(|t| t.contains(tool))
+    }) {
+        return json!({ "behavior": "allow", "updatedInput": input }).to_string();
+    }
     let (label, detail) = describe_tool(tool, input);
     match ask(app, &session, &label, &detail).await {
-        Answer::Allow | Answer::Always => {
+        Answer::Allow => json!({ "behavior": "allow", "updatedInput": input }).to_string(),
+        Answer::Always => {
+            with(&SESSION_ALLOWED, |a| {
+                a.entry(session.clone())
+                    .or_default()
+                    .insert(tool.to_owned())
+            });
             json!({ "behavior": "allow", "updatedInput": input }).to_string()
         }
         Answer::Deny => {
@@ -838,6 +901,9 @@ async fn run_claude(
         .spawn()
         .map_err(|e| format!("could not start Claude Code: {e}"))?;
     let stderr = keep_stderr(&mut child);
+    if let Some(pid) = child.id() {
+        with(&PIDS, |p| p.insert(id.to_owned(), pid));
+    }
     let mut stdin = child.stdin.take().ok_or("no stdin")?;
     let mut lines = BufReader::new(child.stdout.take().ok_or("no stdout")?).lines();
     loop {
@@ -1074,6 +1140,9 @@ async fn run_codex(
         .spawn()
         .map_err(|e| format!("could not start Codex: {e}"))?;
     let stderr = keep_stderr(&mut child);
+    if let Some(pid) = child.id() {
+        with(&PIDS, |p| p.insert(id.to_owned(), pid));
+    }
     let mut stdin = child.stdin.take().ok_or("no stdin")?;
     let mut lines = BufReader::new(child.stdout.take().ok_or("no stdout")?).lines();
     let mut next_id = 0u64;
@@ -1296,7 +1365,7 @@ mod tests {
         }
         std::fs::write(dir.join("a.txt"), "one\n").ok()?;
         (git(&dir, &["add", "."]) && git(&dir, &["commit", "-q", "-m", "start"])).then_some(())?;
-        let b = review::snapshot(&dir)?;
+        let b = review::snapshot(&dir, None)?;
         let id = format!("test-{name}");
         let (tx, _rx) = mpsc::unbounded_channel();
         with(&SESSIONS, |s| {

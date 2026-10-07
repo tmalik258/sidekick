@@ -63,6 +63,35 @@ function askScrollMax(): number {
   return Math.min(ASK_SCROLL_CAP, Math.max(ASK_SCROLL_FLOOR, available));
 }
 
+/** Windows Settings pages Ask can open by name, with the words people type. */
+const WINDOWS_PAGES: { page: string; label: string; words: string[] }[] = [
+  { page: "display", label: "Display", words: ["display", "screen", "resolution", "brightness", "scale"] },
+  { page: "nightlight", label: "Night light", words: ["night", "nightlight", "blue light"] },
+  { page: "sound", label: "Sound", words: ["sound", "audio", "speaker", "microphone", "volume"] },
+  { page: "notifications", label: "Notifications", words: ["notifications"] },
+  { page: "focus", label: "Focus", words: ["focus", "do not disturb", "dnd"] },
+  { page: "bluetooth", label: "Bluetooth & devices", words: ["bluetooth", "devices", "headphones"] },
+  { page: "wifi", label: "Wi-Fi", words: ["wifi", "wi-fi", "wireless"] },
+  { page: "network", label: "Network & internet", words: ["network", "internet", "ethernet", "vpn", "proxy"] },
+  { page: "battery", label: "Battery saver", words: ["battery", "saver"] },
+  { page: "power", label: "Power & sleep", words: ["power", "sleep"] },
+  { page: "storage", label: "Storage", words: ["storage", "disk", "space"] },
+  { page: "apps", label: "Installed apps", words: ["apps", "uninstall", "programs"] },
+  { page: "default_apps", label: "Default apps", words: ["default"] },
+  { page: "startup_apps", label: "Startup apps", words: ["startup"] },
+  { page: "colors", label: "Colors", words: ["colors", "colours", "dark mode", "theme", "transparency"] },
+  { page: "background", label: "Background", words: ["background", "wallpaper"] },
+  { page: "mouse", label: "Mouse & touchpad", words: ["mouse", "touchpad", "trackpad"] },
+  { page: "keyboard", label: "Keyboard", words: ["keyboard"] },
+  { page: "printers", label: "Printers & scanners", words: ["printer", "scanner"] },
+  { page: "updates", label: "Windows Update", words: ["update", "updates"] },
+  { page: "privacy", label: "Privacy & security", words: ["privacy", "security", "permissions"] },
+  { page: "accounts", label: "Your account", words: ["account", "profile"] },
+  { page: "time", label: "Date & time", words: ["date", "time", "clock", "timezone"] },
+  { page: "language", label: "Language & region", words: ["language", "region"] },
+  { page: "about", label: "About this PC", words: ["about", "specs", "system info"] },
+];
+
 export function AskPanel() {
   const ask = useSidekick((s) => s.ask);
   const turns = useSidekick((s) => s.turns);
@@ -376,6 +405,19 @@ export function AskPanel() {
             run: () => void api.fileOpen(f.path),
           });
         }
+        const wq = q.replace(/^(open\s+)?(windows\s+)?settings?\s*/, "").trim();
+        named(
+          "Windows settings",
+          (wq.length >= 3 ? WINDOWS_PAGES.filter((p) => p.words.some((w) => w.startsWith(wq) || wq.startsWith(w))) : [])
+            .slice(0, 3)
+            .map((p) => ({
+              id: `winset:${p.page}`,
+              label: p.label,
+              hint: "Windows Settings",
+              icon: "settings" as const,
+              run: () => void api.windowsSettingsOpen(p.page),
+            })),
+        );
         named(
           "Settings",
           SETTINGS_TABS.filter((t) => t.label.toLowerCase().includes(q.replace(/^settings?\s*/, "")))

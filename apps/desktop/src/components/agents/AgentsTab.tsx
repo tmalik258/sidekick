@@ -25,6 +25,7 @@ import { Markdown } from "@/lib/markdown";
 import type { AgentMode, Agents, EditorList } from "@/lib/types";
 import { KeyHint } from "../ask/parts";
 import { Icon } from "../Icon";
+import { Select } from "../settings/ui";
 import { Review } from "./Review";
 
 const MODES: { id: AgentMode; label: string; note: string }[] = [
@@ -82,6 +83,8 @@ function NewSession({ sessions }: { sessions: Session[] }) {
   const { data: agents } = useCached<Agents>("agents", api.agentsStatus);
   const { data: projects } = useCached<{ name: string; path: string }[]>("projects", api.projectsList);
   const [agent, setAgent] = useState<string>("");
+  // Where the agent and project menus open, so the island grows to show them.
+  const [menuSlot, setMenuSlot] = useState<HTMLDivElement | null>(null);
   const [path, setPath] = useState("");
   const [mode, setMode] = useState<AgentMode>("edit");
   const [prompt, setPrompt] = useState("");
@@ -120,35 +123,44 @@ function NewSession({ sessions }: { sessions: Session[] }) {
         <>
           <div className="ak-meta">
             {choices.length > 1 ? (
-              <select
-                aria-label="Agent"
-                value={pickedAgent}
-                onChange={(e) => setAgent(e.target.value)}
-                className="ak-mi b chip"
-              >
-                {choices.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <span className="ak-mi b">
+                <Select
+                  variant="plain"
+                  portal={menuSlot}
+                  label="Agent"
+                  value={pickedAgent}
+                  onChange={setAgent}
+                  options={choices.map((c) => ({
+                    value: c.id,
+                    label: c.name,
+                    sub: c.id === "codex" ? "Your ChatGPT plan" : "Your Claude plan",
+                    icon: c.id === "codex" ? "X" : "C",
+                    color: c.id === "codex" ? "#10a37f" : "#d97757",
+                  }))}
+                />
+              </span>
             ) : (
               <span className="ak-mi b">{choices[0]?.name ?? "Claude Code"}</span>
             )}
-            <select
-              aria-label="Project"
-              value={pickedPath}
-              onChange={(e) => setPath(e.target.value)}
-              className="ak-mi chip max-w-44 truncate"
-            >
-              {(projects ?? []).map((p) => (
-                <option key={p.path} value={p.path}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+            <span className="ak-mi max-w-44">
+              <Select
+                variant="plain"
+                portal={menuSlot}
+                label="Project"
+                value={pickedPath}
+                onChange={setPath}
+                group="Project"
+                options={(projects ?? []).map((p) => ({
+                  value: p.path,
+                  label: p.name,
+                  sub: p.path.replace(/^[A-Za-z]:[\\/]Users[\\/][^\\/]+/, "~").replace(/^\/home\/[^/]+/, "~"),
+                  icon: p.name.slice(0, 1).toUpperCase(),
+                }))}
+              />
+            </span>
             <ModeSwitch mode={mode} onChange={setMode} />
           </div>
+          <div ref={setMenuSlot} />
           <div className="ak-composer">
             <input
               ref={inputRef}
@@ -192,12 +204,57 @@ function ModeSwitch({ mode, onChange }: { mode: AgentMode; onChange?: (m: AgentM
 }
 
 /** How much of the context window is used, as a small ring. */
-function ContextRing({ used, window }: { used: number; window: number }) {
+function ContextRing({ used, window, onCompact }: { used: number; window: number; onCompact?: () => void }) {
   const p = Math.round(Math.min(1, used / window) * 100);
+  if (!onCompact) {
+    return (
+      <span className="ak-ring mono" title={`${p}% of the context used`}>
+        <i style={{ "--p": p } as CSSProperties} aria-hidden="true" />
+        {p}%
+      </span>
+    );
+  }
+  // One click runs /compact: the conversation is summed up to free room.
   return (
-    <span className="ak-ring mono" title={`${p}% of the context used`}>
+    <button
+      type="button"
+      onClick={onCompact}
+      title={`${p}% of the context used. Click to compact it.`}
+      aria-label={`${p}% of the context used. Compact`}
+      className="ak-ring mono chip rounded-full px-1 hover:text-white"
+    >
       <i style={{ "--p": p } as CSSProperties} aria-hidden="true" />
       {p}%
+    </button>
+  );
+}
+
+/** How much memory the session's CLI uses, checked every 5 seconds. */
+function SessionMemory({ id, live }: { id: string; live: boolean }) {
+  const [bytes, setBytes] = useState<number | null>(null);
+  useEffect(() => {
+    if (!live) {
+      setBytes(null);
+      return;
+    }
+    let on = true;
+    const check = () =>
+      void api
+        .agentMemory(id)
+        .then((b) => on && setBytes(b))
+        .catch(() => undefined);
+    check();
+    const t = setInterval(check, 5000);
+    return () => {
+      on = false;
+      clearInterval(t);
+    };
+  }, [id, live]);
+  if (bytes === null) return null;
+  const mb = bytes / (1024 * 1024);
+  return (
+    <span className="ak-mi" title="Memory this session uses">
+      {mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`}
     </span>
   );
 }
@@ -291,7 +348,17 @@ function SessionView({
     <>
       <div className="ak-head">
         <span className="ak-title">{s.title}</span>
-        {s.usage && <ContextRing used={s.usage.used} window={s.usage.window} />}
+        {s.usage && (
+          <ContextRing
+            used={s.usage.used}
+            window={s.usage.window}
+            onCompact={
+              s.agent === "Claude Code" && s.status !== "working" && s.status !== "ended"
+                ? () => sendToSession(s.id, "/compact")
+                : undefined
+            }
+          />
+        )}
         {working ? (
           <button type="button" onClick={() => void api.agentStop(s.id)} className="ak-stop chip">
             Stop <kbd>Esc</kbd>
@@ -313,6 +380,7 @@ function SessionView({
         <span className="ak-mi b">{s.agent}</span>
         <span className="ak-mi">{s.project}</span>
         {s.branch && <span className="ak-mi">⎇ {s.branch}</span>}
+        <SessionMemory id={s.id} live={s.status !== "ended" && s.status !== "failed" && !s.restored} />
         <ModeSwitch mode={s.mode} />
       </div>
 
@@ -377,10 +445,10 @@ function SessionView({
                     Allow <kbd>Alt A</kbd>
                   </button>
                   <button type="button" onClick={() => answerQuestion(s.id, "always")} className="ak-chip chip">
-                    Always <kbd>Alt Y</kbd>
+                    Allow this session <kbd>Alt Y</kbd>
                   </button>
                   <button type="button" onClick={() => answerQuestion(s.id, "deny")} className="ak-chip chip">
-                    No <kbd>Alt N</kbd>
+                    Deny <kbd>Alt N</kbd>
                   </button>
                 </div>
               </div>

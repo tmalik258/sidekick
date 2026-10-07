@@ -94,7 +94,14 @@ export interface EventPayloads {
   [EVENTS.updateAvailable]: UpdateInfo;
   [EVENTS.inboxChanged]: null;
   [EVENTS.aiDelta]: { id: string; text: string };
-  [EVENTS.aiDone]: { id: string; provider: string | null; error: string | null; handoff: string | null };
+  [EVENTS.aiDone]: {
+    id: string;
+    provider: string | null;
+    error: string | null;
+    handoff: string | null;
+    /** US dollars, only for Anthropic API answers. */
+    cost?: number | null;
+  };
   [EVENTS.aiTool]: { id: string; name: string; label?: string };
   [EVENTS.aiProposal]: { chatId: string; id: string; label: string; step?: boolean };
   [EVENTS.askOpen]: AskOpen;
@@ -230,6 +237,8 @@ export const api = {
   agentClose: (id: string) => invoke<void>("agent_close", { id }),
   agentTerminal: (id: string) => invoke<void>("agent_terminal", { id }),
   agentResume: (id: string) => invoke<void>("agent_resume", { id }),
+  windowsSettingsOpen: (page: string) => invoke<void>("windows_settings_open", { page }),
+  agentMemory: (id: string) => invoke<number | null>("agent_memory", { id }),
   agentOpenEditor: (id: string) => invoke<void>("agent_open_editor", { id }),
   agentRewindPreview: (id: string, index: number) => invoke<number>("agent_rewind_preview", { id, index }),
   agentRewind: (id: string, index: number) => invoke<number>("agent_rewind", { id, index }),

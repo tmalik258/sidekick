@@ -32,6 +32,19 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 - Offline, the context line says so and a web question can wait: Ask when I'm back online (Alt O).
 - After three minutes away, hovering the island shows what finished or is waiting meanwhile, with Review, Answer and Clear all.
 
+### Controls and the rest of the plan
+
+- Settings use the new controls from the design: On/Off switches, a quieter dropdown with a tick on the current choice, and tiles for the mascot and island colours. Menus open upward when there is no room below.
+- Code editor picker shows each editor with its letter, colour and time this week.
+- The Agents tab picks the agent and project from the same menus instead of plain lists, and shows how much memory each session uses.
+- Voice > While you talk: Compact (one slim line) or Full (a waveform, a timer and your words a size larger). Read answers aloud is now Speak replies.
+- Click the context ring in a Claude Code session to compact it.
+- Permission questions say Allow, Allow this session and Deny. Allow this session now also holds for Claude Code.
+- Answers from the Anthropic API show what they cost.
+- Typing a Windows setting in Ask ("bluetooth", "night light") opens that Settings page.
+- Projects without git can be reviewed, undone and rewound too: Sidekick keeps a private copy in its own data folder and never adds git to the project.
+- Windows High contrast mode is followed, sounds stay quiet in Do Not Disturb, and the halo stops turning while the island is at rest.
+
 ### Ready for release
 
 - With Windows transparency effects off, the island is a solid colour; on Battery saver its halo is not blurred and the mascot stays still.

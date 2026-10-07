@@ -16,7 +16,7 @@ import type {
   ExtensionGuide,
 } from "@/lib/types";
 import { ComposioApps } from "./ComposioApps";
-import { Button, CopyButton, Field, Section, Select, TextField, Toggle } from "./ui";
+import { Button, CopyButton, Field, Section, Select, type SelectOption, TextField, Toggle } from "./ui";
 
 export function ConnectionsTab({ onError }: { onError: (e: string) => void }) {
   return (
@@ -45,6 +45,33 @@ export function ConnectionsTab({ onError }: { onError: (e: string) => void }) {
   );
 }
 
+const capital = (t: string) => t.slice(0, 1).toUpperCase() + t.slice(1);
+
+/** Each editor's own colour behind its letter. */
+function editorColor(id: string): string {
+  const colors: Record<string, string> = {
+    cursor: "#111",
+    vscode: "#0f78d4",
+    code: "#0f78d4",
+    antigravity: "#2f6fd8",
+    windsurf: "#0b9e8a",
+    vscodium: "#2a7fd4",
+    zed: "#3d3d46",
+    pycharm: "#d63c78",
+    intellij: "#e0533b",
+    webstorm: "#00a3c4",
+    rider: "#c90f5e",
+    visualstudio: "#7a3fd8",
+  };
+  const key = Object.keys(colors).find((k) =>
+    id
+      .toLowerCase()
+      .replace(/[^a-z]/g, "")
+      .includes(k),
+  );
+  return key ? colors[key] : "#2b2b30";
+}
+
 function hours(minutes: number): string {
   if (minutes <= 0) return "not used this week";
   if (minutes < 60) return `${minutes} min this week`;
@@ -58,15 +85,35 @@ function EditorPicker({ onError }: { onError: (e: string) => void }) {
   if (data && editors.length === 0) {
     return <p className="text-[13px] text-(--muted)">No code editor found on this PC.</p>;
   }
-  const options: [string, string][] = [
-    ["auto", `Auto${data?.current ? ` · ${data.current}` : ""}`],
-    ...editors.map((e): [string, string] => [e.id, `${e.name} · ${hours(e.minutes)}`]),
+  const value = editors.some((e) => e.id === choice) ? choice : "auto";
+  const options: SelectOption[] = [
+    {
+      value: "auto",
+      label: "Auto",
+      sub: data?.current ? `${data.current} right now · the one you use most` : "The one you use most",
+      icon: "A",
+      color: "linear-gradient(135deg,#3a3a44,#24242b)",
+    },
+    ...editors.map((e, i) => ({
+      value: e.id,
+      label: e.name,
+      sub: capital(hours(e.minutes)),
+      icon: e.name.slice(0, 1).toUpperCase(),
+      color: editorColor(e.id),
+      sepBefore: i === 0,
+    })),
   ];
+  const named = editors.find((e) => e.id === value)?.name;
   return (
-    <Field label="Open projects and files in">
+    <Field
+      label="Open projects and files in"
+      hint={`Found ${editors.length} ${editors.length === 1 ? "editor" : "editors"} on this PC.`}
+    >
       <Select
         label="Open projects and files in"
-        value={editors.some((e) => e.id === choice) ? choice : "auto"}
+        value={value}
+        group="Open with"
+        current={value === "auto" ? `Auto${data?.current ? ` · ${data.current}` : ""}` : named}
         options={options}
         onChange={(codeEditor) =>
           void updateSettings({ codeEditor })
