@@ -18,9 +18,13 @@ let settings: Settings = structuredClone(DEFAULT_SETTINGS);
 /** Preview switches: `?nomodel` has no AI set up, `?offline` no internet. */
 const previewFlag = (name: string) => typeof location !== "undefined" && new URLSearchParams(location.search).has(name);
 
-// `?onboarded` in the preview URL skips the welcome.
-if (typeof location !== "undefined" && new URLSearchParams(location.search).has("onboarded")) {
-  settings.onboarded = true;
+// `?onboarded` in the preview URL skips the welcome; `?color=smoke` and
+// `?theme=onyx` pick the island and mascot colours (for visual checks).
+if (typeof location !== "undefined") {
+  const q = new URLSearchParams(location.search);
+  if (q.has("onboarded")) settings.onboarded = true;
+  settings.islandColor = (q.get("color") as Settings["islandColor"] | null) ?? settings.islandColor;
+  settings.theme = (q.get("theme") as Settings["theme"] | null) ?? settings.theme;
 }
 let mascot: MascotState = "idle";
 let suggestion: Suggestion | null = null;
@@ -66,6 +70,10 @@ function saveSettings(next: Settings): Settings {
 
 const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   app_info: () => ({ version: "0.1.0 (browser mock)", dbPath: "-", settingsPath: "-", eventCount: 0 }),
+  system_look: () => ({ transparency: !previewFlag("solid"), batterySaver: previewFlag("saver") }),
+  diagnostics: () => "Sidekick 0.1.0 (browser mock)\nWindows 11 Pro 24H2\nModels in order: local, claude_code",
+  crash_pending: () => (previewFlag("crash") ? "2026-10-07T09:12:00Z panicked at src/voice.rs:120:9" : null),
+  crash_dismiss: () => undefined,
   settings_get: () => settings,
   settings_set: (a) => saveSettings(a.settings as Settings),
   sensors_pause: (a) => {
@@ -354,7 +362,11 @@ commands.ai_run_proposal = () => ({
 });
 commands.ai_cancel = () => undefined;
 commands.ai_release = () => undefined;
-commands.timing_record = () => undefined;
+// Kept for the speed check (scripts/speed.mjs).
+commands.timing_record = (a) => {
+  const w = window as unknown as { __timings?: { name: string; ms: number }[] };
+  w.__timings = [...(w.__timings ?? []), { name: a.name as string, ms: a.ms as number }];
+};
 commands.timings_recent = () => [];
 
 // Agent sessions: a short simulated run with a plan, steps, one question
@@ -492,6 +504,7 @@ commands.ask_close = () => {
 commands.ask_open = (a) => {
   welcomeDeferred = false;
   emit("ask://open", {
+    sentAt: Date.now(),
     context: {
       app: "Visual Studio Code",
       title: "Island.tsx - sidekick",

@@ -32,7 +32,16 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 - Offline, the context line says so and a web question can wait: Ask when I'm back online (Alt O).
 - After three minutes away, hovering the island shows what finished or is waiting meanwhile, with Review, Answer and Clear all.
 
-### Faster Ask
+### Ready for release
+
+- With Windows transparency effects off, the island is a solid colour; on Battery saver its halo is not blurred and the mascot stays still.
+- Secrets (API keys, tokens, private keys, passwords) are shown as dots in saved chats, agent transcripts, command output and the change review.
+- "This PC only" is tested: the local model gets no tools that go online, and one it names anyway is refused.
+- Screen readers hear state changes, an agent that needs you, and answers a sentence or two at a time.
+- An agent CLI too old for Sidekick says so and how to update it, instead of stopping without a word.
+- Copy diagnostics in Settings > Home > About, for bug reports, and opt-in crash reports you read before sending.
+- Faint text on the island is a little brighter, so every island colour passes a contrast check, now run in CI with speed targets and screenshots of each colour.
+
 
 - Claude Code and Codex keep a session warm per chat: one starts when Ask opens, and follow-up messages go into it instead of starting the CLI again (Codex through `codex app-server`, older Codex versions fall back to `codex exec`). Idle sessions close after 10 minutes, at most three per agent.
 - The local model loads while you type (Ollama `keep_alive`), and the Composio connection and its tool list are kept between messages.

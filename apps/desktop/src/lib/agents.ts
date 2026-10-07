@@ -4,6 +4,7 @@
 
 import { create } from "zustand";
 import { api, EVENTS, listen } from "./bridge";
+import { mask } from "./mask";
 import type { AgentMode, AgentStarted } from "./types";
 
 export interface Step {
@@ -83,7 +84,10 @@ useAgents.subscribe((st) => {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify(st.sessions.slice(0, 20)));
+      localStorage.setItem(
+        STORE_KEY,
+        JSON.stringify(st.sessions.slice(0, 20), (_k, v: unknown) => (typeof v === "string" ? mask(v) : v)),
+      );
     } catch {
       // Storage full or blocked: the timeline just does not survive a restart.
     }
@@ -205,8 +209,8 @@ function onEvent(e: { session: string; kind: string } & Record<string, unknown>)
         const text = String(e.text ?? "");
         const entries: Entry[] =
           last?.kind === "text"
-            ? [...s.entries.slice(0, -1), { kind: "text", text: last.text + text }]
-            : [...s.entries, { kind: "text", text }];
+            ? [...s.entries.slice(0, -1), { kind: "text", text: mask(last.text + text) }]
+            : [...s.entries, { kind: "text", text: mask(text) }];
         return { ...s, entries };
       });
     case "step":

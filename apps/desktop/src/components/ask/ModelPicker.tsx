@@ -102,7 +102,7 @@ export function ModelPicker({
             onKeyDown={onListKey}
             className="menu absolute top-full right-0 z-30 mt-1.5 flex w-64 flex-col gap-0.5 rounded-[14px] p-1 text-[13px]"
           >
-            <p className="px-2.5 pt-1 pb-0.5 text-[11px] font-medium text-[rgb(235_235_245/0.4)]">Answers come from</p>
+            <p className="px-2.5 pt-1 pb-0.5 text-[11px] font-medium text-[rgb(235_235_245/0.45)]">Answers come from</p>
             {items.map((it) => {
               const on = (picked?.id ?? null) === it.id;
               return (

@@ -7,6 +7,8 @@
 //! (`--permission-prompt-tool`). Codex runs as `codex app-server` and asks
 //! for approvals as JSON-RPC requests.
 
+use sidekick_sensors::classify::mask;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -445,8 +447,20 @@ fn baseline(id: &str) -> Result<Baseline, String> {
         .ok_or_else(|| "Changes can only be reviewed in a git project.".to_owned())
 }
 
+/// The changes to review, with secrets in them masked. Undo reads the files
+/// again, so masking here never changes what gets undone.
 pub fn changes(id: &str) -> Result<Vec<review::FileChange>, String> {
-    review::changes(&baseline(id)?)
+    let mut files = review::changes(&baseline(id)?)?;
+    for line in files
+        .iter_mut()
+        .flat_map(|f| f.hunks.iter_mut())
+        .flat_map(|h| h.lines.iter_mut())
+    {
+        if let Cow::Owned(m) = mask(line) {
+            *line = m;
+        }
+    }
+    Ok(files)
 }
 
 pub fn undo(id: &str, path: Option<&str>, hunk: Option<usize>) -> Result<(), String> {
@@ -701,7 +715,7 @@ async fn ask(app: &AppHandle, session: &str, label: &str, detail: &str) -> Answe
     emit(
         app,
         session,
-        json!({ "kind": "ask", "question": question, "label": label, "detail": detail }),
+        json!({ "kind": "ask", "question": question, "label": label, "detail": mask(detail) }),
     );
     let answer = tokio::time::timeout(ASK_TIMEOUT, rx)
         .await
@@ -817,12 +831,13 @@ async fn run_claude(
     cmd.current_dir(path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .kill_on_drop(true);
     crate::agents::hide_console(&mut cmd);
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("could not start Claude Code: {e}"))?;
+    let stderr = keep_stderr(&mut child);
     let mut stdin = child.stdin.take().ok_or("no stdin")?;
     let mut lines = BufReader::new(child.stdout.take().ok_or("no stdout")?).lines();
     loop {
@@ -846,7 +861,8 @@ async fn run_claude(
             },
             line = lines.next_line() => {
                 let Ok(Some(line)) = line else {
-                    return Err("Claude Code stopped.".into());
+                    let _ = child.wait().await;
+                    return Err(why_stopped("Claude Code", &lock(&stderr)));
                 };
                 let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
                 for data in claude_events(&v) {
@@ -956,9 +972,64 @@ pub fn claude_events(v: &Value) -> Vec<Value> {
 }
 
 /// The end of a command's output, for the folded block under a step.
+/// The end of a CLI's error output, read as it comes so a full pipe never
+/// blocks it.
+fn keep_stderr(child: &mut tokio::process::Child) -> std::sync::Arc<Mutex<String>> {
+    let kept = std::sync::Arc::new(Mutex::new(String::new()));
+    if let Some(err) = child.stderr.take() {
+        let kept = kept.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut lines = BufReader::new(err).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let mut k = lock(&kept);
+                k.push_str(&line);
+                k.push('\n');
+                if k.len() > 4000 {
+                    let cut = k.len() - 2000;
+                    let cut = (cut..k.len()).find(|i| k.is_char_boundary(*i)).unwrap_or(0);
+                    k.drain(..cut);
+                }
+            }
+        });
+    }
+    kept
+}
+
+/// Why an agent stopped, in words: a CLI too old for a flag or method
+/// Sidekick uses says how to update it.
+pub fn why_stopped(agent: &str, stderr: &str) -> String {
+    let e = stderr.to_lowercase();
+    let old = [
+        "unknown option",
+        "unexpected argument",
+        "unrecognized option",
+        "unrecognized argument",
+        "unrecognized subcommand",
+        "unknown command",
+        "unknown subcommand",
+        "method not found",
+        "unknown variant",
+    ];
+    if old.iter().any(|o| e.contains(o)) {
+        let update = if agent == "Codex" {
+            "npm install -g @openai/codex@latest"
+        } else {
+            "claude update"
+        };
+        return format!(
+            "{agent} is too old for this. Update it (run {update} in a terminal), then try again."
+        );
+    }
+    match stderr.lines().rev().find(|l| !l.trim().is_empty()) {
+        Some(last) => format!("{agent} stopped: {}", mask(last.trim())),
+        None => format!("{agent} stopped."),
+    }
+}
+
 pub fn tail(text: &str) -> String {
     const LINES: usize = 12;
     const MAX: usize = 1_500;
+    let text = mask(text);
     let lines: Vec<&str> = text.trim_end().lines().collect();
     let kept = lines[lines.len().saturating_sub(LINES)..].join("\n");
     let start = kept.len().saturating_sub(MAX);
@@ -996,12 +1067,13 @@ async fn run_codex(
         .current_dir(path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .kill_on_drop(true);
     crate::agents::hide_console(&mut cmd);
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("could not start Codex: {e}"))?;
+    let stderr = keep_stderr(&mut child);
     let mut stdin = child.stdin.take().ok_or("no stdin")?;
     let mut lines = BufReader::new(child.stdout.take().ok_or("no stdout")?).lines();
     let mut next_id = 0u64;
@@ -1058,12 +1130,13 @@ async fn run_codex(
             },
             line = lines.next_line() => {
                 let Ok(Some(line)) = line else {
-                    return Err("Codex stopped.".into());
+                    let _ = child.wait().await;
+                    return Err(why_stopped("Codex", &lock(&stderr)));
                 };
                 let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
                 if v["id"] == thread_req && v.get("method").is_none() {
                     if let Some(err) = v["error"]["message"].as_str() {
-                        return Err(err.to_owned());
+                        return Err(why_stopped("Codex", err));
                     }
                     let t = v["result"]["thread"]["id"].as_str().map(str::to_owned);
                     with(&SESSIONS, |s| if let Some(h) = s.get_mut(id) { h.resume = t.clone() });
@@ -1299,11 +1372,32 @@ mod tests {
     }
 
     #[test]
+    fn says_when_a_cli_is_too_old() {
+        let m = why_stopped(
+            "Claude Code",
+            "error: unknown option '--include-partial-messages'\n",
+        );
+        assert!(m.contains("too old") && m.contains("claude update"), "{m}");
+        let m = why_stopped("Codex", "error: unrecognized subcommand 'app-server'");
+        assert!(m.contains("@openai/codex@latest"), "{m}");
+        assert!(why_stopped("Codex", "Method not found: thread/resume").contains("too old"));
+        assert_eq!(
+            why_stopped("Codex", "\nnot logged in\n\n"),
+            "Codex stopped: not logged in"
+        );
+        assert_eq!(why_stopped("Codex", ""), "Codex stopped.");
+    }
+
+    #[test]
     fn keeps_the_end_of_long_output() {
         let text: String = (1..=40).map(|n| format!("line {n}\n")).collect();
         let t = tail(&text);
         assert!(t.starts_with("line 29") && t.ends_with("line 40"), "{t}");
         assert_eq!(tail(""), "");
+        assert_eq!(
+            tail("export TOKEN ghp_abcdefghijklmnopqrstuvwxyz0123456789AB"),
+            "export TOKEN \u{2022}\u{2022}\u{2022}\u{2022}"
+        );
     }
 
     #[test]

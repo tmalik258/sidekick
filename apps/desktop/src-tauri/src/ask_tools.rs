@@ -452,7 +452,6 @@ pub fn defs() -> Vec<ToolDef> {
     ]
 }
 
-/// Tools that reach the internet or other apps, left out for "This PC only".
 /// What a tool call is doing, in a few words for the steps list: "Searching
 /// the web for flight prices", "Reading WhatsApp", "Clicking Send".
 pub fn step_label(name: &str, args: &Value) -> String {
@@ -671,6 +670,7 @@ fn closest(q: &[f32], tools: &[(String, Vec<f32>)], n: usize) -> Vec<String> {
     scored.into_iter().take(n).map(|(_, n)| n.clone()).collect()
 }
 
+/// Tools that reach the internet or other apps, left out for "This PC only".
 pub fn is_web(name: &str) -> bool {
     matches!(name, WEB_SEARCH | READ_PAGE | BROWSER | APP_ACTION | APPS)
 }
@@ -1392,6 +1392,28 @@ mod tests {
             "C:/Users/Public/Documents"
         );
         assert_eq!(expand_home("D:/work/x"), "D:/work/x");
+    }
+
+    /// This PC only keeps exactly these: each reads or acts on this PC. A new
+    /// tool that goes online must be added to `is_web`, or this fails.
+    #[test]
+    fn this_pc_only_keeps_tools_that_stay_on_the_pc() {
+        let offline: Vec<String> = defs()
+            .into_iter()
+            .map(|d| d.name)
+            .filter(|n| !is_web(n))
+            .collect();
+        let mut expected = vec![
+            SEARCH, TODAY, RECENT, OPEN, SCREEN, PROPOSE, FIND, REVEAL, PC_STATUS, STORAGE, PC,
+            WINDOWS, NOTIFS, DESKTOP, OFFICE, RECIPES, REMEMBER,
+        ];
+        let mut got: Vec<&str> = offline.iter().map(String::as_str).collect();
+        expected.sort_unstable();
+        got.sort_unstable();
+        assert_eq!(got, expected);
+        for web in [WEB_SEARCH, READ_PAGE, BROWSER, APP_ACTION, APPS] {
+            assert!(is_web(web), "{web} goes online");
+        }
     }
 
     #[test]

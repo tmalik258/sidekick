@@ -70,7 +70,7 @@ function SessionChips({ sessions, current }: { sessions: Session[]; current: str
         type="button"
         aria-pressed={false}
         onClick={() => useAgents.setState({ current: null })}
-        className="ak-sp chip text-[rgb(235_235_245/0.36)]"
+        className="ak-sp chip text-[rgb(235_235_245/0.45)]"
       >
         + New
       </button>

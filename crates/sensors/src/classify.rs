@@ -94,6 +94,33 @@ static SECRET: LazyLock<Regex> = LazyLock::new(|| {
     ))
     .expect("secret regex")
 });
+/// The same secrets, found anywhere in a longer text. A `key = value` pair
+/// keeps its key so the line still reads.
+static SECRET_IN_TEXT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(concat!(
+        r"AKIA[0-9A-Z]{16}",
+        r"|sk-(?:ant-|proj-)?[A-Za-z0-9_\-]{20,}",
+        r"|gh[pousr]_[A-Za-z0-9]{30,}",
+        r"|xox[abpr]-[A-Za-z0-9\-]{10,}",
+        r"|-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)",
+        r"|eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}",
+        r#"|(?P<key>(?i:password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret)["']?\s*[:=]\s*["']?)[^\s"',;]{6,}"#,
+    ))
+    .expect("secret mask regex")
+});
+
+/// Shown in place of a secret.
+pub const MASKED: &str = "\u{2022}\u{2022}\u{2022}\u{2022}";
+
+/// `text` with API keys, tokens, private keys and passwords replaced by
+/// dots, for diffs, history and transcripts.
+pub fn mask(text: &str) -> std::borrow::Cow<'_, str> {
+    SECRET_IN_TEXT.replace_all(text, |c: &regex::Captures| match c.name("key") {
+        Some(key) => format!("{}{MASKED}", key.as_str()),
+        None => MASKED.to_owned(),
+    })
+}
+
 static URL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(https?://|www\.)\S+$").expect("url regex"));
 static COLOR: LazyLock<Regex> = LazyLock::new(|| {
@@ -174,6 +201,25 @@ mod tests {
         assert!(is_partial_or_hidden(Path::new("a.zip.part")));
         assert!(is_partial_or_hidden(Path::new("~$doc.docx")));
         assert!(!is_partial_or_hidden(Path::new("invoice.pdf")));
+    }
+
+    #[test]
+    fn masks_secrets_inside_text() {
+        let text = "token ghp_abcdefghijklmnopqrstuvwxyz0123456789AB here\nOPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwx\n\"password\": \"hunter22\"\nplain line";
+        let m = mask(text);
+        assert!(
+            !m.contains("ghp_abc") && !m.contains("sk-proj") && !m.contains("hunter22"),
+            "{m}"
+        );
+        assert!(m.contains("OPENAI_API_KEY=\u{2022}"), "{m}");
+        assert!(m.contains("\"password\": \"\u{2022}"), "{m}");
+        assert!(m.ends_with("plain line"));
+        let key = "-----BEGIN RSA PRIVATE KEY-----\nMIIEabc\n-----END RSA PRIVATE KEY-----\nafter";
+        assert_eq!(mask(key), format!("{MASKED}\nafter"));
+        assert!(matches!(
+            mask("nothing to hide"),
+            std::borrow::Cow::Borrowed(_)
+        ));
     }
 
     #[test]

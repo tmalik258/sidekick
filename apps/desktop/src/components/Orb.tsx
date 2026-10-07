@@ -90,6 +90,7 @@ export function Orb({
   theme = "pearl",
   magnetic = true,
   alive = false,
+  simple = false,
 }: {
   state: MascotState;
   /** A mood that overrides the state's own face for a while. */
@@ -100,8 +101,10 @@ export function Orb({
   magnetic?: boolean;
   /** Idle on its own: glances, blinks, the odd smile. */
   alive?: boolean;
+  /** Battery saver: no motion beyond what a state needs. */
+  simple?: boolean;
 }) {
-  const reduced = useReducedMotion() ?? false;
+  const reduced = (useReducedMotion() ?? false) || simple;
   const expression = face ?? FOR_STATE[state];
   const root = useRef<HTMLDivElement>(null);
   const halo = useRef<HTMLDivElement>(null);

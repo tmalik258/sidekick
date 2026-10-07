@@ -57,7 +57,7 @@ export function Chat({ turns, askedInBar }: { turns: Turn[]; askedInBar: boolean
             <div key={i} className="ak-um ak-in">
               {t.content}
               {t.screen && (
-                <span className="mt-0.5 block text-[11px] text-[rgb(235_235_245/0.5)]">with screenshot</span>
+                <span className="mt-0.5 block text-[11px] text-[rgb(235_235_245/0.62)]">with screenshot</span>
               )}
             </div>
           );
@@ -178,7 +178,7 @@ export function Steps({ steps, running, tookMs }: { steps: string[]; running: bo
         return (
           <li
             key={id}
-            className={`flex items-center gap-1.5 ${live ? "text-white/80" : "text-[rgb(235_235_245/0.36)]"}`}
+            className={`flex items-center gap-1.5 ${live ? "text-white/80" : "text-[rgb(235_235_245/0.45)]"}`}
           >
             <span className={live ? "ak-dot animate-pulse bg-white" : "text-[#30d158]"}>{live ? "" : "✓"}</span>
             {s}
@@ -227,7 +227,7 @@ export function Handoff({ turns, reason }: { turns: Turn[]; reason: string | nul
       .catch((e) => setState(String(e)));
   };
   if (state === "opened") {
-    return <p className="mt-1.5 text-[12px] text-[rgb(235_235_245/0.55)]">{agent} carries on in the Agents tab.</p>;
+    return <p className="mt-1.5 text-[12px] text-[rgb(235_235_245/0.62)]">{agent} carries on in the Agents tab.</p>;
   }
   return (
     <div className="mt-1.5 flex flex-col gap-1">

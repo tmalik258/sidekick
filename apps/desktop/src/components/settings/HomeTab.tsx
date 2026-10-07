@@ -183,6 +183,13 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
             <dt className="text-(--muted)">Stored events</dt>
             <dd>{info.eventCount}</dd>
           </dl>
+          <CopyDiagnostics onError={onError} />
+          <Toggle
+            label="Offer to report crashes"
+            hint="After a crash, Sidekick shows the report and lets you send it. It holds the version, Windows version and the error, never your files or chats."
+            checked={settings.crashReports}
+            onChange={(crashReports) => save({ crashReports })}
+          />
           <details className="text-[13px]">
             <summary className="cursor-pointer text-(--muted)">Debug tools</summary>
             <div className="mt-2 flex flex-col gap-2">
@@ -573,6 +580,29 @@ function UpdateRow({ version, onError }: { version: string; onError: (e: string)
           {state === "checking" ? "Checking..." : "Check now"}
         </Button>
       )}
+    </div>
+  );
+}
+
+/** Version, models, timings and the end of the log, with secrets and your
+ * name taken out, copied for a bug report. */
+function CopyDiagnostics({ onError }: { onError: (e: string) => void }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () =>
+    void api
+      .diagnostics()
+      .then((text) => navigator.clipboard.writeText(text))
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch((e: unknown) => onError(String(e)));
+  return (
+    <div className="flex items-center gap-3">
+      <Button small onClick={copy}>
+        {copied ? "Copied" : "Copy diagnostics"}
+      </Button>
+      <span className="text-[13px] text-(--muted)">For a bug report. Keys, tokens and your name are taken out.</span>
     </div>
   );
 }

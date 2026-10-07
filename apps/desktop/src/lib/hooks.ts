@@ -162,3 +162,26 @@ export function useScrollEdge(): (el: HTMLElement | null) => void {
     };
   }, []);
 }
+
+/** Windows' look settings the island follows: transparency effects off
+ * makes it solid, Battery saver makes it simple. Checked every minute. */
+export function useSystemLook(): { solid: boolean; simple: boolean } {
+  const [look, setLook] = useState({ solid: false, simple: false });
+  useEffect(() => {
+    const check = () =>
+      void api
+        .systemLook()
+        .then((l) =>
+          setLook((p) =>
+            p.solid === !l.transparency && p.simple === l.batterySaver
+              ? p
+              : { solid: !l.transparency, simple: l.batterySaver },
+          ),
+        )
+        .catch(() => undefined);
+    check();
+    const id = setInterval(check, 60_000);
+    return () => clearInterval(id);
+  }, []);
+  return look;
+}

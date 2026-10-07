@@ -75,7 +75,7 @@ function Rows({ rows }: { rows: Row[] }) {
           <span className="ak-sd" data-s={r.dot === "wait" ? "waiting" : r.dot === "done" ? "idle" : "working"} />
           <span className="min-w-0 text-left">
             <b className="block truncate text-[13.5px] font-semibold">{r.title}</b>
-            <em className="block truncate text-[11.5px] text-[rgb(235_235_245/0.36)] not-italic">{r.sub}</em>
+            <em className="block truncate text-[11.5px] text-[rgb(235_235_245/0.45)] not-italic">{r.sub}</em>
           </span>
           <span className="whitespace-nowrap text-right text-[12px] text-[rgb(235_235_245/0.6)]">{r.right}</span>
         </button>

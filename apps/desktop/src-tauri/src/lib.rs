@@ -111,6 +111,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
+            commands::system_look,
+            commands::diagnostics,
+            commands::crash_pending,
+            commands::crash_dismiss,
             commands::settings_get,
             commands::settings_set,
             commands::sensors_pause,

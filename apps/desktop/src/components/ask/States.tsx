@@ -48,6 +48,13 @@ export function explain(error: string, provider: string | null | undefined): Fai
       },
     };
   }
+  if (/too old|unknown option|unexpected argument|unrecognized (option|argument|subcommand)|method not found/.test(e)) {
+    const codex = provider === "codex" || /codex/.test(e);
+    return {
+      title: `${codex ? "Codex" : "Claude Code"} needs an update`,
+      detail: `This version is too old for Sidekick. Run ${codex ? "npm install -g @openai/codex@latest" : "claude update"} in a terminal, then retry.`,
+    };
+  }
   if (/no model found|pull a model|ollama pull/.test(e)) {
     return {
       title: "No local model downloaded yet",

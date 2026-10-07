@@ -120,7 +120,7 @@ export function IslandGuide({ waiting, guide }: { waiting: Waiting; guide: Guide
           onClick={cancelWaiting}
           className="chip ml-auto rounded-full px-2.5 py-1.5 text-[12.5px] text-[rgb(235_235_245/0.6)] hover:text-white"
         >
-          Cancel <kbd className="ml-1 font-sans text-[11px] text-white/35">Alt 0</kbd>
+          Cancel <kbd className="ml-1 font-sans text-[11px] text-white/45">Alt 0</kbd>
         </button>
       </div>
     </div>
@@ -144,7 +144,7 @@ function GuideChip({ button, hint, done }: { button: GuideButton; hint: string |
       {done ? "Copied" : button.label}
       {hint && (
         <kbd
-          className={`ml-1.5 font-sans text-[11px] ${button.kind === "primary" ? "text-black/40" : "text-white/35"}`}
+          className={`ml-1.5 font-sans text-[11px] ${button.kind === "primary" ? "text-black/40" : "text-white/45"}`}
         >
           {hint}
         </kbd>

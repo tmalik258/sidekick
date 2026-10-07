@@ -37,7 +37,7 @@ export function Extras() {
         on={settings.launchAtLogin}
         onChange={(launchAtLogin) => void updateSettings({ launchAtLogin })}
       />
-      <p className="px-1 pt-1 text-[12px] leading-relaxed text-[rgb(235_235_245/0.55)]">
+      <p className="px-1 pt-1 text-[12px] leading-relaxed text-[rgb(235_235_245/0.62)]">
         Come back in Settings anytime — for these, or what's left to set up.
       </p>
     </div>

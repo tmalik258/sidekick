@@ -128,7 +128,7 @@ export function FoundCard({ onDone }: { onDone: () => void }) {
           </span>
           <div className="min-w-0">
             <p className="font-medium text-white">All set</p>
-            <p className="text-[11.5px] text-[rgb(235_235_245/0.55)]">Ready on this PC.</p>
+            <p className="text-[11.5px] text-[rgb(235_235_245/0.62)]">Ready on this PC.</p>
           </div>
         </div>
       ) : (
@@ -155,7 +155,7 @@ export function FoundCard({ onDone }: { onDone: () => void }) {
           </button>
           {error && <p className="text-[12px] text-[#ff453a]">{error}</p>}
           {showClaudeNote && (
-            <p className="text-[11.5px] text-[rgb(235_235_245/0.5)]">Claude settings are backed up first.</p>
+            <p className="text-[11.5px] text-[rgb(235_235_245/0.62)]">Claude settings are backed up first.</p>
           )}
         </>
       )}

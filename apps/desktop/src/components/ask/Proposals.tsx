@@ -161,7 +161,7 @@ export function UndoProposal({
   buttonRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const [state, setState] = useState<string | null>(null);
-  if (state) return <span className="shrink-0 text-[12px] text-[rgb(235_235_245/0.55)]">{state}</span>;
+  if (state) return <span className="shrink-0 text-[12px] text-[rgb(235_235_245/0.62)]">{state}</span>;
   return (
     <button
       ref={buttonRef}
