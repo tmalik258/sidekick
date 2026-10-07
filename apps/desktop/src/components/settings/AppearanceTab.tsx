@@ -35,9 +35,12 @@ const ISLAND_SWATCH: Record<IslandColor, string> = {
   solid_black: "#000",
 };
 
+/** A tile in the plan's style: faint glass, a blue ring on the picked one. */
 const tile = (on: boolean) =>
-  `chip flex flex-col items-center gap-2 rounded-xl py-3 text-[12.5px] font-medium ${
-    on ? "ring-2 ring-inset ring-[#0a84ff]" : "ring-1 ring-inset ring-black/10 dark:ring-white/10"
+  `chip flex flex-col items-center gap-[7px] rounded-xl px-1 pt-2.5 pb-2 text-[12px] transition-[box-shadow,background-color,scale] duration-150 active:scale-[0.96] ${
+    on
+      ? "bg-white/[0.07] text-white shadow-[inset_0_0_0_1.5px_#0a84ff]"
+      : "bg-white/[0.04] text-[rgb(235_235_245/0.62)] shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)] hover:bg-white/[0.06]"
   }`;
 
 export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
@@ -55,7 +58,7 @@ export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
               type="button"
               aria-pressed={settings.theme === t}
               onClick={() => save({ theme: t })}
-              className={`${tile(settings.theme === t)} bg-black text-white/90`}
+              className={tile(settings.theme === t)}
             >
               <Orb state="idle" size={34} theme={t} magnetic={false} />
               {THEME_STYLES[t].label}

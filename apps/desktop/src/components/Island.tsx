@@ -68,6 +68,8 @@ const EXPANDED = { width: 388, minHeight: 78, radius: 30, pad: PANEL_PAD };
 /** Ask mode, as in the design: 420 wide, 580 for the Agents tab. */
 const ASK_WIDTH = 420;
 const AGENTS_WIDTH = 580;
+/** Voice, Full listening style. */
+const FULL_VOICE_WIDTH = 400;
 const ASK_RADIUS = 26;
 /** The welcome: a short read, so a narrower column than Ask. */
 const WELCOME_WIDTH = 440;
@@ -175,9 +177,13 @@ export function Island() {
   // Only agents at work: hover lists them (and answers in place) instead of
   // opening Ask.
   const agentsOnly = voiceQuestion === null && hearing === null && chatWorking === null && agentWorking !== null;
+  // Full listening style: the island opens while you talk, with a waveform,
+  // a timer and your words larger, instead of the slim pill.
+  const fullVoice = voicePill !== null && !voicePill.working && (settings.voice.listeningStyle ?? "compact") === "full";
   // Suggestions stay normal during thinking — do not gate them on !voicePill.
   const expanded =
     asking ||
+    fullVoice ||
     preparingVoice ||
     (hovered && (!voicePill || agentsOnly)) ||
     guiding ||
@@ -269,9 +275,11 @@ export function Island() {
         ? AGENTS_WIDTH
         : ASK_WIDTH
     : expanded
-      ? showGuide
-        ? GUIDE_WIDTH
-        : EXPANDED.width
+      ? fullVoice
+        ? FULL_VOICE_WIDTH
+        : showGuide
+          ? GUIDE_WIDTH
+          : EXPANDED.width
       : voicePill
         ? voiceShellWidth(voicePill.text, voicePill.thinking, voicePill.working)
         : waiting
@@ -361,6 +369,7 @@ export function Island() {
             theme={settings.theme}
             alive={settings.alive && visible && !look.simple}
             simple={look.simple}
+            active={shown && !bare}
           />
         </motion.div>
 
@@ -428,7 +437,9 @@ export function Island() {
                 exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
                 transition={{ duration: 0.28, delay: 0.06, ease: [0.23, 1, 0.32, 1] }}
               >
-                {showGuide && waiting ? (
+                {fullVoice && voicePill ? (
+                  <FullVoice text={voicePill.text} thinking={voicePill.thinking} />
+                ) : showGuide && waiting ? (
                   <IslandGuide waiting={waiting} guide={guide} />
                 ) : (
                   <ExpandedContent mascot={mascot} paused={paused} suggestion={suggestion} />
@@ -451,6 +462,66 @@ function voiceLabel(text: string, thinking: boolean, working?: boolean): string 
   if (working) return text;
   if (thinking) return `Thinking: ${text}`;
   return text.trim() ? tail(text) : "Listening...";
+}
+
+/** Full listening style: a waveform, a timer and Stop on the first line,
+ * then your words a size larger (grey until final) and what happens next. */
+function FullVoice({ text, thinking }: { text: string; thinking: boolean }) {
+  const [start] = useState(() => Date.now());
+  const now = useNow(1000);
+  const secs = Math.max(0, Math.floor((now - start) / 1000));
+  const words = text.trim();
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex h-9 items-center gap-2.5">
+        {thinking ? (
+          <span className="flex-1">
+            <Activity />
+          </span>
+        ) : (
+          <span className="voice-wave min-w-0 flex-1" aria-hidden="true">
+            {Array.from({ length: 30 }, (_, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: fixed bars
+              <i key={i} style={{ animationDelay: `${-((i * 0.37) % 0.9).toFixed(2)}s` }} />
+            ))}
+          </span>
+        )}
+        <span className="min-w-[2.6em] text-right font-mono text-[11.5px] text-white/45 tabular-nums">
+          {Math.floor(secs / 60)}:{String(secs % 60).padStart(2, "0")}
+        </span>
+        <button
+          type="button"
+          aria-label="Stop listening"
+          title="Stop (Esc)"
+          onClick={() => void api.voiceStop()}
+          className="chip grid size-7 shrink-0 place-items-center rounded-full bg-white/[0.09] hover:bg-white/[0.15]"
+        >
+          <span className="size-[9px] rounded-[2.5px] bg-white" />
+        </button>
+      </div>
+      <p
+        className={`min-h-[1.45em] px-1 text-[16.5px] leading-[1.45] tracking-[-0.005em] ${
+          words ? "text-white" : "text-white/45"
+        }`}
+      >
+        {words || "Listening..."}
+      </p>
+      <p className="flex items-center gap-[7px] px-1 pb-0.5 text-[11.5px] text-white/45">
+        {thinking ? (
+          <span className="shimmer-text">Thinking</span>
+        ) : (
+          <>
+            <span className="voice-live size-1.5 rounded-full bg-white" aria-hidden="true" />
+            Listening · pause to send ·
+            <kbd className="rounded-[4px] bg-white/[0.09] px-[5px] py-px font-mono text-[10.5px] text-white/62">
+              Esc
+            </kbd>
+            cancel
+          </>
+        )}
+      </p>
+    </div>
+  );
 }
 
 /** Compact listening shell: tight when empty, grows with speech up to voiceWidth. */

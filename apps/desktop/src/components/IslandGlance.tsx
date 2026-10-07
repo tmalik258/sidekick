@@ -84,13 +84,18 @@ function FullscreenSwitch() {
       </span>
       <span
         aria-hidden="true"
-        className={`relative h-[22px] w-9 shrink-0 rounded-full transition-colors duration-200 ${hide ? "bg-[#30d158]" : "bg-white/20"}`}
+        className="flex shrink-0 gap-0.5 rounded-[10px] bg-white/[0.08] p-[3px] text-[12.5px] leading-none"
       >
         <span
-          className={`absolute top-[2px] left-[2px] size-[18px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${
-            hide ? "translate-x-[14px]" : ""
-          }`}
-        />
+          className={`rounded-[8px] px-2.5 py-[5px] ${hide ? "bg-[#f5f5f7] font-semibold text-black" : "text-white/62"}`}
+        >
+          On
+        </span>
+        <span
+          className={`rounded-[8px] px-2.5 py-[5px] ${hide ? "text-white/62" : "bg-[#f5f5f7] font-semibold text-black"}`}
+        >
+          Off
+        </span>
       </span>
     </button>
   );

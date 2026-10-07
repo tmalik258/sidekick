@@ -16,6 +16,8 @@ const shots = join(dir, "..", "visual");
 mkdirSync(shots, { recursive: true });
 
 const css = readFileSync(join(dir, "..", "src", "app", "globals.css"), "utf8");
+const orb = readFileSync(join(dir, "..", "src", "components", "Orb.tsx"), "utf8");
+const themes = [...orb.matchAll(/^ {2}(\w+): \{\n {4}label:/gm)].map((m) => m[1]);
 const colors = ["glass", ...[...css.matchAll(/\.island-shell\[data-color="([^"]+)"\]/g)].map((m) => m[1])];
 
 const TYPES = {
@@ -82,6 +84,10 @@ const agents = async (p) => {
 for (const color of colors) {
   const q = `?onboarded${color === "glass" ? "" : `&color=${color}`}`;
   for (const desktop of Object.keys(DESKTOPS)) await shoot(`${color}-hover`, q, desktop, hover);
+}
+for (const theme of themes) {
+  for (const desktop of Object.keys(DESKTOPS))
+    await shoot(`mascot-${theme}`, `?onboarded&theme=${theme}`, desktop, hover);
 }
 for (const desktop of Object.keys(DESKTOPS)) {
   await shoot("ask", "?onboarded", desktop, ask);

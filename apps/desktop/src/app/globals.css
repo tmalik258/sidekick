@@ -774,6 +774,9 @@ body {
 /* Menus: Graphite, frosted, anchored to their button. */
 .menu {
   background: rgb(30 30 36 / 0.94);
+  /* Menus sit over the app's own content, which they can blur. */
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
   box-shadow:
     inset 0 0.5px 0 rgb(255 255 255 / 0.1),
     0 0 0 0.5px rgb(255 255 255 / 0.12),
@@ -804,6 +807,13 @@ body {
   background: rgb(255 255 255 / 0.09);
   outline: none;
 }
+/* Battery saver and transparency effects off: menus are solid. */
+.island-shell[data-simple] .menu,
+.island-shell[data-solid] .menu {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: rgb(30 30 36);
+}
 .menu-item small {
   grid-column: 1;
   font-size: 11.5px;
@@ -811,6 +821,43 @@ body {
 }
 
 /* The voice: rainbow bars that follow the level. */
+/* Full listening style: a wide, quiet waveform in the island's ink. */
+.voice-wave {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2.5px;
+  height: 30px;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent);
+}
+.voice-wave i {
+  flex: none;
+  width: 2.5px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 0.9);
+  animation: voice-bar 0.9s ease-in-out infinite;
+}
+.voice-live {
+  animation: voice-live 1.6s ease-out infinite;
+}
+@keyframes voice-live {
+  0% {
+    box-shadow: 0 0 0 0 rgb(255 255 255 / 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 6px rgb(255 255 255 / 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-wave i,
+  .voice-live {
+    animation: none;
+    height: 40%;
+  }
+}
+
 .voice-bars {
   display: flex;
   align-items: center;
@@ -1935,4 +1982,40 @@ select.ak-mi option {
 }
 .ak-bgr.first {
   background: rgb(255 159 10 / 0.07);
+}
+
+/* Windows High contrast: system colours, real borders instead of tints,
+   and no glow or blur. */
+@media (forced-colors: active) {
+  .island-shell {
+    border: 1px solid CanvasText;
+    background-color: Canvas;
+    box-shadow: none;
+  }
+  .island-shell::before,
+  .orb-halo {
+    display: none;
+  }
+  .chip,
+  .ak-chip,
+  .ak-model,
+  .menu,
+  kbd {
+    border: 1px solid ButtonText;
+    forced-color-adjust: auto;
+  }
+  [aria-pressed="true"],
+  [aria-selected="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .menu {
+    backdrop-filter: none;
+    background: Canvas;
+  }
+  .voice-wave i,
+  .voice-bars i,
+  .voice-live {
+    background: CanvasText;
+  }
 }

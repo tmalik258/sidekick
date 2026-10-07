@@ -300,6 +300,9 @@ pub struct VoiceSettings {
     pub speak_suggestions: bool,
     /// Talking over a spoken answer stops it and listens.
     pub interrupt: bool,
+    /// While you talk: "compact" (one slim line) or "full" (a waveform and
+    /// your words larger).
+    pub listening_style: String,
     /// Voice id, e.g. "f5" (Supertonic 3's Female 5).
     pub voice: String,
     /// 0.5 to 2.0.
@@ -324,6 +327,7 @@ impl Default for VoiceSettings {
             enabled: true,
             wake_word: true,
             speak_answers: true,
+            listening_style: "compact".into(),
             conversation: true,
             speak_suggestions: true,
             interrupt: true,

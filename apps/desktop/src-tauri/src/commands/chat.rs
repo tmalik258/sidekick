@@ -398,6 +398,19 @@ pub async fn app_launch(id: String) -> CmdResult<()> {
         .map_err(|e| e.to_string())
 }
 
+/// Opens a Windows Settings page picked from Ask's instant results; only the
+/// named pages in `SETTINGS_PAGES` can open.
+#[tauri::command]
+pub async fn windows_settings_open(page: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        sidekick_actions::pc::control("open_settings", None, Some(&page))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
 /// Opens a file or folder picked from Ask's instant results. Programs and
 /// scripts are shown in their folder instead of run.
 #[tauri::command]
@@ -412,4 +425,10 @@ pub async fn file_open(app: AppHandle, path: String) -> CmdResult<()> {
         .await
         .map(|_| ())
         .map_err(|e| e.to_string())
+}
+
+/// Memory an agent session uses, in bytes (None once it stopped).
+#[tauri::command]
+pub fn agent_memory(id: String) -> Option<u64> {
+    crate::sessions::memory(&id)
 }

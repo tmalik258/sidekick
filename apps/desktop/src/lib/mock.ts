@@ -25,6 +25,7 @@ if (typeof location !== "undefined") {
   if (q.has("onboarded")) settings.onboarded = true;
   settings.islandColor = (q.get("color") as Settings["islandColor"] | null) ?? settings.islandColor;
   settings.theme = (q.get("theme") as Settings["theme"] | null) ?? settings.theme;
+  if (q.get("voice") === "full") settings.voice.listeningStyle = "full";
 }
 let mascot: MascotState = "idle";
 let suggestion: Suggestion | null = null;
@@ -474,6 +475,7 @@ commands.agent_stop = () => undefined;
 commands.agent_close = () => undefined;
 commands.agent_terminal = () => undefined;
 commands.agent_resume = () => undefined;
+commands.agent_memory = () => 312 * 1024 * 1024;
 commands.agent_open_editor = () => undefined;
 commands.agent_rewind_preview = () => 1;
 commands.agent_rewind = () => 1;
@@ -869,6 +871,7 @@ commands.instant_find = (a) => {
   return { apps, files };
 };
 commands.app_launch = () => undefined;
+commands.windows_settings_open = () => undefined;
 commands.file_open = () => undefined;
 commands.project_launch = () => "Opened sidekick in VS Code and a terminal";
 commands.search_status = () => ({ items: 1240, embedded: 1240, embedError: null });

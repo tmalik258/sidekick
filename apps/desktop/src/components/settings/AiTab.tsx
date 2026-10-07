@@ -19,7 +19,7 @@ import {
   type VoiceSettings,
 } from "@/lib/types";
 import { SetupItems } from "../SetupChecklist";
-import { Button, Field, Section, Select, StatusDot, Switch, TextField, Toggle } from "./ui";
+import { Button, Field, Section, Segmented, Select, StatusDot, Switch, TextField, Toggle } from "./ui";
 
 export function AiTab({ onError }: { onError: (e: string) => void }) {
   const ai = useSidekick((s) => s.settings.ai);
@@ -428,8 +428,27 @@ function VoiceSection({ voice, onError }: { voice: VoiceSettings; onError: (e: s
         checked={voice.wakeWord}
         onChange={(wakeWord) => void set({ wakeWord })}
       />
+      <div className="flex items-center justify-between gap-4 text-[14px]">
+        <div className="min-w-0">
+          <p>While you talk</p>
+          <p className="text-[12px] text-(--muted)">
+            Compact is one slim line with your latest words. Full shows a waveform and your words in larger text. Both
+            open Ask when the answer is ready.
+          </p>
+        </div>
+        <Segmented
+          label="While you talk"
+          value={voice.listeningStyle ?? "compact"}
+          options={[
+            ["compact", "Compact"],
+            ["full", "Full"],
+          ]}
+          onChange={(listeningStyle) => void set({ listeningStyle })}
+        />
+      </div>
       <Toggle
-        label="Read answers aloud"
+        label="Speak replies"
+        hint="Also the speaker button next to the mic, Alt S."
         checked={voice.speakAnswers}
         onChange={(speakAnswers) => void set({ speakAnswers })}
       />

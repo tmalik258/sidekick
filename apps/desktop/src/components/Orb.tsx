@@ -91,6 +91,7 @@ export function Orb({
   magnetic = true,
   alive = false,
   simple = false,
+  active = true,
 }: {
   state: MascotState;
   /** A mood that overrides the state's own face for a while. */
@@ -103,6 +104,8 @@ export function Orb({
   alive?: boolean;
   /** Battery saver: no motion beyond what a state needs. */
   simple?: boolean;
+  /** False while nothing is on screen: the halo stops turning. */
+  active?: boolean;
 }) {
   const reduced = (useReducedMotion() ?? false) || simple;
   const expression = face ?? FOR_STATE[state];
@@ -122,8 +125,8 @@ export function Orb({
   const fx = useRef<HTMLDivElement>(null);
   const engine = useRef<OrbEngine | null>(null);
   // Latest props, so a rebuilt engine starts from them.
-  const latest = useRef({ theme, expression, alive });
-  latest.current = { theme, expression, alive };
+  const latest = useRef({ theme, expression, alive, active });
+  latest.current = { theme, expression, alive, active };
 
   useEffect(() => {
     const e = new OrbEngine(
@@ -149,6 +152,7 @@ export function Orb({
     e.setMaterial(THEME_STYLES[now.theme] ?? THEME_STYLES.pearl);
     e.show(now.expression);
     e.setAlive(now.alive);
+    e.setActive(now.active);
     engine.current = e;
     return () => {
       e.destroy();
@@ -165,6 +169,9 @@ export function Orb({
   useEffect(() => {
     engine.current?.setAlive(alive);
   }, [alive]);
+  useEffect(() => {
+    engine.current?.setActive(active);
+  }, [active]);
 
   // Cursor: gaze anywhere on screen, magnetic pull only nearby.
   useEffect(() => {

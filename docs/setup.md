@@ -70,3 +70,16 @@ Sidekick works with OpenAI's Codex CLI the same way as Claude Code, for people w
 - **Chat**: Codex is in Settings > AI next to Claude Code. It runs read-only in an empty folder.
 - **Continue in...**: Settings > AI > Coding agent picks who gets handoffs from Ask mode. Auto takes Claude Code when it is installed, else Codex.
 - **Notifications and tools**: Settings > Connections > Codex > Add for me adds a `notify` script and Sidekick's MCP server to `~/.codex/config.toml` (backed up first), so the island tells you when a Codex turn is done.
+
+## Supported versions
+
+Sidekick checks for these when it starts a session and says so plainly when something is too old.
+
+| What | Supported | Needs |
+| --- | --- | --- |
+| Windows | Windows 11, and Windows 10 22H2 | The island is a tinted capsule on both; nothing behind it is blurred. |
+| Claude Code | A current release (`claude update` keeps it there) | `--input-format stream-json`, `--permission-prompt-tool` and `--resume`. An older CLI shows "Claude Code is too old for this" with the command to update. |
+| Codex | A release with `codex app-server` (`npm install -g @openai/codex@latest`) | The app server's `thread/start`, `thread/resume` and `turn/steer`. Older versions fall back to `codex exec` in Ask; the Agents tab asks you to update. |
+| Ollama | 0.5 or newer | `/api/ps` for the model's context size, and `keep_alive`. |
+| Code editors | Cursor, VS Code, VSCodium, Antigravity, Windsurf, Zed, JetBrains IDEs (2023 or newer) and Visual Studio 2019 or newer | Found from Windows' list of installed apps; projects open with the editor's own command line. |
+| git | 2.30 or newer, for reviewing and undoing agent changes | Projects without git are tracked in a private copy inside Sidekick's data folder, so review and undo work there too. |
