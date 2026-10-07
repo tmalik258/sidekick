@@ -13,6 +13,7 @@ import { updateSettings, useSidekick } from "@/lib/store";
 import { type AppTime, type CalendarToday, formatDuration, type LaterItem } from "@/lib/types";
 import { Icon } from "./Icon";
 import { AgentsGlance, AwayCard, useAway } from "./IslandAgents";
+import { CardChips, CardHead, CardNote } from "./IslandCard";
 
 /** A meeting this close (or already on) takes the headline. */
 const MEETING_SOON_MIN = 60;
@@ -286,22 +287,15 @@ function CrashCard({ note, onDone }: { note: string; onDone: () => void }) {
       void api.aiOpenLink(url).then(dismiss);
     });
   return (
-    <div className="ak grid gap-2">
-      <p className="text-[15px] font-semibold">Sidekick closed unexpectedly</p>
-      <p className="text-[13px] text-[rgb(235_235_245/0.6)]">
-        The report has the version and the error, nothing else. You can read it before it is sent.
-      </p>
-      <pre className="max-h-20 overflow-hidden rounded-lg bg-white/[0.06] px-2.5 py-1.5 text-[11.5px] whitespace-pre-wrap text-[rgb(235_235_245/0.6)]">
-        {note}
-      </pre>
-      <div className="ak-chips" style={{ marginLeft: "calc(var(--orb-indent, 0px) * -1)" }}>
-        <button type="button" onClick={report} className="ak-chip primary chip">
-          Report it
-        </button>
-        <button type="button" onClick={dismiss} className="ak-chip chip">
-          Not now
-        </button>
-      </div>
+    <div className="flex flex-col">
+      <CardHead
+        title="Sidekick closed unexpectedly"
+        detail="The report has the version and the error, nothing else. You read it before it is sent."
+      />
+      <CardNote>
+        <span className="line-clamp-3">{note}</span>
+      </CardNote>
+      <CardChips options={[{ label: "Report it", run: report }]} quiet={{ label: "Not now", run: dismiss }} />
     </div>
   );
 }
