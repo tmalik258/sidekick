@@ -217,6 +217,40 @@ pub fn graphics_memory() -> Option<u64> {
     None
 }
 
+/// A user environment variable as saved in the registry (`setx`), which a
+/// running process does not see until it restarts.
+#[cfg(windows)]
+pub fn user_env(name: &str) -> Option<String> {
+    use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_SZ, RegGetValueW};
+    let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let key = wide("Environment");
+    let name = wide(name);
+    let mut buf = [0u16; 512];
+    let mut size = (buf.len() * 2) as u32;
+    // SAFETY: valid NUL-terminated strings and an out buffer of `size` bytes.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr().cast(),
+            &mut size,
+        )
+    };
+    if status != 0 {
+        return None;
+    }
+    let len = (size as usize / 2).saturating_sub(1);
+    Some(String::from_utf16_lossy(&buf[..len.min(buf.len())]))
+}
+
+#[cfg(not(windows))]
+pub fn user_env(name: &str) -> Option<String> {
+    std::env::var(name).ok()
+}
+
 /// Installed memory, in bytes.
 pub fn total_memory() -> u64 {
     System::new_with_specifics(

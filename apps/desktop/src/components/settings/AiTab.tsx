@@ -73,7 +73,7 @@ const PROVIDER_SETUP: Record<AiProviderId, string[]> = {
   claude_code: ["claude_code", "claude_hooks", "claude_mcp"],
   codex: ["codex", "codex_notify", "codex_mcp"],
   anthropic: ["anthropic"],
-  local: ["ollama", "ollama_chat", "ollama_embed", "ollama_vision"],
+  local: ["ollama", "ollama_chat", "ollama_embed", "ollama_vision", "ollama_light"],
 };
 
 const CODING_AGENTS: [string, string][] = [

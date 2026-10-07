@@ -47,6 +47,10 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 
 ### Ask and agents, after first use on Windows
 
+- A model that says nothing for 90 seconds (or runs past 5 minutes) is stopped and Auto asks the next one, instead of Ask waiting forever.
+- Instant results show on the first keystroke: the app and file lists are built in the background when Sidekick starts and when Ask opens, then matched in memory.
+- Agents, chats, editors and the island's look are read off the UI thread, so a slow disk or process scan no longer freezes Sidekick. Session memory is no longer measured on the UI thread every 5 seconds.
+- "Lighter Ollama" in Setup: one answer at a time, flash attention and an 8-bit cache, about half the memory and faster answers. The local model now unloads after 10 idle minutes instead of 30.
 - After you send, the input clears ("Ask a follow-up") and your question shows above the answer.
 - The app, what you copied and This PC only look like toggles again: a tick when on, an outline with + when left out.
 - Holding Alt shows only the letter on each control, like Windows KeyTips.

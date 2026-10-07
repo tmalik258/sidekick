@@ -53,6 +53,13 @@ export const SETUP_CATALOG: Array<{
     recommended: false,
   },
   {
+    id: "ollama_light",
+    group: "ai",
+    title: "Lighter Ollama",
+    why: "Uses about half the memory and answers faster. Restarts Ollama.",
+    recommended: true,
+  },
+  {
     id: "anthropic",
     group: "ai",
     title: "Anthropic API key",

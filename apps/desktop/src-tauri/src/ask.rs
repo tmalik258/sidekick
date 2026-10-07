@@ -224,6 +224,7 @@ pub fn ensure_welcome(app: &AppHandle) {
 }
 
 pub fn open(app: &AppHandle, mut open: Open) {
+    crate::instant::refresh(app);
     let Some(window) = app.get_webview_window(LABEL) else {
         return;
     };

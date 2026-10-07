@@ -378,6 +378,8 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         mascot::dispatch(app, MascotEvent::Rest);
     }
     log::info!("Sidekick started");
+    // App and file lists for instant results, ready before Ask first opens.
+    instant::refresh(app);
     Ok(())
 }
 

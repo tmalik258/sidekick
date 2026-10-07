@@ -65,7 +65,7 @@ pub struct EditorInfo {
     minutes: i64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Editors {
     editors: Vec<EditorInfo>,

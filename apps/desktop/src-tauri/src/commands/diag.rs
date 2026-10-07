@@ -9,7 +9,7 @@ use super::CmdResult;
 use crate::state::{AppState, lock};
 
 /// What the island adapts to: solid instead of glass, simpler on battery saver.
-#[derive(Serialize)]
+#[derive(Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemLook {
     transparency: bool,
@@ -17,11 +17,14 @@ pub struct SystemLook {
 }
 
 #[tauri::command]
-pub fn system_look() -> SystemLook {
-    SystemLook {
+pub async fn system_look() -> SystemLook {
+    // Registry and power status: off the UI thread.
+    tauri::async_runtime::spawn_blocking(|| SystemLook {
         transparency: sidekick_sensors::transparency_effects(),
         battery_saver: sidekick_sensors::battery_saver(),
-    }
+    })
+    .await
+    .unwrap_or_default()
 }
 
 const CRASH_FILE: &str = "last-crash.txt";

@@ -72,6 +72,12 @@ export function explain(error: string, provider: string | null | undefined): Fai
       },
     };
   }
+  if (/did not answer in|took over \d+ minutes/.test(e)) {
+    return {
+      title: "That model got stuck",
+      detail: "Sidekick stopped it and tried the others. Try again, or pick a different model.",
+    };
+  }
   if (/claude code usage limit/.test(e)) {
     return {
       title: "Claude Code's usage is used up",

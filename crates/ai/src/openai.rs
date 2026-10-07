@@ -683,7 +683,7 @@ impl AiProvider for OpenAiCompat {
         let sent = self
             .client
             .post(format!("{root}/api/generate"))
-            .json(&json!({ "model": model, "keep_alive": "30m" }))
+            .json(&json!({ "model": model, "keep_alive": "10m" }))
             .timeout(Duration::from_secs(120))
             .send()
             .await;

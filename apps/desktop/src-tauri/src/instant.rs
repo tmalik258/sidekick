@@ -1,6 +1,7 @@
 //! Instant results in Ask: installed apps and files whose name matches what
-//! is typed, found without any model. The app list is read from the Start
-//! menu when Ask opens and kept for a while; files get a short time budget.
+//! is typed, found without any model. Both lists are built in the background
+//! (at start and when Ask opens) and matched in memory, so results show on
+//! the first keystroke instead of after a disk walk or a PowerShell call.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -13,13 +14,30 @@ use crate::state::{AppState, lock};
 
 /// How long the Start menu list is trusted before it is read again.
 const APPS_FRESH: Duration = Duration::from_secs(10 * 60);
-/// Files must not hold up typing.
-const FILE_BUDGET: Duration = Duration::from_millis(150);
+/// How long the file list is trusted before it is walked again.
+const FILES_FRESH: Duration = Duration::from_secs(5 * 60);
+/// Before the file list exists, a live walk gets this long.
+const FILE_BUDGET: Duration = Duration::from_millis(80);
+/// The background walk stops after this many names or this long.
+const INDEX_CAP: usize = 200_000;
+const INDEX_BUDGET: Duration = Duration::from_secs(20);
 const MAX_EACH: usize = 3;
 
 /// When the Start menu list was read, and the list: (name, app id).
 type AppList = Option<(Instant, Vec<(String, String)>)>;
 static APPS: Mutex<AppList> = Mutex::new(None);
+
+/// One file or folder in the background list, its name ready to match.
+struct Entry {
+    key: String,
+    path: PathBuf,
+    folder: bool,
+}
+/// When the file list was built, and the list (nearest folders first).
+static FILES: Mutex<Option<(Instant, Vec<Entry>)>> = Mutex::new(None);
+/// A refresh is running; another one is not started.
+static APPS_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static FILES_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -46,18 +64,47 @@ pub struct Results {
     pub files: Vec<FileHit>,
 }
 
-/// Reads the Start menu list in the background when it is old or missing.
-pub fn refresh() {
+/// Rebuilds the app and file lists in the background when old or missing.
+/// The old lists keep answering meanwhile.
+pub fn refresh(app: &AppHandle) {
+    use std::sync::atomic::Ordering;
     let stale = lock(&APPS)
         .as_ref()
         .is_none_or(|(at, _)| at.elapsed() > APPS_FRESH);
-    if stale {
+    if stale && !APPS_BUSY.swap(true, Ordering::SeqCst) {
         std::thread::spawn(|| {
             if let Ok(list) = sidekick_actions::pc::installed_apps() {
                 *lock(&APPS) = Some((Instant::now(), list));
             }
+            APPS_BUSY.store(false, Ordering::SeqCst);
         });
     }
+    let stale = lock(&FILES)
+        .as_ref()
+        .is_none_or(|(at, _)| at.elapsed() > FILES_FRESH);
+    if stale && !FILES_BUSY.swap(true, Ordering::SeqCst) {
+        let roots = file_roots(app);
+        std::thread::spawn(move || {
+            let list = index(&roots);
+            *lock(&FILES) = Some((Instant::now(), list));
+            FILES_BUSY.store(false, Ordering::SeqCst);
+        });
+    }
+}
+
+/// Every name under `roots`, nearest first, skipping what `find` skips.
+fn index(roots: &[PathBuf]) -> Vec<Entry> {
+    let started = Instant::now();
+    let mut out = Vec::new();
+    crate::find::walk(roots, |path, name, folder| {
+        out.push(Entry {
+            key: crate::find::key(name),
+            path: path.to_path_buf(),
+            folder,
+        });
+        out.len() < INDEX_CAP && started.elapsed() < INDEX_BUDGET
+    });
+    out
 }
 
 /// Apps and files named like `query`, best first.
@@ -66,7 +113,7 @@ pub fn find(app: &AppHandle, query: &str) -> Results {
     if query.chars().count() < 2 {
         return Results::default();
     }
-    refresh();
+    refresh(app);
     let usage = week_usage(app);
     let apps = lock(&APPS)
         .as_ref()
@@ -125,7 +172,9 @@ fn week_usage(app: &AppHandle) -> Vec<(String, i64)> {
     storage.time_by_app_since(&since).unwrap_or_default()
 }
 
-fn find_files(app: &AppHandle, query: &str) -> Vec<FileHit> {
+/// The user's folders and code folders. App data is left out: it is huge and
+/// rarely what someone types a name for.
+fn file_roots(app: &AppHandle) -> Vec<PathBuf> {
     let Some(home) = dirs::home_dir() else {
         return Vec::new();
     };
@@ -139,24 +188,44 @@ fn find_files(app: &AppHandle, query: &str) -> Vec<FileHit> {
     } else {
         configured
     };
-    let roots = crate::find::roots(&home, &code);
-    crate::find::find(&roots, query, None, FILE_BUDGET)
+    crate::find::roots(&home, &code)
         .into_iter()
+        .filter(|r| !r.ends_with("Roaming") && !r.ends_with("Local"))
+        .collect()
+}
+
+fn find_files(app: &AppHandle, query: &str) -> Vec<FileHit> {
+    let words = crate::find::words(query);
+    if words.is_empty() {
+        return Vec::new();
+    }
+    let hits: Vec<(PathBuf, bool)> = match lock(&FILES).as_ref() {
+        Some((_, list)) => list
+            .iter()
+            .filter(|e| words.iter().all(|w| e.key.contains(w.as_str())))
+            .take(MAX_EACH)
+            .map(|e| (e.path.clone(), e.folder))
+            .collect(),
+        // Not built yet: a short live walk.
+        None => crate::find::find(&file_roots(app), query, None, FILE_BUDGET)
+            .into_iter()
+            .map(|f| (f.path, f.folder))
+            .collect(),
+    };
+    hits.into_iter()
         .take(MAX_EACH)
-        .map(|f| FileHit {
-            name: f
-                .path
+        .map(|(path, folder)| FileHit {
+            name: path
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default(),
-            place: f
-                .path
+            place: path
                 .parent()
                 .and_then(|p| p.file_name())
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default(),
-            path: f.path.to_string_lossy().into_owned(),
-            folder: f.folder,
+            path: path.to_string_lossy().into_owned(),
+            folder,
         })
         .collect()
 }
@@ -187,5 +256,32 @@ mod tests {
         assert_eq!(hits.len(), 2);
         assert_eq!(hits[0].name, "Cursor Agent");
         assert!(rank_apps(&list(), "zzz", &usage).is_empty());
+    }
+
+    /// Matching the background list must stay instant even for a big home
+    /// folder: 20,000 names in well under a frame.
+    #[test]
+    fn matching_the_file_list_is_instant() {
+        let dir = std::env::temp_dir().join(format!("sk-instant-{}", std::process::id()));
+        for i in 0..200 {
+            let sub = dir.join(format!("project-{i}"));
+            std::fs::create_dir_all(&sub).unwrap();
+            for j in 0..100 {
+                std::fs::write(sub.join(format!("note-{j}.txt")), "").unwrap();
+            }
+        }
+        std::fs::write(dir.join("project-7").join("Cursor settings.json"), "").unwrap();
+        let list = index(std::slice::from_ref(&dir));
+        assert!(list.len() > 20_000);
+        let started = Instant::now();
+        let words = crate::find::words("cursor sett");
+        let hit: Vec<_> = list
+            .iter()
+            .filter(|e| words.iter().all(|w| e.key.contains(w.as_str())))
+            .collect();
+        let took = started.elapsed();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(hit.len(), 1);
+        assert!(took < Duration::from_millis(16), "matching took {took:?}");
     }
 }

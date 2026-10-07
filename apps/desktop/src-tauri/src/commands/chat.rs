@@ -20,8 +20,11 @@ pub fn ai_chat(
 
 /// Installed code editors and the one projects open in.
 #[tauri::command]
-pub fn editors_list(app: AppHandle) -> crate::editors::Editors {
-    crate::editors::list(&app)
+pub async fn editors_list(app: AppHandle) -> crate::editors::Editors {
+    // Reads the registry and looks for editors on disk: off the UI thread.
+    tauri::async_runtime::spawn_blocking(move || crate::editors::list(&app))
+        .await
+        .unwrap_or_default()
 }
 
 /// Starts Claude Code or Codex in a project, inside the island.
@@ -76,8 +79,10 @@ pub async fn agent_send(id: String, text: String) -> CmdResult<()> {
 
 /// Carries on a session that ended or was cut off by a restart.
 #[tauri::command]
-pub fn agent_resume(app: AppHandle, id: String) -> CmdResult<()> {
-    crate::sessions::resume(&app, &id)
+pub async fn agent_resume(app: AppHandle, id: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::resume(&app, &id))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// How many files rewinding to before message `index` would put back.
@@ -154,8 +159,10 @@ pub fn agent_close(id: String) {
 
 /// Carries on in the CLI itself, in a terminal.
 #[tauri::command]
-pub fn agent_terminal(app: AppHandle, id: String) -> CmdResult<()> {
-    crate::sessions::open_terminal(&app, &id)
+pub async fn agent_terminal(app: AppHandle, id: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::open_terminal(&app, &id))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -182,7 +189,6 @@ pub fn timings_recent(app: AppHandle) -> Vec<crate::timings::Timing> {
 /// Turns the island into Ask mode, optionally with a prompt.
 #[tauri::command]
 pub fn ask_open(app: AppHandle, prompt: Option<String>, ask: bool) {
-    crate::instant::refresh();
     ask::open(
         &app,
         ask::Open {
@@ -248,26 +254,40 @@ pub async fn ai_open_link(app: AppHandle, target: String) -> CmdResult<String> {
 
 /// Which coding agents are installed and which one gets handoffs.
 #[tauri::command]
-pub fn agents_status(state: State<'_, AppState>) -> crate::agents::Agents {
-    crate::agents::status(&lock(&state.settings))
+pub async fn agents_status(app: AppHandle) -> CmdResult<crate::agents::Agents> {
+    // Looks for the CLIs on PATH: off the UI thread.
+    tauri::async_runtime::spawn_blocking(move || {
+        let settings = lock(&app.state::<AppState>().settings).clone();
+        crate::agents::status(&settings)
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// Recent Ask conversations, newest first.
 #[tauri::command]
-pub fn chats_list(state: State<'_, AppState>) -> CmdResult<Vec<sidekick_core::ChatSummary>> {
-    lock(&state.storage)
-        .recent_chats(30)
-        .map_err(|e| e.to_string())
+pub async fn chats_list(app: AppHandle) -> CmdResult<Vec<sidekick_core::ChatSummary>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        lock(&app.state::<AppState>().storage)
+            .recent_chats(30)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// A saved conversation's turns, as the UI saved them.
 #[tauri::command]
-pub fn chat_get(state: State<'_, AppState>, id: String) -> CmdResult<serde_json::Value> {
-    let text = lock(&state.storage)
-        .chat_turns(&id)
-        .map_err(|e| e.to_string())?
-        .ok_or("That conversation is gone")?;
-    serde_json::from_str(&text).map_err(|e| e.to_string())
+pub async fn chat_get(app: AppHandle, id: String) -> CmdResult<serde_json::Value> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let text = lock(&app.state::<AppState>().storage)
+            .chat_turns(&id)
+            .map_err(|e| e.to_string())?
+            .ok_or("That conversation is gone")?;
+        serde_json::from_str(&text).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Masks secrets in every string of a saved chat, so history never keeps them.
@@ -285,20 +305,25 @@ fn mask_strings(v: &mut serde_json::Value) {
 }
 
 #[tauri::command]
-pub fn chat_save(
-    state: State<'_, AppState>,
+pub async fn chat_save(
+    app: AppHandle,
     id: String,
     title: String,
     mut turns: serde_json::Value,
 ) -> CmdResult<()> {
-    let title: String = sidekick_sensors::classify::mask(title.trim())
-        .chars()
-        .take(80)
-        .collect();
-    mask_strings(&mut turns);
-    lock(&state.storage)
-        .save_chat(&id, &title, &turns.to_string())
-        .map_err(|e| e.to_string())
+    // Masking and writing a long chat after every answer: off the UI thread.
+    tauri::async_runtime::spawn_blocking(move || {
+        let title: String = sidekick_sensors::classify::mask(title.trim())
+            .chars()
+            .take(80)
+            .collect();
+        mask_strings(&mut turns);
+        lock(&app.state::<AppState>().storage)
+            .save_chat(&id, &title, &turns.to_string())
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -455,6 +480,10 @@ pub async fn file_open(app: AppHandle, path: String) -> CmdResult<()> {
 
 /// Memory an agent session uses, in bytes (None once it stopped).
 #[tauri::command]
-pub fn agent_memory(id: String) -> Option<u64> {
-    crate::sessions::memory(&id)
+pub async fn agent_memory(id: String) -> Option<u64> {
+    // Walks every process on the PC: never on the UI thread.
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::memory(&id))
+        .await
+        .ok()
+        .flatten()
 }
