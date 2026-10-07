@@ -45,6 +45,12 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 - Projects without git can be reviewed, undone and rewound too: Sidekick keeps a private copy in its own data folder and never adds git to the project.
 - Windows High contrast mode is followed, sounds stay quiet in Do Not Disturb, and the halo stops turning while the island is at rest.
 
+### Local model setup
+
+- Sidekick reaches Ollama on `127.0.0.1` instead of `localhost`. Windows tried IPv6 first, and a fresh Ollama only listens on IPv4, so it looked stopped until "Expose Ollama to the network" was turned on.
+- Installing Ollama from Sidekick also starts it and downloads the chat model, in one PowerShell window.
+- The chat model suits the PC: `qwen3:8b` with an 8 GB graphics card, `qwen3:4b` with 4 GB or 16 GB of memory, otherwise `qwen3:1.7b`.
+
 ### Ready for release
 
 - With Windows transparency effects off, the island is a solid colour; on Battery saver its halo is not blurred and the mascot stays still.

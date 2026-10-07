@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 
 use crate::{AiError, AiProvider, CancellationToken, ChatRequest, Sink, ToolDef, ToolRunner, sse};
 
-pub const OLLAMA_URL: &str = "http://localhost:11434/v1";
+pub const OLLAMA_URL: &str = "http://127.0.0.1:11434/v1";
 
 /// T1b: a local model through any OpenAI-compatible server (Ollama, LM
 /// Studio, llama.cpp server, vLLM). Nothing leaves the machine when the URL
@@ -26,9 +26,8 @@ impl OpenAiCompat {
     pub fn new(base_url: Option<String>, model: Option<String>) -> Self {
         let base_url = base_url
             .filter(|u| !u.trim().is_empty())
-            .unwrap_or_else(|| OLLAMA_URL.into())
-            .trim_end_matches('/')
-            .to_owned();
+            .unwrap_or_else(|| OLLAMA_URL.into());
+        let base_url = loopback(base_url.trim_end_matches('/'));
         Self {
             base_url,
             model: model.unwrap_or_default().trim().to_owned(),
@@ -169,6 +168,19 @@ impl OpenAiCompat {
 const WARM_AGAIN: Duration = Duration::from_secs(60);
 static LAST_WARM: std::sync::Mutex<Option<(String, std::time::Instant)>> =
     std::sync::Mutex::new(None);
+
+/// `localhost` as `127.0.0.1`. Windows tries `::1` first, and Ollama only
+/// listens on IPv4 unless "Expose Ollama to the network" is on, so a refused
+/// IPv6 connect (about 2 seconds on Windows) made a running Ollama look
+/// stopped.
+pub fn loopback(url: &str) -> String {
+    match url.split_once("://localhost") {
+        Some((scheme, rest)) if rest.is_empty() || rest.starts_with([':', '/']) => {
+            format!("{scheme}://127.0.0.1{rest}")
+        }
+        _ => url.to_owned(),
+    }
+}
 
 /// Ollama's own API root (without `/v1`), when the URL looks like Ollama.
 fn ollama_root(base_url: &str) -> Option<&str> {
@@ -727,6 +739,28 @@ mod tests {
         );
         assert_eq!(ollama_root("http://localhost:1234/v1"), None);
         assert_eq!(ollama_root("http://localhost:11434"), None);
+    }
+
+    #[test]
+    fn talks_to_ollama_over_ipv4() {
+        assert_eq!(
+            loopback("http://localhost:11434/v1"),
+            "http://127.0.0.1:11434/v1"
+        );
+        assert_eq!(loopback("http://localhost"), "http://127.0.0.1");
+        assert_eq!(
+            loopback("http://localhost.lan:1/v1"),
+            "http://localhost.lan:1/v1"
+        );
+        assert_eq!(
+            loopback("http://192.168.1.5:11434/v1"),
+            "http://192.168.1.5:11434/v1"
+        );
+        assert!(
+            OpenAiCompat::new(None, None)
+                .base_url
+                .starts_with("http://127.0.0.1:11434")
+        );
     }
     use crate::Message;
     use async_trait::async_trait;

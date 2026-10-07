@@ -35,7 +35,7 @@ export const SETUP_CATALOG: Array<{
     id: "ollama_chat",
     group: "ai",
     title: "Local chat model",
-    why: "Private answers on this PC. About 2.5 GB.",
+    why: "Private answers on this PC, from a model that suits it.",
     recommended: false,
   },
   {

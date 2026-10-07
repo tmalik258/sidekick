@@ -58,7 +58,7 @@ export function explain(error: string, provider: string | null | undefined): Fai
   if (/no model found|pull a model|ollama pull/.test(e)) {
     return {
       title: "No local model downloaded yet",
-      detail: "Ollama is running but has no chat model. The download is about 2.5 GB.",
+      detail: "Ollama is running but has no chat model yet. Sidekick downloads one that suits this PC.",
       fix: { label: "Download it", run: () => api.setupRun("ollama_chat") },
     };
   }
@@ -191,7 +191,7 @@ export function FirstRun() {
     {
       id: "pc",
       title: "This PC",
-      note: "Free and private. Installs Ollama and a 2.5 GB model.",
+      note: "Free and private. Installs Ollama and a model picked for this PC.",
       action: pcReady ? "Ready" : running === pcStep?.id ? "Setting up..." : (pcStep?.action ?? "Set up"),
       recommended: true,
       go: () => run(pcStep),

@@ -353,7 +353,7 @@ export const DEFAULT_SETTINGS: Settings = {
     claudeCode: { enabled: true, path: "", model: FAST_CLAUDE_MODEL },
     codex: { enabled: true, path: "", model: FAST_CODEX_MODEL },
     codingAgent: "auto",
-    local: { enabled: true, baseUrl: "http://localhost:11434/v1", model: "", visionModel: "" },
+    local: { enabled: true, baseUrl: "http://127.0.0.1:11434/v1", model: "", visionModel: "" },
     anthropic: { enabled: true, model: FAST_CLAUDE_MODEL },
     semif: {
       enabled: true,

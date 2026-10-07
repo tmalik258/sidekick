@@ -459,7 +459,7 @@ impl Default for LocalModelPref {
     fn default() -> Self {
         Self {
             enabled: true,
-            base_url: "http://localhost:11434/v1".into(),
+            base_url: "http://127.0.0.1:11434/v1".into(),
             model: String::new(),
             vision_model: String::new(),
         }
@@ -528,7 +528,9 @@ impl AiSettings {
         if !CODING_AGENTS.contains(&self.coding_agent.as_str()) {
             self.coding_agent = "auto".into();
         }
-        if self.local.base_url.trim().is_empty() {
+        // The old default; Ollama listens on IPv4 only (see `loopback`).
+        let old = self.local.base_url.trim().trim_end_matches('/');
+        if old.is_empty() || old == "http://localhost:11434/v1" {
             self.local.base_url = LocalModelPref::default().base_url;
         }
         self.semif.command.retain(|a| !a.trim().is_empty());
@@ -784,7 +786,7 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"muted":true}"#).unwrap();
         assert!(s.muted);
         assert!(s.ai.claude_code.enabled);
-        assert_eq!(s.ai.local.base_url, "http://localhost:11434/v1");
+        assert_eq!(s.ai.local.base_url, "http://127.0.0.1:11434/v1");
         assert!(s.ai.semif.enabled);
     }
 
