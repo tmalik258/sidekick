@@ -64,15 +64,20 @@ pub struct SearchStatus {
 }
 
 #[tauri::command]
-pub fn search_status(app: AppHandle) -> CmdResult<SearchStatus> {
-    let items = lock(&app.state::<AppState>().storage)
-        .search_count()
-        .map_err(|e| e.to_string())?;
-    Ok(SearchStatus {
-        items,
-        embedded: crate::search::embedded_count(&app),
-        embed_error: crate::search::embed_error(),
+pub async fn search_status(app: AppHandle) -> CmdResult<SearchStatus> {
+    // Counts rows in the search index: off the UI thread (57 ms in CI).
+    tauri::async_runtime::spawn_blocking(move || {
+        let items = lock(&app.state::<AppState>().storage)
+            .search_count()
+            .map_err(|e| e.to_string())?;
+        Ok(SearchStatus {
+            items,
+            embedded: crate::search::embedded_count(&app),
+            embed_error: crate::search::embed_error(),
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
