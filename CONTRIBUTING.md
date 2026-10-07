@@ -31,14 +31,11 @@ Voice tests that need the speech models run when `SIDEKICK_VOICE_MODELS` points 
 
 ### End-to-end tests (Windows)
 
-`pnpm --filter desktop e2e` drives the real app: it opens Ask, checks instant results, the tabs, every Settings tab and This PC only, and fails on a page error, a step over its time budget, or anything that held the UI thread over 250 ms. CI runs it on every pull request (job `e2e-windows`, screenshots in the `e2e-windows` artifact). To run it locally:
+`pnpm --filter desktop e2e` drives the real app (Playwright attached to its WebView2): it opens Ask, checks instant results, the tabs, every Settings tab and This PC only, and fails on a page error, a step over its time budget, or anything that held the UI thread over 250 ms. CI runs it on every pull request (job `e2e-windows`, screenshots in the `e2e-windows` artifact). To run it locally:
 
 ```powershell
-cargo install tauri-driver --locked
-cargo install --git https://github.com/chippers/msedgedriver-tool
-cd apps/desktop; msedgedriver-tool
+cd apps/desktop
 pnpm tauri build --debug --no-bundle --config src-tauri/tauri.e2e.conf.json
-Start-Process tauri-driver -ArgumentList '--native-driver', "$PWD\msedgedriver.exe"
 pnpm e2e
 ```
 
