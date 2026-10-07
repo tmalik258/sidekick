@@ -22,7 +22,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
+      - run: pnpm --filter desktop check:contrast
       - run: pnpm --filter desktop build
+      - run: pnpm --filter desktop exec playwright install --with-deps chromium
+      - run: pnpm --filter desktop speed
+      - run: pnpm --filter desktop visual
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: island-screenshots
+          path: apps/desktop/visual/
+          retention-days: 14
 
   rust-windows:
     runs-on: windows-latest

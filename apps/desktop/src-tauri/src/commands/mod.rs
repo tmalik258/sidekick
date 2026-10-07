@@ -19,11 +19,13 @@ use crate::windows;
 
 mod chat;
 mod data;
+mod diag;
 mod notify;
 mod setup;
 mod voice;
 pub use chat::*;
 pub use data::*;
+pub use diag::*;
 pub use notify::*;
 pub use setup::*;
 pub use voice::*;

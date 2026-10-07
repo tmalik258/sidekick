@@ -62,6 +62,8 @@ export interface Settings {
   routinesAuto: boolean;
   /** The mascot idles on its own: glances around, blinks, the odd smile. */
   alive: boolean;
+  /** After a crash, offer a report to send (never sent on its own). */
+  crashReports: boolean;
   /** Fade the island while a fullscreen app is in front. */
   hideInFullscreen: boolean;
   notifications: NotificationSettings;
@@ -372,6 +374,7 @@ export const DEFAULT_SETTINGS: Settings = {
   routinesAuto: false,
   hideInFullscreen: false,
   alive: true,
+  crashReports: false,
   notifications: { enabled: true, apps: {}, vip: [] },
   recipes: [],
   memory: [],

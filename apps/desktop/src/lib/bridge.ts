@@ -135,6 +135,10 @@ export async function listen<K extends keyof EventPayloads>(
 
 export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
+  systemLook: () => invoke<{ transparency: boolean; batterySaver: boolean }>("system_look"),
+  diagnostics: () => invoke<string>("diagnostics"),
+  crashPending: () => invoke<string | null>("crash_pending"),
+  crashDismiss: () => invoke<void>("crash_dismiss"),
   settingsGet: () => invoke<Settings>("settings_get"),
   settingsSet: (settings: Settings) => invoke<Settings>("settings_set", { settings }),
   sensorsPause: (minutes: number | null) => invoke<Settings>("sensors_pause", { minutes }),

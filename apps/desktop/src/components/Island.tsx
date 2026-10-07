@@ -9,12 +9,13 @@ import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } fr
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { listenToAgents, useAgents } from "@/lib/agents";
 import { api } from "@/lib/bridge";
-import { useNow } from "@/lib/hooks";
+import { useNow, useSystemLook } from "@/lib/hooks";
 import { ISLAND_TOP, PANEL_PAD } from "@/lib/islandSize";
 import type { NetNotice } from "@/lib/net";
 import { playSound } from "@/lib/sound";
 import { connect, notePick, setHovered, uiVolume, useSidekick, watchWaiting } from "@/lib/store";
 import { isPaused, type MascotState, type Suggestion } from "@/lib/types";
+import { Announcer } from "./Announcer";
 import { ASK_MASCOT, ASK_ORB, ASK_PAD, AskPanel, VoiceBars } from "./AskPanel";
 import { Icon } from "./Icon";
 import { Glance, RoundButton } from "./IslandGlance";
@@ -123,6 +124,7 @@ export function Island() {
   const hearing = useSidekick((s) => (s.ask ? null : s.hearing));
   const voiceQuestion = useSidekick((s) => (s.ask ? null : s.voiceQuestion));
   const reduced = useReducedMotion() ?? false;
+  const look = useSystemLook();
   const now = useNow(15_000);
   const paused = isPaused(settings.pause, now);
   // Closing a panel (Hide, Esc, Done) goes straight to the small orb. The
@@ -335,6 +337,8 @@ export function Island() {
         className="island-shell relative overflow-hidden text-white"
         data-bare={bare}
         data-color={settings.islandColor}
+        data-solid={look.solid || undefined}
+        data-simple={look.simple || undefined}
         initial={false}
         animate={{ width, height, borderRadius: radius }}
         transition={transition}
@@ -342,6 +346,7 @@ export function Island() {
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}
       >
+        <Announcer />
         <motion.div
           className="absolute top-0 left-0"
           initial={false}
@@ -354,7 +359,8 @@ export function Island() {
             face={chatting && mascot === "idle" ? null : face}
             size={ORB}
             theme={settings.theme}
-            alive={settings.alive && visible}
+            alive={settings.alive && visible && !look.simple}
+            simple={look.simple}
           />
         </motion.div>
 
@@ -471,7 +477,7 @@ function VoicePill({ text, thinking, working }: { text: string; thinking: boolea
     >
       <span
         className={`min-w-0 flex-1 truncate text-[12.5px] font-medium ${
-          text.trim() || thinking ? "text-white/90" : "text-white/50"
+          text.trim() || thinking ? "text-white/90" : "text-white/62"
         }`}
       >
         {label}
@@ -671,7 +677,7 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
           <span className="max-w-60 leading-snug text-balance">{option}</span>
           <kbd
             className={`shrink-0 self-center font-sans text-[11px] leading-none ${
-              i === 0 ? "text-black/40" : "text-white/35"
+              i === 0 ? "text-black/40" : "text-white/45"
             }`}
           >
             Alt {i + 1}
@@ -700,7 +706,7 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
         className="chip rounded-full px-2.5 py-1.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
       >
         Not now
-        <kbd className="ml-1.5 font-sans text-[11px] text-white/35">Alt 0</kbd>
+        <kbd className="ml-1.5 font-sans text-[11px] text-white/45">Alt 0</kbd>
       </motion.button>
     </div>
   );

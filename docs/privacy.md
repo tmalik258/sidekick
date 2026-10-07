@@ -6,6 +6,9 @@ Sidekick runs on your PC and keeps what it sees there.
 - **Morning setup** (Settings > Skills): the first time you open each app, and each site in your active tab (with the browser extension, domain only, never the page), during the first hour of a day. Kept for 60 days on this PC to suggest your usual start. Turn it Off, take one app out with a click, or press Start over any time.
 - **Work log**: Save to work log appends to Documents\Sidekick\worklog.md, only when you press it.
 - **Clipboard secrets** (keys, tokens, passwords) are detected and never stored, indexed or sent to AI.
+- **Secrets in chats and agent work** (API keys, tokens, private keys, passwords) are shown as dots in saved chats, agent transcripts, command output and the change review.
+- **Copy diagnostics** (Settings > Home > About) copies the version, Windows version, which models answer, recent timings and the end of the log, with secrets and your user name taken out. Nothing is sent; you paste it where you choose.
+- **Crash reports** are off until you turn on Offer to report crashes. After a crash Sidekick then shows the error and opens a GitHub issue you can read and edit before sending. Nothing is sent on its own.
 - **Browser password stores** are never read or written. Cookies are never read.
 - **AI** only sees what you send it: your question, plus the window, clipboard, page or screenshot you choose to attach. Claude Code runs in an empty folder and Sidekick never reads its credential files.
 - **Voice** is on by default and can be turned off in Settings > AI. Speech recognition and the Supertonic voice run on this PC; audio is never saved or sent. Only the words you say go to your AI, like a typed question.

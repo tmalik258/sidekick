@@ -22,6 +22,8 @@ const LATER_SHOWN = 3;
 export function Glance({ paused }: { paused: boolean }) {
   const sessions = useAgents((s) => s.sessions);
   const away = useAway();
+  const { data: crash, refresh: refreshCrash } = useCached<string | null>("crash", api.crashPending);
+  if (crash) return <CrashCard note={crash} onDone={() => void refreshCrash()} />;
   if (away.rows.length > 0) return <AwayCard />;
   if (sessions.some((s) => s.status === "working" || s.status === "waiting"))
     return <AgentsGlance sessions={sessions} />;
@@ -75,7 +77,7 @@ function FullscreenSwitch() {
     >
       <span className="min-w-0 flex-1">
         <span className="block text-[13px] font-medium text-white">Hide while fullscreen</span>
-        <span className="block text-[12px] text-[rgb(235_235_245/0.55)]">
+        <span className="block text-[12px] text-[rgb(235_235_245/0.62)]">
           {hide ? "Hidden; hover the top edge to bring it back" : "The island stays on top of this app"}
         </span>
       </span>
@@ -189,7 +191,7 @@ function LaterList() {
           >
             <span className="min-w-0 flex-1 overflow-hidden">
               <span className="block truncate text-[13px] font-medium text-white">{l.title}</span>
-              <span className="block truncate text-[12px] text-[rgb(235_235_245/0.55)]">{l.detail}</span>
+              <span className="block truncate text-[12px] text-[rgb(235_235_245/0.62)]">{l.detail}</span>
             </span>
             <span className="shrink-0 text-[11px] text-white/40 tabular-nums">{ago(l.minutesAgo)}</span>
           </button>
@@ -199,7 +201,7 @@ function LaterList() {
         <button
           type="button"
           onClick={() => setAll(true)}
-          className="chip self-start text-[12px] text-white/50 hover:text-white"
+          className="chip self-start text-[12px] text-white/62 hover:text-white"
         >
           Show {items.length - LATER_SHOWN} more
         </button>
@@ -268,5 +270,38 @@ export function RoundButton({ label, onClick, children }: { label: string; onCli
     >
       {children}
     </button>
+  );
+}
+
+const ISSUES = "https://github.com/tmalik258/sidekick/issues/new";
+
+/** After a crash, for people who opted in: the report, and sending it is
+ * their choice (a GitHub issue they can read and edit first). */
+function CrashCard({ note, onDone }: { note: string; onDone: () => void }) {
+  const dismiss = () => void api.crashDismiss().then(onDone);
+  const report = () =>
+    void api.appInfo().then((info) => {
+      const body = `Sidekick ${info.version} closed unexpectedly.\n\n\`\`\`\n${note}\n\`\`\`\n\nWhat I was doing:\n`;
+      const url = `${ISSUES}?title=${encodeURIComponent("Crash report")}&body=${encodeURIComponent(body)}`;
+      void api.aiOpenLink(url).then(dismiss);
+    });
+  return (
+    <div className="ak grid gap-2">
+      <p className="text-[15px] font-semibold">Sidekick closed unexpectedly</p>
+      <p className="text-[13px] text-[rgb(235_235_245/0.6)]">
+        The report has the version and the error, nothing else. You can read it before it is sent.
+      </p>
+      <pre className="max-h-20 overflow-hidden rounded-lg bg-white/[0.06] px-2.5 py-1.5 text-[11.5px] whitespace-pre-wrap text-[rgb(235_235_245/0.6)]">
+        {note}
+      </pre>
+      <div className="ak-chips" style={{ marginLeft: "calc(var(--orb-indent, 0px) * -1)" }}>
+        <button type="button" onClick={report} className="ak-chip primary chip">
+          Report it
+        </button>
+        <button type="button" onClick={dismiss} className="ak-chip chip">
+          Not now
+        </button>
+      </div>
+    </div>
   );
 }

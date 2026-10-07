@@ -44,7 +44,7 @@ export function ChatHistory({
               <Icon name="ask" size={13} />
             </span>
             <span className="min-w-0 flex-1 truncate text-[13px] text-white/90">{c.title}</span>
-            <span className="shrink-0 text-[11px] text-[rgb(235_235_245/0.4)]">{ago(c.updated)}</span>
+            <span className="shrink-0 text-[11px] text-[rgb(235_235_245/0.45)]">{ago(c.updated)}</span>
             {i === active && <Kbd>Enter</Kbd>}
           </button>
           <button
@@ -98,7 +98,7 @@ export function Clips({
             }`}
           >
             <span className="line-clamp-2 min-w-0 flex-1 font-mono text-[12px] break-all text-white/85">{c.text}</span>
-            <span className="shrink-0 text-[11px] text-[rgb(235_235_245/0.4)] tabular-nums">
+            <span className="shrink-0 text-[11px] text-[rgb(235_235_245/0.45)] tabular-nums">
               {new Date(c.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </span>
             {i === active && <Kbd>Enter</Kbd>}
@@ -148,7 +148,7 @@ export function Results({
                 </span>
                 <span className="truncate text-white/90">{h.title || h.reference}</span>
               </span>
-              <span className="line-clamp-2 text-[12px] text-[rgb(235_235_245/0.55)]">
+              <span className="line-clamp-2 text-[12px] text-[rgb(235_235_245/0.62)]">
                 <Snippet text={h.snippet} />
               </span>
             </button>

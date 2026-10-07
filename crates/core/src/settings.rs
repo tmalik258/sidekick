@@ -110,6 +110,8 @@ pub struct Settings {
     pub hide_in_fullscreen: bool,
     /// The mascot idles on its own: glances around, blinks, the odd smile.
     pub alive: bool,
+    /// After a crash, offer a report to send (never sent on its own).
+    pub crash_reports: bool,
     /// The notification inbox: Sidekick reads Windows notifications and only
     /// brings up what matters.
     pub notifications: NotificationSettings,
@@ -600,6 +602,7 @@ impl Default for Settings {
             routines_auto: false,
             hide_in_fullscreen: false,
             alive: true,
+            crash_reports: false,
             notifications: NotificationSettings::default(),
             recipes: Vec::new(),
             memory: Vec::new(),

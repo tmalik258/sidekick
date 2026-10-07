@@ -91,6 +91,24 @@ mod tests {
         json!({ "role": role, "content": "x".repeat(n) })
     }
 
+    /// Speed target: fitting runs before every local answer, so even a long
+    /// chat with big tool results is trimmed well under the time to first word.
+    #[test]
+    fn fits_a_long_chat_quickly() {
+        let mut m = vec![msg("system", 8_000)];
+        for _ in 0..200 {
+            m.push(msg("user", 2_000));
+            m.push(msg("tool", 20_000));
+            m.push(msg("assistant", 3_000));
+        }
+        let start = std::time::Instant::now();
+        fit(&mut m, 12_000);
+        let took = start.elapsed();
+        assert!(took < std::time::Duration::from_millis(50), "took {took:?}");
+        // Only the rules and the newest turn are left.
+        assert!(m.len() <= 4, "{} messages left", m.len());
+    }
+
     #[test]
     fn leaves_a_short_chat_alone() {
         let mut m = vec![msg("system", 100), msg("user", 50)];

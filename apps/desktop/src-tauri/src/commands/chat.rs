@@ -270,14 +270,32 @@ pub fn chat_get(state: State<'_, AppState>, id: String) -> CmdResult<serde_json:
     serde_json::from_str(&text).map_err(|e| e.to_string())
 }
 
+/// Masks secrets in every string of a saved chat, so history never keeps them.
+fn mask_strings(v: &mut serde_json::Value) {
+    match v {
+        serde_json::Value::String(s) => {
+            if let std::borrow::Cow::Owned(m) = sidekick_sensors::classify::mask(s) {
+                *s = m;
+            }
+        }
+        serde_json::Value::Array(a) => a.iter_mut().for_each(mask_strings),
+        serde_json::Value::Object(o) => o.values_mut().for_each(mask_strings),
+        _ => {}
+    }
+}
+
 #[tauri::command]
 pub fn chat_save(
     state: State<'_, AppState>,
     id: String,
     title: String,
-    turns: serde_json::Value,
+    mut turns: serde_json::Value,
 ) -> CmdResult<()> {
-    let title: String = title.trim().chars().take(80).collect();
+    let title: String = sidekick_sensors::classify::mask(title.trim())
+        .chars()
+        .take(80)
+        .collect();
+    mask_strings(&mut turns);
     lock(&state.storage)
         .save_chat(&id, &title, &turns.to_string())
         .map_err(|e| e.to_string())

@@ -140,6 +140,42 @@ impl Sensor for SystemSensor {
     }
 }
 
+/// Battery saver is on: the island keeps its look simple to save power.
+pub fn battery_saver() -> bool {
+    battery().is_some_and(|(_, _, saver)| saver)
+}
+
+/// Windows' "Transparency effects" (Settings > Personalization > Colors).
+/// When off, the island is a solid colour instead of glass.
+#[cfg(windows)]
+pub fn transparency_effects() -> bool {
+    use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
+    let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let key = wide(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+    let name = wide("EnableTransparency");
+    let mut value: u32 = 1;
+    let mut size = std::mem::size_of::<u32>() as u32;
+    // SAFETY: valid NUL-terminated strings and an out buffer of `size` bytes.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            (&mut value as *mut u32).cast(),
+            &mut size,
+        )
+    };
+    // Missing value: Windows' default, on.
+    status != 0 || value != 0
+}
+
+#[cfg(not(windows))]
+pub fn transparency_effects() -> bool {
+    true
+}
+
 /// Below this, on battery, power saving is offered.
 const BATTERY_LOW_PCT: u8 = 20;
 

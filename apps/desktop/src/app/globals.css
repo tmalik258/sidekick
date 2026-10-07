@@ -413,6 +413,25 @@ body {
   --isl-sheen: none;
 }
 
+/* Windows transparency effects off: a solid colour, no sheen. */
+.island-shell[data-solid] {
+  background-color: rgb(from var(--isl-bg) r g b / 1);
+}
+.island-shell[data-solid]::before {
+  opacity: 0;
+}
+/* Battery saver: the halo is not blurred, no sheen or colour fades. */
+.island-shell[data-simple] {
+  transition: none;
+}
+.island-shell[data-simple]::before {
+  opacity: 0;
+}
+.island-shell[data-simple] .orb-halo {
+  filter: none;
+  opacity: calc(var(--halo) * 0.5);
+}
+
 /* Idle and sleeping: just the sphere, no capsule behind it. */
 .island-shell[data-bare="true"] {
   background-color: transparent;
@@ -507,7 +526,7 @@ body {
   --bg: #000;
   --surface: rgb(255 255 255 / 0.06);
   --text: #fff;
-  --muted: rgb(235 235 245 / 0.55);
+  --muted: rgb(235 235 245 / 0.62);
   --border: rgb(255 255 255 / 0.1);
   --hover: rgb(255 255 255 / 0.1);
   --accent: #0a84ff;
@@ -865,7 +884,7 @@ body {
 .ak {
   --ink: #f5f5f7;
   --i2: rgb(235 235 245 / 0.6);
-  --i3: rgb(235 235 245 / 0.36);
+  --i3: rgb(235 235 245 / 0.45);
   --chipbg: rgb(255 255 255 / 0.09);
   display: grid;
   gap: 8px;
@@ -1414,7 +1433,7 @@ body {
 select.ak-mi {
   padding-right: 18px;
   background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='rgb(235 235 245 / 0.5)' stroke-width='2.4' stroke-linecap='round' d='m7 10 5 5 5-5'/%3E%3C/svg%3E")
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='rgb(235 235 245 / 0.62)' stroke-width='2.4' stroke-linecap='round' d='m7 10 5 5 5-5'/%3E%3C/svg%3E")
     no-repeat right 4px center / 10px;
 }
 select.ak-mi:hover,

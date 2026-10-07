@@ -629,7 +629,7 @@ export function AskPanel() {
     !best && !firstRun ? (
       <div className="ak-foot items-center">
         {providersData === null ? (
-          <SetupSpinner className="text-white/50" />
+          <SetupSpinner className="text-white/62" />
         ) : (
           <span className="size-1.5 self-center rounded-full bg-[#ffd60a]" aria-hidden="true" />
         )}

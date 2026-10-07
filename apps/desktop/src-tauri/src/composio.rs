@@ -434,6 +434,9 @@ pub struct Runner {
     app: AppHandle,
     chat_id: String,
     handoff: Arc<Mutex<Option<String>>>,
+    /// This PC only: tools that reach the internet are refused even when the
+    /// model names one it was not given.
+    offline: bool,
 }
 
 #[async_trait]
@@ -458,6 +461,11 @@ impl ToolRunner for Runner {
             *lock(&self.handoff) = Some(reason.chars().take(160).collect());
             return "Noted. Tell the user in one sentence that Claude Code can finish this, \
                     with the button below the answer."
+                .into();
+        }
+        if self.offline && crate::ask_tools::is_web(name) {
+            return "Error: this question is set to This PC only, so nothing goes online. \
+                    Answer from this PC, or say it needs the internet."
                 .into();
         }
         if plumbing(name) {
@@ -645,6 +653,7 @@ impl AiProvider for LocalWithTools {
             app: self.app.clone(),
             chat_id: self.chat_id.clone(),
             handoff: self.handoff.clone(),
+            offline: self.offline,
         };
         let end = match self
             .inner
