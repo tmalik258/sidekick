@@ -37,7 +37,7 @@ Voice tests that need the speech models run when `SIDEKICK_VOICE_MODELS` points 
 cargo install tauri-driver --locked
 cargo install --git https://github.com/chippers/msedgedriver-tool
 cd apps/desktop; msedgedriver-tool
-pnpm tauri build --debug --no-bundle
+pnpm tauri build --debug --no-bundle --config src-tauri/tauri.e2e.conf.json
 Start-Process tauri-driver -ArgumentList '--native-driver', "$PWD\msedgedriver.exe"
 pnpm e2e
 ```
