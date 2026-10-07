@@ -47,6 +47,8 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 
 ### Ask and agents, after first use on Windows
 
+- Freeze watch: anything that holds the UI thread over 50 ms is logged with the command that caused it, and shows in Copy diagnostics.
+- End-to-end tests drive the real app on Windows in CI: Ask, instant results, tabs, every Settings tab, This PC only, page errors and freezes.
 - A model that says nothing for 90 seconds (or runs past 5 minutes) is stopped and Auto asks the next one, instead of Ask waiting forever.
 - Instant results show on the first keystroke: the app and file lists are built in the background when Sidekick starts and when Ask opens, then matched in memory.
 - Agents, chats, editors and the island's look are read off the UI thread, so a slow disk or process scan no longer freezes Sidekick. Session memory is no longer measured on the UI thread every 5 seconds.

@@ -54,3 +54,37 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+
+  # Drives the real app on Windows: Ask, instant results, tabs, every
+  # Settings tab, This PC only, and fails if the UI thread froze.
+  e2e-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: e2e
+      - uses: ./.github/actions/sherpa-onnx
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: cargo install tauri-driver --locked
+      - run: cargo install --git https://github.com/chippers/msedgedriver-tool
+      # A WebDriver that matches this runner's WebView2.
+      - run: msedgedriver-tool
+        working-directory: apps/desktop
+      - run: pnpm --filter desktop tauri build --debug --no-bundle
+      - name: Start tauri-driver
+        shell: pwsh
+        run: Start-Process tauri-driver -ArgumentList '--native-driver', "$PWD\apps\desktop\msedgedriver.exe" -WindowStyle Hidden
+      - run: pnpm --filter desktop e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-windows
+          path: apps/desktop/e2e/
+          retention-days: 14
