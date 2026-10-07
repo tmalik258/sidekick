@@ -72,8 +72,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # The test build leaves out the window's own WebView2 arguments, so the
-      # debugging port the test opens is not replaced.
+      # The test build opens WebView2's debugging port (9229) for Playwright;
+      # set in the window's own arguments, since they replace the environment's.
       - run: pnpm --filter desktop tauri build --debug --no-bundle --config src-tauri/tauri.e2e.conf.json
       - run: pnpm --filter desktop e2e
       - uses: actions/upload-artifact@v4
