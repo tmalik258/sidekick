@@ -102,6 +102,16 @@ pub async fn diagnostics(app: AppHandle) -> String {
             .collect();
         out.push_str(&format!("Timings: {}\n", list.join("; ")));
     }
+    let freezes = crate::freeze::report();
+    if !freezes.is_empty() {
+        let list: Vec<String> = freezes
+            .iter()
+            .rev()
+            .take(10)
+            .map(|f| format!("{} {} ms at {} s", f.what, f.ms, f.at))
+            .collect();
+        out.push_str(&format!("UI thread held: {}\n", list.join("; ")));
+    }
     if let Ok(crash) = std::fs::read_to_string(data_dir.join(CRASH_FILE)) {
         out.push_str(&format!("\nLast crash:\n{}\n", crash.trim()));
     }
@@ -132,6 +142,12 @@ pub fn crash_pending(state: State<'_, AppState>) -> Option<String> {
 pub fn crash_dismiss(state: State<'_, AppState>) -> CmdResult<()> {
     let text = std::fs::read_to_string(state.data_dir.join(CRASH_FILE)).unwrap_or_default();
     std::fs::write(state.data_dir.join("last-crash-seen.txt"), text).map_err(|e| e.to_string())
+}
+
+/// What held the UI thread long enough to show, oldest first.
+#[tauri::command]
+pub async fn freeze_report() -> Vec<crate::freeze::Freeze> {
+    crate::freeze::report()
 }
 
 #[cfg(test)]

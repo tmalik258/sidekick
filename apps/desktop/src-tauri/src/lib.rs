@@ -23,6 +23,7 @@ mod extension;
 mod fathom;
 mod files;
 mod find;
+mod freeze;
 mod health;
 mod inbox;
 mod instant;
@@ -109,7 +110,8 @@ pub fn run() {
             setup(app.handle())?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(freeze::timed(tauri::generate_handler![
+            commands::freeze_report,
             commands::app_info,
             commands::system_look,
             commands::diagnostics,
@@ -242,7 +244,7 @@ pub fn run() {
             commands::search_reindex,
             commands::open_reference,
             commands::action_undo,
-        ])
+        ]))
         .run(tauri::generate_context!())
         .expect("error while running Sidekick");
 }
@@ -380,6 +382,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     log::info!("Sidekick started");
     // App and file lists for instant results, ready before Ask first opens.
     instant::refresh(app);
+    freeze::watch(app);
     Ok(())
 }
 
