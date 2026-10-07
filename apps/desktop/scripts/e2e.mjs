@@ -1,5 +1,5 @@
-// End-to-end regression tests on the real app (Windows): starts the debug
-// build with WebView2's debugging port open, connects Playwright to it (the
+// End-to-end regression tests on the real app (Windows): starts the test
+// build, whose WebView2 opens a debugging port (tauri.e2e.conf.json), connects Playwright to it (the
 // way Microsoft documents for automating WebView2), drives the island the way
 // a user does, and fails on a broken flow, a page error, a slow step or a
 // frozen UI thread.
@@ -23,7 +23,8 @@ import { chromium } from "playwright";
 
 const APP =
   process.env.SIDEKICK_EXE ?? join(import.meta.dirname, "..", "..", "..", "target", "debug", "sidekick-desktop.exe");
-const PORT = Number(process.env.E2E_PORT ?? 9229);
+/** Set in tauri.e2e.conf.json; WebView2 ignores the environment variable once the app passes its own arguments. */
+const PORT = 9229;
 const SHOTS = join(import.meta.dirname, "..", "e2e");
 /** Budgets, in ms: a step slower than this fails. */
 const BUDGET = { open: 1500, instant: 1500, freeze: 250 };
