@@ -1490,10 +1490,7 @@ mod tests {
 
     #[test]
     fn reads_paths_the_way_models_write_them() {
-        assert_eq!(
-            normalize_target("/C:/Users/talha/AppData"),
-            "C:/Users/talha/AppData"
-        );
+        assert_eq!(normalize_target("/C:/Projects/app"), "C:/Projects/app");
         assert_eq!(normalize_target("file:///C:/a%20b/x.pdf"), "C:/a b/x.pdf");
         assert_eq!(normalize_target("<https://x.dev>"), "https://x.dev");
         assert_eq!(normalize_target("C:\\x"), "C:\\x");
