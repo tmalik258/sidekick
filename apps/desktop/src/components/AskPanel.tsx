@@ -226,7 +226,7 @@ export function AskPanel() {
     if (tool === "screen") {
       sendChat("What's on my screen? Explain it briefly and point out anything I should act on.", { screen: true });
     }
-    const id = requestAnimationFrame(() => inputRef.current?.focus());
+    const id = requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
     return () => cancelAnimationFrame(id);
   }, [seq, refreshProviders]);
 
@@ -275,7 +275,7 @@ export function AskPanel() {
         focusInput: (prefix) =>
           requestAnimationFrame(() => {
             setText(prefix);
-            inputRef.current?.focus();
+            inputRef.current?.focus({ preventScroll: true });
           }),
       }),
     [ask?.context, chatPage, calendar],
@@ -289,7 +289,7 @@ export function AskPanel() {
     setHits(null);
     setPick(0);
     nearBottom.current = true;
-    requestAnimationFrame(() => inputRef.current?.focus());
+    requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
   }, []);
 
   const commands = useMemo<Command[]>(() => {
@@ -537,7 +537,7 @@ export function AskPanel() {
         run: () => {
           setText("/");
           setSelected(0);
-          inputRef.current?.focus();
+          inputRef.current?.focus({ preventScroll: true });
         },
         stay: true,
         keepText: true,
@@ -567,7 +567,7 @@ export function AskPanel() {
         .then(setChats)
         .catch(() => setChats([]));
     }
-    requestAnimationFrame(() => inputRef.current?.focus());
+    requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
   };
 
   altKeys.current = {
@@ -628,7 +628,7 @@ export function AskPanel() {
     // Listening: Esc only stops the mic and leaves the box ready to type in.
     if (current.hearing !== null || current.mascot === "listening") {
       stopListening();
-      requestAnimationFrame(() => inputRef.current?.focus());
+      requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
       return;
     }
     if (current.turns.length > 0 || current.chatId !== null) {
@@ -978,7 +978,11 @@ function historyRows(chats: ChatSummary[], sessions: Session[], kind: HistoryKin
         group: day(s.startedAt),
         agent: true,
         title: s.title,
-        meta: [s.agent, s.project, s.changes ? `${s.changes} ${s.changes === 1 ? "change" : "changes"}` : ""]
+        meta: [
+          s.agent,
+          s.project.split(/[\\/]/).filter(Boolean).pop(),
+          s.changes ? `${s.changes} ${s.changes === 1 ? "change" : "changes"}` : "",
+        ]
           .filter(Boolean)
           .join(" · "),
         at: s.startedAt,

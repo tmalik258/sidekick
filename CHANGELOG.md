@@ -54,6 +54,11 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 - In Auto, a Claude Code plan that is used up no longer ends the answer: Sidekick asks Codex or the next model, skips Claude Code until it resets, and hands coding work to Codex meanwhile.
 - Agents shows how much of the 5-hour or weekly limit is used, in the session and on the island, and offers Compact (Alt K) once Claude Code's context is half full.
 - Settings > Appearance scrolls smoothly; its mascot previews stand still.
+- This PC only stays on for the rest of the chat. Before, clicking it left the keyboard on the button, so the next Enter switched it back off.
+- Ctrl+Space opens Ask in one quick move. The input no longer scrolls the panel while it grows, so the tabs stop jumping.
+- The copied pill names what you copied ("Copied: stack trace"); hover shows the text.
+- History rows no longer run past the island: long titles and project paths are cut short.
+- Settings > AI shows Start Ollama (or Install Ollama) when Ollama is not running, instead of an empty model list.
 
 - Sidekick reaches Ollama on `127.0.0.1` instead of `localhost`. Windows tried IPv6 first, and a fresh Ollama only listens on IPv4, so it looked stopped until "Expose Ollama to the network" was turned on.
 - Installing Ollama from Sidekick also starts it and downloads the chat model, in one PowerShell window.

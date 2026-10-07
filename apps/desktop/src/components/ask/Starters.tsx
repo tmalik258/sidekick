@@ -21,6 +21,9 @@ export interface Command {
  * were in and what you copied. Click one to leave it out (or back in).
  * This PC only sits at the end. */
 export function ContextLine({ keys }: { keys: boolean }) {
+  // Clicking a chip leaves focus in the input; otherwise the next Enter
+  // would press the chip again and switch it back.
+  const keepFocus = (e: { preventDefault: () => void }) => e.preventDefault();
   const ask = useSidekick((s) => s.ask);
   const offline = useSidekick((s) => !s.online);
   if (!ask) return null;
@@ -36,10 +39,10 @@ export function ContextLine({ keys }: { keys: boolean }) {
     });
   }
   if (!context.clipboardSecret && context.clipboardKind) {
-    const preview = (context.clipboardPreview ?? "").replace(/\s+/g, " ").trim();
+    // What it is ("stack trace", "link"); the text itself shows on hover.
     items.push({
       id: "clip",
-      label: `Copied: ${preview || context.clipboardKind}`,
+      label: `Copied: ${context.clipboardKind.replace(/_/g, " ")}`,
       on: ask.attachClip,
       title: context.clipboardPreview,
       toggle: () => setAsk({ attachClip: !ask.attachClip }),
@@ -53,6 +56,7 @@ export function ContextLine({ keys }: { keys: boolean }) {
           <button
             type="button"
             aria-pressed={it.on}
+            onMouseDown={keepFocus}
             title={`${it.on ? "Goes with your question. Click to leave it out" : "Left out. Click to add it"}${
               it.title ? `: ${it.title}` : ""
             }`}
@@ -69,6 +73,7 @@ export function ContextLine({ keys }: { keys: boolean }) {
         <button
           type="button"
           aria-pressed={ask.localOnly}
+          onMouseDown={keepFocus}
           title="Only use a model on this PC (Alt P)"
           onClick={() => setAsk({ localOnly: !ask.localOnly })}
           className="ak-pc chip"

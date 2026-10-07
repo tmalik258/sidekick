@@ -774,6 +774,8 @@ function flushText() {
 
 /** Reopening Ask within this long keeps the last chat. */
 const RESUME_MS = 10 * 60_000;
+/** This PC only of the chat that was open, for when Ask comes back to it. */
+let keptLocalOnly = false;
 let askClosedAt = Date.now();
 
 function updateLastTurn(id: string, fn: (t: Turn) => Turn) {
@@ -875,6 +877,10 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         }
         const settingsTab = resumeSettingsTab ?? undefined;
         resumeSettingsTab = null;
+        // This PC only belongs to the chat: it stays while the chat goes on.
+        const prev = useSidekick.getState();
+        const sameChat = prev.turns.length > 0;
+        const localOnly = sameChat ? (prev.ask?.localOnly ?? keptLocalOnly) : false;
         useSidekick.setState({
           ask: {
             view: open.view ?? "ask",
@@ -883,7 +889,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
             seq,
             attachWindow: false,
             attachClip: clip,
-            localOnly: false,
+            localOnly,
             tool: open.tool ?? null,
             settingsTab,
           },
@@ -892,6 +898,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       }),
       listen(EVENTS.askClose, (payload) => {
         askClosedAt = Date.now();
+        keptLocalOnly = useSidekick.getState().ask?.localOnly ?? false;
         if (useSidekick.getState().hearing !== null) stopListening();
         useSidekick.setState({ ask: null });
         // Hide parks welcome; do not fight the park with ensure_welcome.

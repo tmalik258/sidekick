@@ -89,6 +89,9 @@ const morphClose = { type: "spring", bounce: 0.12, duration: 0.42 } as const;
 /** Growing or shrinking while already open (an answer streaming in, New):
  * no bounce, so the panel never overshoots and settles back. */
 const resize = { type: "spring", bounce: 0, duration: 0.34 } as const;
+/** Ctrl+Space is a keyboard action used many times a day: Ask opens in one
+ * quick, calm move, with no bounce and no blur. */
+const askOpen = { duration: 0.2, ease: [0.23, 1, 0.32, 1] } as const;
 
 export function Island() {
   const { mascot, settings, suggestion, hovered: rawHover, visible, ready } = useSidekick();
@@ -305,7 +308,15 @@ export function Island() {
     const id = setTimeout(() => setSettled(true), 600);
     return () => clearTimeout(id);
   }, [expanded]);
-  const transition = reduced ? { duration: 0 } : expanded ? (settled ? resize : morphOpen) : morphClose;
+  const transition = reduced
+    ? { duration: 0 }
+    : expanded
+      ? settled
+        ? resize
+        : asking
+          ? askOpen
+          : morphOpen
+      : morphClose;
 
   // Report the target shape as the interactive area; outside it the window
   // stays click-through. Sent once per change, not per animation frame.
@@ -351,6 +362,11 @@ export function Island() {
         animate={{ width, height, borderRadius: radius }}
         transition={transition}
         style={{ scaleX: bump, originY: 0 }}
+        // Focusing the input while the shell is still small would scroll its
+        // content up; the shell never scrolls.
+        onScroll={(e) => {
+          e.currentTarget.scrollTop = 0;
+        }}
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}
       >
@@ -397,10 +413,10 @@ export function Island() {
                   ? { left: ASK_PAD.x, paddingTop: ASK_PAD.top, paddingRight: ASK_PAD.x }
                   : { left: EXPANDED.pad, paddingTop: EXPANDED.pad, paddingRight: EXPANDED.pad }
               }
-              initial={reduced ? { opacity: 0 } : { opacity: 0, filter: "blur(6px)", y: 4 }}
-              animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
-              exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
-              transition={{ duration: 0.28, delay: 0.06, ease: [0.23, 1, 0.32, 1] }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, transition: { duration: 0.08 } }}
+              transition={{ duration: reduced ? 0 : 0.14, ease: "easeOut" }}
             >
               {view === "settings" ? <IslandSettings /> : view === "welcome" ? <IslandWelcome /> : <AskPanel />}
             </motion.div>
