@@ -35,6 +35,8 @@ interface SidekickState {
   online: boolean;
   /** When the connection dropped, while offline. */
   offlineSince: number | null;
+  /** A question to ask again once the internet is back. */
+  askWhenOnline: string | null;
   /** A short note that the connection dropped or came back. */
   netNotice: NetNotice | null;
   /** Cursor is over the island's interactive area (reported by Rust). */
@@ -162,6 +164,7 @@ export const useSidekick = create<SidekickState>(() => ({
   mood: null,
   update: null,
   online: true,
+  askWhenOnline: null,
   offlineSince: null,
   netNotice: null,
   hovered: false,
@@ -463,6 +466,22 @@ export const setAsk = (patch: Partial<AskState>) => {
 
 /** Sends a message in the Ask conversation; answers stream into the last turn. */
 /** Asks the last question again after an answer failed. */
+/** Asks the question of the last answer again when the internet is back. */
+export function askWhenOnline() {
+  const { turns } = useSidekick.getState();
+  const question = turns.findLast((t) => t.role === "user");
+  if (question) useSidekick.setState({ askWhenOnline: question.content });
+}
+
+// Back online with a question waiting: open Ask and ask it.
+useSidekick.subscribe((s, prev) => {
+  if (!prev.online && s.online && s.askWhenOnline) {
+    const q = s.askWhenOnline;
+    useSidekick.setState({ askWhenOnline: null });
+    void api.askOpen().then(() => setTimeout(() => sendChat(q), 400));
+  }
+});
+
 export function retryLast(): boolean {
   const { turns, chatId } = useSidekick.getState();
   const last = turns[turns.length - 1];
@@ -606,6 +625,7 @@ export function sendChat(prompt: string, attach?: ChatAttach): boolean {
         content: "",
         streaming: true,
         startedAt: Date.now(),
+        offline: !useSidekick.getState().online,
         steps: adopted?.tools.map((t) => t.label || toolStatus(t.name).replace(/\.\.\.$/, "")),
         proposals: adopted?.proposals,
       },

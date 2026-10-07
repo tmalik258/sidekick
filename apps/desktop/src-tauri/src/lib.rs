@@ -216,6 +216,12 @@ pub fn run() {
             commands::agent_undo,
             commands::agent_close,
             commands::agent_terminal,
+            commands::agent_resume,
+            commands::agent_rewind_preview,
+            commands::agent_rewind,
+            commands::agent_files,
+            commands::agent_commands,
+            commands::agent_open_editor,
             commands::ask_open,
             commands::ask_ensure_welcome,
             commands::ask_defer_welcome,
@@ -295,7 +301,10 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         hovered: Default::default(),
         last_window: Mutex::default(),
         chats: Mutex::default(),
-        ask_proposals: Mutex::new(ask_tools::load_proposals(&data_dir)),
+        ask_proposals: Mutex::new({
+            sessions::restore(&data_dir);
+            ask_tools::load_proposals(&data_dir)
+        }),
         ai_workdir: data_dir.join("claude-workspace"),
         voice: voice::Voice::new(data_dir.join("voice-models")),
         calendar: calendar.clone(),

@@ -6,10 +6,10 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// The project as it was when the agent started.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Baseline {
     pub root: PathBuf,
     /// A commit holding the working tree at the start (or HEAD when it was
@@ -75,6 +75,15 @@ fn hide_console(cmd: &mut Command) {
 
 #[cfg(not(windows))]
 fn hide_console(_cmd: &mut Command) {}
+
+/// A fingerprint of a file's bytes (FNV-1a), stable across runs, to tell
+/// whether it changed since; None when the file is gone.
+pub fn fingerprint(root: &Path, path: &str) -> Option<u64> {
+    let bytes = std::fs::read(root.join(path)).ok()?;
+    Some(bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3)
+    }))
+}
 
 /// Snapshots `dir` when it is in a git repository; None otherwise.
 pub fn snapshot(dir: &Path) -> Option<Baseline> {

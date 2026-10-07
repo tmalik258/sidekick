@@ -5,12 +5,14 @@
 // data shows at once and refreshes behind it.
 
 import { type ReactNode, useEffect, useState } from "react";
+import { useAgents } from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { useNow } from "@/lib/hooks";
 import { updateSettings, useSidekick } from "@/lib/store";
 import { type AppTime, type CalendarToday, formatDuration, type LaterItem } from "@/lib/types";
 import { Icon } from "./Icon";
+import { AgentsGlance, AwayCard, useAway } from "./IslandAgents";
 
 /** A meeting this close (or already on) takes the headline. */
 const MEETING_SOON_MIN = 60;
@@ -18,6 +20,15 @@ const MEETING_SOON_MIN = 60;
 const LATER_SHOWN = 3;
 
 export function Glance({ paused }: { paused: boolean }) {
+  const sessions = useAgents((s) => s.sessions);
+  const away = useAway();
+  if (away.rows.length > 0) return <AwayCard />;
+  if (sessions.some((s) => s.status === "working" || s.status === "waiting"))
+    return <AgentsGlance sessions={sessions} />;
+  return <DayGlance paused={paused} />;
+}
+
+function DayGlance({ paused }: { paused: boolean }) {
   const now = useNow(30_000);
   const { data: calendar } = useCached<CalendarToday>("calendar-today", api.calendarToday);
   const { data: time } = useCached<AppTime[]>("time-today", api.timeToday);

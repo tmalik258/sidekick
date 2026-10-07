@@ -225,6 +225,13 @@ export const api = {
   agentUndo: (id: string, path: string | null, hunk: number | null) => invoke<void>("agent_undo", { id, path, hunk }),
   agentClose: (id: string) => invoke<void>("agent_close", { id }),
   agentTerminal: (id: string) => invoke<void>("agent_terminal", { id }),
+  agentResume: (id: string) => invoke<void>("agent_resume", { id }),
+  agentOpenEditor: (id: string) => invoke<void>("agent_open_editor", { id }),
+  agentRewindPreview: (id: string, index: number) => invoke<number>("agent_rewind_preview", { id, index }),
+  agentRewind: (id: string, index: number) => invoke<number>("agent_rewind", { id, index }),
+  agentFiles: (id: string, query: string) => invoke<string[]>("agent_files", { id, query }),
+  agentCommands: (id: string) =>
+    invoke<{ name: string; description: string; group: string }[]>("agent_commands", { id }),
   aiOpenLink: (target: string) => invoke<string>("ai_open_link", { target }),
   codexAddNotify: () => invoke<string | null>("codex_add_notify"),
   codexAddMcp: () => invoke<string | null>("codex_add_mcp"),

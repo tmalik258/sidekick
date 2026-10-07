@@ -10,9 +10,10 @@ import { useNow } from "@/lib/hooks";
 import { Markdown } from "@/lib/markdown";
 import { splitOptions } from "@/lib/options";
 import { useReveal } from "@/lib/reveal";
-import { retryLast, useSidekick } from "@/lib/store";
+import { askWhenOnline, retryLast, useSidekick } from "@/lib/store";
 import { type Agents, type AiSettings, PROVIDER_LABELS, type Turn } from "@/lib/types";
 import { AnswerOptions, Proposals, pendingCount } from "./Proposals";
+import { FailureCard } from "./States";
 
 /** The YAML block of an answer, if it has one. */
 export function yamlBlock(text: string): string | null {
@@ -80,7 +81,11 @@ export function Chat({ turns, askedInBar }: { turns: Turn[]; askedInBar: boolean
                 <span className="shimmer-text text-[rgb(235_235_245/0.6)]">{t.tool}...</span>
               </p>
             )}
-            {t.error && <p className="ak-err">{t.error}</p>}
+            {t.error && isLast && !t.streaming ? (
+              <FailureCard turn={t} turns={turns} />
+            ) : (
+              t.error && <p className="ak-err">{t.error}</p>
+            )}
             {!t.streaming && t.provider && (
               <p className="ak-tag mono">
                 <b>
@@ -93,12 +98,13 @@ export function Chat({ turns, askedInBar }: { turns: Turn[]; askedInBar: boolean
                 </span>
               </p>
             )}
-            {t.error && !t.streaming && isLast && <Retry />}
+
+            {isLast && !t.streaming && !t.error && t.offline && <OfflineChips />}
             {skillMode && !t.streaming && yamlBlock(t.content) && <AddSkill yaml={yamlBlock(t.content) ?? ""} />}
             {t.proposals && t.proposals.length > 0 && <Proposals items={t.proposals} keys={isLast} />}
             {isLast && options.length > 0 && <AnswerOptions options={options} start={pendingCount(t.proposals)} />}
             {/* Offered when the local model gives up; Ctrl Enter works when an agent is installed. */}
-            {!t.streaming && isLast && (t.handoff || t.error) && <Handoff turns={turns} reason={t.handoff ?? null} />}
+            {!t.streaming && isLast && t.handoff && !t.error && <Handoff turns={turns} reason={t.handoff} />}
           </div>
         );
       })}
@@ -279,5 +285,31 @@ export function Thinking() {
       <span className="thinking-dot" />
       <span className="thinking-dot" />
     </span>
+  );
+}
+
+/** Answered offline: ask again once the internet is back. */
+function OfflineChips() {
+  const online = useSidekick((s) => s.online);
+  const waiting = useSidekick((s) => s.askWhenOnline !== null);
+  useEffect(() => {
+    if (online || waiting) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.altKey && !e.ctrlKey && e.key.toLowerCase() === "o") {
+        e.preventDefault();
+        askWhenOnline();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [online, waiting]);
+  if (online) return null;
+  if (waiting) return <p className="ak-done">Sidekick asks again as soon as the internet is back.</p>;
+  return (
+    <div className="ak-chips">
+      <button type="button" onClick={askWhenOnline} className="ak-chip primary chip">
+        Ask when I'm back online <kbd>Alt O</kbd>
+      </button>
+    </div>
   );
 }

@@ -15,6 +15,9 @@ type Handler = (payload: unknown) => void;
 
 const handlers = new Map<string, Set<Handler>>();
 let settings: Settings = structuredClone(DEFAULT_SETTINGS);
+/** Preview switches: `?nomodel` has no AI set up, `?offline` no internet. */
+const previewFlag = (name: string) => typeof location !== "undefined" && new URLSearchParams(location.search).has(name);
+
 // `?onboarded` in the preview URL skips the welcome.
 if (typeof location !== "undefined" && new URLSearchParams(location.search).has("onboarded")) {
   settings.onboarded = true;
@@ -83,7 +86,7 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   mascot_get: () => mascot,
   island_set_hit_rect: () => undefined,
   island_ready: () => undefined,
-  net_status: () => true,
+  net_status: () => !previewFlag("offline"),
   update_status: () => null,
   // The preview pretends a release is out, so the update UI can be seen.
   update_check: () => {
@@ -92,7 +95,7 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
     return update;
   },
   update_install: () => "Installing Sidekick_0.2.0_x64-setup.exe",
-  net_check: () => typeof navigator === "undefined" || navigator.onLine,
+  net_check: () => !previewFlag("offline") && (typeof navigator === "undefined" || navigator.onLine),
   suggestion_current: () => suggestion,
   suggestion_choose: (a) => {
     const index = a.index as number;
@@ -306,6 +309,18 @@ function mockChat(a: Record<string, unknown>) {
       });
     }
   };
+  if (/meetings/i.test(last)) {
+    // A local model that is not running, for the failure card.
+    later(900, () =>
+      emit("ai://done", {
+        id,
+        provider: null,
+        error: "error sending request for url (http://localhost:11434/v1/chat/completions)",
+        handoff: null,
+      }),
+    );
+    return;
+  }
   emit("ai://tool", { id, name: "search", label: `Searching your PC for \u201c${last.slice(0, 30)}\u201d` });
   // A task with several steps shows them one by one.
   if (/ and /i.test(last)) {
@@ -414,7 +429,11 @@ commands.agent_start = (a) => {
     ev("answered", { question: `q${id}` });
     ev("step", { id: "t3", tool: "Bash", label: "Run a command", detail: "pnpm test src/api", state: "running" });
     at(900, () => {
-      ev("step", { id: "t3", state: "done" });
+      ev("step", {
+        id: "t3",
+        state: "done",
+        output: "> vitest run src/api\n\n ✓ client.test.ts (1)\n\n Test Files  1 passed (1)\n      Tests  1 passed (1)",
+      });
       ev("usage", { used: 46000, window: 200000 });
       ev("text", { text: "\n\nDone. Requests retry up to three times, and a new test covers it." });
       ev("turn", { error: null });
@@ -442,6 +461,22 @@ commands.agent_send = () => undefined;
 commands.agent_stop = () => undefined;
 commands.agent_close = () => undefined;
 commands.agent_terminal = () => undefined;
+commands.agent_resume = () => undefined;
+commands.agent_open_editor = () => undefined;
+commands.agent_rewind_preview = () => 1;
+commands.agent_rewind = () => 1;
+commands.agent_files = (a) =>
+  [
+    "apps/desktop/src-tauri/src/island.rs",
+    "apps/desktop/src-tauri/src/island_tests.rs",
+    "apps/desktop/src/components/Island.tsx",
+  ].filter((f) => f.toLowerCase().includes(String(a.query ?? "").toLowerCase()));
+commands.agent_commands = () => [
+  { name: "/compact", description: "Summarize the chat to free context", group: "Session" },
+  { name: "/clear", description: "Start fresh in the same project", group: "Session" },
+  { name: "/rewind", description: "Go back to an earlier message, code included", group: "Session" },
+  { name: "/release", description: "Cut a release (.claude/commands/release.md)", group: "This project" },
+];
 commands.agent_changes = () => structuredClone(mockChanges);
 commands.agent_undo = (a) => {
   mockChanges = a.path ? mockChanges.filter((f) => f.path !== a.path) : [];
@@ -933,13 +968,16 @@ commands.time_today = () => [
 ];
 commands.browser_info = () => ({ token: "browser-preview-pairing-code", port: 47822 });
 commands.action_undo = () => "Moved photo.webp to the Recycle Bin";
-commands.ai_status = () => [
-  { id: "claude_code", available: true, local: false },
-  { id: "codex", available: true, local: false },
-  { id: "anthropic", available: false, local: false },
-  { id: "local", available: true, local: true },
-  { id: "semif", available: false, local: true },
-];
+commands.ai_status = () =>
+  previewFlag("nomodel")
+    ? []
+    : [
+        { id: "claude_code", available: true, local: false },
+        { id: "codex", available: true, local: false },
+        { id: "anthropic", available: false, local: false },
+        { id: "local", available: true, local: true },
+        { id: "semif", available: false, local: true },
+      ];
 
 export const mock = {
   async invoke<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {

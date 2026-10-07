@@ -4,12 +4,16 @@
 // step by step, answer its questions here, steer it, and keep or undo each
 // change when it is done.
 
-import { type CSSProperties, Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, Fragment, type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   answerQuestion,
   closeSession,
   type Entry,
+  messageIndex,
+  resumeSession,
+  rewindSession,
   type Session,
+  type Step,
   sendToSession,
   startSession,
   useAgents,
@@ -18,7 +22,7 @@ import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { useNow } from "@/lib/hooks";
 import { Markdown } from "@/lib/markdown";
-import type { AgentMode, Agents } from "@/lib/types";
+import type { AgentMode, Agents, EditorList } from "@/lib/types";
 import { KeyHint } from "../ask/parts";
 import { Icon } from "../Icon";
 import { Review } from "./Review";
@@ -217,6 +221,10 @@ function SessionView({
 }) {
   const [text, setText] = useState("");
   const [reviewing, setReviewing] = useState(false);
+  const [rewindAt, setRewindAt] = useState<number | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const { data: editors } = useCached<EditorList>("editors", api.editorsList);
+  const editor = editors?.editors.find((e) => e.id === editors.current)?.name ?? null;
   const scroll = useRef<HTMLDivElement>(null);
   const now = useNow(250);
   const working = s.status === "working" || s.status === "waiting";
@@ -242,11 +250,14 @@ function SessionView({
       } else if (k === "1" && done && s.reviewable && s.changes !== 0) {
         e.preventDefault();
         setReviewing(true);
+      } else if (k === "3" && done && editor) {
+        e.preventDefault();
+        void api.agentOpenEditor(s.id);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [s.id, done, s.reviewable, s.changes]);
+  }, [s.id, done, s.reviewable, s.changes, editor]);
 
   // Alt A, Y, N answer a question while one waits.
   useEffect(() => {
@@ -313,7 +324,20 @@ function SessionView({
             {s.entries.map((e, i) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: entries only ever append
               <Fragment key={i}>
-                <EntryRow entry={e} />
+                <EntryRow
+                  entry={e}
+                  onRewind={e.kind === "you" && done && s.reviewable ? () => setRewindAt(i) : undefined}
+                />
+                {rewindAt === i && (
+                  <RewindConfirm
+                    session={s}
+                    entry={i}
+                    onDone={(msg) => {
+                      setRewindAt(null);
+                      setNotice(msg);
+                    }}
+                  />
+                )}
                 {i === planAfter && s.plan.length > 0 && (
                   <div className="ak-todo ak-in">
                     <div className="h">
@@ -387,26 +411,50 @@ function SessionView({
                 <button type="button" onClick={() => void api.agentTerminal(s.id)} className="ak-chip chip">
                   Open in terminal <kbd>Alt 2</kbd>
                 </button>
+                {editor && (
+                  <button type="button" onClick={() => void api.agentOpenEditor(s.id)} className="ak-chip chip">
+                    Open in {editor} <kbd>Alt 3</kbd>
+                  </button>
+                )}
               </div>
             )}
+            {notice && <p className="ak-note ak-in">{notice}</p>}
           </div>
 
-          {s.status !== "ended" && (
-            <div className="ak-composer">
-              <input
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    send();
-                  }
-                }}
-                placeholder={working ? "Steer it, it reads this next" : "Ask for more"}
-              />
-              <span className="ckeys mono">{working ? "Esc interrupt" : "Enter send"}</span>
-              <KeyHint show={keys}>Alt T</KeyHint>
+          {s.restored || s.status === "ended" || (s.status === "failed" && !working) ? (
+            <div className="ak-chips">
+              <button
+                type="button"
+                onClick={() => void resumeSession(s.id).catch((e: unknown) => setNotice(String(e)))}
+                className="ak-chip primary chip"
+              >
+                Resume
+              </button>
+              <span className="ak-note">
+                {s.restored ? "Sidekick restarted since this ran." : "This session ended."} Resume carries on where it
+                stopped.
+              </span>
             </div>
+          ) : (
+            <Composer
+              session={s}
+              working={working}
+              text={text}
+              setText={setText}
+              onSend={send}
+              onClear={() => {
+                closeSession(s.id);
+              }}
+              onRewind={() => {
+                const last = s.entries
+                  .map((e, i) => (e.kind === "you" ? i : -1))
+                  .filter((i) => i > 0)
+                  .at(-1);
+                if (last !== undefined) setRewindAt(last);
+                else setNotice("There is no earlier message to go back to.");
+              }}
+              keys={keys}
+            />
           )}
         </>
       )}
@@ -433,8 +481,18 @@ const STEP_TAG: Record<string, string> = {
   webSearch: "Web",
 };
 
-function EntryRow({ entry: e }: { entry: Entry }) {
-  if (e.kind === "you") return <div className="ak-um ak-in">{e.text}</div>;
+function EntryRow({ entry: e, onRewind }: { entry: Entry; onRewind?: () => void }) {
+  if (e.kind === "you") {
+    if (!onRewind) return <div className="ak-um ak-in">{e.text}</div>;
+    return (
+      <div className="ak-um-wrap ak-in">
+        <button type="button" onClick={onRewind} className="ak-rwb chip">
+          ↺ Rewind to here
+        </button>
+        <div className="ak-um">{e.text}</div>
+      </div>
+    );
+  }
   if (e.kind === "text") {
     return (
       <div className="ak-ans ak-in px-0">
@@ -444,10 +502,247 @@ function EntryRow({ entry: e }: { entry: Entry }) {
   }
   const st = e.step;
   return (
-    <div className="ak-tg ak-in" data-s={st.state}>
-      <span className="ak-k mono">{STEP_TAG[st.tool] ?? st.tool.slice(0, 5)}</span>
-      <span className={`shrink-0 ${st.state === "running" ? "text-white" : ""}`}>{st.label}</span>
-      {st.detail && <span className="d mono">{st.detail}</span>}
+    <>
+      <div className="ak-tg ak-in" data-s={st.state}>
+        <span className="ak-k mono">{STEP_TAG[st.tool] ?? st.tool.slice(0, 5)}</span>
+        <span className={`shrink-0 ${st.state === "running" ? "text-white" : ""}`}>{st.label}</span>
+        {st.detail && <span className="d mono">{st.detail}</span>}
+      </div>
+      {st.output && STEP_TAG[st.tool] === "Run" && <Output step={st} />}
+    </>
+  );
+}
+
+/** A command's output, folded to its last lines; click for the rest. */
+function Output({ step }: { step: Step }) {
+  const [open, setOpen] = useState(step.state === "failed");
+  const lines = (step.output ?? "").split("\n");
+  // Folded: the last three lines that say something.
+  const shown = open ? lines : lines.filter((l) => l.trim()).slice(-3);
+  return (
+    <div className="ak-term ak-in">
+      <pre className="mono">{shown.join("\n")}</pre>
+      {lines.length > 3 && (
+        <button type="button" onClick={() => setOpen((o) => !o)} className="chip">
+          {open ? "Show less" : `Show all ${lines.length} lines`}
+        </button>
+      )}
     </div>
+  );
+}
+
+/** "Rewind to before this message?" with how many files go back. */
+function RewindConfirm({
+  session: s,
+  entry,
+  onDone,
+}: {
+  session: Session;
+  entry: number;
+  onDone: (message: string | null) => void;
+}) {
+  const [files, setFiles] = useState<number | null>(null);
+  useEffect(() => {
+    void api
+      .agentRewindPreview(s.id, messageIndex(s, entry))
+      .then(setFiles)
+      .catch(() => setFiles(0));
+  }, [s, entry]);
+  const go = () =>
+    void rewindSession(s.id, entry)
+      .then((n) =>
+        onDone(`↺ Rewound · ${n} ${n === 1 ? "file" : "files"} put back · write a new message to go another way`),
+      )
+      .catch((e: unknown) => onDone(String(e)));
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        go();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onDone(null);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  });
+  const said = s.entries[entry]?.kind === "you" ? (s.entries[entry] as { text: string }).text : "";
+  return (
+    <div
+      className="ak-ask ak-in"
+      style={{
+        background: "rgb(255 255 255 / 0.05)",
+        color: "var(--ink)",
+        boxShadow: "inset 0 0 0 0.5px rgb(255 255 255 / 0.12)",
+      }}
+    >
+      <p>
+        Rewind to before “{said.length > 60 ? `${said.slice(0, 57)}...` : said}”?{" "}
+        {files === null
+          ? ""
+          : files === 0
+            ? "No files changed since then."
+            : `This puts back ${files} ${files === 1 ? "file" : "files"} the agent changed since.`}
+      </p>
+      <div className="ak-chips">
+        <button type="button" onClick={go} className="ak-chip primary chip">
+          Rewind <kbd>Enter</kbd>
+        </button>
+        <button type="button" onClick={() => onDone(null)} className="ak-chip chip">
+          Cancel <kbd>Esc</kbd>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+type Slash = { name: string; description: string; group: string };
+
+/** Where you type to the agent: / lists commands, @ finds files in the project. */
+function Composer({
+  session: s,
+  working,
+  text,
+  setText,
+  onSend,
+  onClear,
+  onRewind,
+  keys,
+}: {
+  session: Session;
+  working: boolean;
+  text: string;
+  setText: (t: string) => void;
+  onSend: () => void;
+  onClear: () => void;
+  onRewind: () => void;
+  keys: boolean;
+}) {
+  const [commands, setCommands] = useState<Slash[]>([]);
+  const [files, setFiles] = useState<string[]>([]);
+  const [sel, setSel] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    void api
+      .agentCommands(s.id)
+      .then(setCommands)
+      .catch(() => setCommands([]));
+  }, [s.id]);
+  const slash = text.startsWith("/") && !text.includes(" ");
+  const mention = /(^|\s)@([^\s@]*)$/.exec(text);
+  const query = mention?.[2] ?? null;
+  useEffect(() => {
+    if (query === null) {
+      setFiles([]);
+      return;
+    }
+    let live = true;
+    const id = setTimeout(() => {
+      void api
+        .agentFiles(s.id, query)
+        .then((f) => live && setFiles(f))
+        .catch(() => undefined);
+    }, 80);
+    return () => {
+      live = false;
+      clearTimeout(id);
+    };
+  }, [query, s.id]);
+  const shownCommands = slash ? commands.filter((c) => c.name.startsWith(text.toLowerCase())) : [];
+  const count = slash ? shownCommands.length : query !== null ? files.length : 0;
+  const at = Math.min(sel, Math.max(count - 1, 0));
+  const runCommand = (c: Slash) => {
+    setText("");
+    if (c.name === "/clear") onClear();
+    else if (c.name === "/rewind") onRewind();
+    else sendToSession(s.id, c.name);
+  };
+  const pickFile = (f: string) => {
+    if (!mention) return;
+    setText(`${text.slice(0, text.length - mention[2].length - 1)}@${f} `);
+    inputRef.current?.focus();
+  };
+  const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (count && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      setSel((at + (e.key === "ArrowDown" ? 1 : -1) + count) % count);
+    } else if (count && (e.key === "Enter" || e.key === "Tab")) {
+      e.preventDefault();
+      if (slash) {
+        const c = shownCommands[at];
+        if (c) runCommand(c);
+      } else if (files[at]) pickFile(files[at]);
+      setSel(0);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      onSend();
+    }
+  };
+  let lastGroup = "";
+  return (
+    <>
+      {count > 0 && (
+        <div className="ak-pop ak-in" role="listbox" aria-label={slash ? "Commands" : "Files"}>
+          {slash ? (
+            shownCommands.map((c, i) => {
+              const head = c.group !== lastGroup;
+              lastGroup = c.group;
+              return (
+                <Fragment key={c.name}>
+                  {head && <p className="g">{c.group}</p>}
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={i === at}
+                    data-sel={i === at}
+                    onMouseMove={() => setSel(i)}
+                    onClick={() => runCommand(c)}
+                    className="it"
+                  >
+                    <span className="c mono">{c.name}</span>
+                    <span className="d">{c.description}</span>
+                  </button>
+                </Fragment>
+              );
+            })
+          ) : (
+            <>
+              <p className="g">Files in {s.project}</p>
+              {files.map((f, i) => (
+                <button
+                  key={f}
+                  type="button"
+                  role="option"
+                  aria-selected={i === at}
+                  data-sel={i === at}
+                  onMouseMove={() => setSel(i)}
+                  onClick={() => pickFile(f)}
+                  className="it"
+                >
+                  <span className="c mono">{f.split("/").pop()}</span>
+                  <span className="d">{f.split("/").slice(0, -1).join("/")}</span>
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+      <div className="ak-composer relative">
+        <input
+          ref={inputRef}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setSel(0);
+          }}
+          onKeyDown={onKey}
+          placeholder={working ? "Steer it, it reads this next" : "Ask for more, / for commands, @ for files"}
+        />
+        <span className="ckeys mono">{working ? "Esc interrupt" : "Enter send"}</span>
+        <KeyHint show={keys}>Alt T</KeyHint>
+      </div>
+    </>
   );
 }

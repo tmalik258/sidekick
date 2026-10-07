@@ -16,6 +16,22 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 - A task with several steps shows its plan first: Run (Enter) does the steps in order and ticks each off, and Undo all (Alt Z) puts them back.
 - Typing in Ask shows installed apps and files by name before any model runs, the apps you use most first.
 
+### More for agents
+
+- Type `/` in the Agents composer for its commands (compact, clear, rewind and your project's own commands), and `@` to mention a file.
+- Hover a message and Rewind to here puts the code and the conversation back to before it.
+- A command's output shows folded under its step: the last three lines, the rest on click.
+- Open in your editor (Alt 3) when a session is done.
+- Sessions survive a restart: their history comes back, Resume carries on where it stopped, and Undo still works. Undo leaves a file alone when you edited it after the agent finished.
+- Hover the island while agents work to see each one and Allow the waiting one there (Enter).
+
+### Clearer states
+
+- When an answer fails, Ask says what happened and offers the fix: Start Ollama, download the model, sign in again, ask the local model when a cloud one is busy, or ask again when you are back online. Retry is Alt R.
+- With no model set up yet, Ask shows how Sidekick can answer (This PC, Claude Code, Codex or your API key) and sets up the one you pick; apps, files and commands work already.
+- Offline, the context line says so and a web question can wait: Ask when I'm back online (Alt O).
+- After three minutes away, hovering the island shows what finished or is waiting meanwhile, with Review, Answer and Clear all.
+
 ### Faster Ask
 
 - Claude Code and Codex keep a session warm per chat: one starts when Ask opens, and follow-up messages go into it instead of starting the CLI again (Codex through `codex app-server`, older Codex versions fall back to `codex exec`). Idle sessions close after 10 minutes, at most three per agent.
