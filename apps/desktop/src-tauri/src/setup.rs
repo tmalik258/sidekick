@@ -122,7 +122,7 @@ pub fn welcome_bulk_install(item: &SetupItem) -> bool {
     }
     !matches!(
         item.id,
-        "ollama" | "ollama_chat" | "ollama_embed" | "ollama_vision" | "gh"
+        "ollama" | "ollama_chat" | "ollama_embed" | "ollama_vision" | "ollama_light" | "gh"
     )
 }
 
@@ -212,6 +212,16 @@ pub fn chat_model_for(graphics: u64, memory: u64) -> ChatPick {
         size,
     }
 }
+
+/// Ollama settings for a smaller, faster local model (see "Lighter Ollama").
+const OLLAMA_LIGHT: [(&str, &str); 3] = [
+    ("OLLAMA_NUM_PARALLEL", "1"),
+    ("OLLAMA_FLASH_ATTENTION", "1"),
+    ("OLLAMA_KV_CACHE_TYPE", "q8_0"),
+];
+
+/// Quits Ollama so it starts again with new settings, then starts it.
+const OLLAMA_RESTART: &str = "Get-Process 'ollama app','ollama' -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 1; $env:OLLAMA_NUM_PARALLEL='1'; $env:OLLAMA_FLASH_ATTENTION='1'; $env:OLLAMA_KV_CACHE_TYPE='q8_0'; $app = Join-Path (Split-Path (Get-Command ollama).Source) 'ollama app.exe'; if (Test-Path $app) { Start-Process $app }";
 
 /// Starts the Ollama app if it is not running and waits until it answers,
 /// so `ollama pull` right after an install works.
@@ -531,6 +541,38 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             .action("Download");
     }
     items.push(vision_item);
+
+    // Ollama's defaults keep room for four answers at once and full-size
+    // caches. One at a time, flash attention and an 8-bit cache roughly
+    // halve the memory a model holds and speed up answers.
+    let lighter = OLLAMA_LIGHT
+        .iter()
+        .all(|(k, v)| sidekick_sensors::user_env(k).as_deref() == Some(v));
+    let mut light = SetupItem::new(
+        "ollama_light",
+        Group::Ai,
+        "Lighter Ollama",
+        "Uses about half the memory and answers faster. Restarts Ollama.",
+    )
+    .done(
+        lighter,
+        "On",
+        if ollama_installed {
+            "Off"
+        } else {
+            "Needs Ollama"
+        },
+    );
+    if ollama_installed {
+        let set: Vec<String> = OLLAMA_LIGHT
+            .iter()
+            .map(|(k, v)| format!("setx {k} {v} | Out-Null"))
+            .collect();
+        light = light
+            .run(format!("{}; {OLLAMA_RESTART}", set.join("; ")))
+            .action("Turn on");
+    }
+    items.push(light.recommended());
 
     let api_key = std::env::var("ANTHROPIC_API_KEY").is_ok_and(|k| !k.trim().is_empty());
     items.push(

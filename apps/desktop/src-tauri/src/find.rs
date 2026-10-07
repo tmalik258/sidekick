@@ -37,10 +37,52 @@ pub struct Found {
     pub modified: Option<SystemTime>,
 }
 
+/// A name as `matches` compares it: lower case, separators as spaces.
+pub fn key(name: &str) -> String {
+    name.to_lowercase().replace(['_', '-', '.'], " ")
+}
+
 /// Every word of the query is in the name (case and separators ignored).
 pub fn matches(name: &str, words: &[String]) -> bool {
-    let n = name.to_lowercase().replace(['_', '-', '.'], " ");
+    let n = key(name);
     !words.is_empty() && words.iter().all(|w| n.contains(w.as_str()))
+}
+
+/// Walks `roots` breadth first, calling `visit(path, name, is_folder)` for
+/// every entry until it returns false. Skips what `find` skips.
+pub fn walk(roots: &[PathBuf], mut visit: impl FnMut(&Path, &str, bool) -> bool) {
+    let mut queue: std::collections::VecDeque<(PathBuf, usize)> = roots
+        .iter()
+        .filter(|r| r.is_dir())
+        .map(|r| (r.clone(), 0))
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    while let Some((dir, depth)) = queue.pop_front() {
+        if !seen.insert(dir.clone()) {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            let is_dir = kind.is_dir();
+            let path = entry.path();
+            if !visit(&path, &name, is_dir) {
+                return;
+            }
+            if is_dir
+                && depth + 1 < MAX_DEPTH
+                && !name.starts_with('.')
+                && !SKIP.contains(&name.to_lowercase().as_str())
+            {
+                queue.push_back((path, depth + 1));
+            }
+        }
+    }
 }
 
 pub fn words(query: &str) -> Vec<String> {
