@@ -22,6 +22,7 @@ export interface Command {
  * This PC only sits at the end. */
 export function ContextLine({ keys }: { keys: boolean }) {
   const ask = useSidekick((s) => s.ask);
+  const offline = useSidekick((s) => !s.online);
   if (!ask) return null;
   const { context } = ask;
   const items: { id: string; label: string; on: boolean; title?: string | null; toggle: () => void }[] = [];
@@ -46,9 +47,10 @@ export function ContextLine({ keys }: { keys: boolean }) {
   }
   return (
     <div className="ak-ctx">
+      {offline && <span className="ak-offl">Offline</span>}
       {items.map((it, n) => (
         <span key={it.id} className={`flex min-w-0 items-center gap-1.5 ${it.id === "clip" ? "shrink" : "shrink-0"}`}>
-          {n > 0 && <span className="ak-ctx-sep" aria-hidden="true" />}
+          {(n > 0 || offline) && <span className="ak-ctx-sep" aria-hidden="true" />}
           <button
             type="button"
             aria-pressed={it.on}

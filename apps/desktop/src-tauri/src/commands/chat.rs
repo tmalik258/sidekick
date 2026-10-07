@@ -68,8 +68,57 @@ pub async fn agent_handoff(
 
 /// A follow-up, or a steer while it works.
 #[tauri::command]
-pub fn agent_send(id: String, text: String) -> CmdResult<()> {
-    crate::sessions::send(&id, &text)
+pub async fn agent_send(id: String, text: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::send(&id, &text))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Carries on a session that ended or was cut off by a restart.
+#[tauri::command]
+pub fn agent_resume(app: AppHandle, id: String) -> CmdResult<()> {
+    crate::sessions::resume(&app, &id)
+}
+
+/// How many files rewinding to before message `index` would put back.
+#[tauri::command]
+pub async fn agent_rewind_preview(id: String, index: usize) -> CmdResult<usize> {
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::rewind_preview(&id, index))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Puts the project back to before message `index`.
+#[tauri::command]
+pub async fn agent_rewind(id: String, index: usize) -> CmdResult<usize> {
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::rewind(&id, index))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Files in the session's project for @ in the composer.
+#[tauri::command]
+pub async fn agent_files(id: String, query: String) -> Vec<String> {
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::files(&id, &query))
+        .await
+        .unwrap_or_default()
+}
+
+/// Opens the session's project in the user's editor ("Open in Cursor").
+#[tauri::command]
+pub async fn agent_open_editor(app: AppHandle, id: String) -> CmdResult<()> {
+    let path = crate::sessions::project(&id).ok_or("That session is gone.")?;
+    crate::state::executor(&app.state::<AppState>())
+        .run("open_in_editor", &serde_json::json!({ "path": path }))
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Commands for / in the composer.
+#[tauri::command]
+pub fn agent_commands(id: String) -> Vec<crate::sessions::SlashCommand> {
+    crate::sessions::commands(&id)
 }
 
 #[tauri::command]

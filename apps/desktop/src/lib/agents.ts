@@ -12,6 +12,8 @@ export interface Step {
   label: string;
   detail: string;
   state: "running" | "done" | "failed";
+  /** The end of a command's output, folded under the step. */
+  output?: string;
 }
 
 export interface PlanItem {
@@ -38,6 +40,10 @@ export interface Session extends AgentStarted {
   tookMs: number | null;
   /** Files changed when it ended, from Rust. */
   changes: number;
+  /** Said before the next message after a rewind, so the agent knows. */
+  note?: string | null;
+  /** Cut off by a restart: nothing runs until Resume. */
+  restored?: boolean;
 }
 
 export type AskTab = "ask" | "agents" | "history";
@@ -50,7 +56,39 @@ interface AgentsState {
   current: string | null;
 }
 
-export const useAgents = create<AgentsState>(() => ({ tab: "ask", sessions: [], current: null }));
+/** Sessions are kept in this window's storage, so the timeline comes back
+ * after a restart; Rust keeps what Review, Undo and Resume need. */
+const STORE_KEY = "sidekick.agents";
+
+function loadSessions(): Session[] {
+  try {
+    const raw = typeof localStorage === "undefined" ? null : localStorage.getItem(STORE_KEY);
+    const list = raw ? (JSON.parse(raw) as Session[]) : [];
+    // Whatever was running stopped with Sidekick; each can be resumed.
+    return list.map((s) => ({
+      ...s,
+      status: s.status === "working" || s.status === "waiting" ? "ended" : s.status,
+      question: null,
+      restored: true,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export const useAgents = create<AgentsState>(() => ({ tab: "ask", sessions: loadSessions(), current: null }));
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+useAgents.subscribe((st) => {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(st.sessions.slice(0, 20)));
+    } catch {
+      // Storage full or blocked: the timeline just does not survive a restart.
+    }
+  }, 400);
+});
 
 export const setTab = (tab: AskTab) => useAgents.setState({ tab });
 
@@ -92,14 +130,48 @@ export async function handOff(messages: { role: "user" | "assistant"; content: s
 }
 
 export function sendToSession(id: string, text: string) {
+  const note = useAgents.getState().sessions.find((s) => s.id === id)?.note;
   update(id, (s) => ({
     ...s,
     entries: [...s.entries, { kind: "you", text }],
     status: "working",
     turnAt: Date.now(),
     tookMs: null,
+    note: null,
+    error: null,
   }));
-  void api.agentSend(id, text).catch((e: unknown) => update(id, (s) => ({ ...s, error: String(e) })));
+  void api
+    .agentSend(id, note ? `${note}\n\n${text}` : text)
+    .catch((e: unknown) => update(id, (s) => ({ ...s, status: "failed", error: String(e) })));
+}
+
+/** Starts the agent again in its own earlier session, after it ended or
+ * Sidekick restarted. */
+export async function resumeSession(id: string) {
+  await api.agentResume(id);
+  update(id, (s) => ({ ...s, status: "idle", restored: false, error: null }));
+}
+
+/** Puts the code back to before the user's message at `entry` (an index in
+ * entries) and drops what came after; the next message tells the agent. */
+export async function rewindSession(id: string, entry: number): Promise<number> {
+  const s = useAgents.getState().sessions.find((x) => x.id === id);
+  if (!s) return 0;
+  const index = s.entries.slice(0, entry).filter((e) => e.kind === "you").length;
+  const said = s.entries[entry]?.kind === "you" ? (s.entries[entry] as { text: string }).text : "";
+  const n = await api.agentRewind(id, index);
+  update(id, (x) => ({
+    ...x,
+    entries: x.entries.slice(0, entry),
+    plan: [],
+    note: `(I rewound this conversation to before my message "${said.slice(0, 80)}". The file changes made after it were undone. Ignore everything after that point and work from here.)`,
+  }));
+  return n;
+}
+
+/** Which user message an entry is, counting from 0, for Rewind. */
+export function messageIndex(s: Session, entry: number): number {
+  return s.entries.slice(0, entry).filter((e) => e.kind === "you").length;
 }
 
 export function answerQuestion(id: string, answer: "allow" | "always" | "deny") {
@@ -150,6 +222,7 @@ function onEvent(e: { session: string; kind: string } & Record<string, unknown>)
               state: e.state as Step["state"],
               label: (e.label as string) || old.step.label,
               detail: (e.detail as string) || old.step.detail,
+              output: (e.output as string) || old.step.output,
             },
           };
           return { ...s, entries };

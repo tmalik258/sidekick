@@ -198,6 +198,8 @@ export interface Turn extends ChatMessage {
   tookMs?: number;
   /** How long until the first word showed. */
   firstMs?: number;
+  /** Asked while offline: web answers wait for the connection. */
+  offline?: boolean;
 }
 
 export interface Proposal {

@@ -7,7 +7,7 @@
 
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "motion/react";
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
-import { useAgents } from "@/lib/agents";
+import { listenToAgents, useAgents } from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
 import { ISLAND_TOP, PANEL_PAD } from "@/lib/islandSize";
@@ -91,6 +91,7 @@ export function Island() {
   const { mascot, settings, suggestion, hovered: rawHover, visible, ready } = useSidekick();
   const asking = useSidekick((s) => s.ask !== null);
   const askTab = useAgents((s) => s.tab);
+  useEffect(listenToAgents, []);
   const view = useSidekick((s) => s.ask?.view);
   // The Ask panel itself (not Settings or the welcome shown in its place).
   const askPanel = asking && view !== "settings" && view !== "welcome";
@@ -107,7 +108,7 @@ export function Island() {
     return last.tool ? `${last.tool}...` : "Working...";
   });
   // Agents keep working with Ask closed: a small pill says so, and says
-  // when one needs an answer. Hovering it opens Ask.
+  // when one needs an answer. Hovering it lists them.
   const agentWorking = useAgents((s) => {
     const waiting = s.sessions.find((x) => x.status === "waiting");
     if (waiting) return `${waiting.agent} needs you`;
@@ -169,11 +170,14 @@ export function Island() {
         : working !== null
           ? { text: working, thinking: true, working: true }
           : null;
+  // Only agents at work: hover lists them (and answers in place) instead of
+  // opening Ask.
+  const agentsOnly = voiceQuestion === null && hearing === null && chatWorking === null && agentWorking !== null;
   // Suggestions stay normal during thinking — do not gate them on !voicePill.
   const expanded =
     asking ||
     preparingVoice ||
-    (hovered && !voicePill) ||
+    (hovered && (!voicePill || agentsOnly)) ||
     guiding ||
     (OPEN_STATES.has(mascot) && !voicePill) ||
     !!suggestion ||
@@ -188,10 +192,9 @@ export function Island() {
   useEffect(() => {
     if (!intent || quiet || asking || !settings.onboarded) return;
     if (voiceQuestion === null && working === null) return;
-    // An agent's pill opens the Agents tab.
-    if (chatWorking === null && agentWorking !== null) useAgents.setState({ tab: "agents" });
+    if (agentsOnly) return;
     void api.askOpen();
-  }, [intent, quiet, asking, settings.onboarded, voiceQuestion, working, chatWorking, agentWorking]);
+  }, [intent, quiet, asking, settings.onboarded, voiceQuestion, working, agentsOnly]);
 
   const [contentHeight, setContentHeight] = useState(0);
   const bump = useMotionValue(1);

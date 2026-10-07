@@ -38,8 +38,10 @@ import { ModelPicker } from "./ask/ModelPicker";
 import { ago, KeyHint, scrollIfActive } from "./ask/parts";
 import type { Command } from "./ask/Starters";
 import { ContextLine, contextStarters, soonestMeeting } from "./ask/Starters";
+import { FirstRun } from "./ask/States";
 import { Timings } from "./ask/Timings";
 import { Icon } from "./Icon";
+import { markSeen } from "./IslandAgents";
 import { SETTINGS_TABS } from "./SettingsPanel";
 import { SetupSpinner } from "./SetupChecklistRow";
 
@@ -161,6 +163,7 @@ export function AskPanel() {
   useEffect(() => {
     if (seq === undefined) return;
     setText(useSidekick.getState().ask?.prompt ?? "");
+    markSeen();
     setSelected(0);
     setClips(null);
     setHandoffError(null);
@@ -619,45 +622,49 @@ export function AskPanel() {
 
   const lastQuestion = turns.findLast((t) => t.role === "user")?.content ?? "";
   const askedInBar = inChat && !text && !inHistory;
-  const footer = !best ? (
-    <div className="ak-foot items-center">
-      {providersData === null ? (
-        <SetupSpinner className="text-white/50" />
-      ) : (
-        <span className="size-1.5 self-center rounded-full bg-[#ffd60a]" aria-hidden="true" />
-      )}
-      <span className="truncate" aria-live="polite">
-        {providersData === null
-          ? "Checking AI…"
-          : ask.localOnly
-            ? "No local model running"
-            : "No AI set up yet. See Settings > AI"}
-      </span>
-    </div>
-  ) : alt ? (
-    <div className="ak-foot">
-      <span>
-        <kbd>Enter</kbd> {asking ? "ask" : showClips ? "copy" : showHits || inHistory ? "open" : "run"}
-      </span>
-      {agent && (asking || inChat) && (
-        <span>
-          <kbd>Ctrl Enter</kbd> continue in {agent}
+  // No model yet: the first-run card says how to add one, so the footer
+  // keeps its usual line.
+  const firstRun = !best && providersData !== null && !inChat && !asking && !slash && !inHistory && !showClips;
+  const footer =
+    !best && !firstRun ? (
+      <div className="ak-foot items-center">
+        {providersData === null ? (
+          <SetupSpinner className="text-white/50" />
+        ) : (
+          <span className="size-1.5 self-center rounded-full bg-[#ffd60a]" aria-hidden="true" />
+        )}
+        <span className="truncate" aria-live="polite">
+          {providersData === null
+            ? "Checking AI…"
+            : ask.localOnly
+              ? "No local model running"
+              : "No AI set up yet. See Settings > AI"}
         </span>
-      )}
-      <span>
-        <kbd>Ctrl Tab</kbd> switch tab
-      </span>
-      <span>
-        <kbd>Esc</kbd> {hearing !== null ? "stop mic" : inChat || streaming ? "new chat" : "close"}
-      </span>
-    </div>
-  ) : (
-    <div className="ak-foot">
-      <span>
-        Hold <kbd>Alt</kbd> for shortcuts · <kbd>/</kbd> for all commands
-      </span>
-    </div>
-  );
+      </div>
+    ) : alt ? (
+      <div className="ak-foot">
+        <span>
+          <kbd>Enter</kbd> {asking ? "ask" : showClips ? "copy" : showHits || inHistory ? "open" : "run"}
+        </span>
+        {agent && (asking || inChat) && (
+          <span>
+            <kbd>Ctrl Enter</kbd> continue in {agent}
+          </span>
+        )}
+        <span>
+          <kbd>Ctrl Tab</kbd> switch tab
+        </span>
+        <span>
+          <kbd>Esc</kbd> {hearing !== null ? "stop mic" : inChat || streaming ? "new chat" : "close"}
+        </span>
+      </div>
+    ) : (
+      <div className="ak-foot">
+        <span>
+          Hold <kbd>Alt</kbd> for shortcuts · <kbd>/</kbd> for all commands
+        </span>
+      </div>
+    );
 
   return (
     <div className="ak">
@@ -763,6 +770,8 @@ export function AskPanel() {
         <div key="chat" ref={chatRef} onScroll={onScroll} className="ak-scroll" style={{ maxHeight: scrollMax }}>
           <Chat turns={turns} askedInBar={askedInBar} />
         </div>
+      ) : firstRun ? (
+        <FirstRun />
       ) : (
         rows > 0 && (
           <ul
