@@ -11,6 +11,9 @@ import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { useNow } from "@/lib/hooks";
 import type { InboxStatus } from "@/lib/types";
+import { Icon } from "./Icon";
+import { CardChips, CardHead, CardList, type CardRow } from "./IslandCard";
+import { RoundButton } from "./IslandGlance";
 
 /** Away this long before the island shows what happened meanwhile. */
 const AWAY_MS = 3 * 60_000;
@@ -53,37 +56,6 @@ function clock(ms: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-interface Row {
-  key: string;
-  dot: "wait" | "done" | "work";
-  title: string;
-  sub: string;
-  right: string;
-  open?: () => void;
-}
-
-function Rows({ rows }: { rows: Row[] }) {
-  return (
-    <div className="ak-bglist">
-      {rows.map((r, i) => (
-        <button
-          key={r.key}
-          type="button"
-          onClick={r.open}
-          className={`ak-bgr chip ${i === 0 && r.dot === "wait" ? "first" : ""}`}
-        >
-          <span className="ak-sd" data-s={r.dot === "wait" ? "waiting" : r.dot === "done" ? "idle" : "working"} />
-          <span className="min-w-0 text-left">
-            <b className="block truncate text-[13.5px] font-semibold">{r.title}</b>
-            <em className="block truncate text-[11.5px] text-[rgb(235_235_245/0.45)] not-italic">{r.sub}</em>
-          </span>
-          <span className="whitespace-nowrap text-right text-[12px] text-[rgb(235_235_245/0.6)]">{r.right}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /** Keys for the chips under a card: Enter and Alt + a letter or digit. */
 function useKeys(keys: Record<string, (() => void) | undefined>) {
   useEffect(() => {
@@ -99,55 +71,79 @@ function useKeys(keys: Record<string, (() => void) | undefined>) {
   });
 }
 
-/** Agents at work, one line each; the one waiting for you first. */
+/** Agents at work, one row each; the one waiting for you first, answered
+ * right here. */
 export function AgentsGlance({ sessions }: { sessions: Session[] }) {
   const now = useNow(1000);
   const active = [...sessions]
     .filter((s) => s.status === "working" || s.status === "waiting")
-    .sort((a, b) => Number(b.status === "waiting") - Number(a.status === "waiting"));
+    .sort((a, b) => Number(!!b.question) - Number(!!a.question));
   const waiting = active.find((s) => s.question);
   const step = (s: Session) => {
     const last = [...s.entries].reverse().find((e) => e.kind === "step");
     return last?.kind === "step" ? last.step.label : "Working";
   };
-  const rows: Row[] = active.map((s) => ({
+  const wants = (s: Session) =>
+    s.question ? `Wants to ${s.question.label.toLowerCase()}${s.question.detail ? ` ${s.question.detail}` : ""}` : "";
+  const title = waiting
+    ? `${waiting.agent} needs you`
+    : active.length > 1
+      ? `${active.length} agents working`
+      : `${active[0]?.agent ?? "Agent"} is working`;
+  const lead = waiting ?? active[0];
+  const detail = lead ? `${lead.title} \u00b7 ${lead.project}` : "";
+  const rows: CardRow[] = active.map((s) => ({
     key: s.id,
-    dot: s.question ? "wait" : "work",
+    dot: s.question ? "wait" : undefined,
     title: s.title,
-    sub: s.question
-      ? `Wants to ${s.question.label.toLowerCase()}${s.question.detail ? ` ${s.question.detail}` : ""}`
-      : `${s.project} · ${step(s)}`,
+    detail: s.question ? wants(s) : `${s.agent} \u00b7 ${step(s)}`,
     right: s.question ? "Waiting" : clock(now - s.turnAt),
-    open: () => openSession(s.id),
+    onClick: () => openSession(s.id),
   }));
   const allow = waiting ? () => answerQuestion(waiting.id, "allow") : undefined;
-  useKeys({ Enter: allow });
+  const deny = waiting ? () => answerQuestion(waiting.id, "deny") : undefined;
+  const open = () => openSession(lead?.id ?? "");
+  useKeys({ Enter: allow, "Alt N": deny });
   return (
-    <div className="ak grid gap-2">
-      <p className="text-[15px] font-semibold">Agents</p>
-      <Rows rows={rows} />
-      <div className="ak-chips" style={{ marginLeft: "calc(var(--orb-indent, 0px) * -1)" }}>
-        {waiting?.question && (
-          <button type="button" onClick={allow} className="ak-chip primary chip max-w-60">
-            <span className="truncate">Allow {waiting.question.detail || waiting.question.label.toLowerCase()}</span>
-            <kbd>Enter</kbd>
-          </button>
-        )}
-        <button type="button" onClick={() => openSession(active[0]?.id ?? "")} className="ak-chip chip">
-          Open Agents
-        </button>
-      </div>
+    <div className="flex flex-col">
+      <CardHead
+        title={title}
+        detail={detail}
+        right={
+          <RoundButton label="Open Agents" onClick={open}>
+            <Icon name="terminal" size={15} />
+          </RoundButton>
+        }
+      />
+      <CardList rows={rows} />
+      {waiting && allow && deny ? (
+        <CardChips
+          options={[
+            {
+              label: `Allow ${waiting.question?.detail || waiting.question?.label.toLowerCase() || ""}`,
+              keys: "Enter",
+              run: allow,
+            },
+            { label: "No", keys: "Alt N", run: deny },
+          ]}
+        />
+      ) : null}
     </div>
   );
 }
 
 /** What finished or started waiting since the user last looked. */
-export function useAway(): { rows: Row[]; reviewId: string | null; waitingId: string | null; agent: string | null } {
+export function useAway(): {
+  rows: CardRow[];
+  reviewId: string | null;
+  waitingId: string | null;
+  agent: string | null;
+} {
   const seen = useSeen((s) => s.at);
   const sessions = useAgents((s) => s.sessions);
   const { data: inbox } = useCached<InboxStatus>("inbox-status", api.notificationsStatus);
   const now = useNow(60_000);
-  const rows: Row[] = [];
+  const rows: CardRow[] = [];
   let reviewId: string | null = null;
   let waitingId: string | null = null;
   let agent: string | null = null;
@@ -161,9 +157,9 @@ export function useAway(): { rows: Row[]; reviewId: string | null; waitingId: st
         key: s.id,
         dot: "wait",
         title: `${s.agent} is waiting`,
-        sub: `${s.title} · wants to ${s.question.label.toLowerCase()}`,
+        detail: `${s.title} · wants to ${s.question.label.toLowerCase()}`,
         right: ago(s.turnAt, now),
-        open: () => openSession(s.id),
+        onClick: () => openSession(s.id),
       });
     } else if (endedAt && endedAt > seen && (s.status === "idle" || s.status === "ended")) {
       if (s.reviewable) reviewId ??= s.id;
@@ -171,16 +167,16 @@ export function useAway(): { rows: Row[]; reviewId: string | null; waitingId: st
         key: s.id,
         dot: "done",
         title: `${s.agent} finished`,
-        sub: `${s.title}${s.changes ? ` · ${s.changes} ${s.changes === 1 ? "change" : "changes"} to review` : ""}`,
+        detail: `${s.title}${s.changes ? ` · ${s.changes} ${s.changes === 1 ? "change" : "changes"} to review` : ""}`,
         right: ago(endedAt, now),
-        open: () => openSession(s.id),
+        onClick: () => openSession(s.id),
       });
     }
   }
   for (const n of inbox?.items ?? []) {
     const at = Date.parse(n.ts);
     if (rows.length >= 5 || !(at > seen) || (n.level !== "now" && n.level !== "soon")) continue;
-    rows.push({ key: `n${n.id}`, dot: "work", title: n.title || n.app, sub: n.app, right: ago(at, now) });
+    rows.push({ key: `n${n.id}`, title: n.title || n.app, detail: n.app, right: ago(at, now) });
   }
   return { rows, reviewId, waitingId, agent };
 }
@@ -191,28 +187,30 @@ export function AwayCard() {
   const review = reviewId ? () => openSession(reviewId) : undefined;
   const answer = waitingId ? () => openSession(waitingId) : undefined;
   useKeys({ "Alt 1": review ?? answer, "Alt 2": review ? answer : undefined, "Alt X": markSeen });
+  const done = rows.filter((r) => r.dot === "done").length;
+  const waits = rows.filter((r) => r.dot === "wait").length;
+  const parts = [
+    done && `${done} finished`,
+    waits && `${waits} waiting for you`,
+    rows.length - done - waits && `${rows.length - done - waits} new`,
+  ].filter(Boolean);
+  const options = [
+    review && { label: "Review the change", keys: "Alt 1", run: review },
+    answer && { label: `Answer ${agent}`, keys: review ? "Alt 2" : "Alt 1", run: answer },
+  ].filter((o): o is { label: string; keys: string; run: () => void } => !!o);
   return (
-    <div className="ak grid gap-2">
-      <p className="flex items-center gap-2 text-[15px] font-semibold">
-        While you were away
-        <span className="ak-model ml-auto">{rows.length} new</span>
-      </p>
-      <Rows rows={rows} />
-      <div className="ak-chips" style={{ marginLeft: "calc(var(--orb-indent, 0px) * -1)" }}>
-        {review && (
-          <button type="button" onClick={review} className="ak-chip primary chip">
-            Review the change <kbd>Alt 1</kbd>
+    <div className="flex flex-col">
+      <CardHead title="While you were away" detail={parts.join(" \u00b7 ")} />
+      <CardList
+        label="Since you last looked"
+        action={
+          <button type="button" onClick={markSeen} className="chip hover:text-white">
+            Clear all <kbd className="ml-1 font-sans text-[11px] text-white/45">Alt X</kbd>
           </button>
-        )}
-        {answer && (
-          <button type="button" onClick={answer} className={`ak-chip chip ${review ? "" : "primary"}`}>
-            Answer {agent} <kbd>{review ? "Alt 2" : "Alt 1"}</kbd>
-          </button>
-        )}
-        <button type="button" onClick={markSeen} className="ak-chip chip">
-          Clear all <kbd>Alt X</kbd>
-        </button>
-      </div>
+        }
+        rows={rows}
+      />
+      {options.length > 0 && <CardChips options={options} />}
     </div>
   );
 }
