@@ -13,3 +13,4 @@ suggestion:
     - { label: "Open in {{editor}}", action: open_in_editor, args: { path: "{{path}}" }, requires: ["tool:code"] }
     - { label: Install dependencies, action: install_deps, args: { path: "{{path}}" }, when: { deps_needed: { equals: true } } }
     - { label: Start an agent here, action: agent_here, args: { path: "{{path}}" } }
+    - { label: "Always put {{owner}} here", action: clone_rule, args: { owner: "{{owner}}", dir: "{{dir}}" }, when: { ask_rule: { equals: true } } }

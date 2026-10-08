@@ -302,6 +302,7 @@ pub const ACTIONS: &[&str] = &[
     "git_pull",
     "git_clone",
     "clone_pick",
+    "clone_rule",
     "agent_here",
     "git_after_merge",
     "git_update_branch",

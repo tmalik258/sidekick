@@ -241,15 +241,23 @@ pub fn observe(app: &AppHandle, event: &Event) {
     });
 }
 
-/// After a clone: remember where this owner goes, and offer next steps.
-pub fn after_clone(app: &AppHandle, url: &str, dir: &str, path: &str) {
-    if let Some(r) = parse(url) {
-        let state = app.state::<AppState>();
-        let mut s = lock(&state.settings).clone();
-        s.clone_rules.insert(r.owner.clone(), dir.to_owned());
-        if let Err(e) = crate::commands::apply_settings(app, s) {
-            log::warn!("could not keep the clone rule: {e}");
-        }
+/// Remembers that this owner's repos go in `dir`.
+pub fn keep_rule(app: &AppHandle, owner: &str, dir: &str) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let mut s = lock(&state.settings).clone();
+    s.clone_rules.insert(owner.to_owned(), dir.to_owned());
+    crate::commands::apply_settings(app, s).map(|_| ())
+}
+
+/// After a clone: remember where this owner goes, and offer next steps. A
+/// folder the user picked by hand is asked about once instead of learned.
+pub fn after_clone(app: &AppHandle, url: &str, dir: &str, path: &str, picked: bool) {
+    let owner = parse(url).map(|r| r.owner).unwrap_or_default();
+    if !picked
+        && !owner.is_empty()
+        && let Err(e) = keep_rule(app, &owner, dir)
+    {
+        log::warn!("could not keep the clone rule: {e}");
     }
     let p = Path::new(path);
     let deps = sidekick_actions::dev::manager(p).is_some();
@@ -260,7 +268,14 @@ pub fn after_clone(app: &AppHandle, url: &str, dir: &str, path: &str) {
     app.state::<AppState>().bus.publish(Event::new(
         CLONED,
         "clipboard",
-        json!({ "name": name, "path": path, "deps_needed": deps }),
+        json!({
+            "name": name,
+            "path": path,
+            "deps_needed": deps,
+            "owner": owner,
+            "dir": dir,
+            "ask_rule": picked && !owner.is_empty(),
+        }),
     ));
 }
 
@@ -284,7 +299,7 @@ pub async fn pick_and_clone(
             .map_err(|e| e.to_string())?
             .map_err(|e| e.to_string())?;
     if let Some(path) = &out.path {
-        after_clone(app, url, &picked.to_string_lossy(), path);
+        after_clone(app, url, &picked.to_string_lossy(), path, true);
     }
     Ok(out)
 }

@@ -743,9 +743,21 @@ async fn execute(
                     arg("url").unwrap_or_default(),
                     arg("dir").unwrap_or_default(),
                     path,
+                    false,
                 );
             }
             return Ok(out);
+        }
+        "clone_rule" => {
+            let (owner, dir) = (
+                arg("owner").unwrap_or_default(),
+                arg("dir").unwrap_or_default(),
+            );
+            crate::clone::keep_rule(app, owner, dir)?;
+            return Ok(sidekick_actions::Outcome {
+                message: format!("Saved. {owner} repos go to {dir} from now on"),
+                path: None,
+            });
         }
         "agent_here" => {
             crate::ask::open(
