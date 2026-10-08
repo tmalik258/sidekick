@@ -2128,6 +2128,7 @@ select.ak-mi option {
 }
 .ak-act {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 6px;
   padding: 5px 10px;
