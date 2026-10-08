@@ -13,6 +13,8 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -24,7 +26,38 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Signs the app and installers with Azure Trusted Signing when its
+      # secrets are set (see docs/releasing.md); unsigned builds otherwise.
+      - name: Set up signing
+        if: ${{ env.AZURE_CLIENT_ID != '' }}
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          SIGNING_ENDPOINT: ${{ vars.SIGNING_ENDPOINT }}
+          SIGNING_ACCOUNT: ${{ vars.SIGNING_ACCOUNT }}
+          SIGNING_PROFILE: ${{ vars.SIGNING_PROFILE }}
+        run: |
+          cargo install trusted-signing-cli --locked
+          $conf = "apps/desktop/src-tauri/tauri.release.conf.json"
+          $json = Get-Content $conf -Raw | ConvertFrom-Json
+          $cmd = "trusted-signing-cli -e $env:SIGNING_ENDPOINT -a $env:SIGNING_ACCOUNT -c $env:SIGNING_PROFILE -d Sidekick %1"
+          $json.bundle | Add-Member -NotePropertyName windows -NotePropertyValue @{ signCommand = $cmd } -Force
+          $json | ConvertTo-Json -Depth 10 | Set-Content $conf
       - run: pnpm build
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      - name: Check signatures
+        if: ${{ env.AZURE_CLIENT_ID != '' }}
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem target/release/sidekick*.exe, target/release/bundle/nsis/*.exe, target/release/bundle/msi/*.msi
+          foreach ($f in $files) {
+            $sig = Get-AuthenticodeSignature $f
+            Write-Output "$($f.Name): $($sig.Status)"
+            if ($sig.Status -ne "Valid") { throw "$($f.Name) is not signed" }
+          }
       # Sidekick checks an update against these before running it.
       - name: Checksums
         shell: pwsh
