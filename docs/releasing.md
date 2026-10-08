@@ -32,6 +32,11 @@ pnpm build
 
 The installers land in `target\release\bundle\nsis` and `target\release\bundle\msi`.
 
-## Code signing (optional)
+## Code signing
 
-Unsigned installers work but show a SmartScreen warning. To sign, add your certificate to the runner and set `bundle.windows.certificateThumbprint` (or a `signCommand`) in `apps/desktop/src-tauri/tauri.release.conf.json`. See the Tauri guide: https://v2.tauri.app/distribute/sign/windows/
+Signed builds are trusted by SmartScreen and antivirus on every PC, with no warning and no exclusions. The Release workflow signs the app and both installers with [Azure Trusted Signing](https://learn.microsoft.com/azure/trusted-signing/) when these are set on the repository, and fails if any file comes out unsigned:
+
+- Secrets: `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID` (an app registration with the Trusted Signing Certificate Profile Signer role).
+- Variables: `SIGNING_ENDPOINT` (for example `https://eus.codesigning.azure.net`), `SIGNING_ACCOUNT`, `SIGNING_PROFILE`.
+
+Without them the workflow builds unsigned installers, which work but show a SmartScreen warning. See the Tauri guide: https://v2.tauri.app/distribute/sign/windows/
