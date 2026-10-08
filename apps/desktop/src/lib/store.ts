@@ -14,6 +14,7 @@ import {
   type ChatMessage,
   DEFAULT_SETTINGS,
   type ExtensionGuide,
+  type HitRect,
   type MascotState,
   type Proposal,
   type Settings,
@@ -41,6 +42,8 @@ interface SidekickState {
   netNotice: NetNotice | null;
   /** Cursor is over the island's interactive area (reported by Rust). */
   hovered: boolean;
+  /** Extra interactive area while a floating menu is open (unioned into the hit rect). */
+  overlayHit: HitRect | null;
   /** False while a fullscreen app is in front; the island fades away. */
   visible: boolean;
   /** A fullscreen app is in front on the island's screen. */
@@ -168,6 +171,7 @@ export const useSidekick = create<SidekickState>(() => ({
   offlineSince: null,
   netNotice: null,
   hovered: false,
+  overlayHit: null,
   visible: true,
   fullscreen: false,
   ready: false,
@@ -796,6 +800,9 @@ function updateLastTurn(id: string, fn: (t: Turn) => Turn) {
 }
 
 export const setHovered = (hovered: boolean) => useSidekick.setState({ hovered });
+
+/** Grow the clickable area around a floating menu so it is not click-through. */
+export const setOverlayHit = (overlayHit: HitRect | null) => useSidekick.setState({ overlayHit });
 
 export function updateSettings(patch: Partial<Settings>): Promise<Settings> {
   const next = { ...useSidekick.getState().settings, ...patch };
