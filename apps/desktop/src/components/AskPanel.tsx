@@ -21,6 +21,7 @@ import {
   startSkill,
   stopListening,
   updateSettings,
+  useAssistantName,
   useSidekick,
 } from "@/lib/store";
 import {
@@ -122,6 +123,7 @@ const WINDOWS_PAGES: { page: string; label: string; words: string[]; switch?: st
 ];
 
 export function AskPanel() {
+  const assistant = useAssistantName();
   const ask = useSidekick((s) => s.ask);
   const turns = useSidekick((s) => s.turns);
   const chatId = useSidekick((s) => s.chatId);
@@ -383,7 +385,7 @@ export function AskPanel() {
         icon: <span className="text-[12px]">✦</span>,
         label: (
           <>
-            Ask Sidekick: <span className="text-[rgb(235_235_245/0.6)]">“{text.trim()}”</span>
+            Ask {assistant}: <span className="text-[rgb(235_235_245/0.6)]">“{text.trim()}”</span>
           </>
         ),
         run: () => {
@@ -820,7 +822,12 @@ export function AskPanel() {
                 <Icon name={speak ? "speaker" : "speakerOff"} size={14} />
               </IconButton>
               {voiceReady && !streaming && (
-                <IconButton label="Talk, or say Hey Sidekick (Alt V)" keys={alt} hint="Alt V" onClick={startListening}>
+                <IconButton
+                  label={`Talk, or say Hey ${assistant} (Alt V)`}
+                  keys={alt}
+                  hint="Alt V"
+                  onClick={startListening}
+                >
                   <Icon name="mic" size={14} />
                 </IconButton>
               )}

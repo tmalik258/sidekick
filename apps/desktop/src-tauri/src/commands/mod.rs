@@ -360,6 +360,7 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
     if previous.voice != next.voice
         || previous.pause != next.pause
         || previous.onboarded != next.onboarded
+        || previous.assistant_name != next.assistant_name
     {
         crate::voice::refresh(app);
     }
