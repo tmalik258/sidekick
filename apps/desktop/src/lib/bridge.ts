@@ -190,7 +190,6 @@ export const api = {
   openSettings: () => invoke<void>("open_settings"),
   debugSetState: (state: MascotState) => invoke<void>("debug_set_state", { state }),
   debugEmitEvent: () => invoke<void>("debug_emit_event"),
-  debugDemoFlow: () => invoke<void>("debug_demo_flow"),
   skillsList: () => invoke<SkillInfo[]>("skills_list"),
   skillSet: (id: string, enabled: boolean, auto: boolean) => invoke<Settings>("skill_set", { id, enabled, auto }),
   capabilitiesGet: (rescan = false) => invoke<CapabilityInfo>("capabilities_get", { rescan }),

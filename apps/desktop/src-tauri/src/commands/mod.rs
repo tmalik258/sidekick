@@ -179,11 +179,6 @@ pub fn debug_emit_event(state: State<'_, AppState>) {
     ));
 }
 
-#[tauri::command]
-pub fn debug_demo_flow(app: AppHandle) {
-    suggestions::demo(&app);
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillInfo {

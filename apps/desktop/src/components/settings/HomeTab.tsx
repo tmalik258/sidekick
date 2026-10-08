@@ -180,9 +180,6 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
                 <Button small onClick={() => void api.debugEmitEvent()}>
                   Emit test event
                 </Button>
-                <Button small onClick={() => void api.debugDemoFlow()}>
-                  Run demo suggestion
-                </Button>
               </div>
               <RecentEvents />
             </div>

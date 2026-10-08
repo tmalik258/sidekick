@@ -725,7 +725,8 @@ function ExpandedContent({
   const netNotice = useSidekick((s) => s.netNotice);
   const reporting = (mascot === "success" || mascot === "error" || mascot === "working") && !suggestion;
   if (netNotice && !suggestion) return <NetNoticeCard notice={netNotice} />;
-  if (!suggestion && (mascot === "idle" || mascot === "sleeping")) {
+  // A suggestion that expired or was taken leaves nothing to show: fall back to the glance.
+  if (!suggestion && (mascot === "idle" || mascot === "sleeping" || mascot === "suggesting")) {
     return <Glance paused={paused} />;
   }
   // Working names what it is doing; done and error say what happened.

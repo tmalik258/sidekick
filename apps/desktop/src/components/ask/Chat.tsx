@@ -146,7 +146,7 @@ function modelOf(ai: AiSettings, provider: string): string {
 export function SaveRecipe({ prompt }: { prompt: string }) {
   const [saved, setSaved] = useState<string | null>(null);
   if (!prompt.trim()) return null;
-  if (saved) return <span>{saved}</span>;
+  if (saved) return <span className="max-w-40 truncate whitespace-nowrap">{saved}</span>;
   return (
     <button
       type="button"
@@ -156,9 +156,11 @@ export function SaveRecipe({ prompt }: { prompt: string }) {
           .then(setSaved)
           .catch((e) => setSaved(String(e)))
       }
-      className="chip hover:text-white"
+      aria-label="Save as recipe"
+      title="Save as recipe"
+      className="ak-act chip"
     >
-      Save as recipe
+      <ActIcon d="M7 4h10v16l-5-3.5L7 20z" />
     </button>
   );
 }

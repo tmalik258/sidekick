@@ -1000,32 +1000,6 @@ fn schedule_next(app: &AppHandle, after: Duration) {
     });
 }
 
-/// A scripted suggestion for the debug panel and tray.
-pub fn demo(app: &AppHandle) {
-    let option = |label: &str, action: &str, message: &str| ProposedOption {
-        label: label.into(),
-        action: action.into(),
-        args: serde_json::json!({ "message": message }),
-        skill_id: "debug.demo".into(),
-    };
-    offer(
-        app,
-        Proposal {
-            skill_id: "debug.demo".into(),
-            skill_ids: vec!["debug.demo".into()],
-            title: "Demo suggestion".into(),
-            detail: "Pick an option to see the flow.".into(),
-            options: vec![
-                option("Succeed", "noop", "That worked"),
-                option("Fail", "fail", "Simulated failure"),
-            ],
-            trust: Trust::Suggest,
-            remember: None,
-            priority: 50,
-        },
-    );
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

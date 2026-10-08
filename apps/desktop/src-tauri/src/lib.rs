@@ -206,7 +206,6 @@ pub fn run() {
             commands::voice_say,
             commands::debug_set_state,
             commands::debug_emit_event,
-            commands::debug_demo_flow,
             commands::skills_list,
             commands::skill_set,
             commands::capabilities_get,
