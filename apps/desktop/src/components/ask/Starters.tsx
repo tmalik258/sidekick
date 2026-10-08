@@ -141,6 +141,18 @@ export function contextStarters({
       stay: true,
     });
   }
+  if (context?.app && !page) {
+    const app = context.app;
+    out.push({
+      id: "starter:howto",
+      label: `How do I use ${app}?`,
+      hint: "Three steps, shows where",
+      icon: "ask",
+      run: () =>
+        sendChat(`How do I use ${app} for what I am doing? Three short steps, and point at the first control.`),
+      stay: true,
+    });
+  }
   if (meeting) {
     out.push({
       id: "starter:meeting",
