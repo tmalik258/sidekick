@@ -1279,7 +1279,13 @@ body {
   color: var(--i3);
   padding: 0 4px;
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+/* Each part stays on one line ("first word 41.9 s", "Think harder Alt H"). */
+.ak-tag > * {
+  white-space: nowrap;
 }
 .ak-tag b {
   font-weight: 500;

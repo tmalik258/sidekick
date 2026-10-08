@@ -410,7 +410,7 @@ fn without_name<'a>(text: &'a str, names: &[&str]) -> &'a str {
 
 /// A tool call the model wrote as text (`{"name": ..., "arguments": ...}`,
 /// maybe fenced or tagged), when it names one of the `offered` tools.
-fn text_call(text: &str, offered: &[&str]) -> Option<Value> {
+fn text_call(text: &str, offered: &[&str], tools: &[Value]) -> Option<Value> {
     let mut t = text.trim();
     if let Some(inner) = t.strip_prefix("<tool_call>") {
         t = inner.trim_end().trim_end_matches("</tool_call>").trim();
@@ -425,7 +425,12 @@ fn text_call(text: &str, offered: &[&str]) -> Option<Value> {
     } else {
         &v
     };
-    let name = f["name"].as_str()?;
+    let Some(name) = f["name"].as_str() else {
+        // Only the arguments ({"what": "hotspot_on"}): the one tool they fit.
+        let name = fitting_tool(&v, tools)?;
+        return Some(json!({ "id": "call_text", "type": "function",
+                            "function": { "name": name, "arguments": v.to_string() } }));
+    };
     if !offered.contains(&name) {
         return None;
     }
@@ -436,6 +441,34 @@ fn text_call(text: &str, offered: &[&str]) -> Option<Value> {
         .unwrap_or_else(|| json!({}));
     Some(json!({ "id": "call_text", "type": "function",
                  "function": { "name": name, "arguments": args.to_string() } }))
+}
+
+/// The only offered tool whose parameters `args` fits: every key is one of
+/// its parameters, its required ones are there, and values from a fixed list
+/// are on it.
+fn fitting_tool<'a>(args: &Value, tools: &'a [Value]) -> Option<&'a str> {
+    let args = args.as_object().filter(|a| !a.is_empty())?;
+    let fits = |t: &&Value| {
+        let params = &t["function"]["parameters"];
+        let props = &params["properties"];
+        let required = params["required"].as_array().into_iter().flatten();
+        args.iter().all(|(k, v)| {
+            props.get(k).is_some_and(|p| {
+                p["enum"]
+                    .as_array()
+                    .is_none_or(|choices| choices.contains(v))
+            })
+        }) && required
+            .filter_map(Value::as_str)
+            .all(|r| args.contains_key(r))
+    };
+    let mut fitting = tools.iter().filter(fits);
+    let one = fitting.next()?;
+    fitting
+        .next()
+        .is_none()
+        .then(|| one["function"]["name"].as_str())
+        .flatten()
 }
 
 /// What one streamed round produced.
@@ -543,7 +576,8 @@ impl OpenAiCompat {
                 .flatten()
                 .filter_map(|t| t["function"]["name"].as_str())
                 .collect();
-            match text_call(&held, &offered) {
+            let tools = body["tools"].as_array().map_or(&[][..], Vec::as_slice);
+            match text_call(&held, &offered, tools) {
                 Some(call) if calls.is_empty() => {
                     calls.push(call);
                     raw.clear();
@@ -935,6 +969,7 @@ mod tests {
         let c = text_call(
             r#"{"name": "continue_in_claude_code", "arguments": {"reason": "needs more"}}"#,
             &offered,
+            &[],
         )
         .unwrap();
         assert_eq!(c["function"]["name"], "continue_in_claude_code");
@@ -944,14 +979,25 @@ mod tests {
         );
         let fenced = "```json\n{\"name\": \"apps\", \"parameters\": {\"action\": \"find\"}}\n```";
         assert_eq!(
-            parse_arguments(&text_call(fenced, &offered).unwrap()["function"]["arguments"])["action"],
+            parse_arguments(&text_call(fenced, &offered, &[]).unwrap()["function"]["arguments"])["action"],
             "find"
         );
         let tagged = r#"<tool_call>{"function": {"name": "apps", "arguments": "{}"}}</tool_call>"#;
-        assert!(text_call(tagged, &offered).is_some());
+        assert!(text_call(tagged, &offered, &[]).is_some());
         // Not an offered tool, or plain JSON the user asked for: shown as is.
-        assert!(text_call(r#"{"name": "rm_rf", "arguments": {}}"#, &offered).is_none());
-        assert!(text_call(r#"{"a": 1}"#, &offered).is_none());
+        assert!(text_call(r#"{"name": "rm_rf", "arguments": {}}"#, &offered, &[]).is_none());
+        assert!(text_call(r#"{"a": 1}"#, &offered, &[]).is_none());
+        // Only the arguments: the one tool whose parameters they fit.
+        let tools = [
+            json!({"function": {"name": "pc_control", "parameters": {
+                "properties": {"what": {"enum": ["hotspot_on", "wifi_off"]}}, "required": ["what"]}}}),
+            json!({"function": {"name": "read_page", "parameters": {
+                "properties": {"what": {"enum": ["tables", "text"]}}}}}),
+        ];
+        let c = text_call(r#"{"what": "hotspot_on"}"#, &offered, &tools).unwrap();
+        assert_eq!(c["function"]["name"], "pc_control");
+        assert!(text_call(r#"{"what": "nope"}"#, &offered, &tools).is_none());
+        assert!(text_call(r#"{"what": "text", "x": 1}"#, &offered, &tools).is_none());
         assert!(may_be_call("{\"na"));
         assert!(may_be_call("``"));
         assert!(may_be_call("<tool"));
