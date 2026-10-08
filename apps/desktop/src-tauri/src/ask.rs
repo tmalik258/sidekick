@@ -94,6 +94,8 @@ pub struct Open {
     /// A tool to start with: "screen" asks about the screen, "clipboard"
     /// shows clipboard history.
     pub tool: Option<&'static str>,
+    /// Which Settings tab to show with view "settings" ("memory").
+    pub settings_tab: Option<&'static str>,
     /// When the open was asked for (ms since 1970), for the open-to-ready
     /// timing.
     pub sent_at: i64,
