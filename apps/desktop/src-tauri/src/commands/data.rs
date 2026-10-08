@@ -34,6 +34,33 @@ pub async fn learned_list(app: AppHandle) -> Vec<crate::learned::Learned> {
         .unwrap_or_default()
 }
 
+/// How often each kind of suggestion is taken, for Settings > Memory.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestionRate {
+    skill: String,
+    taken: i64,
+    dismissed: i64,
+}
+
+#[tauri::command]
+pub async fn suggestion_rates(app: AppHandle) -> Vec<SuggestionRate> {
+    off_ui(move || {
+        lock(&app.state::<AppState>().storage)
+            .suggestion_rates()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(skill, taken, dismissed)| SuggestionRate {
+                skill,
+                taken,
+                dismissed,
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
 #[tauri::command]
 pub fn learned_forget(app: AppHandle, kind: String, key: String, label: String) -> CmdResult<()> {
     crate::learned::forget(&app, &kind, &key, &label)

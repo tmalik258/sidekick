@@ -1108,6 +1108,10 @@ commands.focus_stop = () => {
   return "Focus done. Nothing came in.";
 };
 commands.focus_status = () => ({ until: mockFocusUntil, held: 0 });
+commands.suggestion_rates = () => [
+  { skill: "files.screenshot", taken: 12, dismissed: 3 },
+  { skill: "dev.port-in-use", taken: 2, dismissed: 7 },
+];
 commands.learned_list = () => [
   {
     kind: "choice",

@@ -154,6 +154,25 @@ const QUIET_BELOW: i32 = 40;
 /// During a meeting, only this urgent and above interrupts.
 const MEETING_FROM: i32 = 80;
 const MAX_LATER: usize = 20;
+/// At most this many suggestions interrupt per hour; the rest wait in the
+/// list. Urgent ones (MEETING_FROM and above) still show.
+const MAX_PER_HOUR: usize = 4;
+
+/// When suggestions last interrupted, for the hourly cap.
+static SHOWN: std::sync::Mutex<std::collections::VecDeque<Instant>> =
+    std::sync::Mutex::new(std::collections::VecDeque::new());
+
+/// Too many interrupted in the last hour already.
+fn over_cap(now: Instant) -> bool {
+    let mut shown = lock(&SHOWN);
+    while shown
+        .front()
+        .is_some_and(|t| now.duration_since(*t) > Duration::from_secs(3600))
+    {
+        shown.pop_front();
+    }
+    shown.len() >= MAX_PER_HOUR
+}
 const LATER_KEEP: chrono::Duration = chrono::Duration::hours(3);
 
 /// How long a missed suggestion is still worth showing. Ones tied to a
@@ -303,7 +322,10 @@ pub fn offer(app: &AppHandle, mut proposal: Proposal) {
         return;
     }
     if proposal.trust != Trust::Auto
-        && should_wait(&proposal.skill_id, proposal.priority, in_meeting(app))
+        && (should_wait(&proposal.skill_id, proposal.priority, in_meeting(app))
+            || (proposal.priority < MEETING_FROM
+                && !shows_while_paused(&proposal.skill_id)
+                && (crate::island::fullscreen() || over_cap(Instant::now()))))
     {
         keep_for_later(app, proposal, false);
         return;
@@ -379,6 +401,9 @@ fn show(app: &AppHandle, proposal: Proposal) {
         });
         schedule_next(&app, NEXT_AFTER_DISMISS);
         return;
+    }
+    if proposal.trust != Trust::Auto && proposal.priority < MEETING_FROM {
+        lock(&SHOWN).push_back(Instant::now());
     }
     let ui = Suggestion {
         id: ulid::Ulid::new().to_string(),
