@@ -81,6 +81,16 @@ pub fn list(app: &AppHandle) -> Vec<Learned> {
             label: item.kind,
         });
     }
+    if let Some(hour) = crate::timetrack::learned_end(app) {
+        out.push(Learned {
+            kind: "dayend".into(),
+            text: format!("Your day usually ends around {hour}:00"),
+            why: "From when you were last at the PC on recent days. The day summary comes then."
+                .into(),
+            key: String::new(),
+            label: String::new(),
+        });
+    }
     out
 }
 
@@ -104,6 +114,10 @@ pub fn forget(app: &AppHandle, kind: &str, key: &str, label: &str) -> Result<(),
             .map(|_| ())
             .map_err(|e| e.to_string()),
         "routine" => crate::routines::remove(app, label, key).map(|_| ()),
+        "dayend" => {
+            crate::timetrack::forget_day_ends(app);
+            Ok(())
+        }
         _ => Err(format!("unknown kind {kind}")),
     }
 }
@@ -115,6 +129,7 @@ pub fn forget_all(app: &AppHandle) -> Result<(), String> {
         storage.clear_choices().map_err(|e| e.to_string())?;
         storage.clear_habits().map_err(|e| e.to_string())?;
     }
+    crate::timetrack::forget_day_ends(app);
     crate::routines::forget(app).map(|_| ())
 }
 
