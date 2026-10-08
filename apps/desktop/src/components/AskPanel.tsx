@@ -41,6 +41,7 @@ import { ContextLine, contextStarters, soonestMeeting } from "./ask/Starters";
 import { FirstRun } from "./ask/States";
 import { Timings } from "./ask/Timings";
 import { Icon } from "./Icon";
+import { Tip } from "./Tip";
 import { markSeen } from "./IslandAgents";
 import { SETTINGS_TABS } from "./SettingsPanel";
 import { SetupSpinner } from "./SetupChecklistRow";
@@ -1040,16 +1041,11 @@ function IconButton({
 }) {
   return (
     <span className="relative shrink-0">
-      <button
-        type="button"
-        aria-label={label}
-        title={label}
-        aria-pressed={pressed}
-        onClick={onClick}
-        className="ak-ibtn chip"
-      >
-        {children}
-      </button>
+      <Tip label={label}>
+        <button type="button" aria-label={label} aria-pressed={pressed} onClick={onClick} className="ak-ibtn chip">
+          {children}
+        </button>
+      </Tip>
       <KeyHint show={keys}>{hint}</KeyHint>
     </span>
   );

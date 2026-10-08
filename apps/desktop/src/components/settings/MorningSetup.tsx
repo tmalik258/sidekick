@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
 import { updateSettings, useSidekick } from "@/lib/store";
 import type { RoutineItem } from "@/lib/types";
+import { Tip } from "../Tip";
 import { appName, Button, Segmented } from "./ui";
 
 type Mode = "ask" | "auto" | "off";
@@ -70,21 +71,22 @@ export function MorningSetup({ onError }: { onError: (e: string) => void }) {
                 const name = item.kind === "app" ? appName(item.label) : item.label;
                 return (
                   <li key={`${item.kind}:${item.key}`}>
-                    <button
-                      type="button"
-                      onClick={() => remove(item)}
-                      title={`Take ${name} out (${item.days} of 5 mornings)`}
-                      aria-label={`Remove ${name}`}
-                      className="chip group flex items-center gap-1.5 rounded-full bg-black/5 py-1 pr-2 pl-2.5 text-[12.5px] dark:bg-white/10"
-                    >
-                      {name}
-                      {item.kind === "site" && item.browser && (
-                        <span className="text-(--muted)">in {item.browser}</span>
-                      )}
-                      <span aria-hidden className="text-(--muted) group-hover:text-(--text)">
-                        ×
-                      </span>
-                    </button>
+                    <Tip label={`Take ${name} out (${item.days} of 5 mornings)`}>
+                      <button
+                        type="button"
+                        onClick={() => remove(item)}
+                        aria-label={`Remove ${name}`}
+                        className="chip group flex items-center gap-1.5 rounded-full bg-black/5 py-1 pr-2 pl-2.5 text-[12.5px] dark:bg-white/10"
+                      >
+                        {name}
+                        {item.kind === "site" && item.browser && (
+                          <span className="text-(--muted)">in {item.browser}</span>
+                        )}
+                        <span aria-hidden className="text-(--muted) group-hover:text-(--text)">
+                          ×
+                        </span>
+                      </button>
+                    </Tip>
                   </li>
                 );
               })}

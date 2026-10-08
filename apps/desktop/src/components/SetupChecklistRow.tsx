@@ -8,6 +8,7 @@ import { friendlyError } from "@/lib/friendly";
 import { startWaiting, stopWaiting, useSidekick } from "@/lib/store";
 import type { SetupItem } from "@/lib/types";
 import { ItemGuide } from "./SetupGuides";
+import { Tip } from "./Tip";
 
 const TAB_LABELS: Record<string, string> = {
   ai: "AI",
@@ -242,12 +243,11 @@ export const SetupRow = memo(function SetupRow({
 
 function Code({ text }: { text: string }) {
   return (
-    <code
-      title={text}
-      className="block truncate rounded-lg bg-black/30 px-2.5 py-1.5 font-mono text-[11px] text-white/80 select-all"
-    >
-      {text}
-    </code>
+    <Tip label={text} className="block min-w-0 max-w-full">
+      <code className="block truncate rounded-lg bg-black/30 px-2.5 py-1.5 font-mono text-[11px] text-white/80 select-all">
+        {text}
+      </code>
+    </Tip>
   );
 }
 

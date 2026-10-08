@@ -28,6 +28,7 @@ import type { AgentMode, Agents, EditorList } from "@/lib/types";
 import { KeyHint } from "../ask/parts";
 import { Icon } from "../Icon";
 import { Select } from "../settings/ui";
+import { Tip } from "../Tip";
 import { Review } from "./Review";
 
 const MODES: { id: AgentMode; label: string; note: string }[] = [
@@ -189,17 +190,17 @@ function ModeSwitch({ mode, onChange }: { mode: AgentMode; onChange?: (m: AgentM
   return (
     <fieldset aria-label="Mode" className="ak-seg border-0">
       {MODES.map((m) => (
-        <button
-          key={m.id}
-          type="button"
-          title={m.note}
-          aria-pressed={mode === m.id}
-          disabled={!onChange}
-          onClick={() => onChange?.(m.id)}
-          className="chip"
-        >
-          {m.label}
-        </button>
+        <Tip key={m.id} label={m.note}>
+          <button
+            type="button"
+            aria-pressed={mode === m.id}
+            disabled={!onChange}
+            onClick={() => onChange?.(m.id)}
+            className="chip"
+          >
+            {m.label}
+          </button>
+        </Tip>
       ))}
     </fieldset>
   );
@@ -210,24 +211,27 @@ function ContextRing({ used, window, onCompact }: { used: number; window: number
   const p = Math.round(Math.min(1, used / window) * 100);
   if (!onCompact) {
     return (
-      <span className="ak-ring mono" title={`${p}% of the context used`}>
-        <i style={{ "--p": p } as CSSProperties} aria-hidden="true" />
-        {p}%
-      </span>
+      <Tip label={`${p}% of the context used`}>
+        <span className="ak-ring mono">
+          <i style={{ "--p": p } as CSSProperties} aria-hidden="true" />
+          {p}%
+        </span>
+      </Tip>
     );
   }
   // One click runs /compact: the conversation is summed up to free room.
   return (
-    <button
-      type="button"
-      onClick={onCompact}
-      title={`${p}% of the context used. Click to compact it.`}
-      aria-label={`${p}% of the context used. Compact`}
-      className="ak-ring mono chip rounded-full px-1 hover:text-white"
-    >
-      <i style={{ "--p": p } as CSSProperties} aria-hidden="true" />
-      {p}%
-    </button>
+    <Tip label={`${p}% of the context used. Click to compact it.`}>
+      <button
+        type="button"
+        onClick={onCompact}
+        aria-label={`${p}% of the context used. Compact`}
+        className="ak-ring mono chip rounded-full px-1 hover:text-white"
+      >
+        <i style={{ "--p": p } as CSSProperties} aria-hidden="true" />
+        {p}%
+      </button>
+    </Tip>
   );
 }
 
@@ -255,9 +259,9 @@ function SessionMemory({ id, live }: { id: string; live: boolean }) {
   if (bytes === null) return null;
   const mb = bytes / (1024 * 1024);
   return (
-    <span className="ak-mi" title="Memory this session uses">
-      {mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`}
-    </span>
+    <Tip label="Memory this session uses">
+      <span className="ak-mi">{mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`}</span>
+    </Tip>
   );
 }
 
@@ -384,15 +388,11 @@ function SessionView({
             Stop <kbd>Esc</kbd>
           </button>
         ) : (
-          <button
-            type="button"
-            aria-label="Close session"
-            title="Close session"
-            onClick={() => closeSession(s.id)}
-            className="ak-ibtn chip"
-          >
-            <Icon name="close" size={13} />
-          </button>
+          <Tip label="Close session">
+            <button type="button" aria-label="Close session" onClick={() => closeSession(s.id)} className="ak-ibtn chip">
+              <Icon name="close" size={13} />
+            </button>
+          </Tip>
         )}
       </div>
       <SessionChips sessions={sessions} current={s.id} />

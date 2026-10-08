@@ -11,6 +11,7 @@
 
 import { memo, type ReactNode, useState } from "react";
 import { Icon } from "@/components/Icon";
+import { Tip } from "@/components/Tip";
 import { api } from "./bridge";
 
 interface ListItem {
@@ -147,30 +148,32 @@ function Link({ label, target }: { label: string; target: string }) {
     // A file or folder: a chip that opens it.
     const folder = /[\\/]$/.test(target) || !/\.[a-z0-9]{1,8}$/i.test(target.replace(/[\\/]+$/, ""));
     return (
-      <button
-        type="button"
-        title={error ?? `Open ${target}`}
-        onClick={open}
-        className={`chip inline-flex max-w-full items-center gap-1 rounded-md bg-white/[0.1] px-1.5 py-px align-baseline text-[0.92em] hover:bg-white/[0.16] ${
-          error ? "text-[#ffb4ae]" : "text-white"
-        }`}
-      >
-        <Icon name={folder ? "folder" : "file"} size={12} className="shrink-0 text-white/60" />
-        <span className="truncate">{label}</span>
-      </button>
+      <Tip label={error ?? `Open ${target}`}>
+        <button
+          type="button"
+          onClick={open}
+          className={`chip inline-flex max-w-full items-center gap-1 rounded-md bg-white/[0.1] px-1.5 py-px align-baseline text-[0.92em] hover:bg-white/[0.16] ${
+            error ? "text-[#ffb4ae]" : "text-white"
+          }`}
+        >
+          <Icon name={folder ? "folder" : "file"} size={12} className="shrink-0 text-white/60" />
+          <span className="truncate">{label}</span>
+        </button>
+      </Tip>
     );
   }
   return (
-    <button
-      type="button"
-      title={error ?? target}
-      onClick={open}
-      className={`inline rounded-sm text-left underline decoration-white/35 underline-offset-2 hover:decoration-white ${
-        error ? "text-[#ffb4ae]" : "text-[#64d2ff]"
-      }`}
-    >
-      {label}
-    </button>
+    <Tip label={error ?? target}>
+      <button
+        type="button"
+        onClick={open}
+        className={`inline rounded-sm text-left underline decoration-white/35 underline-offset-2 hover:decoration-white ${
+          error ? "text-[#ffb4ae]" : "text-[#64d2ff]"
+        }`}
+      >
+        {label}
+      </button>
+    </Tip>
   );
 }
 

@@ -1,8 +1,9 @@
 "use client";
-import { type RefObject, useEffect, useRef, useState } from "react";
+import { Fragment, type RefObject, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
 import { runProposal, sendChat, undoProposal, useSidekick } from "@/lib/store";
 import type { Proposal } from "@/lib/types";
+import { Tip } from "../Tip";
 
 /** Buttons still waiting for a tap; they take Alt 1, Alt 2... first. */
 export function pendingCount(items: Proposal[] | undefined): number {
@@ -110,27 +111,34 @@ export function Proposals({ items, keys }: { items: Proposal[]; keys: boolean })
   return (
     <div className="ak-body">
       <div className="ak-prs">
-        {items.map((p, i) => (
-          <button
-            key={p.id}
-            type="button"
-            disabled={!!p.ran || busy}
-            onClick={() => void runProposal(p.id)}
-            data-state={p.ran ? (p.ran.ok ? "done" : "failed") : "waiting"}
-            title={p.ran?.message}
-            className="ak-pr ak-in"
-            style={{ animationDelay: `${i * 40}ms` }}
-          >
-            <span className="ak-cb" aria-hidden="true" />
-            <span className="min-w-0 flex-1 truncate">{p.ran && !p.ran.ok ? p.ran.message : p.label}</span>
-            {!p.ran && keys && pending.indexOf(p) < 9 && (
-              <kbd>
-                <i className="alt-pre">Alt </i>
-                {pending.indexOf(p) + 1}
-              </kbd>
-            )}
-          </button>
-        ))}
+        {items.map((p, i) => {
+          const button = (
+            <button
+              type="button"
+              disabled={!!p.ran || busy}
+              onClick={() => void runProposal(p.id)}
+              data-state={p.ran ? (p.ran.ok ? "done" : "failed") : "waiting"}
+              className="ak-pr ak-in"
+              style={{ animationDelay: `${i * 40}ms` }}
+            >
+              <span className="ak-cb" aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate">{p.ran && !p.ran.ok ? p.ran.message : p.label}</span>
+              {!p.ran && keys && pending.indexOf(p) < 9 && (
+                <kbd>
+                  <i className="alt-pre">Alt </i>
+                  {pending.indexOf(p) + 1}
+                </kbd>
+              )}
+            </button>
+          );
+          return p.ran?.message ? (
+            <Tip key={p.id} label={p.ran.message}>
+              {button}
+            </Tip>
+          ) : (
+            <Fragment key={p.id}>{button}</Fragment>
+          );
+        })}
       </div>
       <div className="ak-chips">
         {pending.length > 0 && (

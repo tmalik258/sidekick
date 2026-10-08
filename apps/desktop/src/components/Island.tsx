@@ -24,6 +24,7 @@ import { IslandSettings } from "./IslandSettings";
 import { IslandWelcome } from "./IslandWelcome";
 import { Orb } from "./Orb";
 import { PreparingVoice } from "./PreparingVoice";
+import { Tip } from "./Tip";
 
 const TITLE: Record<MascotState, string> = {
   idle: "Sidekick",
@@ -505,15 +506,16 @@ function FullVoice({ text, thinking }: { text: string; thinking: boolean }) {
         <span className="min-w-[2.6em] text-right font-mono text-[11.5px] text-white/45 tabular-nums">
           {Math.floor(secs / 60)}:{String(secs % 60).padStart(2, "0")}
         </span>
-        <button
-          type="button"
-          aria-label="Stop listening"
-          title="Stop (Esc)"
-          onClick={() => void api.voiceStop()}
-          className="chip grid size-7 shrink-0 place-items-center rounded-full bg-white/[0.09] hover:bg-white/[0.15]"
-        >
-          <span className="size-[9px] rounded-[2.5px] bg-white" />
-        </button>
+        <Tip label="Stop (Esc)">
+          <button
+            type="button"
+            aria-label="Stop listening"
+            onClick={() => void api.voiceStop()}
+            className="chip grid size-7 shrink-0 place-items-center rounded-full bg-white/[0.09] hover:bg-white/[0.15]"
+          >
+            <span className="size-[9px] rounded-[2.5px] bg-white" />
+          </button>
+        </Tip>
       </div>
       <p
         className={`min-h-[1.45em] px-1 text-[16.5px] leading-[1.45] tracking-[-0.005em] ${
@@ -610,19 +612,22 @@ function CompactTrailing({
       {busy ? (
         <Activity />
       ) : offline ? (
-        <span role="img" aria-label="Offline" title="Offline" className="text-[#ff9f0a]">
-          <Icon name="wifiOff" size={14} />
-        </span>
+        <Tip label="Offline">
+          <span role="img" aria-label="Offline" className="text-[#ff9f0a]">
+            <Icon name="wifiOff" size={14} />
+          </span>
+        </Tip>
       ) : paused ? (
-        <span className="size-1.5 rounded-full bg-[#ffd60a]" style={{ boxShadow: "0 0 8px #ffd60a" }} title="Paused" />
+        <Tip label="Paused">
+          <span className="size-1.5 rounded-full bg-[#ffd60a]" style={{ boxShadow: "0 0 8px #ffd60a" }} />
+        </Tip>
       ) : (
         later > 0 && (
-          <span
-            className="grid h-4 min-w-4 place-items-center rounded-full bg-[#0a84ff] px-1 text-[10px] leading-none font-semibold text-white"
-            title={`${later} waiting for you`}
-          >
-            {later}
-          </span>
+          <Tip label={`${later} waiting for you`}>
+            <span className="grid h-4 min-w-4 place-items-center rounded-full bg-[#0a84ff] px-1 text-[10px] leading-none font-semibold text-white">
+              {later}
+            </span>
+          </Tip>
         )
       )}
     </motion.div>
@@ -772,17 +777,20 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
         </motion.button>
       ))}
       {alwaysAt >= 0 && (
-        <motion.button
-          type="button"
-          onClick={() => always(suggestion, alwaysAt)}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.2, delay: 0.12 + suggestion.options.length * 0.04 }}
-          title={`From now on, "${suggestion.options[alwaysAt]}" without asking. Undo in Settings > Skills.`}
-          className="chip rounded-full px-2.5 py-1.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
+        <Tip
+          label={`From now on, "${suggestion.options[alwaysAt]}" without asking. Undo in Settings > Skills.`}
         >
-          Always {suggestion.options[alwaysAt].toLowerCase()}
-        </motion.button>
+          <motion.button
+            type="button"
+            onClick={() => always(suggestion, alwaysAt)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2, delay: 0.12 + suggestion.options.length * 0.04 }}
+            className="chip rounded-full px-2.5 py-1.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
+          >
+            Always {suggestion.options[alwaysAt].toLowerCase()}
+          </motion.button>
+        </Tip>
       )}
       <motion.button
         type="button"

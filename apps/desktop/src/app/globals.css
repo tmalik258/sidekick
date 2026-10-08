@@ -1101,6 +1101,29 @@ body {
   margin-top: -6px;
   min-width: 0;
 }
+/* In-webview tip (replaces native title, which sits under the island). */
+.ak-tip {
+  position: fixed;
+  z-index: 100;
+  max-width: min(280px, calc(100vw - 16px));
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: rgb(28 28 32 / 0.96);
+  color: rgb(235 235 245 / 0.92);
+  font-size: 11.5px;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  box-shadow:
+    0 0 0 0.5px rgb(255 255 255 / 0.12),
+    0 8px 24px -4px rgb(0 0 0 / 0.55);
+  transform: translateX(-50%);
+  pointer-events: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.ak-tip[data-above] {
+  transform: translate(-50%, -100%);
+}
 /* Context toggles: filled with a tick when it goes with the question,
    an outline with + when left out. */
 .ak-ctx-i {
