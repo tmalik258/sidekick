@@ -71,6 +71,9 @@ export interface Settings {
   recipes: Recipe[];
   memory: string[];
   userName: string;
+  people: string;
+  projects: string;
+  answerStyle: string;
   codes: boolean | null;
   assistantName: string;
   learning: boolean;
@@ -401,6 +404,9 @@ export const DEFAULT_SETTINGS: Settings = {
   recipes: [],
   memory: [],
   userName: "",
+  people: "",
+  projects: "",
+  answerStyle: "",
   codes: null,
   assistantName: "Sidekick",
   learning: true,

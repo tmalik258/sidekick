@@ -125,6 +125,12 @@ pub struct Settings {
     pub memory: Vec<String>,
     /// What Sidekick calls the user ("Sam"); empty until they say.
     pub user_name: String,
+    /// People the user works with ("Sara, my manager"), one per line.
+    pub people: String,
+    /// What the user is working on now, one per line.
+    pub projects: String,
+    /// How the user likes answers ("short, bullet points").
+    pub answer_style: String,
     /// The user works with code: technical answers and setup. None: not asked.
     pub codes: Option<bool>,
     /// What the assistant is called and answers to ("Hey Orbi"). The app
@@ -653,6 +659,9 @@ impl Default for Settings {
             recipes: Vec::new(),
             memory: Vec::new(),
             user_name: String::new(),
+            people: String::new(),
+            projects: String::new(),
+            answer_style: String::new(),
             codes: None,
             assistant_name: "Sidekick".into(),
             learning: true,
@@ -717,6 +726,9 @@ impl Settings {
             name.chars().take(24).collect()
         };
         self.user_name = self.user_name.trim().chars().take(40).collect();
+        for about in [&mut self.people, &mut self.projects, &mut self.answer_style] {
+            *about = about.trim().chars().take(1000).collect();
+        }
         // The dark orbs of 0.1 became Onyx.
         if matches!(self.theme.as_str(), "graphite" | "midnight") {
             self.theme = "onyx".into();
