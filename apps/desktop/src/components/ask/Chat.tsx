@@ -119,6 +119,9 @@ const TAG_NAMES: Record<string, string> = {
   claude_code: "Claude Code",
   codex: "Codex",
   anthropic: "Claude API",
+  gemini: "Gemini",
+  groq: "Groq",
+  openrouter: "OpenRouter",
   instant: "Done without AI",
 };
 
@@ -133,7 +136,9 @@ function modelOf(ai: AiSettings, provider: string): string {
           ? ai.codex.model
           : provider === "anthropic"
             ? ai.anthropic.model
-            : "";
+            : provider === "gemini" || provider === "groq" || provider === "openrouter"
+              ? ai[provider].model
+              : "";
   return m.replace(/^claude-/, "").replace(/-\d{8}$/, "");
 }
 

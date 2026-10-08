@@ -2,6 +2,7 @@
 // Tauri. It mimics the demo flow loosely; the real rules live in Rust.
 
 import {
+  type CloudId,
   CUES,
   type Cue,
   DEFAULT_SETTINGS,
@@ -62,6 +63,8 @@ function later(ms: number, fn: () => void) {
   }, ms);
 }
 
+const cloudKeys: Record<CloudId, boolean> = { gemini: previewFlag("gemini"), groq: false, openrouter: false };
+
 function saveSettings(next: Settings): Settings {
   settings = next;
   emit("settings://changed", settings);
@@ -72,6 +75,74 @@ function saveSettings(next: Settings): Settings {
 const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   app_info: () => ({ version: "0.1.0 (browser mock)", dbPath: "-", settingsPath: "-", eventCount: 0 }),
   system_look: () => ({ transparency: !previewFlag("solid"), batterySaver: previewFlag("saver") }),
+  cloud_keys: () => ({ ...cloudKeys }),
+  cloud_key_set: (a) => {
+    const id = a.id as CloudId;
+    if (!String(a.key).trim()) throw new Error("Paste the key first.");
+    cloudKeys[id] = true;
+    return saveSettings({ ...settings, ai: { ...settings.ai, [id]: { ...settings.ai[id], enabled: true } } });
+  },
+  cloud_key_clear: (a) => {
+    const id = a.id as CloudId;
+    cloudKeys[id] = false;
+    return saveSettings({ ...settings, ai: { ...settings.ai, [id]: { ...settings.ai[id], enabled: false } } });
+  },
+  openrouter_models: () => [
+    {
+      id: "openrouter/auto",
+      name: "Auto (best for each question)",
+      free: false,
+      input: 0,
+      output: 0,
+      context: 2000000,
+      tools: true,
+    },
+    {
+      id: "meta-llama/llama-3.3-70b-instruct:free",
+      name: "Meta: Llama 3.3 70B Instruct (free)",
+      free: true,
+      input: 0,
+      output: 0,
+      context: 131072,
+      tools: true,
+    },
+    {
+      id: "qwen/qwen3-coder:free",
+      name: "Qwen: Qwen3 Coder (free)",
+      free: true,
+      input: 0,
+      output: 0,
+      context: 262144,
+      tools: true,
+    },
+    {
+      id: "anthropic/claude-sonnet-4.5",
+      name: "Anthropic: Claude Sonnet 4.5",
+      free: false,
+      input: 3,
+      output: 15,
+      context: 1000000,
+      tools: true,
+    },
+    {
+      id: "openai/gpt-5-mini",
+      name: "OpenAI: GPT-5 Mini",
+      free: false,
+      input: 0.25,
+      output: 2,
+      context: 400000,
+      tools: true,
+    },
+    {
+      id: "deepseek/deepseek-chat-v3.1",
+      name: "DeepSeek: V3.1",
+      free: false,
+      input: 0.2,
+      output: 0.8,
+      context: 163840,
+      tools: true,
+    },
+  ],
   report_save: () => "C:\\Users\\you\\Downloads\\Sidekick report 2026-10-08 0930.txt",
   diagnostics: () => "Sidekick 0.1.0 (browser mock)\nWindows 11 Pro 24H2\nModels in order: local, claude_code",
   crash_pending: () => (previewFlag("crash") ? "2026-10-07T09:12:00Z panicked at src/voice.rs:120:9" : null),
