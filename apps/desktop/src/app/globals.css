@@ -2420,7 +2420,7 @@ select.ak-mi option {
   align-items: center;
   gap: 8px;
   font-size: 11.5px;
-  color: rgb(235 235 245 / 0.5);
+  color: rgb(235 235 245 / 0.62);
 }
 .ak-tnote {
   font-size: 11px;
