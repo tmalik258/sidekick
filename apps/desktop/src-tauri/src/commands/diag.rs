@@ -124,6 +124,38 @@ pub async fn diagnostics(app: AppHandle) -> String {
     scrub(&out)
 }
 
+/// Log lines in a saved report: enough to follow what happened.
+const REPORT_LINES: usize = 2_000;
+
+/// Saves a fuller report (diagnostics and the end of the log, scrubbed) to
+/// Downloads and returns its path. Nothing is sent: the user reads the file
+/// and attaches it to an issue themselves.
+#[tauri::command]
+pub async fn report_save(app: AppHandle) -> CmdResult<String> {
+    let head = diagnostics(app.clone()).await;
+    let log = log_file(&app);
+    let dir = dirs::download_dir()
+        .or_else(dirs::desktop_dir)
+        .ok_or("no Downloads folder")?;
+    super::off_ui(move || {
+        let mut text = head;
+        if let Some(log) = log {
+            text.push_str(&format!(
+                "\nFull log (last {REPORT_LINES} lines):\n{}\n",
+                scrub(&last_lines(&log, REPORT_LINES))
+            ));
+        }
+        let name = format!(
+            "Sidekick report {}.txt",
+            chrono::Local::now().format("%Y-%m-%d %H%M")
+        );
+        let path = dir.join(name);
+        std::fs::write(&path, text).map_err(|e| e.to_string())?;
+        Ok::<_, String>(path.display().to_string())
+    })
+    .await?
+}
+
 /// The crash from the last run, when the user opted in to crash reports and
 /// has not seen it yet.
 #[tauri::command]

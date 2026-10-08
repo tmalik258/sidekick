@@ -121,6 +121,7 @@ pub fn run() {
             commands::app_info,
             commands::system_look,
             commands::diagnostics,
+            commands::report_save,
             commands::crash_pending,
             commands::crash_dismiss,
             commands::settings_get,
