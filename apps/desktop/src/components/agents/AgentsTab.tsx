@@ -35,7 +35,7 @@ import { useCached } from "@/lib/cache";
 import { useNow } from "@/lib/hooks";
 import { Markdown } from "@/lib/markdown";
 import { setOverlayHit } from "@/lib/store";
-import type { AgentMode, Agents, EditorList } from "@/lib/types";
+import type { AgentInfo, AgentMode, Agents, EditorList } from "@/lib/types";
 import { KeyHint, scrollIfActive } from "../ask/parts";
 import { Icon } from "../Icon";
 import { Select } from "../settings/ui";
@@ -111,12 +111,10 @@ function NewSession({ sessions }: { sessions: Session[] }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const choices = [
-    ...(agents?.claudeCode ? [{ id: "claude_code", name: "Claude Code" }] : []),
-    ...(agents?.codex ? [{ id: "codex", name: "Codex" }] : []),
-    ...(agents?.copilot ? [{ id: "copilot", name: "GitHub Copilot" }] : []),
-    ...(agents?.cursor ? [{ id: "cursor", name: "Cursor" }] : []),
-  ];
+  // Ready agents first; the rest stay listed with what they need.
+  const all = agents?.list ?? [];
+  const choices = [...all.filter(ready), ...all.filter((a) => !ready(a) && a.installed)];
+  const missing = all.filter((a) => !a.installed);
   const pickedPath = path || projects?.[0]?.path || "";
   // The agent you used last in this project comes first.
   const [usual, setUsual] = useState<string | null>(null);
@@ -131,13 +129,14 @@ function NewSession({ sessions }: { sessions: Session[] }) {
       live = false;
     };
   }, [pickedPath]);
-  const usualChoice = choices.find((c) => c.id === usual)?.id;
+  const usualChoice = choices.find((c) => c.id === usual && ready(c))?.id;
   const pickedAgent = agent || usualChoice || choices[0]?.id || "";
+  const picked = all.find((a) => a.id === pickedAgent);
   useEffect(() => {
     requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
   }, []);
   const go = () => {
-    if (!prompt.trim() || !pickedPath || busy) return;
+    if (!prompt.trim() || !pickedPath || busy || (picked && !ready(picked))) return;
     setBusy(true);
     setError(null);
     startSession(pickedAgent, pickedPath, prompt.trim(), mode)
@@ -152,13 +151,16 @@ function NewSession({ sessions }: { sessions: Session[] }) {
       </div>
       <SessionChips sessions={sessions} current={null} />
       {agents && choices.length === 0 ? (
-        <p className="ak-group py-1 text-[13px]">
-          Install Claude Code, Codex, GitHub Copilot CLI or Cursor to run agents here. Settings &gt; AI shows how.
-        </p>
+        <div className="ak-group py-1 text-[13px]">
+          <p>Install one coding agent to run it here:</p>
+          {missing.map((a) => (
+            <FixLine key={a.id} agent={a} />
+          ))}
+        </div>
       ) : (
         <>
           <div className="ak-meta">
-            {choices.length > 1 ? (
+            {choices.length + missing.length > 1 ? (
               <span className="ak-mi b">
                 <Select
                   variant="plain"
@@ -166,9 +168,10 @@ function NewSession({ sessions }: { sessions: Session[] }) {
                   label="Agent"
                   value={pickedAgent}
                   onChange={setAgent}
-                  options={choices.map((c) => ({
+                  options={[...choices, ...missing].map((c) => ({
                     value: c.id,
                     label: c.name,
+                    sub: readyNote(c),
                     icon: AGENT_MARKS[c.id]?.[0] ?? "C",
                     color: AGENT_MARKS[c.id]?.[1] ?? "#d97757",
                   }))}
@@ -196,6 +199,7 @@ function NewSession({ sessions }: { sessions: Session[] }) {
             </span>
             <ModeSwitch mode={mode} onChange={setMode} />
           </div>
+          {picked && !ready(picked) && <FixLine agent={picked} />}
           <div className="ak-composer">
             <input
               ref={inputRef}
@@ -215,6 +219,51 @@ function NewSession({ sessions }: { sessions: Session[] }) {
         </>
       )}
     </>
+  );
+}
+
+/** Ready to start: installed, not known signed out, not out of usage. */
+function ready(a: AgentInfo): boolean {
+  return a.installed && a.signedIn !== false && !a.limited;
+}
+
+/** Where it runs and whether it is ready, in a few words. */
+function readyNote(a: AgentInfo): string {
+  if (!a.installed) return "Not installed";
+  if (a.signedIn === false) return "Cloud · sign in needed";
+  if (a.limited) return "Cloud · out of usage for now";
+  return a.signedIn ? "Cloud · ready" : "Cloud · installed";
+}
+
+/** The one step that makes an agent ready, with Copy when it is a command. */
+function FixLine({ agent }: { agent: AgentInfo }) {
+  const [copied, setCopied] = useState(false);
+  const step = agent.limited && !agent.fix ? null : agent.fix;
+  const command = step && !/\s(from|then)\s/.test(step) ? step : null;
+  return (
+    <p className="ak-note ak-in flex items-center gap-2">
+      <span className="min-w-0 flex-1">
+        {agent.name}: {readyNote(agent).replace(/^Cloud · /, "")}.
+        {step && (
+          <>
+            {" "}
+            {command ? "Run " : ""}
+            <code className="mono">{step}</code>
+          </>
+        )}
+      </span>
+      {command && (
+        <button
+          type="button"
+          className="ak-chip chip"
+          onClick={() => {
+            void navigator.clipboard?.writeText(command).then(() => setCopied(true));
+          }}
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+      )}
+    </p>
   );
 }
 

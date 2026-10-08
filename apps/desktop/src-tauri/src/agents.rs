@@ -137,6 +137,96 @@ pub struct Agents {
     pub cursor: bool,
     /// Display name of the agent that gets handoffs, if any.
     pub handoff: Option<String>,
+    /// Every agent with whether it is ready, for the picker.
+    pub list: Vec<AgentInfo>,
+}
+
+/// One agent in the picker: where it runs, whether it is ready, and the
+/// one step that makes it ready when it is not.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInfo {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub installed: bool,
+    /// None when we cannot tell from here.
+    pub signed_in: Option<bool>,
+    /// Out of plan usage for now.
+    pub limited: bool,
+    /// The one step to fix it, when it is not ready.
+    pub fix: Option<String>,
+}
+
+impl Agent {
+    fn install_hint(self) -> &'static str {
+        match self {
+            Agent::ClaudeCode => "npm install -g @anthropic-ai/claude-code",
+            Agent::Codex => "npm install -g @openai/codex",
+            Agent::Copilot => "npm install -g @github/copilot",
+            Agent::Cursor => "Install the Cursor CLI from cursor.com/cli",
+        }
+    }
+
+    fn login_hint(self) -> &'static str {
+        match self {
+            Agent::ClaudeCode => "claude /login",
+            Agent::Codex => "codex login",
+            Agent::Copilot => "copilot, then /login",
+            Agent::Cursor => "cursor-agent login",
+        }
+    }
+
+    /// Whether the CLI has a saved sign-in or a key, by its own files.
+    fn signed_in(self) -> Option<bool> {
+        let env = |k: &str| std::env::var(k).is_ok_and(|v| !v.trim().is_empty());
+        let home = dirs::home_dir()?;
+        let file = |p: PathBuf| p.is_file();
+        Some(match self {
+            Agent::ClaudeCode => {
+                env("ANTHROPIC_API_KEY")
+                    || file(home.join(".claude").join(".credentials.json"))
+                    || std::fs::read_to_string(home.join(".claude.json"))
+                        .is_ok_and(|t| t.contains("\"oauthAccount\""))
+            }
+            Agent::Codex => env("OPENAI_API_KEY") || file(home.join(".codex").join("auth.json")),
+            Agent::Copilot => {
+                if env("GH_TOKEN") || env("GITHUB_TOKEN") || env("COPILOT_GITHUB_TOKEN") {
+                    true
+                } else {
+                    // Copilot keeps its token in the system keychain.
+                    return None;
+                }
+            }
+            Agent::Cursor => {
+                if env("CURSOR_API_KEY") {
+                    true
+                } else {
+                    return None;
+                }
+            }
+        })
+    }
+
+    fn info(self, s: &Settings) -> AgentInfo {
+        let installed = self.resolve(s).is_some();
+        let signed_in = if installed { self.signed_in() } else { None };
+        let limited = self == Agent::ClaudeCode && sidekick_ai::claude_code_limited();
+        let fix = if !installed {
+            Some(self.install_hint().to_owned())
+        } else if signed_in == Some(false) {
+            Some(self.login_hint().to_owned())
+        } else {
+            None
+        };
+        AgentInfo {
+            id: self.id(),
+            name: self.name(),
+            installed,
+            signed_in,
+            limited,
+            fix,
+        }
+    }
 }
 
 pub fn status(s: &Settings) -> Agents {
@@ -148,6 +238,10 @@ pub fn status(s: &Settings) -> Agents {
         copilot: Agent::Copilot.resolve(s).is_some(),
         cursor: Agent::Cursor.resolve(s).is_some(),
         handoff: chosen(s).map(|a| a.name().to_owned()),
+        list: [Agent::ClaudeCode, Agent::Codex, Agent::Copilot, Agent::Cursor]
+            .into_iter()
+            .map(|a| a.info(s))
+            .collect(),
     }
 }
 

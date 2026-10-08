@@ -683,6 +683,21 @@ export interface Agents {
   cursor: boolean;
   /** The agent that gets handoffs by name, or null when none is installed. */
   handoff: string | null;
+  /** Every agent with whether it is ready, for the picker. */
+  list?: AgentInfo[];
+}
+
+/** One agent in the picker. */
+export interface AgentInfo {
+  id: string;
+  name: string;
+  installed: boolean;
+  /** null when Sidekick cannot tell. */
+  signedIn: boolean | null;
+  /** Out of plan usage for now. */
+  limited: boolean;
+  /** The one step that makes it ready. */
+  fix: string | null;
 }
 
 /** How much a notification interrupts. */
