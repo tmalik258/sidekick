@@ -70,6 +70,9 @@ export type AskTab = "ask" | "agents" | "history";
 /** One session big, or the board of live tiles. */
 export type AgentsLayout = "one" | "board";
 
+/** A 1440p screen or bigger fits three board tiles across. */
+export const wideScreen = () => typeof window !== "undefined" && window.screen.height >= 1440;
+
 interface AgentsState {
   layout: AgentsLayout;
   /** The board tile the chat box talks to. */
