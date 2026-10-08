@@ -800,7 +800,7 @@ export function AskPanel() {
     ) : null;
 
   return (
-    <div className="ak">
+    <div className="ak" data-chat={showChat || undefined}>
       {tabs}
       <div className="ak-bar">
         {hearing !== null ? (
