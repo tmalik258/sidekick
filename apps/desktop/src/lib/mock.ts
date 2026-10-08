@@ -143,6 +143,7 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
       tools: true,
     },
   ],
+  copilot_ask: () => "Copilot is open with your question copied. Paste it there (Ctrl V).",
   report_save: () => "C:\\Users\\you\\Downloads\\Sidekick report 2026-10-08 0930.txt",
   diagnostics: () => "Sidekick 0.1.0 (browser mock)\nWindows 11 Pro 24H2\nModels in order: local, claude_code",
   crash_pending: () => (previewFlag("crash") ? "2026-10-07T09:12:00Z panicked at src/voice.rs:120:9" : null),

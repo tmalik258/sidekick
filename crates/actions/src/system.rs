@@ -75,6 +75,39 @@ pub fn reveal(path: &Path) -> Result<(), ActionError> {
     }
 }
 
+/// Copilot for personal Microsoft accounts has no API: the question goes to
+/// the clipboard and the Copilot app opens (the website when the app is not
+/// installed), ready to paste.
+pub fn ask_copilot(text: &str) -> Result<Outcome, ActionError> {
+    set_clipboard_text(text)?;
+    #[cfg(windows)]
+    {
+        let app = Command::new("reg")
+            .args(["query", r"HKCR\ms-copilot"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success());
+        let target = if app {
+            "ms-copilot:"
+        } else {
+            "https://copilot.microsoft.com/"
+        };
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/c", "start", "", target]);
+        spawn_detached(cmd)?;
+        Ok(Outcome::msg(if app {
+            "Copilot is open with your question copied. Paste it there (Ctrl V)."
+        } else {
+            "Copilot is open in your browser with your question copied. Paste it there (Ctrl V)."
+        }))
+    }
+    #[cfg(not(windows))]
+    Ok(Outcome::msg(
+        "Your question is copied; Copilot runs on Windows.",
+    ))
+}
+
 pub fn set_clipboard_text(text: &str) -> Result<(), ActionError> {
     arboard::Clipboard::new()
         .and_then(|mut c| c.set_text(text))

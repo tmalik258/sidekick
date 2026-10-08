@@ -166,6 +166,7 @@ export const api = {
   cloudKeySet: (id: CloudId, key: string) => invoke<Settings>("cloud_key_set", { id, key }),
   cloudKeyClear: (id: CloudId) => invoke<Settings>("cloud_key_clear", { id }),
   openrouterModels: () => invoke<RouterModel[]>("openrouter_models"),
+  copilotAsk: (text: string) => invoke<string>("copilot_ask", { text }),
   crashPending: () => invoke<string | null>("crash_pending"),
   crashDismiss: () => invoke<void>("crash_dismiss"),
   settingsGet: () => invoke<Settings>("settings_get"),
