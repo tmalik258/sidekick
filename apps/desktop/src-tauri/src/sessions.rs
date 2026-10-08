@@ -87,6 +87,53 @@ fn emit(app: &AppHandle, session: &str, data: Value) {
 enum Cmd {
     Send(String),
     Stop,
+    /// Stop quietly: a new process carries on the same session.
+    Restart,
+}
+
+/// What a quiet restart returns, so it is not reported as the end.
+const RESTARTED: &str = "restarted";
+
+/// The model and thinking picked for one session in its chat box.
+#[derive(Debug, Clone, Default)]
+struct Tune {
+    model: Option<String>,
+    effort: Option<String>,
+    /// Claude Code takes them only at start: restart on the next message.
+    restart: bool,
+}
+
+static TUNES: Mutex<Option<HashMap<String, Tune>>> = Mutex::new(None);
+
+/// Thinking budget for Claude Code by level.
+fn thinking_tokens(effort: &str) -> Option<&'static str> {
+    match effort {
+        "off" => Some("0"),
+        "low" => Some("4000"),
+        "medium" => Some("10000"),
+        "high" => Some("31999"),
+        _ => None,
+    }
+}
+
+/// Sets the model and thinking for a session from its chat box. Codex
+/// takes them with the next turn; Claude Code restarts in its own session
+/// before the next message; Local switches model on the next turn.
+pub fn tune(id: &str, model: Option<String>, effort: Option<String>) {
+    let claude = with(&SESSIONS, |s| {
+        s.get(id).map(|h| h.agent == Agent::ClaudeCode)
+    })
+    .unwrap_or(false);
+    with(&TUNES, |t| {
+        let e = t.entry(id.to_owned()).or_default();
+        e.model = model.filter(|m| !m.trim().is_empty());
+        e.effort = effort.filter(|m| !m.trim().is_empty());
+        e.restart = claude;
+    });
+}
+
+fn tuned(id: &str) -> Tune {
+    with(&TUNES, |t| t.get(id).cloned()).unwrap_or_default()
 }
 
 struct Handle {
@@ -221,6 +268,129 @@ pub struct Started {
     pub branch: Option<String>,
     /// Changes can be reviewed and undone (the project uses git).
     pub reviewable: bool,
+    /// Another session works in this repo, so this one got its own
+    /// worktree on this branch; Finish merges it back.
+    pub worktree: Option<String>,
+}
+
+/// A session's own worktree: the repo it came from and its branch.
+#[derive(Debug, Clone)]
+struct Worktree {
+    repo: PathBuf,
+    dir: PathBuf,
+    branch: String,
+}
+
+static WORKTREES: Mutex<Option<HashMap<String, Worktree>>> = Mutex::new(None);
+
+fn git_ok(dir: &Path, args: &[&str]) -> Result<String, String> {
+    let mut cmd = std::process::Command::new("git");
+    cmd.arg("-C").arg(dir).args(args);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let out = cmd.output().map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr)
+            .lines()
+            .last()
+            .unwrap_or("git failed")
+            .trim()
+            .to_owned())
+    }
+}
+
+/// A branch name from a task: "wt/fix-the-footer-year".
+pub fn worktree_branch(prompt: &str, id: &str) -> String {
+    let slug: String = prompt
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .split('-')
+        .filter(|w| !w.is_empty())
+        .take(5)
+        .collect::<Vec<_>>()
+        .join("-");
+    let tail = &id[id.len().saturating_sub(4)..];
+    format!(
+        "wt/{}-{}",
+        if slug.is_empty() { "task" } else { &slug },
+        tail.to_lowercase()
+    )
+}
+
+/// A second agent in a repo already in use gets its own worktree next to
+/// it, so the two never edit the same files.
+fn own_worktree(path: &Path, prompt: &str, id: &str) -> Option<Worktree> {
+    let busy = with(&SESSIONS, |s| {
+        s.values().any(|h| !h.tx.is_closed() && h.path == path)
+    });
+    if !busy || !path.join(".git").exists() {
+        return None;
+    }
+    let branch = worktree_branch(prompt, id);
+    let name = path.file_name()?.to_string_lossy().into_owned();
+    let dir = path
+        .parent()?
+        .join(".sidekick-worktrees")
+        .join(format!("{name}-{}", branch.trim_start_matches("wt/")));
+    std::fs::create_dir_all(dir.parent()?).ok()?;
+    git_ok(
+        path,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            &branch,
+            &dir.to_string_lossy(),
+        ],
+    )
+    .ok()?;
+    Some(Worktree {
+        repo: path.to_owned(),
+        dir,
+        branch,
+    })
+}
+
+/// Finish: commit the worktree's changes, merge its branch into the
+/// repo's current branch, and remove the worktree.
+pub fn finish(id: &str) -> Result<String, String> {
+    let wt = with(&WORKTREES, |w| w.get(id).cloned())
+        .ok_or("This session has no worktree of its own.")?;
+    let dirty = !git_ok(&wt.dir, &["status", "--porcelain"])?.is_empty();
+    if dirty {
+        git_ok(&wt.dir, &["add", "-A"])?;
+        git_ok(
+            &wt.dir,
+            &[
+                "commit",
+                "-q",
+                "-m",
+                &format!("Agent work on {}", wt.branch),
+            ],
+        )?;
+    }
+    if let Err(e) = git_ok(&wt.repo, &["merge", "--no-edit", "-q", &wt.branch]) {
+        let _ = git_ok(&wt.repo, &["merge", "--abort"]);
+        return Err(format!(
+            "Could not merge {} by itself ({e}). It is kept, so you can merge it in your editor.",
+            wt.branch
+        ));
+    }
+    let _ = git_ok(
+        &wt.repo,
+        &["worktree", "remove", "--force", &wt.dir.to_string_lossy()],
+    );
+    let _ = git_ok(&wt.repo, &["branch", "-d", &wt.branch]);
+    with(&WORKTREES, |w| w.remove(id));
+    Ok(format!("Merged {} back", wt.branch))
 }
 
 /// Starts an agent in `path` with `prompt`.
@@ -231,6 +401,19 @@ pub async fn start(
     prompt: &str,
     mode: Mode,
 ) -> Result<Started, String> {
+    start_tuned(app, agent, path, prompt, mode, None, None).await
+}
+
+/// Starts an agent with the model and thinking picked in New's chat box.
+pub async fn start_tuned(
+    app: &AppHandle,
+    agent: Agent,
+    path: &Path,
+    prompt: &str,
+    mode: Mode,
+    model: Option<String>,
+    effort: Option<String>,
+) -> Result<Started, String> {
     if !path.is_dir() {
         return Err(format!("{} is not a folder", path.display()));
     }
@@ -239,6 +422,27 @@ pub async fn start(
         .resolve(&settings)
         .ok_or_else(|| format!("{} is not installed", agent.name()))?;
     let id = ulid::Ulid::new().to_string();
+    if model.is_some() || effort.is_some() {
+        with(&TUNES, |t| {
+            t.insert(
+                id.clone(),
+                Tune {
+                    model: model.filter(|m| !m.trim().is_empty()),
+                    effort: effort.filter(|e| !e.trim().is_empty()),
+                    restart: false,
+                },
+            )
+        });
+    }
+    let wt = {
+        let (path, prompt, id) = (path.to_owned(), prompt.to_owned(), id.clone());
+        tokio::task::spawn_blocking(move || own_worktree(&path, &prompt, &id))
+            .await
+            .ok()
+            .flatten()
+    };
+    let wt_dir = wt.as_ref().map(|w| w.dir.clone());
+    let path: &Path = wt_dir.as_deref().unwrap_or(path);
     let baseline = {
         let path = path.to_owned();
         tokio::task::spawn_blocking(move || review::snapshot(&path, shadow_root().as_deref()))
@@ -257,7 +461,11 @@ pub async fn start(
             .unwrap_or_default(),
         branch,
         reviewable: baseline.is_some(),
+        worktree: wt.as_ref().map(|w| w.branch.clone()),
     };
+    if let Some(w) = wt {
+        with(&WORKTREES, |m| m.insert(id.clone(), w));
+    }
     with(&SESSIONS, |s| {
         s.insert(
             id.clone(),
@@ -294,7 +502,9 @@ fn spawn_run(
 ) {
     let settings = lock(&app.state::<AppState>().settings).clone();
     let (app2, id2, path2) = (app.clone(), id.to_owned(), path.to_owned());
+    let tune = tuned(id);
     let model = match agent {
+        _ if tune.model.is_some() => tune.model.clone(),
         Agent::ClaudeCode => Some(settings.ai.claude_code.model.clone()),
         Agent::Codex => Some(settings.ai.codex.model.clone()),
         Agent::Copilot | Agent::Cursor => None,
@@ -314,6 +524,7 @@ fn spawn_run(
                     &path2,
                     mode,
                     model,
+                    tune.effort.as_deref(),
                     &mcp_config,
                     resume,
                     rx,
@@ -325,6 +536,9 @@ fn spawn_run(
                 run_plain(&app2, &id2, agent, &exe, &path2, mode, rx).await
             }
         };
+        if result.as_ref().err().map(String::as_str) == Some(RESTARTED) {
+            return;
+        }
         let changes = review_count(&id2);
         emit(
             &app2,
@@ -360,6 +574,36 @@ pub fn resume(app: &AppHandle, id: &str) -> Result<(), String> {
     let (tx, rx) = mpsc::unbounded_channel();
     with(&SESSIONS, |s| {
         if let Some(h) = s.get_mut(id) {
+            h.tx = tx;
+        }
+    });
+    spawn_run(app, id, agent, exe, &path, mode, Some(resume), rx);
+    Ok(())
+}
+
+/// Claude Code with a new model or thinking: stop the process quietly and
+/// carry on the same session with the new settings.
+fn restart(app: &AppHandle, id: &str) -> Result<(), String> {
+    with(&TUNES, |t| {
+        if let Some(e) = t.get_mut(id) {
+            e.restart = false;
+        }
+    });
+    let (agent, path, mode, resume) = with(&SESSIONS, |s| {
+        s.get(id)
+            .map(|h| (h.agent, h.path.clone(), h.mode, h.resume.clone()))
+    })
+    .ok_or("That session is gone.")?;
+    // Not started yet: the first process already has what it needs.
+    let Some(resume) = resume else { return Ok(()) };
+    let settings = lock(&app.state::<AppState>().settings).clone();
+    let exe = agent
+        .resolve(&settings)
+        .ok_or_else(|| format!("{} is not installed", agent.name()))?;
+    let (tx, rx) = mpsc::unbounded_channel();
+    with(&SESSIONS, |s| {
+        if let Some(h) = s.get_mut(id) {
+            let _ = h.tx.send(Cmd::Restart);
             h.tx = tx;
         }
     });
@@ -411,7 +655,14 @@ fn review_count(id: &str) -> usize {
 
 /// Sends a follow-up or a steer to a running session, after a checkpoint
 /// of the project so Rewind can come back to this point.
-pub fn send(id: &str, text: &str) -> Result<(), String> {
+pub fn send(app: &AppHandle, id: &str, text: &str) -> Result<(), String> {
+    if tuned(id).restart {
+        restart(app, id)?;
+    }
+    send_text(id, text)
+}
+
+fn send_text(id: &str, text: &str) -> Result<(), String> {
     let path = with(&SESSIONS, |s| s.get(id).map(|h| h.path.clone()));
     if let Some(snap) = path
         .as_deref()
@@ -857,11 +1108,15 @@ async fn run_claude(
     path: &Path,
     mode: Mode,
     model: Option<String>,
+    effort: Option<&str>,
     mcp_config: &Path,
     resume: Option<String>,
     mut rx: mpsc::UnboundedReceiver<Cmd>,
 ) -> Result<(), String> {
     let mut cmd = tokio::process::Command::new(exe);
+    if let Some(t) = effort.and_then(thinking_tokens) {
+        cmd.env("MAX_THINKING_TOKENS", t);
+    }
     if let Some(r) = &resume {
         cmd.args(["--resume", r]);
     }
@@ -916,6 +1171,10 @@ async fn run_claude(
                     stdin.write_all(line.as_bytes()).await.map_err(|e| e.to_string())?;
                     stdin.flush().await.map_err(|e| e.to_string())?;
                     emit(app, id, json!({ "kind": "working" }));
+                }
+                Some(Cmd::Restart) => {
+                    let _ = child.kill().await;
+                    return Err(RESTARTED.into());
                 }
                 Some(Cmd::Stop) | None => {
                     let _ = child.kill().await;
@@ -1199,13 +1458,18 @@ async fn run_codex(
                     let msg = match &turn {
                         Some(active) => json!({ "id": next_id, "method": "turn/steer",
                             "params": { "threadId": t, "expectedTurnId": active, "input": input } }),
-                        None => json!({ "id": next_id, "method": "turn/start",
-                            "params": { "threadId": t, "input": input } }),
+                        None => {
+                            let mut params = json!({ "threadId": t, "input": input });
+                            let tune = tuned(id);
+                            if let Some(m) = tune.model { params["model"] = json!(m); }
+                            if let Some(e) = tune.effort.filter(|e| e != "off") { params["effort"] = json!(e); }
+                            json!({ "id": next_id, "method": "turn/start", "params": params })
+                        }
                     };
                     write_line(&mut stdin, msg).await?;
                     emit(app, id, json!({ "kind": "working" }));
                 }
-                Some(Cmd::Stop) | None => {
+                Some(Cmd::Stop | Cmd::Restart) | None => {
                     let _ = child.kill().await;
                     return Ok(());
                 }
@@ -1322,7 +1586,7 @@ async fn run_plain(
             Some(t) => t,
             None => match rx.recv().await {
                 Some(Cmd::Send(t)) => t,
-                Some(Cmd::Stop) | None => return Ok(()),
+                Some(Cmd::Stop | Cmd::Restart) | None => return Ok(()),
             },
         };
         emit(app, id, json!({ "kind": "working" }));
@@ -1351,7 +1615,7 @@ async fn run_plain(
                 },
                 cmd = rx.recv() => match cmd {
                     Some(Cmd::Send(more)) => queued.push_back(more),
-                    Some(Cmd::Stop) | None => {
+                    Some(Cmd::Stop | Cmd::Restart) | None => {
                         let _ = child.kill().await;
                         return Ok(());
                     }
@@ -1485,6 +1749,15 @@ mod tests {
     }
 
     #[test]
+    fn names_worktree_branches() {
+        assert_eq!(
+            worktree_branch("Fix the footer year, it says 2024!", "01ABCDWXYZ"),
+            "wt/fix-the-footer-year-it-wxyz"
+        );
+        assert_eq!(worktree_branch("???", "01AB"), "wt/task-01ab");
+    }
+
+    #[test]
     fn plain_agents_get_what_the_mode_allows() {
         let a = plain_args(Agent::Copilot, Mode::Plan, "fix it", false);
         assert_eq!(a[..2], ["-p", "fix it"]);
@@ -1546,7 +1819,7 @@ mod tests {
         };
         std::fs::write(dir.join("a.txt"), "two\n").unwrap();
         // The second message: a checkpoint, then the agent's next edit.
-        let _ = send(&id, "also log it");
+        let _ = send_text(&id, "also log it");
         std::fs::write(dir.join("a.txt"), "three\n").unwrap();
         std::fs::write(dir.join("new.txt"), "x").unwrap();
         assert_eq!(rewind_preview(&id, 1).unwrap(), 2);

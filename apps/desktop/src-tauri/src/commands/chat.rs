@@ -67,6 +67,8 @@ pub async fn agent_start(
     path: String,
     prompt: String,
     mode: crate::sessions::Mode,
+    model: Option<String>,
+    effort: Option<String>,
 ) -> CmdResult<crate::sessions::Started> {
     // The agent you use for this project is remembered and picked next
     // time you do not name one.
@@ -88,7 +90,16 @@ pub async fn agent_start(
         let ts = chrono::Utc::now().to_rfc3339();
         let _ = lock(&app.state::<AppState>().storage).record_choice(&key, agent.id(), &ts);
     }
-    crate::sessions::start(&app, agent, std::path::Path::new(&path), &prompt, mode).await
+    crate::sessions::start_tuned(
+        &app,
+        agent,
+        std::path::Path::new(&path),
+        &prompt,
+        mode,
+        model,
+        effort,
+    )
+    .await
 }
 
 /// Continues an Ask conversation in Claude Code or Codex, inside the island.
@@ -114,8 +125,8 @@ pub async fn agent_handoff(
 
 /// A follow-up, or a steer while it works.
 #[tauri::command]
-pub async fn agent_send(id: String, text: String) -> CmdResult<()> {
-    tauri::async_runtime::spawn_blocking(move || crate::sessions::send(&id, &text))
+pub async fn agent_send(app: AppHandle, id: String, text: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::send(&app, &id, &text))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -529,4 +540,18 @@ pub async fn agent_memory(id: String) -> Option<u64> {
         .await
         .ok()
         .flatten()
+}
+
+/// The model and thinking for one session, from its chat box.
+#[tauri::command]
+pub fn agent_tune(id: String, model: Option<String>, effort: Option<String>) {
+    crate::sessions::tune(&id, model, effort);
+}
+
+/// Finish a session that ran in its own worktree: merge it back.
+#[tauri::command]
+pub async fn agent_finish(id: String) -> CmdResult<String> {
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::finish(&id))
+        .await
+        .map_err(|e| e.to_string())?
 }

@@ -263,11 +263,20 @@ export const api = {
   composioUseKey: (key: string) => invoke<string>("composio_use_key", { key }),
   agentsStatus: () => invoke<Agents>("agents_status"),
   agentUsual: (path: string) => invoke<string | null>("agent_usual", { path }),
-  agentStart: (agent: string, path: string, prompt: string, mode: AgentMode) =>
-    invoke<AgentStarted>("agent_start", { agent, path, prompt, mode }),
+  agentStart: (
+    agent: string,
+    path: string,
+    prompt: string,
+    mode: AgentMode,
+    model: string | null = null,
+    effort: string | null = null,
+  ) => invoke<AgentStarted>("agent_start", { agent, path, prompt, mode, model, effort }),
   agentHandoff: (messages: ChatMessage[], reason: string | null) =>
     invoke<AgentStarted>("agent_handoff", { messages, reason }),
   agentSend: (id: string, text: string) => invoke<void>("agent_send", { id, text }),
+  agentTune: (id: string, model: string | null, effort: string | null) =>
+    invoke<void>("agent_tune", { id, model, effort }),
+  agentFinish: (id: string) => invoke<string>("agent_finish", { id }),
   agentStop: (id: string) => invoke<void>("agent_stop", { id }),
   agentAnswer: (question: string, answer: "allow" | "always" | "deny") =>
     invoke<void>("agent_answer", { question, answer }),

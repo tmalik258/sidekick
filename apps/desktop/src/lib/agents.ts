@@ -49,6 +49,12 @@ export interface Session extends AgentStarted {
   note?: string | null;
   /** Cut off by a restart: nothing runs until Resume. */
   restored?: boolean;
+  /** Picked in the chat box; null is the agent's default. */
+  model?: string | null;
+  /** Thinking: off, low, medium, high; null is the default. */
+  effort?: string | null;
+  /** Merged back with Finish. */
+  finished?: boolean;
 }
 
 /** Half the context used: Claude Code works best compacted from here. */
@@ -61,7 +67,13 @@ export function dismissCompact(id: string) {
 
 export type AskTab = "ask" | "agents" | "history";
 
+/** One session big, or the board of live tiles. */
+export type AgentsLayout = "one" | "board";
+
 interface AgentsState {
+  layout: AgentsLayout;
+  /** The board tile the chat box talks to. */
+  focus: string | null;
   /** Ask's tab: quick questions, agent sessions, or history. */
   tab: AskTab;
   sessions: Session[];
@@ -89,7 +101,51 @@ function loadSessions(): Session[] {
   }
 }
 
-export const useAgents = create<AgentsState>(() => ({ tab: "ask", sessions: loadSessions(), current: null }));
+const LAYOUT_KEY = "sidekick.agentsLayout";
+
+function loadLayout(): AgentsLayout {
+  try {
+    return localStorage.getItem(LAYOUT_KEY) === "board" ? "board" : "one";
+  } catch {
+    return "one";
+  }
+}
+
+export const useAgents = create<AgentsState>(() => ({
+  tab: "ask",
+  sessions: loadSessions(),
+  current: null,
+  layout: typeof window === "undefined" ? "one" : loadLayout(),
+  focus: null,
+}));
+
+export function setLayout(layout: AgentsLayout) {
+  useAgents.setState({ layout });
+  try {
+    localStorage.setItem(LAYOUT_KEY, layout);
+  } catch {
+    // Not kept: the layout resets after a restart.
+  }
+}
+
+/** Gives a session your own name; it shows in the row and the board. */
+export function renameSession(id: string, title: string) {
+  const t = title.trim();
+  if (t) update(id, (s) => ({ ...s, title: t }));
+}
+
+/** Model and thinking for one session, from its chat box. */
+export function tuneSession(id: string, model: string | null, effort: string | null) {
+  update(id, (s) => ({ ...s, model, effort }));
+  void api.agentTune(id, model, effort);
+}
+
+/** Merges a session's own worktree back into its repo. */
+export async function finishSession(id: string): Promise<string> {
+  const msg = await api.agentFinish(id);
+  update(id, (s) => ({ ...s, finished: true }));
+  return msg;
+}
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 useAgents.subscribe((st) => {
@@ -112,9 +168,17 @@ function update(id: string, fn: (s: Session) => Session) {
   useAgents.setState((st) => ({ sessions: st.sessions.map((s) => (s.id === id ? fn(s) : s)) }));
 }
 
-export async function startSession(agent: string, path: string, prompt: string, mode: AgentMode): Promise<string> {
-  const started = await api.agentStart(agent, path, prompt, mode);
+export async function startSession(
+  agent: string,
+  path: string,
+  prompt: string,
+  mode: AgentMode,
+  model: string | null = null,
+  effort: string | null = null,
+): Promise<string> {
+  const started = await api.agentStart(agent, path, prompt, mode, model, effort);
   addSession(started, prompt, mode, prompt);
+  update(started.id, (s) => ({ ...s, model, effort }));
   return started.id;
 }
 
