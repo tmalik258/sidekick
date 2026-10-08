@@ -266,6 +266,8 @@ pub fn run() {
             commands::search,
             commands::search_status,
             commands::search_reindex,
+            names::drive_index_status,
+            names::drive_index_set,
             commands::open_reference,
             commands::action_undo,
         ]))

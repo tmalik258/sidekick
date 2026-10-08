@@ -76,6 +76,7 @@ export function PrivacyTab({ onError }: { onError: (e: string) => void }) {
         keywords="index folders notes documents semantic meaning embedding"
       >
         <SearchSettings onError={onError} />
+        <DriveIndex onError={onError} />
       </Section>
       <Section collapsible summary="Switch each one on or off" title="What Sidekick notices" keywords="sensors">
         {SENSOR_IDS.map(({ id, label, hint }) => (
@@ -109,6 +110,36 @@ function PauseStatus({ pause }: { pause: Pause }) {
     text = `Paused for about ${minutes} more min.`;
   }
   return <p className="text-sm">{text}</p>;
+}
+
+/** The optional indexer service: every file on every drive, kept up to
+ *  date as files change. Shown only when this build ships it. */
+function DriveIndex({ onError }: { onError: (e: string) => void }) {
+  const { data: status, refresh } = useCached("drive-index", api.driveIndexStatus);
+  const [busy, setBusy] = useState(false);
+  if (!status?.available) return null;
+  const set = (on: boolean) => {
+    setBusy(true);
+    api
+      .driveIndexSet(on)
+      .then(() => setTimeout(() => void refresh().catch(() => undefined), on ? 20_000 : 0))
+      .catch((e: unknown) => onError(String(e)))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <Toggle
+      label="Find any file on any drive"
+      hint={
+        busy
+          ? "Waiting for Windows to approve..."
+          : status.live
+            ? "On. New and renamed files show up within seconds."
+            : "Runs a small Windows service that follows every change. Asks for admin approval once."
+      }
+      checked={status.live}
+      onChange={(on) => !busy && set(on)}
+    />
+  );
 }
 
 function SearchSettings({ onError }: { onError: (e: string) => void }) {

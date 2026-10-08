@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 ";
 
 /// Folders never indexed: system, caches, build output and package stores.
-const SKIP: &[&str] = &[
+pub const SKIP: &[&str] = &[
     "$recycle.bin",
     "system volume information",
     "windows",
@@ -59,6 +59,23 @@ impl NameIndex {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.execute_batch(SCHEMA)?;
+        Ok(Self { conn })
+    }
+
+    /// For a file one process writes and others only read (the indexer
+    /// service): a rollback journal, so readers need no write access.
+    pub fn open_shared(path: &Path) -> rusqlite::Result<Self> {
+        let conn = Connection::open(path)?;
+        conn.pragma_update(None, "journal_mode", "DELETE")?;
+        conn.pragma_update(None, "synchronous", "NORMAL")?;
+        conn.execute_batch(SCHEMA)?;
+        Ok(Self { conn })
+    }
+
+    /// Reads an index another process keeps.
+    pub fn open_read_only(path: &Path) -> rusqlite::Result<Self> {
+        let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        conn.busy_timeout(std::time::Duration::from_millis(500))?;
         Ok(Self { conn })
     }
 
@@ -125,6 +142,80 @@ impl NameIndex {
         )?;
         tx.commit()?;
         Ok(Some(count))
+    }
+
+    /// Replaces every entry under `root` with `entries` in one go, for the
+    /// drive indexer that reads a whole drive's file table at once.
+    pub fn replace_under(
+        &mut self,
+        root: &str,
+        entries: impl IntoIterator<Item = (String, bool)>,
+    ) -> rusqlite::Result<u64> {
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "DELETE FROM names WHERE substr(path, 1, length(?1)) = ?1",
+            [root],
+        )?;
+        let mut n = 0u64;
+        {
+            let mut insert =
+                tx.prepare("INSERT INTO names (key, path, folder) VALUES (?1, ?2, ?3)")?;
+            for (path, folder) in entries {
+                let name = path.rsplit(['\\', '/']).next().unwrap_or(&path).to_owned();
+                insert.execute(params![key(&name), path, folder as i32])?;
+                n += 1;
+            }
+        }
+        tx.commit()?;
+        Ok(n)
+    }
+
+    /// Adds one entry, replacing any with the same path.
+    pub fn upsert(&self, path: &str, folder: bool) -> rusqlite::Result<()> {
+        self.conn
+            .execute("DELETE FROM names WHERE path = ?1", [path])?;
+        let name = path.rsplit(['\\', '/']).next().unwrap_or(path);
+        self.conn.execute(
+            "INSERT INTO names (key, path, folder) VALUES (?1, ?2, ?3)",
+            params![key(name), path, folder as i32],
+        )?;
+        Ok(())
+    }
+
+    /// Removes an entry and, for a folder, everything inside it.
+    pub fn remove(&self, path: &str) -> rusqlite::Result<()> {
+        let sep = if path.contains('\\') { '\\' } else { '/' };
+        let inside = format!("{path}{sep}");
+        self.conn.execute(
+            "DELETE FROM names WHERE path = ?1 OR substr(path, 1, length(?2)) = ?2",
+            params![path, inside],
+        )?;
+        Ok(())
+    }
+
+    /// Notes that a live indexer is keeping this index up to date.
+    pub fn mark_live(&self) -> rusqlite::Result<()> {
+        let now = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO meta (k, v) VALUES ('live', ?1) ON CONFLICT(k) DO UPDATE SET v = ?1",
+            [&now],
+        )?;
+        self.conn.execute(
+            "INSERT INTO meta (k, v) VALUES ('built', ?1) ON CONFLICT(k) DO UPDATE SET v = ?1",
+            [&now],
+        )?;
+        Ok(())
+    }
+
+    /// When a live indexer last said it was keeping this index up to date.
+    pub fn live(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        self.conn
+            .query_row("SELECT v FROM meta WHERE k = 'live'", [], |r| {
+                r.get::<_, String>(0)
+            })
+            .ok()
+            .and_then(|v| chrono::DateTime::parse_from_rfc3339(&v).ok())
+            .map(|t| t.with_timezone(&chrono::Utc))
     }
 
     /// When the index was last built in full, if ever.
@@ -226,6 +317,36 @@ mod tests {
             None
         );
         assert_eq!(idx.search("report", 5).len(), 1);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn live_updates_add_and_remove_paths() {
+        let dir = std::env::temp_dir().join(format!("sidekick-names-live-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("proj")).unwrap();
+        std::fs::write(dir.join("proj").join("budget.xlsx"), "").unwrap();
+        std::fs::write(dir.join("notes.txt"), "").unwrap();
+        let root = dir.to_string_lossy().into_owned();
+        let p = |rel: &str| dir.join(rel).to_string_lossy().into_owned();
+        let mut idx = NameIndex::open_in_memory().unwrap();
+        let n = idx
+            .replace_under(
+                &root,
+                vec![(p("proj"), true), (p("proj/budget.xlsx"), false)],
+            )
+            .unwrap();
+        assert_eq!(n, 2);
+        assert_eq!(idx.search("budget", 5).len(), 1);
+        idx.upsert(&p("notes.txt"), false).unwrap();
+        idx.upsert(&p("notes.txt"), false).unwrap();
+        assert_eq!(idx.search("notes", 5).len(), 1);
+        // Removing a folder takes what is inside with it.
+        idx.remove(&p("proj")).unwrap();
+        assert!(idx.search("budget", 5).is_empty());
+        assert!(idx.live().is_none());
+        idx.mark_live().unwrap();
+        assert!(idx.live().is_some() && idx.built().is_some());
         let _ = std::fs::remove_dir_all(dir);
     }
 }

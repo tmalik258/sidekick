@@ -5214,6 +5214,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sidekick-ntfs"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "sidekick-core",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "sidekick-sensors"
 version = "0.1.0"
 dependencies = [
