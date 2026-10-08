@@ -466,6 +466,22 @@ export const SENSOR_IDS = [
   },
 ] as const;
 
+/** One file the branch update left clashing. */
+export interface Clash {
+  file: string;
+  spots: number;
+  mine: string;
+  theirs: string;
+}
+
+/** An update of a feature branch from main, stopped on conflicts. */
+export interface MergeState {
+  branch: string;
+  main: string;
+  stashed: boolean;
+  files: Clash[];
+}
+
 export interface ActionResult {
   ok: boolean;
   message: string;

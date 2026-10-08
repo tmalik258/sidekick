@@ -604,6 +604,77 @@ pub async fn repo_pull(path: String, stash: bool) -> CmdResult<String> {
     .map_err(|e| e.to_string())?
 }
 
+/// The update the island is walking through: what still clashes.
+#[tauri::command]
+pub async fn merge_state(path: String) -> CmdResult<sidekick_actions::dev::MergeState> {
+    tauri::async_runtime::spawn_blocking(move || {
+        sidekick_actions::dev::merge_state(std::path::Path::new(&path)).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Solves one clashing file with "mine", "theirs" or "both".
+#[tauri::command]
+pub async fn merge_keep(path: String, file: String, side: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        sidekick_actions::dev::merge_keep(std::path::Path::new(&path), &file, &side)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Finish update or Undo update. A finished one goes in the history with Undo.
+#[tauri::command]
+pub async fn merge_end(
+    app: AppHandle,
+    path: String,
+    finish: bool,
+) -> CmdResult<crate::suggestions::ActionResult> {
+    let repo = path.clone();
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        let p = std::path::Path::new(&repo);
+        if finish {
+            sidekick_actions::dev::merge_finish(p)
+        } else {
+            sidekick_actions::dev::merge_undo(p)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    let undo_path = finish.then(|| out.path.clone()).flatten();
+    let record = ActionRecord {
+        id: 0,
+        ts: chrono::Utc::now().to_rfc3339(),
+        skill_id: "dev.base_moved".into(),
+        action: "git_update_branch".into(),
+        label: if finish {
+            "Finish update"
+        } else {
+            "Undo update"
+        }
+        .into(),
+        ok: true,
+        message: out.message.clone(),
+        auto: false,
+        undo_path,
+        undone: false,
+    };
+    let undo_id = lock(&app.state::<AppState>().storage)
+        .log_action(&record)
+        .ok()
+        .filter(|_| record.undo_path.is_some());
+    Ok(crate::suggestions::ActionResult {
+        ok: true,
+        message: out.message,
+        path: None,
+        auto: false,
+        undo_id,
+    })
+}
+
 /// Opens a repo in the user's editor.
 #[tauri::command]
 pub async fn repo_open(app: AppHandle, path: String) -> CmdResult<()> {

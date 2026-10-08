@@ -23,6 +23,7 @@ import { Glance, RoundButton } from "./IslandGlance";
 import { IslandGuide, useGuide } from "./IslandGuide";
 import { IslandSettings } from "./IslandSettings";
 import { IslandWelcome } from "./IslandWelcome";
+import { MergeCard } from "./MergeCard";
 import { Orb } from "./Orb";
 import { PreparingVoice } from "./PreparingVoice";
 import { Tip } from "./Tip";
@@ -111,6 +112,7 @@ export function Island() {
   const voiceStatus = useSidekick((s) => s.voiceStatus);
   const online = useSidekick((s) => s.online);
   const netNotice = useSidekick((s) => s.netNotice);
+  const merging = useSidekick((s) => s.merge !== null);
   const waiting = useSidekick((s) => (s.ask ? null : s.waiting));
   const justDone = useSidekick((s) => s.justDone);
   // A task still running after Ask closed: its current step, small.
@@ -258,7 +260,8 @@ export function Island() {
     guiding ||
     (OPEN_STATES.has(mascot) && !voicePill) ||
     !!suggestion ||
-    (!!netNotice && !voicePill);
+    (!!netNotice && !voicePill) ||
+    merging;
   // At rest only the sphere shows. The shell keeps its size (so hover and the
   // orb position do not move) but loses its background.
   const bare =
@@ -810,7 +813,9 @@ function ExpandedContent({
   const result = useSidekick((s) => s.lastResult);
   const running = useSidekick((s) => s.running);
   const netNotice = useSidekick((s) => s.netNotice);
+  const merge = useSidekick((s) => s.merge);
   const reporting = (mascot === "success" || mascot === "error" || mascot === "working") && !suggestion;
+  if (merge && !suggestion) return <MergeCard path={merge.path} />;
   if (netNotice && !suggestion) return <NetNoticeCard notice={netNotice} />;
   // A suggestion that expired or was taken leaves nothing to show: fall back to the glance.
   if (!suggestion && (mascot === "idle" || mascot === "sleeping" || mascot === "suggesting")) {
@@ -835,7 +840,9 @@ function ExpandedContent({
           </p>
           <p
             className={`mt-0.5 ${
-              suggestion?.skillId.startsWith("notify.") ? "line-clamp-4 whitespace-pre-line" : "line-clamp-2"
+              suggestion?.skillId.startsWith("notify.") || (!suggestion && detail.includes("\n"))
+                ? "line-clamp-6 whitespace-pre-line"
+                : "line-clamp-2"
             } text-[13px] leading-4.5 tracking-[-0.005em] text-[rgb(235_235_245/0.6)]`}
           >
             {detail}

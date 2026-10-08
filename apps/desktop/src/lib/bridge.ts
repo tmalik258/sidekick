@@ -32,6 +32,7 @@ import type {
   Learned,
   LocalModels,
   MascotState,
+  MergeState,
   NotifyLevel,
   ProviderStatus,
   Recipe,
@@ -302,6 +303,10 @@ export const api = {
   reposOverview: (fresh: boolean) => invoke<ReposOverview>("repos_overview", { fresh }),
   repoPull: (path: string, stash: boolean) => invoke<string>("repo_pull", { path, stash }),
   repoOpen: (path: string) => invoke<void>("repo_open", { path }),
+  mergeState: (path: string) => invoke<MergeState>("merge_state", { path }),
+  mergeKeep: (path: string, file: string, side: "mine" | "theirs" | "both") =>
+    invoke<void>("merge_keep", { path, file, side }),
+  mergeEnd: (path: string, finish: boolean) => invoke<ActionResult>("merge_end", { path, finish }),
   codexAddNotify: () => invoke<string | null>("codex_add_notify"),
   codexAddMcp: () => invoke<string | null>("codex_add_mcp"),
   guideKeys: (buttons: number) => invoke<void>("guide_keys", { buttons }),

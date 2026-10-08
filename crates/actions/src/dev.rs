@@ -139,9 +139,59 @@ pub fn main_branch(path: &Path) -> String {
     .unwrap_or_else(|_| "main".into())
 }
 
+/// Marks a result whose merge stopped on conflicts: the island opens them.
+pub const MERGE_AT: &str = "git-merge:";
+/// The stash message for changes put aside while the branch updates.
+const UPDATE_STASH: &str = "sidekick: update";
+
+fn dirty(path: &Path) -> Result<bool, ActionError> {
+    Ok(
+        !git(path, &["status", "--porcelain", "--untracked-files=no"])?
+            .trim()
+            .is_empty(),
+    )
+}
+
+/// Puts back the changes put aside for the update, when they are on top.
+fn unstash(path: &Path) -> Result<bool, ActionError> {
+    let top = git(path, &["stash", "list", "-n", "1", "--format=%s"]).unwrap_or_default();
+    if !top.contains(UPDATE_STASH) {
+        return Ok(false);
+    }
+    git(path, &["stash", "pop", "--quiet"]).map_err(|e| {
+        ActionError::Failed(format!(
+            "Your changes clash with the update; they are kept in git stash ({e})"
+        ))
+    })?;
+    Ok(true)
+}
+
+/// The commits on the main branch that your branch does not have yet.
+pub fn branch_commits(path: &Path) -> Result<Outcome, ActionError> {
+    repo(path)?;
+    let main = main_branch(path);
+    let range = format!("HEAD..origin/{main}");
+    let log = git(
+        path,
+        &["log", "--format=%an\x1f%s\x1f%cr", "-n", "10", &range],
+    )?;
+    let lines: Vec<String> = log
+        .lines()
+        .filter_map(|l| {
+            let mut p = l.split('\x1f');
+            Some(format!("{} · {} · {}", p.next()?, p.next()?, p.next()?))
+        })
+        .collect();
+    if lines.is_empty() {
+        return Ok(Outcome::msg(format!("Nothing new on {main}")));
+    }
+    Ok(Outcome::msg(lines.join("\n")))
+}
+
 /// Brings the main branch's new commits into the feature branch you are on,
 /// with a merge, never a rebase, so a branch others share keeps working.
-/// Needs a clean tree; on a conflict it backs out and changes nothing.
+/// Uncommitted changes are put aside first and back after. On a conflict
+/// the merge stays open so the island can walk through each file.
 pub fn update_branch(path: &Path) -> Result<Outcome, ActionError> {
     repo(path)?;
     let main = main_branch(path);
@@ -151,31 +201,201 @@ pub fn update_branch(path: &Path) -> Result<Outcome, ActionError> {
             "You are on the main branch; Pull updates it".into(),
         ));
     }
-    if !git(path, &["status", "--porcelain", "--untracked-files=no"])?
-        .trim()
-        .is_empty()
-    {
-        return Err(ActionError::Failed(
-            "Commit or stash your changes first, then update the branch".into(),
-        ));
+    let stashed = dirty(path)?;
+    if stashed {
+        git(path, &["stash", "push", "--quiet", "-m", UPDATE_STASH])?;
     }
     let _ = git(path, &["fetch", "--quiet", "--no-tags", "origin", &main]);
     let before = git(path, &["rev-parse", "HEAD"])?;
     let base = format!("origin/{main}");
     if let Err(e) = git(path, &["merge", "--no-edit", "--quiet", &base]) {
+        let open = conflicted(path);
+        if !open.is_empty() {
+            return Ok(Outcome {
+                message: format!(
+                    "{} {} you",
+                    open.len(),
+                    if open.len() == 1 {
+                        "file needs"
+                    } else {
+                        "files need"
+                    }
+                ),
+                path: Some(format!("{MERGE_AT}{}", path.display())),
+            });
+        }
         let _ = git(path, &["merge", "--abort"]);
+        if stashed {
+            unstash(path)?;
+        }
         return Err(ActionError::Failed(format!(
-            "{main} clashes with your branch, so nothing changed. Open it in your editor or hand it to an agent ({e})"
+            "Could not merge {main}, so nothing changed ({e})"
         )));
     }
+    let back = if stashed { unstash(path)? } else { false };
     let after = git(path, &["rev-parse", "HEAD"])?;
     if before.trim() == after.trim() {
         return Ok(Outcome::msg(format!("Already up to date with {main}")));
     }
+    let mut message = format!("Merged {main} into {}", branch.trim());
+    if back {
+        message.push_str(", your changes are back");
+    }
     Ok(Outcome {
-        message: format!("Merged {main} into {}", branch.trim()),
+        message,
         path: Some(format!("{RESET_TO}{}\n{}", path.display(), before.trim())),
     })
+}
+
+/// Files the open merge left with conflicts.
+fn conflicted(path: &Path) -> Vec<String> {
+    git(path, &["diff", "--name-only", "--diff-filter=U"])
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+/// One file that clashes: how many spots, and both sides of the first.
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct Clash {
+    pub file: String,
+    pub spots: usize,
+    pub mine: String,
+    pub theirs: String,
+}
+
+/// The merge in progress: which branch, from where, and what still clashes.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MergeState {
+    pub branch: String,
+    pub main: String,
+    pub stashed: bool,
+    pub files: Vec<Clash>,
+}
+
+/// Splits conflict markers into the spot count and both sides of the first.
+pub fn clash_of(text: &str) -> (usize, String, String) {
+    let (mut spots, mut mine, mut theirs) = (0, Vec::new(), Vec::new());
+    let mut side = 0; // 0 outside, 1 mine, 2 base, 3 theirs
+    for line in text.lines() {
+        if line.starts_with("<<<<<<< ") || line == "<<<<<<<" {
+            spots += 1;
+            side = 1;
+        } else if side > 0 && line.starts_with("|||||||") {
+            side = 2;
+        } else if side > 0 && line == "=======" {
+            side = 3;
+        } else if side > 0 && line.starts_with(">>>>>>>") {
+            side = 0;
+        } else if spots == 1 && side == 1 && mine.len() < 12 {
+            mine.push(line);
+        } else if spots == 1 && side == 3 && theirs.len() < 12 {
+            theirs.push(line);
+        }
+    }
+    (spots, mine.join("\n"), theirs.join("\n"))
+}
+
+/// Keeps both sides of every conflict, yours first.
+pub fn keep_both(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut skip = false;
+    for line in text.split_inclusive('\n') {
+        let bare = line.trim_end_matches(['\r', '\n']);
+        if bare.starts_with("<<<<<<<") || bare.starts_with(">>>>>>>") || bare == "=======" {
+            skip = false;
+            continue;
+        }
+        if bare.starts_with("|||||||") {
+            skip = true;
+            continue;
+        }
+        if !skip {
+            out.push_str(line);
+        }
+    }
+    out
+}
+
+pub fn merge_state(path: &Path) -> Result<MergeState, ActionError> {
+    repo(path)?;
+    let top = git(path, &["stash", "list", "-n", "1", "--format=%s"]).unwrap_or_default();
+    let files = conflicted(path)
+        .into_iter()
+        .map(|file| {
+            let text = std::fs::read_to_string(path.join(&file)).unwrap_or_default();
+            let (spots, mine, theirs) = clash_of(&text);
+            Clash {
+                file,
+                spots: spots.max(1),
+                mine,
+                theirs,
+            }
+        })
+        .collect();
+    Ok(MergeState {
+        branch: git(path, &["rev-parse", "--abbrev-ref", "HEAD"])?
+            .trim()
+            .to_owned(),
+        main: main_branch(path),
+        stashed: top.contains(UPDATE_STASH),
+        files,
+    })
+}
+
+/// Solves one file: "mine", "theirs" or "both".
+pub fn merge_keep(path: &Path, file: &str, side: &str) -> Result<(), ActionError> {
+    repo(path)?;
+    if !conflicted(path).iter().any(|f| f == file) {
+        return Err(ActionError::Invalid(format!("{file} has no conflict")));
+    }
+    match side {
+        "mine" => {
+            git(path, &["checkout", "--ours", "--", file])?;
+        }
+        "theirs" => {
+            git(path, &["checkout", "--theirs", "--", file])?;
+        }
+        "both" => {
+            let at = path.join(file);
+            let text = std::fs::read_to_string(&at).map_err(crate::fail)?;
+            std::fs::write(&at, keep_both(&text)).map_err(crate::fail)?;
+        }
+        _ => return Err(ActionError::Invalid(format!("Unknown side {side}"))),
+    }
+    git(path, &["add", "--", file])?;
+    Ok(())
+}
+
+/// Commits the merge once nothing clashes, and puts your changes back.
+pub fn merge_finish(path: &Path) -> Result<Outcome, ActionError> {
+    repo(path)?;
+    let left = conflicted(path).len();
+    if left > 0 {
+        return Err(ActionError::Failed(format!("{left} files still need you")));
+    }
+    let before = git(path, &["rev-parse", "HEAD"])?;
+    git(path, &["commit", "--no-edit", "--quiet"])?;
+    let back = unstash(path)?;
+    let main = main_branch(path);
+    Ok(Outcome {
+        message: if back {
+            format!("Merged {main}, your changes are back")
+        } else {
+            format!("Merged {main}")
+        },
+        path: Some(format!("{RESET_TO}{}\n{}", path.display(), before.trim())),
+    })
+}
+
+/// Backs out of the merge and puts your changes back: as before the update.
+pub fn merge_undo(path: &Path) -> Result<Outcome, ActionError> {
+    repo(path)?;
+    git(path, &["merge", "--abort"])?;
+    unstash(path)?;
+    Ok(Outcome::msg("Back exactly as before the update"))
 }
 
 /// After your PR merged: back to the main branch, pull it, and delete the
@@ -419,6 +639,14 @@ mod tests {
     }
 
     #[test]
+    fn reads_and_keeps_both_sides() {
+        let t = "a\n<<<<<<< HEAD\nmine\n||||||| base\nold\n=======\ntheirs\n>>>>>>> main\nz\n<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> main\n";
+        let (n, mine, theirs) = clash_of(t);
+        assert_eq!((n, mine.as_str(), theirs.as_str()), (2, "mine", "theirs"));
+        assert_eq!(keep_both(t), "a\nmine\ntheirs\nz\nx\ny\n");
+    }
+
+    #[test]
     fn updates_a_feature_branch_from_main() {
         let base = std::env::temp_dir().join(format!("sk-ub-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
@@ -473,21 +701,38 @@ mod tests {
         assert_eq!(out.message, "Merged main into feature");
         assert_eq!(std::fs::read_to_string(b.join("f")).unwrap(), "2");
         assert!(out.path.unwrap().starts_with(RESET_TO));
-        // A clash backs out and leaves the branch as it was.
+        // A clash keeps the merge open, with your uncommitted change put aside.
         std::fs::write(b.join("f"), "b").unwrap();
         run(&b, &["commit", "-qam", "b"]);
         std::fs::write(a.join("f"), "a").unwrap();
         run(&a, &["commit", "-qam", "a"]);
         run(&a, &["push", "-q", "origin", "HEAD:main"]);
+        std::fs::write(b.join("g"), "wip").unwrap();
         let head = git(&b, &["rev-parse", "HEAD"]).unwrap();
-        assert!(update_branch(&b).is_err());
-        assert_eq!(git(&b, &["rev-parse", "HEAD"]).unwrap(), head);
-        assert!(
-            git(&b, &["status", "--porcelain"])
-                .unwrap()
-                .trim()
-                .is_empty()
+        let out = update_branch(&b).unwrap();
+        assert_eq!(out.message, "1 file needs you");
+        assert!(out.path.unwrap().starts_with(MERGE_AT));
+        let state = merge_state(&b).unwrap();
+        assert!(state.stashed);
+        assert_eq!(state.files.len(), 1);
+        assert_eq!(
+            (state.files[0].mine.as_str(), state.files[0].theirs.as_str()),
+            ("b", "a")
         );
+        assert!(branch_commits(&b).unwrap().message.contains("T · a"));
+        // Undo puts everything back as it was.
+        merge_undo(&b).unwrap();
+        assert_eq!(git(&b, &["rev-parse", "HEAD"]).unwrap(), head);
+        assert_eq!(std::fs::read_to_string(b.join("g")).unwrap(), "wip");
+        // Again, then solve it and finish.
+        update_branch(&b).unwrap();
+        assert!(merge_finish(&b).is_err(), "still clashes");
+        assert!(merge_keep(&b, "g", "mine").is_err(), "only clashing files");
+        merge_keep(&b, "f", "theirs").unwrap();
+        let done = merge_finish(&b).unwrap();
+        assert_eq!(done.message, "Merged main, your changes are back");
+        assert_eq!(std::fs::read_to_string(b.join("f")).unwrap(), "a");
+        assert_eq!(std::fs::read_to_string(b.join("g")).unwrap(), "wip");
         let _ = std::fs::remove_dir_all(&base);
     }
 }

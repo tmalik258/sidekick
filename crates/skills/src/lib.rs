@@ -305,6 +305,7 @@ pub const ACTIONS: &[&str] = &[
     "agent_here",
     "git_after_merge",
     "git_update_branch",
+    "git_show_commits",
     "install_deps",
     "create_env",
     "start_docker",

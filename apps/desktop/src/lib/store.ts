@@ -17,6 +17,7 @@ import {
   type ExtensionGuide,
   type HitRect,
   type MascotState,
+  type MergeState,
   type Proposal,
   type Settings,
   type Suggestion,
@@ -52,6 +53,8 @@ interface SidekickState {
   ready: boolean;
   /** Outcome of the last action, shown while the mascot reports it. */
   lastResult: ActionResult | null;
+  /** A branch update stopped on conflicts, solved file by file in the island. */
+  merge: { path: string; state: MergeState } | null;
   /** The option being carried out, shown while the island works on it. */
   running: string | null;
   /** Ask mode: the island is a panel for commands and chat. */
@@ -183,6 +186,7 @@ export const useSidekick = create<SidekickState>(() => ({
   fullscreen: false,
   ready: false,
   lastResult: null,
+  merge: null,
   running: null,
   ask: null,
   turns: [],
@@ -539,6 +543,18 @@ export function setMood(id: Expression, ms: number, sound?: SynthSound) {
     if (useSidekick.getState().mood?.until === until) useSidekick.setState({ mood: null });
   }, ms);
   if (sound) playMood(sound, uiVolume(), useSidekick.getState().settings.soundKit);
+}
+
+/** Marks a result whose branch update stopped on conflicts. */
+const MERGE_AT = "git-merge:";
+
+/** Loads the conflicts of an update into the island. */
+export async function openMerge(path: string) {
+  try {
+    useSidekick.setState({ merge: { path, state: await api.mergeState(path) } });
+  } catch (e) {
+    useSidekick.setState({ lastResult: { ok: false, message: String(e), path: null, auto: false, undoId: null } });
+  }
 }
 
 /** Two failures this close together make the mascot sad, not just "oops". */
@@ -916,8 +932,11 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         const mood = moodForSkill(suggestion.skillId);
         if (mood) setMood(mood, SUGGESTION_MOOD_MS);
       }),
-      listen(EVENTS.actionResult, (lastResult) => {
+      listen(EVENTS.actionResult, (result) => {
+        const merging = result.path?.startsWith(MERGE_AT) ? result.path.slice(MERGE_AT.length) : null;
+        const lastResult = merging ? { ...result, path: null } : result;
         useSidekick.setState({ lastResult, running: null });
+        if (merging) void openMerge(merging);
         // Done with nothing to undo or open: a compact pill, not a card.
         if (lastResult.ok && !lastResult.undoId && !lastResult.path && !useSidekick.getState().ask) {
           showDone(lastResult.message);
