@@ -71,6 +71,22 @@ fn digest(text: &str) -> u64 {
     h.finish()
 }
 
+/// What kind of link this is, for remembering where it opens: the host,
+/// with the port for a local server ("localhost:3000").
+pub fn link_site(url: &str) -> String {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    let host_port = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host_port = host_port.rsplit_once('@').map_or(host_port, |(_, h)| h);
+    let host = host_port.split(':').next().unwrap_or("");
+    let local = matches!(host, "localhost" | "127.0.0.1" | "0.0.0.0" | "[::1]");
+    let site = if local {
+        host_port
+    } else {
+        host.strip_prefix("www.").unwrap_or(host)
+    };
+    site.to_ascii_lowercase()
+}
+
 fn clip_event(text: &str) -> Event {
     let kind = clip_kind(text);
     let trimmed = text.trim();
@@ -85,6 +101,11 @@ fn clip_event(text: &str) -> Event {
             "preview": preview,
             "text": body,
         });
+        if kind == ClipKind::Url
+            && let Some(obj) = payload.as_object_mut()
+        {
+            obj.insert("site".into(), link_site(trimmed).into());
+        }
         if kind == ClipKind::Color
             && let (Some(obj), Some(serde_json::Value::Object(extra))) =
                 (payload.as_object_mut(), crate::color::info(trimmed))
@@ -128,5 +149,12 @@ mod tests {
         let e = clip_event("https://example.com/a");
         assert_eq!(e.payload["kind"], "url");
         assert_eq!(e.payload["text"], "https://example.com/a");
+    }
+
+    #[test]
+    fn links_are_known_by_site() {
+        assert_eq!(link_site("https://www.GitHub.com/a/b?x=1"), "github.com");
+        assert_eq!(link_site("http://localhost:3000/login"), "localhost:3000");
+        assert_eq!(link_site("http://user@127.0.0.1:8080"), "127.0.0.1:8080");
     }
 }

@@ -183,7 +183,8 @@ export const api = {
   updateInstall: () => invoke<string>("update_install"),
   netCheck: (lost: boolean) => invoke<boolean>("net_check", { lost }),
   suggestionCurrent: () => invoke<Suggestion | null>("suggestion_current"),
-  suggestionChoose: (id: string, index: number) => invoke<void>("suggestion_choose", { id, index }),
+  suggestionChoose: (id: string, index: number, priv = false) =>
+    invoke<void>("suggestion_choose", { id, index, private: priv }),
   suggestionDismiss: (id: string, reason: "user" | "timeout") => invoke<void>("suggestion_dismiss", { id, reason }),
   eventsRecent: (limit = 50) => invoke<StoredEvent[]>("events_recent", { limit }),
   openSettings: () => invoke<void>("open_settings"),

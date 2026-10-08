@@ -143,7 +143,15 @@ pub fn suggestion_current(app: AppHandle) -> Option<Suggestion> {
 }
 
 #[tauri::command]
-pub fn suggestion_choose(app: AppHandle, id: String, index: usize) -> CmdResult<()> {
+pub fn suggestion_choose(
+    app: AppHandle,
+    id: String,
+    index: usize,
+    private: Option<bool>,
+) -> CmdResult<()> {
+    if private == Some(true) {
+        suggestions::make_private(&app, &id, index);
+    }
     suggestions::choose(&app, &id, index)
 }
 

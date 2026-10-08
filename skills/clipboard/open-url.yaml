@@ -1,10 +1,10 @@
 id: clipboard.open-url
 name: Open copied links
-description: Offer browsers for a copied link. Off by default; links are copied often.
+description: Offer browsers for a copied link, the usual one for that site first. Shift opens it private. Off by default; links are copied often.
 priority: 30
 enabled_by_default: false
 cooldown_secs: 5
-remember: "url"
+remember: "url:{{site}}"
 trigger:
   event: clipboard.changed
   where:
@@ -14,7 +14,6 @@ suggestion:
   detail: "{{preview}}"
   options:
     - { label: Chrome, action: open_url, args: { url: "{{text}}", browser: chrome }, requires: ["browser:chrome"] }
-    - { label: Incognito, action: open_url, args: { url: "{{text}}", browser: chrome, private: "true" }, requires: ["browser:chrome"] }
     - { label: Zen, action: open_url, args: { url: "{{text}}", browser: zen }, requires: ["browser:zen"] }
     - { label: Edge, action: open_url, args: { url: "{{text}}", browser: edge }, requires: ["browser:edge"] }
     - { label: Default browser, action: open_url, args: { url: "{{text}}" } }
