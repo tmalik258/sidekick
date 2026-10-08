@@ -12,6 +12,7 @@ pub mod dnd;
 pub mod doctor;
 mod editors;
 mod files;
+pub mod gitflow;
 pub mod office;
 pub mod pc;
 mod script;
@@ -306,6 +307,25 @@ impl Executor {
             "empty_recycle_bin" => tokio::task::spawn_blocking(pc::empty_recycle_bin)
                 .await
                 .map_err(fail)?,
+            "git_commit" => {
+                let path = existing_path(args)?;
+                let message = arg(args, "message")?.to_owned();
+                tokio::task::spawn_blocking(move || gitflow::commit(&path, &message))
+                    .await
+                    .map_err(fail)?
+            }
+            "git_delete_branches" => {
+                let path = existing_path(args)?;
+                let branches: Vec<String> = args["branches"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|b| b.as_str().map(str::to_owned))
+                    .collect();
+                tokio::task::spawn_blocking(move || gitflow::delete_branches(&path, &branches))
+                    .await
+                    .map_err(fail)?
+            }
             "git_pull" => {
                 let path = existing_path(args)?;
                 tokio::task::spawn_blocking(move || dev::pull(&path))
