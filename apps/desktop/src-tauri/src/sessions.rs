@@ -142,10 +142,7 @@ fn save() {
         s.iter()
             .map(|(id, h)| Saved {
                 id: id.clone(),
-                agent: match h.agent {
-                    Agent::ClaudeCode => "claude_code".into(),
-                    Agent::Codex => "codex".into(),
-                },
+                agent: h.agent.id().into(),
                 path: h.path.clone(),
                 mode: h.mode,
                 resume: h.resume.clone(),
@@ -172,11 +169,7 @@ pub fn restore(dir: &Path) {
     let saved: Vec<Saved> = serde_json::from_slice(&bytes).unwrap_or_default();
     with(&SESSIONS, |s| {
         for v in saved {
-            let agent = if v.agent == "codex" {
-                Agent::Codex
-            } else {
-                Agent::ClaudeCode
-            };
+            let agent = Agent::from_id(&v.agent).unwrap_or(Agent::ClaudeCode);
             // Nothing is running: sends fail with "That session has ended".
             let (tx, _) = mpsc::unbounded_channel();
             s.entry(v.id).or_insert(Handle {
@@ -304,6 +297,7 @@ fn spawn_run(
     let model = match agent {
         Agent::ClaudeCode => Some(settings.ai.claude_code.model.clone()),
         Agent::Codex => Some(settings.ai.codex.model.clone()),
+        Agent::Copilot | Agent::Cursor => None,
     }
     .filter(|m| !m.trim().is_empty());
     let mcp_config = app
@@ -327,6 +321,9 @@ fn spawn_run(
                 .await
             }
             Agent::Codex => run_codex(&app2, &id2, &exe, &path2, mode, model, resume, rx).await,
+            Agent::Copilot | Agent::Cursor => {
+                run_plain(&app2, &id2, agent, &exe, &path2, mode, rx).await
+            }
         };
         let changes = review_count(&id2);
         emit(
@@ -1270,6 +1267,105 @@ async fn run_codex(
     }
 }
 
+/// One turn's arguments for a CLI run once per message (Copilot, Cursor).
+/// They cannot ask in the island, so the mode decides up front what they
+/// may do; review and undo still cover every change.
+fn plain_args(agent: Agent, mode: Mode, text: &str, again: bool) -> Vec<String> {
+    let mut a: Vec<String> = vec!["-p".into(), text.into()];
+    match agent {
+        Agent::Copilot => {
+            if again {
+                a.push("--continue".into());
+            }
+            match mode {
+                Mode::Full => a.push("--allow-all-tools".into()),
+                Mode::Edit | Mode::Ask => {
+                    a.extend(["--allow-all-tools", "--deny-tool", "shell"].map(String::from))
+                }
+                Mode::Plan => a.extend(
+                    [
+                        "--allow-all-tools",
+                        "--deny-tool",
+                        "write",
+                        "--deny-tool",
+                        "shell",
+                    ]
+                    .map(String::from),
+                ),
+            }
+        }
+        _ => {
+            a.extend(["--output-format", "text"].map(String::from));
+            if matches!(mode, Mode::Full | Mode::Edit) {
+                a.push("--force".into());
+            }
+        }
+    }
+    a
+}
+
+/// Runs a CLI that takes one prompt per process, streaming what it prints.
+/// A message sent mid-turn runs as the next turn.
+async fn run_plain(
+    app: &AppHandle,
+    id: &str,
+    agent: Agent,
+    exe: &Path,
+    path: &Path,
+    mode: Mode,
+    mut rx: mpsc::UnboundedReceiver<Cmd>,
+) -> Result<(), String> {
+    let mut turns = 0usize;
+    let mut queued: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+    loop {
+        let text = match queued.pop_front() {
+            Some(t) => t,
+            None => match rx.recv().await {
+                Some(Cmd::Send(t)) => t,
+                Some(Cmd::Stop) | None => return Ok(()),
+            },
+        };
+        emit(app, id, json!({ "kind": "working" }));
+        let mut cmd = tokio::process::Command::new(exe);
+        cmd.args(plain_args(agent, mode, &text, turns > 0))
+            .current_dir(path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+        crate::agents::hide_console(&mut cmd);
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("could not start {}: {e}", agent.name()))?;
+        turns += 1;
+        let stderr = keep_stderr(&mut child);
+        if let Some(pid) = child.id() {
+            with(&PIDS, |p| p.insert(id.to_owned(), pid));
+        }
+        let mut lines = BufReader::new(child.stdout.take().ok_or("no stdout")?).lines();
+        loop {
+            tokio::select! {
+                line = lines.next_line() => match line {
+                    Ok(Some(line)) => emit(app, id, json!({ "kind": "text", "text": format!("{line}\n") })),
+                    _ => break,
+                },
+                cmd = rx.recv() => match cmd {
+                    Some(Cmd::Send(more)) => queued.push_back(more),
+                    Some(Cmd::Stop) | None => {
+                        let _ = child.kill().await;
+                        return Ok(());
+                    }
+                },
+            }
+        }
+        let ok = child.wait().await.is_ok_and(|s| s.success());
+        let error = (!ok).then(|| why_stopped(agent.name(), &lock(&stderr)));
+        emit(app, id, json!({ "kind": "turn", "error": error }));
+        let id = id.to_owned();
+        tokio::task::spawn_blocking(move || turn_ended(&id));
+    }
+}
+
 /// What one app-server notification means for the island.
 pub fn codex_events(v: &Value) -> Vec<Value> {
     let p = &v["params"];
@@ -1358,6 +1454,18 @@ pub fn codex_events(v: &Value) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plain_agents_get_what_the_mode_allows() {
+        let a = plain_args(Agent::Copilot, Mode::Plan, "fix it", false);
+        assert_eq!(a[..2], ["-p", "fix it"]);
+        assert!(a.windows(2).any(|w| w == ["--deny-tool", "write"]));
+        assert!(
+            plain_args(Agent::Copilot, Mode::Full, "x", true).contains(&"--continue".to_owned())
+        );
+        assert!(plain_args(Agent::Cursor, Mode::Edit, "x", false).contains(&"--force".to_owned()));
+        assert!(!plain_args(Agent::Cursor, Mode::Plan, "x", false).contains(&"--force".to_owned()));
+    }
 
     fn git(dir: &Path, args: &[&str]) -> bool {
         std::process::Command::new("git")

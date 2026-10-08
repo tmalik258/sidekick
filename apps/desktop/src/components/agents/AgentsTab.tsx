@@ -38,6 +38,14 @@ const MODES: { id: AgentMode; label: string; note: string }[] = [
   { id: "full", label: "Full", note: "Does everything without asking" },
 ];
 
+/** Letter and colour for each agent in the picker. */
+const AGENT_MARKS: Record<string, [string, string]> = {
+  claude_code: ["C", "#d97757"],
+  codex: ["X", "#10a37f"],
+  copilot: ["G", "#8957e5"],
+  cursor: ["R", "#9aa0a6"],
+};
+
 export function AgentsTab({ keys, maxHeight }: { keys: boolean; maxHeight: number }) {
   const sessions = useAgents((s) => s.sessions);
   const current = useAgents((s) => s.current);
@@ -95,6 +103,8 @@ function NewSession({ sessions }: { sessions: Session[] }) {
   const choices = [
     ...(agents?.claudeCode ? [{ id: "claude_code", name: "Claude Code" }] : []),
     ...(agents?.codex ? [{ id: "codex", name: "Codex" }] : []),
+    ...(agents?.copilot ? [{ id: "copilot", name: "GitHub Copilot" }] : []),
+    ...(agents?.cursor ? [{ id: "cursor", name: "Cursor" }] : []),
   ];
   const pickedAgent = agent || choices[0]?.id || "";
   const pickedPath = path || projects?.[0]?.path || "";
@@ -118,7 +128,7 @@ function NewSession({ sessions }: { sessions: Session[] }) {
       <SessionChips sessions={sessions} current={null} />
       {agents && choices.length === 0 ? (
         <p className="ak-group py-1 text-[13px]">
-          Install Claude Code or Codex to run agents here. Settings &gt; AI shows how.
+          Install Claude Code, Codex, GitHub Copilot CLI or Cursor to run agents here. Settings &gt; AI shows how.
         </p>
       ) : (
         <>
@@ -134,8 +144,8 @@ function NewSession({ sessions }: { sessions: Session[] }) {
                   options={choices.map((c) => ({
                     value: c.id,
                     label: c.name,
-                    icon: c.id === "codex" ? "X" : "C",
-                    color: c.id === "codex" ? "#10a37f" : "#d97757",
+                    icon: AGENT_MARKS[c.id]?.[0] ?? "C",
+                    color: AGENT_MARKS[c.id]?.[1] ?? "#d97757",
                   }))}
                 />
               </span>
