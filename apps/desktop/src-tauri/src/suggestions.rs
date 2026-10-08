@@ -333,6 +333,18 @@ pub fn offer(app: &AppHandle, mut proposal: Proposal) {
     show_or_queue(app, proposal);
 }
 
+/// One short line on why a suggestion showed, from its track record.
+fn why_line(taken: i64, dismissed: i64) -> String {
+    let total = taken + dismissed;
+    if total == 0 {
+        "New suggestion. Not now tells me to ask less.".into()
+    } else if taken >= dismissed {
+        format!("You took this {taken} of {total} times.")
+    } else {
+        format!("You skipped this {dismissed} of {total} times. It rests if you keep skipping.")
+    }
+}
+
 /// Markdown marks removed (`**7**` reads 7), for a card's one or two lines.
 fn plain(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
@@ -417,6 +429,14 @@ fn show(app: &AppHandle, proposal: Proposal) {
             .enumerate()
             .map(|(i, o)| can_always(&proposal, i, &o.action))
             .collect(),
+        why: if crate::learn::tracked(&proposal.skill_id) {
+            let h = lock(&app.state::<AppState>().storage)
+                .habit(&proposal.skill_id)
+                .unwrap_or_default();
+            why_line(h.accepted, h.dismissed)
+        } else {
+            String::new()
+        },
     };
     let priority = proposal.priority;
     let auto = proposal.trust == Trust::Auto
@@ -990,6 +1010,13 @@ pub fn demo(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn why_line_reads_the_track_record() {
+        assert!(why_line(0, 0).starts_with("New"));
+        assert_eq!(why_line(4, 1), "You took this 4 of 5 times.");
+        assert!(why_line(1, 3).starts_with("You skipped this 3 of 4"));
+    }
 
     #[test]
     fn cards_show_plain_text() {

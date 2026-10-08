@@ -316,6 +316,8 @@ export interface Suggestion {
   options: string[];
   /** Which options can become "Always do this". */
   always?: boolean[];
+  /** Why this showed, from how often you took this kind before. */
+  why?: string;
 }
 
 /** A newer Sidekick release than the one running. */
