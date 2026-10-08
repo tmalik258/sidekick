@@ -30,7 +30,7 @@ fn run(exe: &Path, args: &[&std::ffi::OsStr]) -> Result<String, String> {
 }
 
 /// The text of a PDF, Word or text file.
-fn text_of(app: &AppHandle, path: &Path) -> Result<String, String> {
+pub(crate) fn text_of(app: &AppHandle, path: &Path) -> Result<String, String> {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())

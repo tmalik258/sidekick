@@ -190,7 +190,8 @@ pub fn start_embedder(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         loop {
-            if crate::state::is_paused(&app) {
+            // Embedding is heavy: only while plugged in and not paused.
+            if crate::state::is_paused(&app) || !sidekick_sensors::on_mains() {
                 tokio::time::sleep(Duration::from_secs(60)).await;
                 continue;
             }
@@ -280,7 +281,7 @@ pub async fn hybrid(app: &AppHandle, query: &str, sources: &[&str], limit: u32) 
         .iter()
         .map(|h| (h.source.clone(), h.reference.clone()))
         .collect();
-    sidekick_core::storage::fuse(&[keys, near], limit as usize)
+    let mut out: Vec<SearchHit> = sidekick_core::storage::fuse(&[keys, near], limit as usize * 2)
         .into_iter()
         .filter_map(|(source, reference)| {
             keyword
@@ -289,13 +290,98 @@ pub async fn hybrid(app: &AppHandle, query: &str, sources: &[&str], limit: u32) 
                 .cloned()
                 .or_else(|| storage.hit(&source, &reference).ok().flatten())
         })
-        .collect()
+        .collect();
+    // One row per file: its best passage, under the file's own path.
+    let mut seen = std::collections::HashSet::new();
+    out.retain_mut(|h| {
+        if h.source == "file" {
+            h.reference = file_of(&h.reference).to_owned();
+        }
+        seen.insert((h.source.clone(), h.reference.clone()))
+    });
+    out.truncate(limit as usize);
+    out
+}
+
+/// Documents read through a converter (pdftotext, pandoc) when installed.
+const DOC_EXTS: &[&str] = &["pdf", "docx", "odt", "rtf"];
+/// Documents can be bigger than plain text files.
+const MAX_DOC_BYTES: u64 = 30_000_000;
+/// A passage: about a paragraph or two, what one embedding describes well.
+const PASSAGE: usize = 1200;
+const MAX_PASSAGES: usize = 60;
+
+fn ext(path: &Path) -> String {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default()
 }
 
 fn is_text_file(path: &Path) -> bool {
-    path.extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| TEXT_EXTS.contains(&e.to_ascii_lowercase().as_str()))
+    let e = ext(path);
+    TEXT_EXTS.contains(&e.as_str()) || DOC_EXTS.contains(&e.as_str())
+}
+
+/// Splits text into passages of about `PASSAGE` characters, breaking at
+/// blank lines, then line ends, so each one reads on its own.
+pub fn passages(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for para in text.split("\n\n") {
+        let para = para.trim();
+        if para.is_empty() {
+            continue;
+        }
+        if !cur.is_empty() && cur.len() + para.len() > PASSAGE {
+            out.push(std::mem::take(&mut cur));
+        }
+        if para.len() > PASSAGE {
+            // One long block: cut at line ends, or at a char boundary.
+            for line in para.lines() {
+                if !cur.is_empty() && cur.len() + line.len() > PASSAGE {
+                    out.push(std::mem::take(&mut cur));
+                }
+                let mut rest = line;
+                while rest.len() > PASSAGE {
+                    let mut cut = PASSAGE;
+                    while !rest.is_char_boundary(cut) {
+                        cut -= 1;
+                    }
+                    out.push(rest[..cut].to_owned());
+                    rest = &rest[cut..];
+                }
+                cur.push_str(rest);
+                cur.push('\n');
+            }
+        } else {
+            cur.push_str(para);
+            cur.push_str("\n\n");
+        }
+        if out.len() >= MAX_PASSAGES {
+            break;
+        }
+    }
+    if !cur.trim().is_empty() && out.len() < MAX_PASSAGES {
+        out.push(cur);
+    }
+    out.into_iter()
+        .map(|p| p.trim().to_owned())
+        .filter(|p| !p.is_empty())
+        .collect()
+}
+
+/// A file passage's reference is "path#p3"; the file itself is the path.
+pub fn file_of(reference: &str) -> &str {
+    match reference.rfind("#p") {
+        Some(i)
+            if reference[i + 2..].chars().all(|c| c.is_ascii_digit())
+                && i + 2 < reference.len() =>
+        {
+            &reference[..i]
+        }
+        _ => reference,
+    }
 }
 
 /// Text files under `root`, skipping build output and dependency folders.
@@ -317,7 +403,14 @@ pub fn text_files(root: &Path) -> Vec<std::path::PathBuf> {
                     stack.push((path, depth + 1));
                 }
             } else if is_text_file(&path)
-                && entry.metadata().is_ok_and(|m| m.len() <= MAX_FILE_BYTES)
+                && entry.metadata().is_ok_and(|m| {
+                    m.len()
+                        <= if DOC_EXTS.contains(&ext(&path).as_str()) {
+                            MAX_DOC_BYTES
+                        } else {
+                            MAX_FILE_BYTES
+                        }
+                })
             {
                 out.push(path);
                 if out.len() >= MAX_FILES {
@@ -348,8 +441,20 @@ pub fn reindex_folders(app: &AppHandle) {
             .await
             .unwrap_or_default();
             for path in files {
-                let Ok(text) = tokio::fs::read_to_string(&path).await else {
-                    continue;
+                let text = if DOC_EXTS.contains(&ext(&path).as_str()) {
+                    let (handle, p) = (app.clone(), path.clone());
+                    match tokio::task::spawn_blocking(move || crate::files::text_of(&handle, &p))
+                        .await
+                    {
+                        Ok(Ok(t)) => t,
+                        // No converter installed, or an unreadable file.
+                        _ => continue,
+                    }
+                } else {
+                    let Ok(t) = tokio::fs::read_to_string(&path).await else {
+                        continue;
+                    };
+                    t
                 };
                 let name = path
                     .file_name()
@@ -359,14 +464,17 @@ pub fn reindex_folders(app: &AppHandle) {
                     .and_then(|m| m.modified())
                     .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
                     .unwrap_or_default();
-                put(
-                    &app,
-                    "file",
-                    &path.display().to_string(),
-                    &name,
-                    &clip(&text, 200_000),
-                    &ts,
-                );
+                // Each passage is searched and embedded on its own, so a
+                // question finds the part of a long file that answers it.
+                let at = path.display().to_string();
+                for (i, part) in passages(&clip(&text, 200_000)).iter().enumerate() {
+                    let reference = if i == 0 {
+                        at.clone()
+                    } else {
+                        format!("{at}#p{i}")
+                    };
+                    put(&app, "file", &reference, &name, part, &ts);
+                }
                 count += 1;
                 // Stay gentle on the disk and CPU.
                 if count.is_multiple_of(50) {
@@ -406,6 +514,25 @@ pub fn index_action(app: &AppHandle, label: &str, message: &str, skill: &str, ts
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn splits_long_text_into_passages() {
+        let para = "The landlord will return the deposit within 30 days. ".repeat(10);
+        let text = format!("{para}\n\n{para}\n\n{para}");
+        let parts = passages(&text);
+        assert!(parts.len() >= 2);
+        assert!(parts.iter().all(|p| p.len() <= PASSAGE + 2));
+        assert!(passages("").is_empty());
+        let long = "x".repeat(5000);
+        assert!(passages(&long).iter().all(|p| p.len() <= PASSAGE));
+    }
+
+    #[test]
+    fn passage_references_point_at_the_file() {
+        assert_eq!(file_of(r"C:\docs\lease.pdf#p3"), r"C:\docs\lease.pdf");
+        assert_eq!(file_of(r"C:\docs\lease.pdf"), r"C:\docs\lease.pdf");
+        assert_eq!(file_of(r"C:\a#pages\b.md"), r"C:\a#pages\b.md");
+    }
 
     #[test]
     fn walks_text_files_and_skips_build_folders() {

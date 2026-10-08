@@ -116,7 +116,8 @@ pub async fn open_reference(app: AppHandle, source: String, reference: String) -
     let exec = executor(&app.state::<AppState>());
     let (action, args) = match source.as_str() {
         "file" | "download" | "screenshot" => {
-            ("reveal_path", serde_json::json!({ "path": reference }))
+            let path = crate::search::file_of(&reference);
+            ("reveal_path", serde_json::json!({ "path": path }))
         }
         "page" => ("open_url", serde_json::json!({ "url": reference })),
         _ => return Ok(()),
