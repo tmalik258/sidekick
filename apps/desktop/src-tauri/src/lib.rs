@@ -204,6 +204,7 @@ pub fn run() {
             commands::voice_welcome,
             commands::voice_welcome_step,
             commands::voice_say,
+            commands::voice_read,
             commands::debug_set_state,
             commands::debug_emit_event,
             commands::skills_list,

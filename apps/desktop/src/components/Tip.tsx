@@ -10,6 +10,7 @@ import {
   type ReactNode,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -33,6 +34,16 @@ export function Tip({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number; above: boolean } | null>(null);
+  const tipRef = useRef<HTMLSpanElement>(null);
+  // Near a window edge, slide the tip back inside instead of letting it
+  // squeeze into a one-word-per-line column.
+  useLayoutEffect(() => {
+    const tip = tipRef.current;
+    if (!tip || !pos) return;
+    const r = tip.getBoundingClientRect();
+    const shift = r.right > window.innerWidth - 8 ? window.innerWidth - 8 - r.right : r.left < 8 ? 8 - r.left : 0;
+    if (Math.abs(shift) > 0.5) setPos({ ...pos, left: pos.left + shift });
+  }, [pos]);
 
   const clearTimer = () => {
     if (timer.current !== null) {
@@ -87,6 +98,7 @@ export function Tip({
         pos &&
         createPortal(
           <span
+            ref={tipRef}
             id={id}
             role="tooltip"
             className="ak-tip"
