@@ -333,9 +333,7 @@ export function Select({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
-  const shown = q
-    ? list.filter((r) => `${r.label} ${r.sub ?? ""} ${r.value}`.toLowerCase().includes(q))
-    : list;
+  const shown = q ? list.filter((r) => `${r.label} ${r.sub ?? ""} ${r.value}`.toLowerCase().includes(q)) : list;
   const [active, setActive] = useState(() =>
     Math.max(
       0,
@@ -423,9 +421,10 @@ export function Select({
   useEffect(() => {
     if (!open) return;
     setActive((i) => (shown.length === 0 ? 0 : Math.min(i, shown.length - 1)));
-  }, [q, open, shown.length]);
+  }, [open, shown.length]);
 
   // Prefer the painted menu box once it exists (estimated height can be high).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: shown.length and query resize the menu, so they re-measure it
   useLayoutEffect(() => {
     if (!open || !overlay || !float) return;
     const m = menu.current;
@@ -545,9 +544,7 @@ export function Select({
           </div>
         );
       })}
-      {shown.length === 0 && (
-        <div className="px-[9px] py-2.5 text-[12.5px] text-white/45">No matches</div>
-      )}
+      {shown.length === 0 && <div className="px-[9px] py-2.5 text-[12.5px] text-white/45">No matches</div>}
     </>
   );
 
