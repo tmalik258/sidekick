@@ -301,6 +301,12 @@ function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorC
             <ModeSwitch mode={mode} onChange={setMode} />
           </div>
           {picked && !ready(picked) && <FixLine agent={picked} />}
+          {picked?.local && ready(picked) && (
+            <p className="ak-note">
+              <b className="font-medium text-white">On this PC.</b> Nothing leaves it. Slower; best for small, clear
+              changes. Every edit waits in Review.
+            </p>
+          )}
           <div className="ak-composer ak-two">
             <div className="ak-row">
               <input
