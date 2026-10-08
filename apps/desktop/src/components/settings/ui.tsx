@@ -300,7 +300,7 @@ export function Select({
   group,
   current: currentLabel,
   variant = "chip",
-  overlay,
+  overlay = true,
   searchable,
 }: {
   value: string;

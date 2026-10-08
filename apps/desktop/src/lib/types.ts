@@ -66,9 +66,14 @@ export interface Settings {
   crashReports: boolean;
   /** Fade the island while a fullscreen app is in front. */
   hideInFullscreen: boolean;
+  tips: boolean;
   notifications: NotificationSettings;
   recipes: Recipe[];
   memory: string[];
+  userName: string;
+  codes: boolean | null;
+  assistantName: string;
+  learning: boolean;
   agent: AgentSettings;
 }
 
@@ -377,11 +382,16 @@ export const DEFAULT_SETTINGS: Settings = {
   routines: true,
   routinesAuto: false,
   hideInFullscreen: false,
+  tips: true,
   alive: true,
   crashReports: false,
   notifications: { enabled: true, apps: {}, vip: [] },
   recipes: [],
   memory: [],
+  userName: "",
+  codes: null,
+  assistantName: "Sidekick",
+  learning: true,
   agent: { ask: "outward", places: {} },
   voice: {
     enabled: true,
@@ -711,4 +721,13 @@ export interface AgentSettings {
 export interface InstantResults {
   apps: { name: string; id: string; minutes: number }[];
   files: { name: string; path: string; folder: boolean; place: string }[];
+}
+
+/** Something Sidekick learned, for Settings > Memory. */
+export interface Learned {
+  kind: "choice" | "quiet" | "routine";
+  key: string;
+  label: string;
+  text: string;
+  why: string;
 }

@@ -24,6 +24,22 @@ pub fn routines_remove(app: AppHandle, kind: String, key: String) -> CmdResult<u
     crate::routines::remove(&app, &kind, &key)
 }
 
+/// Everything Sidekick has learned, for Settings > Memory.
+#[tauri::command]
+pub fn learned_list(app: AppHandle) -> Vec<crate::learned::Learned> {
+    crate::learned::list(&app)
+}
+
+#[tauri::command]
+pub fn learned_forget(app: AppHandle, kind: String, key: String, label: String) -> CmdResult<()> {
+    crate::learned::forget(&app, &kind, &key, &label)
+}
+
+#[tauri::command]
+pub fn learned_forget_all(app: AppHandle) -> CmdResult<()> {
+    crate::learned::forget_all(&app)
+}
+
 /// Forgets every learned routine.
 #[tauri::command]
 pub fn routines_forget(app: AppHandle) -> CmdResult<usize> {
@@ -42,11 +58,17 @@ pub fn actions_recent(
 
 /// Today's time per app and project, largest first.
 #[tauri::command]
-pub fn time_today(state: State<'_, AppState>) -> CmdResult<Vec<sidekick_core::AppTime>> {
-    let day = chrono::Local::now().format("%Y-%m-%d").to_string();
-    lock(&state.storage)
-        .time_for_day(&day)
-        .map_err(|e| e.to_string())
+pub async fn time_today(app: AppHandle) -> CmdResult<Vec<sidekick_core::AppTime>> {
+    // The storage lock can be held by a sensor write: wait off the UI thread.
+    tauri::async_runtime::spawn_blocking(move || {
+        let day = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let state = app.state::<AppState>();
+        lock(&state.storage)
+            .time_for_day(&day)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

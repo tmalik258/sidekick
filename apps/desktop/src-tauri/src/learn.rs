@@ -54,6 +54,9 @@ pub fn is_muted(app: &AppHandle, skill_id: &str) -> bool {
 
 /// The user said "Not now" (a timeout is not a judgement).
 pub fn on_dismiss(app: &AppHandle, skill_id: &str, reason: &str) {
+    if !crate::learned::on(app) {
+        return;
+    }
     if reason != "user" || !tracked(skill_id) {
         return;
     }

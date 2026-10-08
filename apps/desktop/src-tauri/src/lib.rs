@@ -30,6 +30,7 @@ mod instant;
 mod island;
 mod layout;
 mod learn;
+mod learned;
 mod mascot;
 mod mcp;
 mod mcp_oauth;
@@ -201,6 +202,9 @@ pub fn run() {
             commands::choices_reset,
             commands::routines_today,
             commands::routines_forget,
+            commands::learned_list,
+            commands::learned_forget,
+            commands::learned_forget_all,
             commands::routines_remove,
             commands::actions_recent,
             commands::reveal_path,

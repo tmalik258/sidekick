@@ -108,6 +108,8 @@ pub struct Settings {
     /// Fade the island out while a fullscreen app is in front. Off: the
     /// island stays on top of everything, fullscreen apps included.
     pub hide_in_fullscreen: bool,
+    /// Now and then, when nothing needs you, a short tip on the island.
+    pub tips: bool,
     /// The mascot idles on its own: glances around, blinks, the odd smile.
     pub alive: bool,
     /// After a crash, offer a report to send (never sent on its own).
@@ -120,6 +122,16 @@ pub struct Settings {
     /// Things Sidekick knows about the user ("My manager is Sara"), given to
     /// every model. Edited in Settings or learned when the user says so.
     pub memory: Vec<String>,
+    /// What Sidekick calls the user ("Sam"); empty until they say.
+    pub user_name: String,
+    /// The user works with code: technical answers and setup. None: not asked.
+    pub codes: Option<bool>,
+    /// What the assistant is called and answers to ("Hey Orbi"). The app
+    /// itself stays Sidekick.
+    pub assistant_name: String,
+    /// Learn from choices (links, files, suggestions, routines). Off: nothing
+    /// new is learned; what is known stays until forgotten.
+    pub learning: bool,
     /// How much Sidekick asks before acting in apps and pages.
     pub agent: AgentSettings,
 }
@@ -608,11 +620,16 @@ impl Default for Settings {
             routines: true,
             routines_auto: false,
             hide_in_fullscreen: false,
+            tips: true,
             alive: true,
             crash_reports: false,
             notifications: NotificationSettings::default(),
             recipes: Vec::new(),
             memory: Vec::new(),
+            user_name: String::new(),
+            codes: None,
+            assistant_name: "Sidekick".into(),
+            learning: true,
             agent: AgentSettings::default(),
         }
     }
@@ -667,6 +684,13 @@ impl Settings {
             *v = v.clamp(0.0, 1.0);
         }
         self.collapse_after_secs = self.collapse_after_secs.clamp(2, 120);
+        let name = self.assistant_name.trim();
+        self.assistant_name = if name.is_empty() {
+            "Sidekick".into()
+        } else {
+            name.chars().take(24).collect()
+        };
+        self.user_name = self.user_name.trim().chars().take(40).collect();
         // The dark orbs of 0.1 became Onyx.
         if matches!(self.theme.as_str(), "graphite" | "midnight") {
             self.theme = "onyx".into();

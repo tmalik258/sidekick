@@ -21,12 +21,11 @@ import {
   type InboxStatus,
   MASCOT_STATES,
   type NotifyLevel,
-  SHORTCUT_ACTIONS,
   type StoredEvent,
 } from "@/lib/types";
 import { SetupChecklist, usePendingByTab } from "../SetupChecklist";
 import { Tip } from "../Tip";
-import { Button, ChipList, Field, FolderPicker, Section, Select, ShortcutRecorder, Slider, Toggle } from "./ui";
+import { Button, ChipList, Field, FolderPicker, Section, Select, Slider, Toggle } from "./ui";
 
 const SOUND_KITS: [string, string][] = [
   [SYNTH_KIT, "Sidekick"],
@@ -63,30 +62,6 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
       </Section>
       <Section title="Today" keywords="time tracking hours apps">
         <TimeToday />
-      </Section>
-      <Section
-        collapsible
-        summary={`Ask with ${settings.paletteHotkey}`}
-        title="Shortcuts"
-        hint="Click one, then press the keys."
-        keywords="hotkey keyboard keys talk accept dismiss screen clipboard pause"
-      >
-        <Field label="Ask">
-          <ShortcutRecorder
-            label="Ask"
-            value={settings.paletteHotkey}
-            onChange={(paletteHotkey) => save({ paletteHotkey })}
-          />
-        </Field>
-        {SHORTCUT_ACTIONS.map((a) => (
-          <Field key={a.id} label={a.label}>
-            <ShortcutRecorder
-              label={a.label}
-              value={settings.shortcuts[a.id] ?? ""}
-              onChange={(keys) => save({ shortcuts: { ...settings.shortcuts, [a.id]: keys } })}
-            />
-          </Field>
-        ))}
       </Section>
       <Section
         collapsible

@@ -985,6 +985,24 @@ commands.time_today = () => [
 ];
 commands.browser_info = () => ({ token: "browser-preview-pairing-code", port: 47822 });
 commands.action_undo = () => "Moved photo.webp to the Recycle Bin";
+commands.learned_list = () => [
+  {
+    kind: "choice",
+    key: "url:localhost",
+    label: "Chrome, private",
+    text: "For links from localhost, you pick Chrome, private",
+    why: "9 times",
+  },
+  {
+    kind: "routine",
+    key: "slack",
+    label: "app",
+    text: "You open Slack as part of your day",
+    why: "On 5 of the last days",
+  },
+];
+commands.learned_forget = () => undefined;
+commands.learned_forget_all = () => undefined;
 commands.ai_status = () =>
   previewFlag("nomodel")
     ? []

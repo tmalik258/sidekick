@@ -546,8 +546,17 @@ pub fn chat(
                 Ok(message) => (message, None),
                 Err(e) => (String::new(), Some(e.to_string())),
             };
-            if !text.is_empty() {
+            // Ask closed (said by voice): a compact done pill, not the panel.
+            if !text.is_empty() && crate::ask::is_open(&app) {
                 send_text(&app, &id, text, speak);
+            } else if !text.is_empty() {
+                if speak {
+                    crate::voice::answer_text(&app, &id, &text);
+                }
+                let _ = app.emit(
+                    "island://done",
+                    serde_json::json!({ "id": id, "text": text }),
+                );
             }
             if speak {
                 crate::voice::answer_done(&app, &id, error.as_deref());
