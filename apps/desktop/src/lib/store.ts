@@ -679,7 +679,7 @@ export function sendChat(prompt: string, attach?: ChatAttach): boolean {
     chatId: id,
     turns: [
       ...turns,
-      { role: "user", content: q, screen },
+      { role: "user", content: q, screen, localOnly: req.localOnly },
       {
         role: "assistant",
         content: "",
@@ -729,7 +729,18 @@ function saveChat() {
 export async function openChat(id: string) {
   cancelChat();
   const turns = await api.chatGet(id);
-  useSidekick.setState({ turns, chatId: null, chatPage: null, chatSkill: false, conversation: id });
+  // The chat keeps the This PC only it was last asked with, whatever the setting says now.
+  const last = turns.findLast((t) => t.role === "user");
+  const { ask, settings } = useSidekick.getState();
+  const localOnly = last?.localOnly ?? settings.ai.localOnly;
+  useSidekick.setState({
+    turns,
+    chatId: null,
+    chatPage: null,
+    chatSkill: false,
+    conversation: id,
+    ask: ask && { ...ask, localOnly },
+  });
 }
 
 /** Starts a conversation in which AI drafts a new skill. */
@@ -797,7 +808,10 @@ function muteSuggestionCue(state: MascotState, previous: MascotState | null): bo
 
 export function newChat() {
   cancelChat();
+  const { ask, settings } = useSidekick.getState();
   useSidekick.setState({
+    // A new chat starts from the setting; the old chat's choice stays with it.
+    ask: ask && { ...ask, localOnly: settings.ai.localOnly },
     turns: [],
     chatId: null,
     chatPage: null,
@@ -963,9 +977,10 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         const settingsTab = open.settingsTab ?? resumeSettingsTab ?? undefined;
         resumeSettingsTab = null;
         // This PC only belongs to the chat: it stays while the chat goes on.
+        // A new chat starts from the setting.
         const prev = useSidekick.getState();
         const sameChat = prev.turns.length > 0;
-        const localOnly = sameChat ? (prev.ask?.localOnly ?? keptLocalOnly) : false;
+        const localOnly = sameChat ? (prev.ask?.localOnly ?? keptLocalOnly) : prev.settings.ai.localOnly;
         useSidekick.setState({
           ask: {
             view: open.view ?? "ask",
