@@ -5,6 +5,167 @@
 /// tokens of the gigaspeech KWS model), and how they appear in transcripts.
 pub const WAKE_KEYWORDS: &str = "▁HE Y ▁ SIDE K IC K @hey_sidekick\n▁HI ▁ SIDE K IC K @hey_sidekick\n▁O K ▁ SIDE K IC K @hey_sidekick\n";
 
+/// A name the user gave the assistant ("Orbi"), as lowercase words. Empty
+/// means only "Sidekick". The default name always keeps working too.
+static CUSTOM_NAME: std::sync::RwLock<Vec<String>> = std::sync::RwLock::new(Vec::new());
+
+/// Sets the assistant's name for wake matching. "Sidekick" or blank clears it.
+pub fn set_name(name: &str) {
+    let words: Vec<String> = name
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_lowercase)
+        .collect();
+    let words = if words == ["sidekick"] {
+        Vec::new()
+    } else {
+        words
+    };
+    if let Ok(mut n) = CUSTOM_NAME.write() {
+        *n = words;
+    }
+}
+
+fn custom_name() -> Vec<String> {
+    CUSTOM_NAME.read().map(|n| n.clone()).unwrap_or_default()
+}
+
+/// Pieces of the wake model's BPE vocabulary with their merge scores.
+pub type Vocab = std::collections::HashMap<String, f32>;
+
+/// Reads the pieces and scores out of a sentencepiece `bpe.model`
+/// (protobuf: field 1 repeats a piece message of string 1, float 2).
+pub fn read_vocab(bytes: &[u8]) -> Vocab {
+    fn varint(b: &[u8], at: &mut usize) -> Option<u64> {
+        let mut v = 0u64;
+        for shift in (0..64).step_by(7) {
+            let byte = *b.get(*at)?;
+            *at += 1;
+            v |= u64::from(byte & 0x7f) << shift;
+            if byte & 0x80 == 0 {
+                return Some(v);
+            }
+        }
+        None
+    }
+    /// Each field as (number, bytes for length-delimited, fixed32 bits).
+    fn fields(b: &[u8]) -> Vec<(u64, &[u8], u32)> {
+        let mut out = Vec::new();
+        let mut at = 0;
+        while at < b.len() {
+            let Some(tag) = varint(b, &mut at) else { break };
+            match tag & 7 {
+                0 => {
+                    if varint(b, &mut at).is_none() {
+                        break;
+                    }
+                }
+                1 => at += 8,
+                2 => {
+                    let Some(len) = varint(b, &mut at) else { break };
+                    let end = at + len as usize;
+                    let Some(body) = b.get(at..end) else { break };
+                    out.push((tag >> 3, body, 0));
+                    at = end;
+                }
+                5 => {
+                    let Some(w) = b.get(at..at + 4) else { break };
+                    out.push((
+                        tag >> 3,
+                        &[][..],
+                        u32::from_le_bytes([w[0], w[1], w[2], w[3]]),
+                    ));
+                    at += 4;
+                }
+                _ => break,
+            }
+        }
+        out
+    }
+    let mut vocab = Vocab::new();
+    for (n, body, _) in fields(bytes) {
+        if n != 1 {
+            continue;
+        }
+        let mut piece = None;
+        let mut score = 0.0;
+        for (m, b, bits) in fields(body) {
+            match m {
+                1 => piece = std::str::from_utf8(b).ok(),
+                2 => score = f32::from_bits(bits),
+                _ => {}
+            }
+        }
+        if let Some(p) = piece {
+            vocab.insert(p.to_owned(), score);
+        }
+    }
+    vocab
+}
+
+/// Spells `phrase` in the wake model's pieces. None when a letter
+/// has no piece.
+pub fn spell(vocab: &Vocab, phrase: &str) -> Option<String> {
+    let mut out = Vec::new();
+    for word in phrase.split_whitespace() {
+        let word: String = word
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '\'')
+            .collect::<String>()
+            .to_uppercase();
+        if !word.is_empty() {
+            out.extend(spell_word(vocab, &word)?);
+        }
+    }
+    (!out.is_empty()).then(|| out.join(" "))
+}
+
+/// One word as the wake model's unigram tokenizer splits it: the split of
+/// "▁WORD" into known pieces with the highest total score.
+fn spell_word(vocab: &Vocab, word: &str) -> Option<Vec<String>> {
+    let text = format!("▁{word}");
+    let cuts: Vec<usize> = text
+        .char_indices()
+        .map(|(i, _)| i)
+        .skip(1)
+        .chain([text.len()])
+        .collect();
+    // best[end]: (score, pieces) of the best split of text[..end].
+    let mut best: std::collections::HashMap<usize, (f32, Vec<String>)> =
+        std::collections::HashMap::from([(0, (0.0, Vec::new()))]);
+    for start in std::iter::once(0).chain(cuts.iter().copied()) {
+        let Some((score, pieces)) = best.get(&start).cloned() else {
+            continue;
+        };
+        for &end in cuts.iter().filter(|&&e| e > start) {
+            let piece = &text[start..end];
+            let Some(&s) = vocab.get(piece) else { continue };
+            if best.get(&end).is_none_or(|(b, _)| score + s > *b) {
+                let mut next = pieces.clone();
+                next.push(piece.to_owned());
+                best.insert(end, (score + s, next));
+            }
+        }
+    }
+    best.remove(&text.len()).map(|(_, p)| p)
+}
+
+/// The wake phrases for the keyword model: "hey Sidekick" always, plus
+/// "hey <name>" when the user renamed the assistant.
+pub fn wake_keywords(vocab: Option<&Vocab>) -> String {
+    let mut out = WAKE_KEYWORDS.to_owned();
+    let name = custom_name();
+    if let (Some(vocab), false) = (vocab, name.is_empty()) {
+        let name = name.join(" ");
+        for greeting in ["hey", "hi", "ok"] {
+            if let Some(spelled) = spell(vocab, &format!("{greeting} {name}")) {
+                out.push_str(&format!("{spelled} @hey_{}\n", name.replace(' ', "_")));
+            }
+        }
+    }
+    out
+}
+
 /// Words a greeting can start with.
 const GREETINGS: &[&str] = &["hey", "hi", "ok", "okay", "a"];
 
@@ -46,12 +207,19 @@ pub fn strip_wake(text: &str) -> String {
             _ => {}
         }
     }
+    let custom = custom_name();
     let name_at = |at: usize| {
-        NAMES.iter().find_map(|name| {
-            let fits = name.len() <= words.len().saturating_sub(at)
-                && name.iter().enumerate().all(|(k, w)| words[at + k].0 == *w);
-            fits.then_some(at + name.len())
-        })
+        let fits = |name: &[&str]| {
+            name.len() <= words.len().saturating_sub(at)
+                && name.iter().enumerate().all(|(k, w)| words[at + k].0 == *w)
+        };
+        let own: Vec<&str> = custom.iter().map(String::as_str).collect();
+        if !own.is_empty() && fits(&own) {
+            return Some(at + own.len());
+        }
+        NAMES
+            .iter()
+            .find_map(|name| fits(name).then_some(at + name.len()))
     };
     let first = words.first().map(|(w, _)| w.as_str());
     let end = name_at(0).or_else(|| {
@@ -357,6 +525,64 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn spells_a_name_in_wake_tokens() {
+        let vocab: Vocab = [
+            ("▁", -1.0),
+            ("H", -2.0),
+            ("E", -2.0),
+            ("Y", -2.0),
+            ("O", -2.0),
+            ("R", -2.0),
+            ("B", -2.0),
+            ("I", -2.0),
+            ("Z", -2.0),
+            ("▁HE", -3.0),
+            ("OR", -4.0),
+            ("▁H", -5.0),
+        ]
+        .into_iter()
+        .map(|(p, s)| (p.to_owned(), s))
+        .collect();
+        assert_eq!(spell(&vocab, "hey Orbi").as_deref(), Some("▁HE Y ▁ OR B I"));
+        assert_eq!(spell(&vocab, "hey Kai"), None);
+    }
+
+    #[test]
+    fn spells_sidekick_like_the_built_in_phrase() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../apps/desktop/src-tauri/resources/voice-models/",
+            "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01/bpe.model"
+        );
+        // The model is downloaded on first build; skip when it is not here.
+        let Ok(bytes) = std::fs::read(path) else {
+            return;
+        };
+        let vocab = read_vocab(&bytes);
+        assert_eq!(
+            spell(&vocab, "hey sidekick").as_deref(),
+            Some("▁HE Y ▁ SIDE K IC K")
+        );
+        assert_eq!(
+            spell(&vocab, "ok sidekick").as_deref(),
+            Some("▁O K ▁ SIDE K IC K")
+        );
+        // Checked against the sentencepiece library.
+        assert_eq!(spell(&vocab, "hey orbi").as_deref(), Some("▁HE Y ▁OR B I"));
+        assert_eq!(spell(&vocab, "light up").as_deref(), Some("▁ L IGHT ▁UP"));
+    }
+
+    #[test]
+    fn a_custom_name_wakes_and_sidekick_still_does() {
+        set_name("Orbi");
+        assert_eq!(strip_wake("hey orbi, open mail"), "open mail");
+        assert_eq!(strip_wake("hey sidekick open mail"), "open mail");
+        assert!(find_wake("so hey orbi what time is it").is_some());
+        set_name("Sidekick");
+        assert_eq!(strip_wake("hey orbi open mail"), "hey orbi open mail");
+    }
 
     #[test]
     fn options_are_not_read_aloud() {

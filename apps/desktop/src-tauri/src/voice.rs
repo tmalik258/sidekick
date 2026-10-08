@@ -83,6 +83,8 @@ struct Key {
     interrupt: bool,
     voice: String,
     speed: f32,
+    /// The assistant's name: "hey <name>" wakes it, so a rename rebuilds.
+    name: String,
     /// The microphone opens only once onboarding is done; until then
     /// Sidekick speaks the welcome but never listens.
     listen: bool,
@@ -232,11 +234,17 @@ fn emit_state(app: &AppHandle) {
 
 /// Starts, rebuilds or stops the voice runtime to match settings and pause.
 pub fn refresh(app: &AppHandle) {
-    let (settings, paused, onboarded) = {
+    let (settings, paused, onboarded, name) = {
         let state = app.state::<AppState>();
         let s = lock(&state.settings);
-        (s.voice.clone(), s.pause.is_active(Utc::now()), s.onboarded)
+        (
+            s.voice.clone(),
+            s.pause.is_active(Utc::now()),
+            s.onboarded,
+            s.assistant_name.clone(),
+        )
     };
+    sidekick_voice::text::set_name(&name);
     let v = voice(app);
     // The speaker also runs for typed answers when "Speak answers" is on,
     // even with the wake word and microphone off.
@@ -259,6 +267,7 @@ pub fn refresh(app: &AppHandle) {
         interrupt: settings.interrupt,
         voice: settings.voice.clone(),
         speed: settings.speed,
+        name,
         listen: onboarded && listen,
     };
     if lock(&v.runtime).as_ref().is_some_and(|r| r.key == key) {
@@ -274,6 +283,7 @@ pub fn refresh(app: &AppHandle) {
         r.key.wake_word == key.wake_word
             && r.key.interrupt == key.interrupt
             && r.key.listen == key.listen
+            && r.key.name == key.name
     });
     if same_ears {
         std::thread::spawn(move || {

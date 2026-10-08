@@ -7,7 +7,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { CLAUDE_MODELS, CODEX_MODELS, explicitModel, FAST_CLAUDE_MODEL, FAST_CODEX_MODEL } from "@/lib/ai-models";
 import { api, EVENTS, listen } from "@/lib/bridge";
 import { SETUP_STATUS_CACHE_KEY, useCached } from "@/lib/cache";
-import { updateSettings, useSidekick } from "@/lib/store";
+import { updateSettings, useAssistantName, useSidekick } from "@/lib/store";
 import {
   AI_PROVIDERS,
   type AiProviderId,
@@ -34,6 +34,7 @@ const NOT_READY: Record<AiProviderId, string> = {
 export function AiTab({ onError }: { onError: (e: string) => void }) {
   const ai = useSidekick((s) => s.settings.ai);
   const voice = useSidekick((s) => s.settings.voice);
+  const name = useAssistantName();
   return (
     <>
       <Section
@@ -425,8 +426,8 @@ function VoiceSection({ voice, onError }: { voice: VoiceSettings; onError: (e: s
   return (
     <>
       <Toggle
-        label="Talk to Sidekick"
-        hint={voice.wakeWord ? 'Say "Hey Sidekick"' : "Use the mic button or the Talk shortcut"}
+        label={`Talk to ${name}`}
+        hint={voice.wakeWord ? `Say "Hey ${name}"` : "Use the mic button or the Talk shortcut"}
         checked={voice.enabled}
         onChange={(enabled) => {
           void set({ enabled });
@@ -463,7 +464,7 @@ function VoiceSection({ voice, onError }: { voice: VoiceSettings; onError: (e: s
         <p className="text-[12px] text-(--muted)">
           {status?.listening
             ? voice.wakeWord
-              ? "Listening for Hey Sidekick."
+              ? `Listening for Hey ${name}.`
               : "Ready. Use the mic button or the Talk shortcut."
             : "Starting the microphone..."}
         </p>

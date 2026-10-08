@@ -9,7 +9,7 @@ import { useAgents } from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { useNow } from "@/lib/hooks";
-import { updateSettings, useSidekick } from "@/lib/store";
+import { updateSettings, useAssistantName, useSidekick } from "@/lib/store";
 import { pickTip } from "@/lib/tips";
 import { type AppTime, type CalendarToday, formatDuration, type LaterItem } from "@/lib/types";
 import { Icon } from "./Icon";
@@ -247,9 +247,10 @@ function ago(mins: number): string {
 
 function QuickActions({ paused }: { paused: boolean }) {
   const hotkey = useSidekick((s) => s.settings.paletteHotkey);
+  const name = useAssistantName();
   return (
     <>
-      <RoundButton label={`Ask Sidekick (${hotkey})`} onClick={() => void api.askOpen()}>
+      <RoundButton label={`Ask ${name} (${hotkey})`} onClick={() => void api.askOpen()}>
         <Icon name="ask" size={15} />
       </RoundButton>
       <RoundButton
