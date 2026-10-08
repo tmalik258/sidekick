@@ -822,7 +822,7 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
         <motion.button
           key={option}
           type="button"
-          onClick={() => choose(suggestion, i)}
+          onClick={(e) => choose(suggestion, i, e.shiftKey)}
           initial={{ opacity: 0, y: 6, filter: "blur(4px)" }}
           animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
           transition={{ duration: 0.26, delay: 0.12 + i * 0.04, ease: [0.23, 1, 0.32, 1] }}
@@ -877,11 +877,12 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
   );
 }
 
-function choose(suggestion: Suggestion, index: number) {
+/** Shift opens a link in a private window. */
+function choose(suggestion: Suggestion, index: number, priv = false) {
   playSound("select", uiVolume(), useSidekick.getState().settings.soundKit);
   useSidekick.setState({ running: suggestion.options[index] ?? null });
   notePick(suggestion.skillId, suggestion.options[index] ?? "");
-  void api.suggestionChoose(suggestion.id, index);
+  void api.suggestionChoose(suggestion.id, index, priv);
 }
 
 function always(suggestion: Suggestion, index: number) {
@@ -913,7 +914,7 @@ function useSuggestionKeys(suggestion: Suggestion | null) {
       if (e.altKey) return; // Alt+N is a global shortcut handled in Rust
       if (e.key === "Escape") dismiss(suggestion);
       const n = Number(e.key);
-      if (n >= 1 && n <= suggestion.options.length) choose(suggestion, n - 1);
+      if (n >= 1 && n <= suggestion.options.length) choose(suggestion, n - 1, e.shiftKey);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

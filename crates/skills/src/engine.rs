@@ -175,7 +175,14 @@ impl Engine {
 
         let mut p = proposal?;
         if let Some(key) = &p.remember {
-            let counts = env.choice_counts(key);
+            let mut counts = env.choice_counts(key);
+            // Nothing yet for this kind ("url:github.com"): what you pick
+            // across all of them ("url").
+            if counts.is_empty()
+                && let Some((all, _)) = key.split_once(':')
+            {
+                counts = env.choice_counts(all);
+            }
             // Stable sort keeps the manifest order among equally used options.
             p.options
                 .sort_by_key(|o| std::cmp::Reverse(counts.get(&o.label).copied().unwrap_or(0)));
