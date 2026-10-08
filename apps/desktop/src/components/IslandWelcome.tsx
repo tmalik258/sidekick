@@ -13,7 +13,7 @@ import { api } from "@/lib/bridge";
 import { prefetch, revalidate, SETUP_STATUS_CACHE_KEY } from "@/lib/cache";
 import { useScrollEdge } from "@/lib/hooks";
 import { PANEL_MAX_HEIGHT } from "@/lib/islandSize";
-import { updateSettings, useSidekick } from "@/lib/store";
+import { showDone, updateSettings, useSidekick } from "@/lib/store";
 import { ASK_ORB } from "./AskPanel";
 import { SetupChecklist } from "./SetupChecklist";
 import { SpokenLine, wasHeard } from "./SpokenLine";
@@ -32,8 +32,15 @@ function clampStep(n: number): number {
   return Math.min(Math.trunc(n), STEPS.length - 1);
 }
 
+/** Steps in order for this person: Tools is skipped for people who don't code. */
+function stepsFor(codes: boolean | null): number[] {
+  return codes === false ? [0, 1, 2, 4] : [0, 1, 2, 3, 4];
+}
+
 export function IslandWelcome() {
   const saved = useSidekick((s) => s.settings.welcomeStep);
+  const codes = useSidekick((s) => s.settings.codes);
+  const order = stepsFor(codes);
   const [step, setStep] = useState(() => clampStep(saved));
   const [autoIn, setAutoIn] = useState<number | null>(null);
   /** Bumped on any real user input so the idle hide clock restarts. */
@@ -59,8 +66,13 @@ export function IslandWelcome() {
   const finish = () => {
     void api.voiceStop().then(() => void api.voiceSay("That's everything. You're all set."));
     // Onboarded must stick before close; otherwise Rust keeps welcome locked.
-    void updateSettings({ onboarded: true, welcomeStep: step }).then(() => api.askClose());
+    void updateSettings({ onboarded: true, welcomeStep: step }).then(() => {
+      void api.askClose();
+      showDone("You're set");
+    });
   };
+  const next = order[order.indexOf(step) + 1] ?? step;
+  const prev = order[order.indexOf(step) - 1] ?? 0;
   const last = step === STEPS.length - 1;
 
   useEffect(() => {
@@ -104,7 +116,7 @@ export function IslandWelcome() {
   // go closes over the latest setters; only the countdown clock should restart.
   // biome-ignore lint/correctness/useExhaustiveDependencies: step and autoIn only
   useEffect(() => {
-    if (step !== 0 || autoIn === null || autoIn <= 0) return;
+    if (step !== 0 || autoIn === null || autoIn <= 0 || codes === null) return;
     const id = setTimeout(() => {
       if (autoIn <= 1) go(1);
       else setAutoIn(autoIn - 1);
@@ -127,17 +139,22 @@ export function IslandWelcome() {
     <div ref={root} className="flex flex-col" style={{ maxHeight: PANEL_MAX_HEIGHT }}>
       <div className="mb-3 flex h-7.5 shrink-0 items-center gap-2" style={{ paddingLeft: ASK_ORB + 10 }}>
         <h1 className="flex-1 font-display text-[17px] font-semibold tracking-[-0.015em]">{STEPS[step]}</h1>
-        <ol className="flex gap-1" aria-label={`Step ${step + 1} of ${STEPS.length}`}>
-          {STEPS.map((s, i) => (
-            <li
-              key={s}
-              aria-label={s}
-              aria-current={i === step ? "step" : undefined}
-              className={`h-1.5 rounded-full transition-[width,background-color] duration-200 ease-out ${
-                i === step ? "w-4 bg-white" : i < step ? "w-1.5 bg-white/55" : "w-1.5 bg-white/20"
-              }`}
-            />
-          ))}
+        <ol className="flex gap-1" aria-label={`Step ${order.indexOf(step) + 1} of ${order.length}`}>
+          {order
+            .map((i) => STEPS[i])
+            .map((s, k) => {
+              const i = order[k];
+              return (
+                <li
+                  key={s}
+                  aria-label={s}
+                  aria-current={i === step ? "step" : undefined}
+                  className={`h-1.5 rounded-full transition-[width,background-color] duration-200 ease-out ${
+                    i === step ? "w-4 bg-white" : i < step ? "w-1.5 bg-white/55" : "w-1.5 bg-white/20"
+                  }`}
+                />
+              );
+            })}
         </ol>
       </div>
 
@@ -180,7 +197,7 @@ export function IslandWelcome() {
             {step > 0 && (
               <button
                 type="button"
-                onClick={() => go(step - 1)}
+                onClick={() => go(prev)}
                 className="chip rounded-full bg-white/12 px-3.5 py-1.5 text-[13px] font-medium text-white/90 hover:bg-white/20"
               >
                 Back
@@ -188,7 +205,7 @@ export function IslandWelcome() {
             )}
             <button
               type="button"
-              onClick={() => (last ? finish() : go(step + 1))}
+              onClick={() => (last ? finish() : go(next))}
               className="chip rounded-full bg-white px-3.5 py-1.5 text-[13px] font-medium text-black hover:bg-white/90"
             >
               {last ? "Start" : autoIn !== null ? `Next · ${autoIn}` : "Next"}
