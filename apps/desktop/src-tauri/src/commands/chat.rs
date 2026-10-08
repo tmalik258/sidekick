@@ -530,3 +530,33 @@ pub async fn agent_memory(id: String) -> Option<u64> {
         .ok()
         .flatten()
 }
+
+/// Chats started in Cursor, for the Agents list.
+#[tauri::command]
+pub async fn cursor_chats() -> Vec<crate::cursor_chats::CursorChat> {
+    tauri::async_runtime::spawn_blocking(|| crate::cursor_chats::list(20))
+        .await
+        .unwrap_or_default()
+}
+
+/// Opens a Cursor chat's project in Cursor ("Open in Cursor").
+#[tauri::command]
+pub async fn cursor_open(app: AppHandle, path: String) -> CmdResult<()> {
+    if !std::path::Path::new(&path).is_dir() {
+        return Err("That project folder is gone.".into());
+    }
+    if let Ok(cursor) = which::which("cursor") {
+        let mut cmd = tokio::process::Command::new(cursor);
+        cmd.arg(&path);
+        crate::agents::hide_console(&mut cmd);
+        return cmd.spawn().map(|_| ()).map_err(|e| e.to_string());
+    }
+    crate::state::executor(&app.state::<AppState>())
+        .run(
+            "open_in_editor",
+            &serde_json::json!({ "path": path, "editor": "cursor" }),
+        )
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}

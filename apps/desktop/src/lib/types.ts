@@ -687,6 +687,17 @@ export interface Agents {
   list?: AgentInfo[];
 }
 
+/** A chat started in Cursor's own window, watched from Agents. */
+export interface CursorChat {
+  id: string;
+  title: string;
+  path: string | null;
+  project: string;
+  updatedAt: number;
+  status: "working" | "idle";
+  lastReply: string;
+}
+
 /** One agent in the picker. */
 export interface AgentInfo {
   id: string;

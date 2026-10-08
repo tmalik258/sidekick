@@ -36,7 +36,7 @@ import { useCached } from "@/lib/cache";
 import { useNow } from "@/lib/hooks";
 import { Markdown } from "@/lib/markdown";
 import { setOverlayHit } from "@/lib/store";
-import type { AgentInfo, AgentMode, Agents, EditorList } from "@/lib/types";
+import type { AgentInfo, AgentMode, Agents, CursorChat, EditorList } from "@/lib/types";
 import { KeyHint, scrollIfActive } from "../ask/parts";
 import { Icon } from "../Icon";
 import { Select } from "../settings/ui";
@@ -59,20 +59,90 @@ const AGENT_MARKS: Record<string, [string, string]> = {
   local: ["L", "#5e9cff"],
 };
 
+/** Chats started in Cursor, refreshed while Agents is open. */
+function useCursorChats(): CursorChat[] {
+  const [chats, setChats] = useState<CursorChat[]>([]);
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      void api
+        .cursorChats()
+        .then((c) => live && setChats(c))
+        .catch(() => {});
+    load();
+    const t = setInterval(load, 15_000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, []);
+  return chats;
+}
+
+const CURSOR = "cursor:";
+
 export function AgentsTab({ keys, maxHeight }: { keys: boolean; maxHeight: number }) {
   const sessions = useAgents((s) => s.sessions);
   const current = useAgents((s) => s.current);
+  const cursor = useCursorChats();
   const session = sessions.find((s) => s.id === current) ?? null;
+  const watched = current?.startsWith(CURSOR) ? cursor.find((c) => CURSOR + c.id === current) : undefined;
+  if (watched) return <CursorView chat={watched} sessions={sessions} cursor={cursor} />;
   return session ? (
     <SessionView key={session.id} session={session} sessions={sessions} keys={keys} maxHeight={maxHeight} />
   ) : (
-    <NewSession sessions={sessions} />
+    <NewSession sessions={sessions} cursor={cursor} />
   );
 }
 
-/** Every session as a chip, then + New. */
-function SessionChips({ sessions, current }: { sessions: Session[]; current: string | null }) {
-  if (sessions.length === 0) return null;
+/** A chat started in Cursor: status and last reply; replies happen in Cursor. */
+function CursorView({ chat, sessions, cursor }: { chat: CursorChat; sessions: Session[]; cursor: CursorChat[] }) {
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <>
+      <div className="ak-head">
+        <span className="ak-title truncate">{chat.title}</span>
+        <span className="ak-mi">Watching</span>
+      </div>
+      <SessionChips sessions={sessions} current={CURSOR + chat.id} cursor={cursor} />
+      <div className="ak-meta">
+        <span className="ak-mi b">Cursor</span>
+        {chat.project && <span className="ak-mi">{chat.project}</span>}
+        <span className="ak-mi">{chat.status === "working" ? "Working" : "Done"}</span>
+      </div>
+      {chat.lastReply ? (
+        <div className="ak-in text-[13px]">
+          <Markdown text={chat.lastReply} />
+        </div>
+      ) : (
+        <p className="ak-note">No reply yet.</p>
+      )}
+      <div className="ak-composer justify-center">
+        <button
+          type="button"
+          disabled={!chat.path}
+          onClick={() => chat.path && void api.cursorOpen(chat.path).catch((e: unknown) => setError(String(e)))}
+          className="ak-chip chip"
+        >
+          Open in Cursor
+        </button>
+      </div>
+      {error && <p className="ak-err">{error}</p>}
+    </>
+  );
+}
+
+/** Every session as a chip, then Cursor's own chats, then + New. */
+function SessionChips({
+  sessions,
+  current,
+  cursor = [],
+}: {
+  sessions: Session[];
+  current: string | null;
+  cursor?: CursorChat[];
+}) {
+  if (sessions.length === 0 && cursor.length === 0) return null;
   return (
     <div className="ak-sess">
       {sessions.map((s) => (
@@ -91,6 +161,19 @@ function SessionChips({ sessions, current }: { sessions: Session[]; current: str
           </em>
         </button>
       ))}
+      {cursor.map((c) => (
+        <button
+          key={c.id}
+          type="button"
+          aria-pressed={CURSOR + c.id === current}
+          onClick={() => useAgents.setState({ current: CURSOR + c.id })}
+          className="ak-sp chip max-w-56"
+        >
+          <span className="ak-sd" data-s={c.status} role="img" aria-label={c.status} />
+          <span className="truncate">{c.title}</span>
+          <em>{c.project ? `${c.project} · Cursor` : "Cursor"}</em>
+        </button>
+      ))}
       <button
         type="button"
         aria-pressed={false}
@@ -103,7 +186,7 @@ function SessionChips({ sessions, current }: { sessions: Session[]; current: str
   );
 }
 
-function NewSession({ sessions }: { sessions: Session[] }) {
+function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorChat[] }) {
   const { data: agents } = useCached<Agents>("agents", api.agentsStatus);
   const { data: projects } = useCached<{ name: string; path: string }[]>("projects", api.projectsList);
   const [agent, setAgent] = useState<string>("");
@@ -151,7 +234,7 @@ function NewSession({ sessions }: { sessions: Session[] }) {
       <div className="ak-head">
         <span className="ak-title">New session</span>
       </div>
-      <SessionChips sessions={sessions} current={null} />
+      <SessionChips sessions={sessions} current={null} cursor={cursor} />
       {agents && choices.length === 0 ? (
         <div className="ak-group py-1 text-[13px]">
           <p>Install one coding agent to run it here:</p>
