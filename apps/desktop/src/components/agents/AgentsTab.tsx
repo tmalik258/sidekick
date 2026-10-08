@@ -795,6 +795,7 @@ function Composer({
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: focus again when the session changes
   useEffect(() => {
     requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
   }, [s.id]);
@@ -853,6 +854,7 @@ function Composer({
       height: want + 8,
     });
   };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-place when the typed text or the list changes
   useLayoutEffect(() => {
     placePop();
     if (count === 0) return;
@@ -865,6 +867,7 @@ function Composer({
       setOverlayHit(null);
     };
   }, [count, slash, query, text]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: measure again when the list length changes
   useLayoutEffect(() => {
     if (!float || !popRef.current) return;
     const r = popRef.current.getBoundingClientRect();
