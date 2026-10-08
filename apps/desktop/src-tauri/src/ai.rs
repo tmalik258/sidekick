@@ -461,13 +461,18 @@ fn system_prompt(app: &AppHandle, attach: &Attach) -> String {
         "\nNow: {}",
         chrono::Local::now().format("%A %-d %B %Y, %H:%M")
     ));
-    let (memory, assistant, user) = {
+    let (memory, assistant, user, about) = {
         let state = app.state::<AppState>();
         let s = lock(&state.settings);
         (
             s.memory.clone(),
             s.assistant_name.clone(),
             s.user_name.clone(),
+            [
+                ("People they work with", s.people.clone()),
+                ("What they are working on", s.projects.clone()),
+                ("How they like answers", s.answer_style.clone()),
+            ],
         )
     };
     if assistant != "Sidekick" {
@@ -477,6 +482,9 @@ fn system_prompt(app: &AppHandle, attach: &Attach) -> String {
     }
     if !user.is_empty() {
         system.push_str(&format!("\nThe user's name is {user}."));
+    }
+    for (label, text) in about.iter().filter(|(_, t)| !t.is_empty()) {
+        system.push_str(&format!("\n{label}: {}", text.replace('\n', "; ")));
     }
     if !memory.is_empty() {
         system.push_str("\n\nAbout the user (they asked you to remember):\n");
