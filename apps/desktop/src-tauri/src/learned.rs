@@ -28,6 +28,7 @@ fn about(key: &str) -> String {
         "file" | "download" => "files",
         "screenshot" => "screenshots",
         "editor" => "projects",
+        "agent" => "coding agents",
         other => other,
     };
     if scope.is_empty() {
@@ -48,7 +49,11 @@ pub fn list(app: &AppHandle) -> Vec<Learned> {
         }
         out.push(Learned {
             kind: "choice".into(),
-            text: format!("{}, you pick {label}", about(&key)),
+            text: if key == "think" {
+                format!("\"{label}...\" questions think harder first")
+            } else {
+                format!("{}, you pick {label}", about(&key))
+            },
             why: format!("{count} times"),
             key,
             label,

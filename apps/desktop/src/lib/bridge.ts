@@ -263,6 +263,7 @@ export const api = {
   composioConnect: (slug: string) => invoke<void>("composio_connect", { slug }),
   composioUseKey: (key: string) => invoke<string>("composio_use_key", { key }),
   agentsStatus: () => invoke<Agents>("agents_status"),
+  agentUsual: (path: string) => invoke<string | null>("agent_usual", { path }),
   agentStart: (agent: string, path: string, prompt: string, mode: AgentMode) =>
     invoke<AgentStarted>("agent_start", { agent, path, prompt, mode }),
   agentHandoff: (messages: ChatMessage[], reason: string | null) =>
