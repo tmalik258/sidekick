@@ -399,3 +399,22 @@ mod tests {
         assert_eq!(guess_name(""), "");
     }
 }
+
+/// What fills the disk, by group (installers, build folders, caches, games,
+/// WSL and Docker). Reads only.
+#[tauri::command]
+pub async fn disk_groups() -> CmdResult<Vec<crate::disk::Group>> {
+    off_ui(crate::disk::groups).await
+}
+
+/// Sends reviewed items of one group to the Recycle Bin. Returns how many
+/// went and the space freed, in plain words.
+#[tauri::command]
+pub async fn disk_clean(group: String, paths: Vec<String>) -> CmdResult<String> {
+    let (count, freed) = off_ui(move || crate::disk::clean(&group, &paths)).await??;
+    Ok(format!(
+        "Moved {count} {} to the Recycle Bin, {} freed",
+        if count == 1 { "item" } else { "items" },
+        crate::disk::human(freed)
+    ))
+}
