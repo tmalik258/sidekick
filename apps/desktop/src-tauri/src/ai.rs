@@ -22,7 +22,7 @@ pub const DONE_EVENT: &str = "ai://done";
 const MAX_CLIP: usize = 8_000;
 const SEMIF_TIMEOUT: Duration = Duration::from_secs(90);
 
-const SYSTEM: &str = "You are Sidekick, the assistant on the user's Windows PC. You help \
+pub(crate) const SYSTEM: &str = "You are Sidekick, the assistant on the user's Windows PC. You help \
 with their own files, apps, day and whatever is on screen right now, and you get small \
 things done. Rules:
 - Lead with the result in the first sentence (\"Done, Do Not Disturb is on.\"), then at most one \
