@@ -280,6 +280,49 @@ impl OpenAiCompat {
         }
     }
 
+    /// Asks Ollama to write `tool`'s arguments again with its JSON schema as
+    /// the required format. None when the server is not Ollama or the new
+    /// arguments still do not fit.
+    async fn repair_args(
+        &self,
+        model: &str,
+        messages: &[Value],
+        tool: &ToolDef,
+        problem: &str,
+    ) -> Option<Value> {
+        let root = ollama_root(&self.base_url)?;
+        let mut messages = messages.to_vec();
+        messages.push(json!({
+            "role": "user",
+            "content": format!(
+                "Write only the JSON arguments for the {} tool. The last ones were wrong: {problem}.",
+                tool.name
+            ),
+        }));
+        let v: Value = self
+            .client
+            .post(format!("{root}/api/chat"))
+            .json(&json!({
+                "model": model, "messages": messages, "stream": false,
+                "think": false, "format": tool.parameters,
+            }))
+            .timeout(Duration::from_secs(60))
+            .send()
+            .await
+            .ok()?
+            .json()
+            .await
+            .ok()?;
+        let args: Value = serde_json::from_str(v["message"]["content"].as_str()?).ok()?;
+        match schema_problem(&args, &tool.parameters) {
+            None => Some(args),
+            Some(still) => {
+                log::debug!("repaired {} arguments still wrong: {still}", tool.name);
+                None
+            }
+        }
+    }
+
     pub async fn chat_with_tools(
         &self,
         req: &ChatRequest,
@@ -347,6 +390,20 @@ impl OpenAiCompat {
                         )
                     })
                     .collect();
+                // Arguments that break the tool's schema are written again
+                // under Ollama's JSON schema mode, so they always fit.
+                let mut parsed = parsed;
+                for (_, name, args) in &mut parsed {
+                    let Some(tool) = tools.iter().find(|t| t.name == *name) else {
+                        continue;
+                    };
+                    if let Some(problem) = schema_problem(args, &tool.parameters)
+                        && let Some(fixed) =
+                            self.repair_args(&model, &messages, tool, &problem).await
+                    {
+                        *args = fixed;
+                    }
+                }
                 // Reads asked for together run together; anything that acts
                 // runs one after another, in order.
                 let together =
@@ -396,6 +453,64 @@ impl OpenAiCompat {
 
 /// Tool arguments arrive as a JSON string (OpenAI) or an object (some
 /// servers).
+/// What is wrong with `args` for a tool with this JSON schema: a missing
+/// required field, a value outside its enum, or the wrong type. None when
+/// they fit.
+pub fn schema_problem(args: &Value, schema: &Value) -> Option<String> {
+    let Some(obj) = args.as_object() else {
+        return Some("arguments must be a JSON object".into());
+    };
+    for key in schema["required"].as_array().into_iter().flatten() {
+        let key = key.as_str().unwrap_or_default();
+        if obj.get(key).is_none_or(Value::is_null) {
+            return Some(format!("{key} is required"));
+        }
+    }
+    let props = schema["properties"].as_object()?;
+    for (key, value) in obj {
+        let Some(prop) = props.get(key) else { continue };
+        if value.is_null() {
+            continue;
+        }
+        if let Some(allowed) = prop["enum"].as_array()
+            && !allowed.contains(value)
+        {
+            let names: Vec<String> = allowed.iter().map(Value::to_string).collect();
+            return Some(format!("{key} must be one of {}", names.join(", ")));
+        }
+        let fits = match prop["type"].as_str() {
+            Some("string") => value.is_string(),
+            Some("integer") => {
+                value.is_i64()
+                    || value.is_u64()
+                    || value
+                        .as_str()
+                        .is_some_and(|s| s.trim().parse::<i64>().is_ok())
+            }
+            Some("number") => {
+                value.is_number()
+                    || value
+                        .as_str()
+                        .is_some_and(|s| s.trim().parse::<f64>().is_ok())
+            }
+            Some("boolean") => value.is_boolean(),
+            Some("object") => value.is_object(),
+            Some("array") => value.is_array(),
+            _ => true,
+        };
+        if !fits {
+            let kind = prop["type"].as_str().unwrap_or("value");
+            let a = if kind.starts_with(['a', 'e', 'i', 'o', 'u']) {
+                "an"
+            } else {
+                "a"
+            };
+            return Some(format!("{key} must be {a} {kind}"));
+        }
+    }
+    None
+}
+
 fn parse_arguments(raw: &Value) -> Value {
     match raw {
         Value::String(s) => serde_json::from_str(s).unwrap_or_else(|_| json!({})),
@@ -829,6 +944,42 @@ impl AiProvider for OpenAiCompat {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn schema_problems_are_named() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "action": { "type": "string", "enum": ["read", "act"] },
+                "ref": { "type": "integer" },
+                "text": { "type": "string" }
+            },
+            "required": ["action"]
+        });
+        assert_eq!(schema_problem(&json!({ "action": "read" }), &schema), None);
+        assert_eq!(
+            schema_problem(&json!({ "action": "act", "ref": "3" }), &schema),
+            None
+        );
+        assert_eq!(
+            schema_problem(&json!({ "text": "hi" }), &schema).as_deref(),
+            Some("action is required")
+        );
+        assert!(
+            schema_problem(&json!({ "action": "click" }), &schema)
+                .unwrap()
+                .contains("one of")
+        );
+        assert_eq!(
+            schema_problem(&json!({ "action": "act", "ref": "third" }), &schema).as_deref(),
+            Some("ref must be an integer")
+        );
+        assert!(schema_problem(&json!("read"), &schema).is_some());
+        assert_eq!(
+            schema_problem(&json!({}), &json!({ "type": "object", "properties": {} })),
+            None
+        );
+    }
     use super::*;
 
     #[test]
