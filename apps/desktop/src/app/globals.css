@@ -1322,7 +1322,7 @@ body {
   opacity: 0.45;
 }
 .ak-um {
-  justify-self: end;
+  align-self: flex-end;
   max-width: 82%;
   background: rgb(255 255 255 / 0.09);
   padding: 7px 11px;
@@ -1900,6 +1900,7 @@ select.ak-mi option {
 .ak-pop {
   max-height: 200px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   scrollbar-width: none;
   border-radius: 14px;
   background: #17171c;
@@ -1909,6 +1910,18 @@ select.ak-mi option {
   padding: 5px;
   display: grid;
   gap: 1px;
+  box-sizing: border-box;
+}
+/* Floated above the composer: keep enter animation off transform so it
+   does not fight fixed bottom positioning. */
+.ak-pop-float.ak-in {
+  animation-name: ak-pop-in;
+}
+@keyframes ak-pop-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
 }
 .ak-pop .g {
   font-size: 10.5px;
@@ -1926,6 +1939,7 @@ select.ak-mi option {
   font-size: 13px;
   text-align: left;
   width: 100%;
+  box-sizing: border-box;
   color: var(--ink);
 }
 .ak-pop .it[data-sel="true"] {
@@ -1969,7 +1983,7 @@ select.ak-mi option {
   color: var(--i2);
 }
 .ak-um-wrap {
-  justify-self: end;
+  align-self: flex-end;
   display: flex;
   align-items: center;
   gap: 8px;

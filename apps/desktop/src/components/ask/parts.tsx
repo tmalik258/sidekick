@@ -102,10 +102,22 @@ export function Snippet({ text }: { text: string }) {
   );
 }
 
+/** Rows already scrolled for the current highlight spell. Ref callbacks are
+ *  new every render; without this, each parent update re-pins the row and
+ *  fights the wheel. */
+const scrolledActive = new WeakMap<HTMLElement, true>();
+
 /** Keeps the highlighted row of a list in view as the arrows move it. */
 export function scrollIfActive(active: boolean) {
   return (el: HTMLElement | null) => {
-    if (active && el) el.scrollIntoView({ block: "nearest" });
+    if (!el) return;
+    if (!active) {
+      scrolledActive.delete(el);
+      return;
+    }
+    if (scrolledActive.has(el)) return;
+    scrolledActive.set(el, true);
+    el.scrollIntoView({ block: "nearest" });
   };
 }
 
