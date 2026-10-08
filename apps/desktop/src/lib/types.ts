@@ -280,7 +280,7 @@ export interface EditorList {
   current: string | null;
 }
 
-export const ISLAND_COLORS = ["black_glass", "graphite", "midnight", "smoke", "warm_graphite", "solid_black"] as const;
+export const ISLAND_COLORS = ["solid_black", "black_glass", "graphite", "midnight", "smoke", "warm_graphite"] as const;
 export type IslandColor = (typeof ISLAND_COLORS)[number];
 
 export interface Suggestion {
@@ -333,7 +333,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pause: { kind: "none" },
   theme: "pearl",
   codeEditor: "auto",
-  islandColor: "black_glass",
+  islandColor: "solid_black",
   soundKit: "sidekick",
   paletteHotkey: "Ctrl+Space",
   shortcuts: {

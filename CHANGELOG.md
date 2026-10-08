@@ -4,6 +4,19 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Fixes from testing
+
+- Every answer is read aloud when the speaker button is on, typed questions included, even with the wake word off. Spoken questions still get short spoken answers; typed ones keep their formatting.
+- Voice Test works after changing the voice or speed: only the speaking engine reloads, the microphone keeps listening, and Test shows "Loading voice" until it plays.
+- "Turn on hotspot", "mute", "wifi off", "volume 40" and similar run at once without a model, including common mishearings like "horsepot".
+- The local model stays loaded for 30 minutes after each answer and loads as soon as the wake word is heard, so the first word comes sooner. A slow start says "Waking up the AI".
+- Copy, Retry and Think harder are real buttons under each answer. Who answered and how fast sit behind an info button: hover to peek, click to keep them shown.
+- The steps line closes again after you open it.
+- Questions and answers can be selected and copied.
+- Retry is Alt T, Undo is Alt U and Think harder is Alt K. Alt R and Alt Z belong to the NVIDIA and AMD overlays, and Alt H stays History. CI fails if those keys come back.
+- Zen (and other browsers that register under another name) is recognised as the default browser, so links no longer show both "Zen" and "Default browser".
+- Solid black is the default island colour again for new installs.
+
 ### Steadier answers on this PC
 
 - The local model gets a prompt that fits its context: older turns, long tool results and attached text are trimmed first, so it no longer forgets the rules or your question, and answers start sooner.

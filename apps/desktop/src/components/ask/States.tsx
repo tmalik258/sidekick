@@ -118,7 +118,7 @@ export function explain(error: string, provider: string | null | undefined): Fai
 }
 
 /** A failed answer: what happened, the fix (Enter), the agent (Ctrl Enter)
- * and Retry (Alt R). */
+ * and Retry (Alt T). */
 export function FailureCard({ turn, turns }: { turn: Turn; turns: Turn[] }) {
   const f = explain(turn.error ?? "", turn.provider);
   const agent = useAgentName();
@@ -139,7 +139,7 @@ export function FailureCard({ turn, turns }: { turn: Turn; turns: Turn[] }) {
       if (e.key === "Enter" && !e.ctrlKey && !e.altKey && empty) {
         e.preventDefault();
         runFix.current();
-      } else if (e.altKey && !e.ctrlKey && e.key.toLowerCase() === "r") {
+      } else if (e.altKey && !e.ctrlKey && e.key.toLowerCase() === "t") {
         e.preventDefault();
         retryLast();
       }
@@ -171,7 +171,7 @@ export function FailureCard({ turn, turns }: { turn: Turn; turns: Turn[] }) {
         <button type="button" onClick={() => retryLast()} className="ak-chip chip">
           Retry{" "}
           <kbd>
-            <i className="alt-pre">Alt </i>R
+            <i className="alt-pre">Alt </i>T
           </kbd>
         </button>
       </div>

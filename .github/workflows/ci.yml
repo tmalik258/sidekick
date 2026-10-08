@@ -23,6 +23,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm --filter desktop check:contrast
+      - run: pnpm --filter desktop check:keys
       - run: pnpm --filter desktop build
       - run: pnpm --filter desktop exec playwright install --with-deps chromium
       - run: pnpm --filter desktop speed

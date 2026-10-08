@@ -262,9 +262,12 @@ pub struct Attach {
     /// Send a screenshot of the window the user was in.
     #[serde(default)]
     pub screen: bool,
-    /// The question was spoken; read the answer aloud.
+    /// Read the answer aloud ("Speak answers" is on).
     #[serde(default)]
     pub speak: bool,
+    /// The question was spoken: answer in short spoken sentences.
+    #[serde(default)]
+    pub voice: bool,
     /// The model picked in Ask mode ("claude_code", "codex", "anthropic",
     /// "local"); it goes first, the others stay as a fallback.
     #[serde(default)]
@@ -403,7 +406,7 @@ fn system_prompt(app: &AppHandle, attach: &Attach) -> String {
     // Fixed rules first and everything that changes (time, memory, context)
     // after FIXED_END, so a local server can reuse the processed start.
     let mut system = SYSTEM.to_owned();
-    if attach.speak {
+    if attach.voice {
         system.push_str(
             "\n\nThe user asked by voice and your answer is read aloud. Answer in one to three short spoken sentences. No markdown, lists, tables, links or OPTION lines unless they ask for them; if code is needed, keep it to one short block.",
         );
@@ -524,6 +527,43 @@ pub fn chat(
         } else {
             None
         };
+        // "Turn on hotspot", "mute": done at once, no model to misread it.
+        // Not while held: the question may still change.
+        if let Some(cmd) = (!attach.hold && !attach.screen)
+            .then(|| question.as_deref().and_then(crate::quick::command))
+            .flatten()
+        {
+            let result = tokio::task::spawn_blocking(move || {
+                sidekick_actions::pc::control(cmd.what, cmd.level, None)
+                    .map(|o| o.message)
+                    .map_err(|e| e.to_string())
+            })
+            .await
+            .unwrap_or_else(|e| Err(e.to_string()));
+            lock(&app.state::<AppState>().chats).remove(&id);
+            let speak = attach.speak && crate::voice::begin_answer(&app, &id);
+            let (text, error) = match result {
+                Ok(message) => (message, None),
+                Err(e) => (String::new(), Some(e.to_string())),
+            };
+            if !text.is_empty() {
+                send_text(&app, &id, text, speak);
+            }
+            if speak {
+                crate::voice::answer_done(&app, &id, error.as_deref());
+            }
+            let _ = app.emit(
+                DONE_EVENT,
+                Done {
+                    id,
+                    provider: Some("instant".into()),
+                    error,
+                    handoff: None,
+                    cost: None,
+                },
+            );
+            return;
+        }
         let think = attach.think || question.as_deref().is_some_and(needs_thinking);
         let req = ChatRequest {
             system: system_prompt(&app, &attach),
@@ -592,6 +632,10 @@ pub fn chat(
         lock(&app.state::<AppState>().chats).remove(&id);
         if let (Ok(answer), Some(q)) = (&result, &question) {
             crate::search::index_chat(&app, &id, q, &answer.text);
+        }
+        if result.as_ref().is_ok_and(|a| a.provider == "local") {
+            let local = local_model(&lock(&app.state::<AppState>().settings).ai);
+            tauri::async_runtime::spawn(async move { local.keep_loaded().await });
         }
         let handoff = lock(&handoff).take();
         let done = match result {
