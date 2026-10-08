@@ -55,6 +55,8 @@ export interface Session extends AgentStarted {
   effort?: string | null;
   /** Merged back with Finish. */
   finished?: boolean;
+  /** The local model went round in circles: offer a handoff. */
+  stuck?: boolean;
 }
 
 /** Half the context used: Claude Code works best compacted from here. */
@@ -204,6 +206,20 @@ function addSession(started: AgentStarted, title: string, mode: AgentMode, first
   useAgents.setState((st) => ({ sessions: [session, ...st.sessions], current: started.id, tab: "agents" }));
 }
 
+/** Hands a stuck session to the agent that gets handoffs, with what was
+ * said so far. */
+export function handOffSession(s: Session) {
+  const messages = s.entries.flatMap((e): { role: "user" | "assistant"; content: string }[] =>
+    e.kind === "you"
+      ? [{ role: "user", content: e.text }]
+      : e.kind === "text"
+        ? [{ role: "assistant", content: e.text }]
+        : [],
+  );
+  update(s.id, (x) => ({ ...x, stuck: false }));
+  return handOff(messages, `${s.agent} got stuck in ${s.project}`);
+}
+
 /** Continues an Ask conversation in Claude Code or Codex, here in the island. */
 export async function handOff(messages: { role: "user" | "assistant"; content: string }[], reason: string | null) {
   const started = await api.agentHandoff(messages, reason);
@@ -218,6 +234,7 @@ export function sendToSession(id: string, text: string) {
     ...s,
     entries: [...s.entries, { kind: "you", text }],
     status: "working",
+    stuck: false,
     turnAt: Date.now(),
     tookMs: null,
     note: null,
@@ -319,6 +336,8 @@ function onEvent(e: { session: string; kind: string } & Record<string, unknown>)
         };
         return { ...s, entries: [...s.entries, { kind: "step", step }] };
       });
+    case "stuck":
+      return update(id, (s) => ({ ...s, stuck: true }));
     case "plan":
       return update(id, (s) => ({ ...s, plan: (e.items as PlanItem[]) ?? [] }));
     case "usage":

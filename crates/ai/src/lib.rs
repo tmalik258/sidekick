@@ -27,7 +27,7 @@ pub use codex::{Codex, close_sessions as close_codex_sessions};
 pub use decide::{Decider, Decision, DecisionOption, LocalDecider, Ranked, SemIf};
 pub use mcp::{McpClient, McpTool};
 pub use openai::{
-    CLOUD, MAX_TOOL_STEPS, OpenAiCompat, ToolChatEnd, first_chat_model, is_chat_model,
+    CLOUD, MAX_TOOL_STEPS, OLLAMA_URL, OpenAiCompat, ToolChatEnd, first_chat_model, is_chat_model,
     is_embedding_model, is_local_url, is_vision_model, loopback, strip_thinking,
 };
 pub use router::{Answer, Router};

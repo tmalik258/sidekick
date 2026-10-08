@@ -7,6 +7,8 @@
 //! (`--permission-prompt-tool`). Codex runs as `codex app-server` and asks
 //! for approvals as JSON-RPC requests.
 
+mod local;
+
 use sidekick_sensors::classify::mask;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -508,6 +510,7 @@ fn spawn_run(
         Agent::ClaudeCode => Some(settings.ai.claude_code.model.clone()),
         Agent::Codex => Some(settings.ai.codex.model.clone()),
         Agent::Copilot | Agent::Cursor => None,
+        Agent::Local => Some(settings.ai.local.model.clone()),
     }
     .filter(|m| !m.trim().is_empty());
     let mcp_config = app
@@ -534,6 +537,18 @@ fn spawn_run(
             Agent::Codex => run_codex(&app2, &id2, &exe, &path2, mode, model, resume, rx).await,
             Agent::Copilot | Agent::Cursor => {
                 run_plain(&app2, &id2, agent, &exe, &path2, mode, rx).await
+            }
+            Agent::Local => {
+                local::run(
+                    &app2,
+                    &id2,
+                    &path2,
+                    mode,
+                    model,
+                    &settings.ai.local.base_url,
+                    rx,
+                )
+                .await
             }
         };
         if result.as_ref().err().map(String::as_str) == Some(RESTARTED) {
@@ -954,6 +969,9 @@ pub fn open_terminal(app: &AppHandle, id: &str) -> Result<(), String> {
             .map(|h| (h.agent, h.path.clone(), h.resume.clone()))
     })
     .ok_or("That session has ended.")?;
+    if agent == Agent::Local {
+        return Err("The local agent runs inside Sidekick, not in a terminal.".into());
+    }
     let settings = lock(&app.state::<AppState>().settings).clone();
     let exe = agent
         .resolve(&settings)
@@ -1559,7 +1577,8 @@ fn plain_args(agent: Agent, mode: Mode, text: &str, again: bool) -> Vec<String> 
             }
         }
         _ => {
-            a.extend(["--output-format", "text"].map(String::from));
+            // Cursor streams each step as JSON, so its sessions are as live as Codex.
+            a.extend(["--output-format", "stream-json"].map(String::from));
             if matches!(mode, Mode::Full | Mode::Edit) {
                 a.push("--force".into());
             }
@@ -1580,6 +1599,8 @@ async fn run_plain(
     mut rx: mpsc::UnboundedReceiver<Cmd>,
 ) -> Result<(), String> {
     let mut turns = 0usize;
+    // Cursor's own chat id, so later turns carry on the same chat.
+    let mut chat: Option<String> = None;
     let mut queued: std::collections::VecDeque<String> = std::collections::VecDeque::new();
     loop {
         let text = match queued.pop_front() {
@@ -1591,8 +1612,11 @@ async fn run_plain(
         };
         emit(app, id, json!({ "kind": "working" }));
         let mut cmd = tokio::process::Command::new(exe);
-        cmd.args(plain_args(agent, mode, &text, turns > 0))
-            .current_dir(path)
+        cmd.args(plain_args(agent, mode, &text, turns > 0));
+        if let Some(c) = chat.as_ref().filter(|_| agent == Agent::Cursor) {
+            cmd.args(["--resume", c]);
+        }
+        cmd.current_dir(path)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -1610,6 +1634,15 @@ async fn run_plain(
         loop {
             tokio::select! {
                 line = lines.next_line() => match line {
+                    Ok(Some(line)) if agent == Agent::Cursor => {
+                        let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
+                        if let Some(c) = v["session_id"].as_str() {
+                            chat = Some(c.to_owned());
+                        }
+                        for e in cursor_events(&v) {
+                            emit(app, id, e);
+                        }
+                    }
                     Ok(Some(line)) => emit(app, id, json!({ "kind": "text", "text": format!("{line}\n") })),
                     _ => break,
                 },
@@ -1627,6 +1660,51 @@ async fn run_plain(
         emit(app, id, json!({ "kind": "turn", "error": error }));
         let id = id.to_owned();
         tokio::task::spawn_blocking(move || turn_ended(&id));
+    }
+}
+
+/// What one line of `cursor-agent --output-format stream-json` means for
+/// the island.
+pub fn cursor_events(v: &Value) -> Vec<Value> {
+    match v["type"].as_str() {
+        Some("assistant") => v["message"]["content"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|c| c["text"].as_str())
+            .map(|t| json!({ "kind": "text", "text": t }))
+            .collect(),
+        Some("tool_call") => {
+            let call = v["tool_call"].as_object();
+            let (name, body) = call
+                .and_then(|o| o.iter().next())
+                .map(|(k, b)| (k.trim_end_matches("ToolCall").to_owned(), b.clone()))
+                .unwrap_or_default();
+            let args = &body["args"];
+            let detail = args["path"]
+                .as_str()
+                .or_else(|| args["command"].as_str())
+                .or_else(|| args["pattern"].as_str())
+                .unwrap_or("");
+            let label = match name.as_str() {
+                "read" => "Read",
+                "edit" | "write" => "Edit",
+                "shell" => "Run",
+                "grep" | "glob" | "ls" => "Search",
+                _ => "Step",
+            };
+            let done = v["subtype"] == "completed";
+            let failed = done && body["result"].get("error").is_some();
+            vec![json!({
+                "kind": "step",
+                "id": v["call_id"].as_str().unwrap_or(""),
+                "tool": name,
+                "label": label,
+                "detail": shown_command(detail),
+                "state": if failed { "failed" } else if done { "done" } else { "running" },
+            })]
+        }
+        _ => Vec::new(),
     }
 }
 
@@ -1767,6 +1845,24 @@ mod tests {
         );
         assert!(plain_args(Agent::Cursor, Mode::Edit, "x", false).contains(&"--force".to_owned()));
         assert!(!plain_args(Agent::Cursor, Mode::Plan, "x", false).contains(&"--force".to_owned()));
+    }
+
+    #[test]
+    fn reads_cursor_stream() {
+        let text =
+            json!({"type":"assistant","message":{"content":[{"type":"text","text":"On it"}]}});
+        assert_eq!(cursor_events(&text)[0]["text"], "On it");
+        let started = json!({"type":"tool_call","subtype":"started","call_id":"c1",
+            "tool_call":{"readToolCall":{"args":{"path":"src/a.ts"}}}});
+        let e = &cursor_events(&started)[0];
+        assert_eq!(
+            (e["label"].as_str(), e["state"].as_str()),
+            (Some("Read"), Some("running"))
+        );
+        let done = json!({"type":"tool_call","subtype":"completed","call_id":"c1",
+            "tool_call":{"readToolCall":{"args":{"path":"src/a.ts"},"result":{"success":{}}}}});
+        assert_eq!(cursor_events(&done)[0]["state"], "done");
+        assert!(cursor_events(&json!({"type":"result"})).is_empty());
     }
 
     fn git(dir: &Path, args: &[&str]) -> bool {

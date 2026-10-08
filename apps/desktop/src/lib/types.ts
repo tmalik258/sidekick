@@ -685,6 +685,34 @@ export interface Agents {
   cursor: boolean;
   /** The agent that gets handoffs by name, or null when none is installed. */
   handoff: string | null;
+  /** Every agent with whether it is ready, for the picker. */
+  list?: AgentInfo[];
+}
+
+/** A chat started in Cursor's own window, watched from Agents. */
+export interface CursorChat {
+  id: string;
+  title: string;
+  path: string | null;
+  project: string;
+  updatedAt: number;
+  status: "working" | "idle";
+  lastReply: string;
+}
+
+/** One agent in the picker. */
+export interface AgentInfo {
+  id: string;
+  name: string;
+  installed: boolean;
+  /** null when Sidekick cannot tell. */
+  signedIn: boolean | null;
+  /** Out of plan usage for now. */
+  limited: boolean;
+  /** The one step that makes it ready. */
+  fix: string | null;
+  /** Runs on this PC; nothing leaves it. */
+  local?: boolean;
 }
 
 /** How much a notification interrupts. */

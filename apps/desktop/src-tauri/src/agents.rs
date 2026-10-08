@@ -22,6 +22,8 @@ pub enum Agent {
     Copilot,
     /// Cursor's agent CLI (`cursor-agent`).
     Cursor,
+    /// A coding model on this PC through Ollama, run by Sidekick itself.
+    Local,
 }
 
 impl Agent {
@@ -31,6 +33,7 @@ impl Agent {
             Agent::Codex => "Codex",
             Agent::Copilot => "GitHub Copilot",
             Agent::Cursor => "Cursor",
+            Agent::Local => "Local",
         }
     }
 
@@ -41,6 +44,7 @@ impl Agent {
             Agent::Codex => "codex",
             Agent::Copilot => "copilot",
             Agent::Cursor => "cursor",
+            Agent::Local => "local",
         }
     }
 
@@ -50,6 +54,7 @@ impl Agent {
             Agent::Codex,
             Agent::Copilot,
             Agent::Cursor,
+            Agent::Local,
         ]
         .into_iter()
         .find(|a| a.id() == id)
@@ -61,6 +66,7 @@ impl Agent {
             Agent::Codex => "codex",
             Agent::Copilot => "copilot",
             Agent::Cursor => "cursor-agent",
+            Agent::Local => "ollama",
         }
     }
 
@@ -68,7 +74,7 @@ impl Agent {
         match self {
             Agent::ClaudeCode => s.ai.claude_code.path.trim().to_owned(),
             Agent::Codex => s.ai.codex.path.trim().to_owned(),
-            Agent::Copilot | Agent::Cursor => String::new(),
+            Agent::Copilot | Agent::Cursor | Agent::Local => String::new(),
         }
     }
 
@@ -137,6 +143,103 @@ pub struct Agents {
     pub cursor: bool,
     /// Display name of the agent that gets handoffs, if any.
     pub handoff: Option<String>,
+    /// Every agent with whether it is ready, for the picker.
+    pub list: Vec<AgentInfo>,
+}
+
+/// One agent in the picker: where it runs, whether it is ready, and the
+/// one step that makes it ready when it is not.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInfo {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub installed: bool,
+    /// None when we cannot tell from here.
+    pub signed_in: Option<bool>,
+    /// Out of plan usage for now.
+    pub limited: bool,
+    /// The one step to fix it, when it is not ready.
+    pub fix: Option<String>,
+    /// Runs on this PC; nothing leaves it.
+    pub local: bool,
+}
+
+impl Agent {
+    fn install_hint(self) -> &'static str {
+        match self {
+            Agent::ClaudeCode => "npm install -g @anthropic-ai/claude-code",
+            Agent::Codex => "npm install -g @openai/codex",
+            Agent::Copilot => "npm install -g @github/copilot",
+            Agent::Cursor => "Install the Cursor CLI from cursor.com/cli",
+            Agent::Local => "Install Ollama from ollama.com",
+        }
+    }
+
+    fn login_hint(self) -> &'static str {
+        match self {
+            Agent::ClaudeCode => "claude /login",
+            Agent::Codex => "codex login",
+            Agent::Copilot => "copilot, then /login",
+            Agent::Cursor => "cursor-agent login",
+            Agent::Local => "",
+        }
+    }
+
+    /// Whether the CLI has a saved sign-in or a key, by its own files.
+    fn signed_in(self) -> Option<bool> {
+        let env = |k: &str| std::env::var(k).is_ok_and(|v| !v.trim().is_empty());
+        let home = dirs::home_dir()?;
+        let file = |p: PathBuf| p.is_file();
+        Some(match self {
+            Agent::ClaudeCode => {
+                env("ANTHROPIC_API_KEY")
+                    || file(home.join(".claude").join(".credentials.json"))
+                    || std::fs::read_to_string(home.join(".claude.json"))
+                        .is_ok_and(|t| t.contains("\"oauthAccount\""))
+            }
+            Agent::Codex => env("OPENAI_API_KEY") || file(home.join(".codex").join("auth.json")),
+            Agent::Copilot => {
+                if env("GH_TOKEN") || env("GITHUB_TOKEN") || env("COPILOT_GITHUB_TOKEN") {
+                    true
+                } else {
+                    // Copilot keeps its token in the system keychain.
+                    return None;
+                }
+            }
+            // Nothing to sign in to.
+            Agent::Local => true,
+            Agent::Cursor => {
+                if env("CURSOR_API_KEY") {
+                    true
+                } else {
+                    return None;
+                }
+            }
+        })
+    }
+
+    fn info(self, s: &Settings) -> AgentInfo {
+        let installed = self.resolve(s).is_some();
+        let signed_in = if installed { self.signed_in() } else { None };
+        let limited = self == Agent::ClaudeCode && sidekick_ai::claude_code_limited();
+        let fix = if !installed {
+            Some(self.install_hint().to_owned())
+        } else if signed_in == Some(false) {
+            Some(self.login_hint().to_owned())
+        } else {
+            None
+        };
+        AgentInfo {
+            id: self.id(),
+            name: self.name(),
+            installed,
+            signed_in,
+            limited,
+            fix,
+            local: self == Agent::Local,
+        }
+    }
 }
 
 pub fn status(s: &Settings) -> Agents {
@@ -148,6 +251,16 @@ pub fn status(s: &Settings) -> Agents {
         copilot: Agent::Copilot.resolve(s).is_some(),
         cursor: Agent::Cursor.resolve(s).is_some(),
         handoff: chosen(s).map(|a| a.name().to_owned()),
+        list: [
+            Agent::ClaudeCode,
+            Agent::Codex,
+            Agent::Copilot,
+            Agent::Cursor,
+            Agent::Local,
+        ]
+        .into_iter()
+        .map(|a| a.info(s))
+        .collect(),
     }
 }
 
@@ -270,6 +383,8 @@ pub async fn hand_off(
         // Both start interactively with the first prompt already sent.
         Agent::Copilot => args.push("-i".into()),
         Agent::Cursor => {}
+        // Never picked for handoffs: it cannot finish what the local model could not.
+        Agent::Local => return Err("The local agent runs inside Sidekick.".into()),
     }
     args.push(HANDOFF_PROMPT.into());
     launch(&dir, &exe, &args, &env)?;
