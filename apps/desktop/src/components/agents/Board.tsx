@@ -14,6 +14,7 @@ import {
   startSession,
   tuneSession,
   useAgents,
+  wideScreen,
 } from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
@@ -41,7 +42,7 @@ function lastSteps(s: Session): string[] {
   const out: string[] = [];
   for (let i = s.entries.length - 1; i >= 0 && out.length < 3; i--) {
     const e = s.entries[i];
-    if (e.kind === "step") out.unshift(e.step.label);
+    if (e.kind === "step") out.unshift(e.step.state === "running" ? `${e.step.label}...` : e.step.label);
     else if (e.kind === "text") out.unshift(e.text.split("\n")[0].slice(0, 90));
   }
   return out;
@@ -266,7 +267,7 @@ export function Board({ sessions, keys }: { sessions: Session[]; keys: boolean }
   return (
     <div className="ak-board">
       <div className="relative">
-        <div ref={grid} className="ak-grid" data-more={below > 0} onScroll={measure}>
+        <div ref={grid} className="ak-grid" data-wide={wideScreen()} data-more={below > 0} onScroll={measure}>
           {live.map((s, i) => (
             <Tile key={s.id} s={s} n={i + 1} focused={s.id === target?.id} keys={keys} />
           ))}

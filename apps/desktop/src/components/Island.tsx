@@ -8,7 +8,7 @@
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "motion/react";
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { listenToAgents, useAgents } from "@/lib/agents";
+import { listenToAgents, useAgents, wideScreen } from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useNow, useSystemLook } from "@/lib/hooks";
 import { ISLAND_TOP, PANEL_PAD } from "@/lib/islandSize";
@@ -70,6 +70,9 @@ const EXPANDED = { width: 388, minHeight: 78, radius: 30, pad: PANEL_PAD };
 /** Ask mode, as in the design: 420 wide, 580 for the Agents tab. */
 const ASK_WIDTH = 420;
 const AGENTS_WIDTH = 580;
+/** The board: two tiles across, three on a 1440p screen and up. */
+const BOARD_WIDTH = 680;
+const BOARD_WIDE_WIDTH = 940;
 /** Voice, Full listening style. */
 const FULL_VOICE_WIDTH = 400;
 const ASK_RADIUS = 26;
@@ -99,6 +102,7 @@ export function Island() {
   const { mascot, settings, suggestion, hovered: rawHover, visible, ready } = useSidekick();
   const asking = useSidekick((s) => s.ask !== null);
   const askTab = useAgents((s) => s.tab);
+  const agentsLayout = useAgents((s) => s.layout);
   useEffect(listenToAgents, []);
   const view = useSidekick((s) => s.ask?.view);
   // The Ask panel itself (not Settings or the welcome shown in its place).
@@ -339,7 +343,11 @@ export function Island() {
     ? view === "welcome"
       ? WELCOME_WIDTH
       : askPanel && askTab === "agents"
-        ? AGENTS_WIDTH
+        ? agentsLayout === "board"
+          ? wideScreen()
+            ? BOARD_WIDE_WIDTH
+            : BOARD_WIDTH
+          : AGENTS_WIDTH
         : ASK_WIDTH
     : expanded
       ? fullVoice

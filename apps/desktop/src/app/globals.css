@@ -2327,10 +2327,8 @@ select.ak-mi option {
 .ak-grid[data-more="true"] {
   mask-image: linear-gradient(to bottom, #000 85%, transparent);
 }
-@media (min-width: 1440px) {
-  .ak-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
+.ak-grid[data-wide="true"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .ak-tile {
   display: flex;
