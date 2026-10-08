@@ -1,0 +1,16 @@
+id: dev.github-review
+name: Review requested
+description: When someone asks you to review a pull request, say which one.
+priority: 60
+cooldown_secs: 30
+dedupe: "{{url}}"
+trigger:
+  event: dev.github
+  where:
+    kind: { equals: review }
+suggestion:
+  title: "Review requested"
+  detail: "{{slug}}#{{number}} {{title}}"
+  options:
+    - { label: Open the PR, action: open_url, args: { url: "{{url}}" } }
+    - { label: Ask an agent to review it, action: agent_here, args: { path: "{{path}}", prompt: "Review PR #{{number}} ({{title}}) with gh pr diff {{number}}. List real problems first, then smaller notes. Do not change any files." }, when: { has_path: { equals: true } } }

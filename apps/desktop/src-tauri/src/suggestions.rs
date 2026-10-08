@@ -752,6 +752,7 @@ async fn execute(
                 app,
                 crate::ask::Open {
                     project: arg("path").map(str::to_owned),
+                    prompt: arg("prompt").map(str::to_owned),
                     ..Default::default()
                 },
             );

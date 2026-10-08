@@ -40,6 +40,7 @@ import { KeyHint, scrollIfActive } from "../ask/parts";
 import { Icon } from "../Icon";
 import { Select } from "../settings/ui";
 import { Tip } from "../Tip";
+import { Repos } from "./Repos";
 import { Review } from "./Review";
 
 const MODES: { id: AgentMode; label: string; note: string }[] = [
@@ -108,7 +109,8 @@ function NewSession({ sessions }: { sessions: Session[] }) {
   const draftPath = useAgents((s) => s.draftPath);
   const [path, setPath] = useState(draftPath ?? "");
   const [mode, setMode] = useState<AgentMode>("edit");
-  const [prompt, setPrompt] = useState("");
+  const draftPrompt = useAgents((s) => s.draftPrompt);
+  const [prompt, setPrompt] = useState(draftPrompt ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -215,6 +217,7 @@ function NewSession({ sessions }: { sessions: Session[] }) {
           {error && <p className="ak-err">{error}</p>}
         </>
       )}
+      <Repos />
     </>
   );
 }

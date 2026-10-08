@@ -29,6 +29,7 @@ mod find;
 mod focus;
 mod freeze;
 mod git_watch;
+mod github;
 mod health;
 mod inbox;
 mod instant;
@@ -257,6 +258,9 @@ pub fn run() {
             commands::agent_files,
             commands::agent_commands,
             commands::agent_open_editor,
+            commands::repos_overview,
+            commands::repo_pull,
+            commands::repo_open,
             commands::ask_open,
             commands::ask_ensure_welcome,
             commands::ask_defer_welcome,
@@ -373,6 +377,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     }
     net::start(app);
     git_watch::start(app);
+    github::start(app);
     tauri::async_runtime::spawn(async move {
         let sensors: Vec<Box<dyn Sensor>> = vec![
             Box::new(DownloadsSensor::new()),

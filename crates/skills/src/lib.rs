@@ -177,6 +177,18 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/dev/cloned.yaml"),
     ),
     (
+        "dev/github-ci.yaml",
+        include_str!("../../../skills/dev/github-ci.yaml"),
+    ),
+    (
+        "dev/github-review.yaml",
+        include_str!("../../../skills/dev/github-review.yaml"),
+    ),
+    (
+        "dev/github-merged.yaml",
+        include_str!("../../../skills/dev/github-merged.yaml"),
+    ),
+    (
         "dev/stuck.yaml",
         include_str!("../../../skills/dev/stuck.yaml"),
     ),
@@ -287,6 +299,7 @@ pub const ACTIONS: &[&str] = &[
     "git_clone",
     "clone_pick",
     "agent_here",
+    "git_after_merge",
     "install_deps",
     "create_env",
     "start_docker",

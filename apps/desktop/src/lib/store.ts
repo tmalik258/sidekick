@@ -971,7 +971,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           ask: {
             view: open.view ?? "ask",
             context: open.context,
-            prompt: open.ask ? "" : (open.prompt ?? ""),
+            prompt: open.ask || open.project ? "" : (open.prompt ?? ""),
             seq,
             attachWindow: false,
             attachClip: clip,
@@ -980,7 +980,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
             settingsTab,
           },
         });
-        if (open.project) startHere(open.project);
+        if (open.project) startHere(open.project, open.prompt);
         if (open.ask && open.prompt) sendChat(open.prompt, { clipboard: clip });
       }),
       listen(EVENTS.askClose, (payload) => {

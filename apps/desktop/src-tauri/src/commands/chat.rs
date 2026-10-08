@@ -530,3 +530,31 @@ pub async fn agent_memory(id: String) -> Option<u64> {
         .ok()
         .flatten()
 }
+
+/// The Repos list in Agents.
+#[tauri::command]
+pub async fn repos_overview(app: AppHandle, fresh: bool) -> crate::github::Overview {
+    crate::github::overview(&app, fresh).await
+}
+
+/// Pull from the Repos list: fast-forward only, stashing when asked.
+#[tauri::command]
+pub async fn repo_pull(path: String, stash: bool) -> CmdResult<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        sidekick_actions::dev::pull(std::path::Path::new(&path), stash)
+            .map(|o| o.message)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Opens a repo in the user's editor.
+#[tauri::command]
+pub async fn repo_open(app: AppHandle, path: String) -> CmdResult<()> {
+    crate::state::executor(&app.state::<AppState>())
+        .run("open_in_editor", &serde_json::json!({ "path": path }))
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
