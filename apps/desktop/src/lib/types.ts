@@ -690,6 +690,39 @@ export interface Agents {
   handoff: string | null;
 }
 
+/** One open pull request in the Repos list. */
+export interface RepoPr {
+  number: number;
+  title: string;
+  url: string;
+  branch: string;
+  mine: boolean;
+  ci: "pass" | "fail" | "pending" | "none";
+  /** The first failing check and its link. */
+  failing: [string, string] | null;
+  reviewRequested: boolean;
+}
+
+/** One repo in the Repos list. */
+export interface RepoRow {
+  name: string;
+  path: string;
+  slug: string | null;
+  branch: string;
+  ahead: number;
+  behind: number;
+  changed: number;
+  prs: RepoPr[];
+  ci: RepoPr["ci"];
+  reviews: number;
+}
+
+export interface ReposOverview {
+  /** How GitHub is reached: the gh sign-in, Composio, or not at all. */
+  via: "gh" | "composio" | "none";
+  repos: RepoRow[];
+}
+
 /** How much a notification interrupts. */
 export type NotifyLevel = "now" | "soon" | "digest" | "never";
 

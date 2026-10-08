@@ -339,6 +339,13 @@ impl Executor {
                     .await
                     .map_err(fail)?
             }
+            "git_after_merge" => {
+                let path = existing_path(args)?;
+                let branch = arg(args, "branch")?.to_owned();
+                tokio::task::spawn_blocking(move || dev::after_merge(&path, &branch))
+                    .await
+                    .map_err(fail)?
+            }
             "git_clone" => {
                 let url = arg(args, "url")?.to_owned();
                 let dir = PathBuf::from(arg(args, "dir")?);

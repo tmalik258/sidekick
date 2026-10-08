@@ -129,6 +129,55 @@ pub fn pull(path: &Path, stash: bool) -> Result<Outcome, ActionError> {
     })
 }
 
+/// After your PR merged: back to the main branch, pull it, and delete the
+/// merged branch when git agrees it is merged.
+pub fn after_merge(path: &Path, branch: &str) -> Result<Outcome, ActionError> {
+    repo(path)?;
+    let main = git(
+        path,
+        &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+    )
+    .map(|s| s.trim().trim_start_matches("origin/").to_owned())
+    .unwrap_or_else(|_| "main".into());
+    if branch.is_empty() || branch == main {
+        return Err(ActionError::Failed("That is the main branch".into()));
+    }
+    let current = git(path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    if current.trim() == branch {
+        git(path, &["checkout", "--quiet", &main])?;
+    }
+    let _ = git(path, &["fetch", "--quiet", "--prune"]);
+    let pulled = if git(path, &["rev-parse", "--abbrev-ref", "HEAD"])?.trim() == main {
+        git(path, &["pull", "--ff-only", "--quiet"]).is_ok()
+    } else {
+        false
+    };
+    // -d refuses a branch git does not see as merged (a squash merge): then
+    // it is only deleted when its remote branch is gone too.
+    let deleted = git(path, &["branch", "-d", branch]).is_ok()
+        || (git(
+            path,
+            &[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                &format!("origin/{branch}"),
+            ],
+        )
+        .is_err()
+            && git(path, &["branch", "-D", branch]).is_ok());
+    let mut msg = format!("On {main}");
+    if pulled {
+        msg.push_str(", pulled");
+    }
+    msg.push_str(if deleted {
+        ", deleted the branch"
+    } else {
+        ", kept the branch (it has commits that are not merged)"
+    });
+    Ok(Outcome::msg(msg))
+}
+
 /// The folder a clone of `url` goes in: the last part, without `.git`.
 pub fn clone_name(url: &str) -> Option<String> {
     let last = url

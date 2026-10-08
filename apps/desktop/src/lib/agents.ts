@@ -69,6 +69,8 @@ interface AgentsState {
   current: string | null;
   /** The project New starts in, when something picked it. */
   draftPath?: string | null;
+  /** What New's box starts with ("Ask an agent to fix it"). */
+  draftPrompt?: string | null;
 }
 
 /** Sessions are kept in this window's storage, so the timeline comes back
@@ -111,7 +113,8 @@ useAgents.subscribe((st) => {
 export const setTab = (tab: AskTab) => useAgents.setState({ tab });
 
 /** Opens New in Agents for one project ("Start an agent here"). */
-export const startHere = (path: string) => useAgents.setState({ tab: "agents", current: null, draftPath: path });
+export const startHere = (path: string, prompt?: string | null) =>
+  useAgents.setState({ tab: "agents", current: null, draftPath: path, draftPrompt: prompt ?? null });
 
 function update(id: string, fn: (s: Session) => Session) {
   useAgents.setState((st) => ({ sessions: st.sessions.map((s) => (s.id === id ? fn(s) : s)) }));
