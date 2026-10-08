@@ -11,6 +11,7 @@ mod codex_config;
 mod commands;
 mod composio;
 mod composio_api;
+mod cursor_chats;
 mod decide;
 #[cfg(test)]
 mod decisions_test;
@@ -255,6 +256,8 @@ pub fn run() {
             commands::agent_files,
             commands::agent_commands,
             commands::agent_open_editor,
+            commands::cursor_chats,
+            commands::cursor_open,
             commands::ask_open,
             commands::ask_ensure_welcome,
             commands::ask_defer_welcome,

@@ -243,6 +243,18 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   routines_forget: () => 12,
   routines_remove: () => 1,
   ai_open_link: (a) => `Opened ${String(a.target)}`,
+  cursor_chats: () => [
+    {
+      id: "c1",
+      title: "Tidy checkout form",
+      path: "C:/code/shop",
+      project: "shop",
+      updatedAt: Date.now() - 120_000,
+      status: "working",
+      lastReply: "Moved validation into one hook and kept the error text as it was.",
+    },
+  ],
+  cursor_open: () => null,
   agents_status: () => ({
     claudeCode: true,
     codex: true,
