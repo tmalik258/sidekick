@@ -66,11 +66,43 @@ pub fn lockfiles_changed(files: &str) -> bool {
         .any(|f| MANAGERS.iter().any(|(lock, _, _)| f.trim().ends_with(lock)))
 }
 
-/// Fast-forward pull; says when dependencies changed.
-pub fn pull(path: &Path) -> Result<Outcome, ActionError> {
+/// Marks an undo record that resets a repo back to a commit.
+pub const RESET_TO: &str = "git-reset:";
+
+/// Fast-forward pull; says when dependencies changed. With `stash`, your
+/// uncommitted changes are put aside first and put back after. Never
+/// merges: when the branches have split it says so.
+pub fn pull(path: &Path, stash: bool) -> Result<Outcome, ActionError> {
     repo(path)?;
+    let dirty = !git(path, &["status", "--porcelain", "--untracked-files=no"])?
+        .trim()
+        .is_empty();
+    if dirty && !stash {
+        return Err(ActionError::Failed(
+            "You have uncommitted changes. Stash, pull, put back keeps them.".into(),
+        ));
+    }
     let before = git(path, &["rev-parse", "HEAD"])?;
-    git(path, &["pull", "--ff-only", "--quiet"])?;
+    let _ = git(path, &["fetch", "--quiet", "--no-tags"]);
+    let ahead = git(path, &["rev-list", "--count", "@{u}..HEAD"]).unwrap_or_default();
+    if ahead.trim().parse::<u64>().unwrap_or(0) > 0 {
+        return Err(ActionError::Failed(
+            "Your branch and the remote have split. Open it in your editor to merge.".into(),
+        ));
+    }
+    if dirty {
+        git(path, &["stash", "push", "--quiet", "-m", "sidekick: pull"])?;
+    }
+    let pulled = git(path, &["pull", "--ff-only", "--quiet"]);
+    if dirty {
+        // Put the changes back even when the pull failed.
+        if let Err(e) = git(path, &["stash", "pop", "--quiet"]) {
+            return Err(ActionError::Failed(format!(
+                "Pulled, but your changes clash with the new commits; they are kept in git stash ({e})"
+            )));
+        }
+    }
+    pulled?;
     let after = git(path, &["rev-parse", "HEAD"])?;
     if before.trim() == after.trim() {
         return Ok(Outcome::msg("Already up to date"));
@@ -85,10 +117,74 @@ pub fn pull(path: &Path) -> Result<Outcome, ActionError> {
         ],
     )?;
     let mut msg = format!("Pulled {} commits", n.trim());
+    if dirty {
+        msg.push_str(", your changes are back");
+    }
     if lockfiles_changed(&changed) {
         msg.push_str("; dependencies changed, install them next");
     }
-    Ok(Outcome::msg(msg))
+    Ok(Outcome {
+        message: msg,
+        path: Some(format!("{RESET_TO}{}\n{}", path.display(), before.trim())),
+    })
+}
+
+/// The folder a clone of `url` goes in: the last part, without `.git`.
+pub fn clone_name(url: &str) -> Option<String> {
+    let last = url
+        .trim()
+        .trim_end_matches('/')
+        .trim_end_matches(".git")
+        .rsplit(['/', ':'])
+        .next()?;
+    let ok = !last.is_empty()
+        && last != ".."
+        && last
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'));
+    ok.then(|| last.to_owned())
+}
+
+/// Clones `url` into a new folder inside `dir`.
+pub fn clone(url: &str, dir: &Path) -> Result<Outcome, ActionError> {
+    let name =
+        clone_name(url).ok_or_else(|| ActionError::Failed("That is not a repo link".into()))?;
+    if !(url.starts_with("https://") || url.starts_with("git@") || url.starts_with("ssh://")) {
+        return Err(ActionError::Failed("That is not a repo link".into()));
+    }
+    std::fs::create_dir_all(dir).map_err(|e| ActionError::Failed(e.to_string()))?;
+    let target = dir.join(&name);
+    if target.exists() {
+        return Err(ActionError::Failed(format!(
+            "{} already exists",
+            target.display()
+        )));
+    }
+    let mut cmd = Command::new("git");
+    cmd.arg("clone")
+        .arg("--quiet")
+        .arg("--")
+        .arg(url)
+        .arg(&target)
+        .env("GIT_TERMINAL_PROMPT", "0");
+    hidden(&mut cmd);
+    let out = cmd
+        .output()
+        .map_err(|e| ActionError::Failed(e.to_string()))?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        return Err(ActionError::Failed(
+            err.lines()
+                .last()
+                .unwrap_or("clone failed")
+                .trim()
+                .to_owned(),
+        ));
+    }
+    Ok(Outcome {
+        message: format!("Cloned {name} into {}", dir.display()),
+        path: Some(target.to_string_lossy().into_owned()),
+    })
 }
 
 /// Which package manager a project uses, by its lockfile.
@@ -219,7 +315,13 @@ mod tests {
         create_env(&dir).unwrap();
         assert!(dir.join(".env").exists());
         assert!(create_env(&dir).is_err(), "never overwrites");
-        assert!(pull(&dir).is_err(), "not a repo");
+        assert!(pull(&dir, false).is_err(), "not a repo");
+        assert_eq!(
+            clone_name("https://github.com/a/shop.git").as_deref(),
+            Some("shop")
+        );
+        assert_eq!(clone_name("git@gitlab.com:t/app").as_deref(), Some("app"));
+        assert!(clone_name("https://github.com/a/..").is_none());
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

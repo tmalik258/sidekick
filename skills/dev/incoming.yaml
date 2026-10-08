@@ -1,0 +1,15 @@
+id: dev.incoming
+name: New commits
+description: Shortly after someone pushes to the branch you are on, say how many commits are new and who made them, and pull with one key. Pulls only fast-forward; your uncommitted changes can be stashed and put back.
+priority: 58
+cooldown_secs: 30
+dedupe: "{{path}}"
+trigger:
+  event: dev.incoming
+suggestion:
+  title: "{{behind}} new on {{branch}}"
+  detail: "{{commits}}"
+  options:
+    - { label: Pull, action: git_pull, args: { path: "{{path}}" }, when: { dirty: { equals: false }, diverged: { equals: false } } }
+    - { label: "Stash, pull, put back", action: git_pull, args: { path: "{{path}}", stash: "true" }, when: { dirty: { equals: true }, diverged: { equals: false } } }
+    - { label: "Branches split: open in {{editor}}", action: open_in_editor, args: { path: "{{path}}" }, requires: ["tool:code"], when: { diverged: { equals: true } } }

@@ -83,6 +83,9 @@ pub struct Settings {
     pub code_folders: Vec<String>,
     /// Local hour after which unsaved work is reported.
     pub end_of_day_hour: u32,
+    /// Where clones go, by owner ("abdullahalhoothy" to "D:\\Abdullah"),
+    /// learned from where you cloned before or set in Settings.
+    pub clone_rules: BTreeMap<String, String>,
     /// Folders whose text files are searchable (opt in).
     pub index_folders: Vec<String>,
     pub ai: AiSettings,
@@ -640,6 +643,7 @@ impl Default for Settings {
             shortcuts: default_shortcuts(),
             code_editor: "auto".into(),
             code_folders: Vec::new(),
+            clone_rules: BTreeMap::new(),
             end_of_day_hour: 18,
             index_folders: Vec::new(),
             ai: AiSettings::default(),

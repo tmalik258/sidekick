@@ -334,7 +334,15 @@ impl Executor {
             }
             "git_pull" => {
                 let path = existing_path(args)?;
-                tokio::task::spawn_blocking(move || dev::pull(&path))
+                let stash = args["stash"] == true || args["stash"] == "true";
+                tokio::task::spawn_blocking(move || dev::pull(&path, stash))
+                    .await
+                    .map_err(fail)?
+            }
+            "git_clone" => {
+                let url = arg(args, "url")?.to_owned();
+                let dir = PathBuf::from(arg(args, "dir")?);
+                tokio::task::spawn_blocking(move || dev::clone(&url, &dir))
                     .await
                     .map_err(fail)?
             }

@@ -1,0 +1,16 @@
+id: dev.clone
+name: Clone from the clipboard
+description: When you copy a GitHub, GitLab or Bitbucket repo link, offer to clone it into the folder it belongs in, judged by where this owner's other clones are.
+priority: 60
+cooldown_secs: 5
+dedupe: "{{slug}}"
+trigger:
+  event: dev.clone_offer
+  where:
+    cloned: { equals: false }
+suggestion:
+  title: "Clone {{slug}} into {{dir}}?"
+  options:
+    - { label: Clone, action: git_clone, args: { url: "{{url}}", dir: "{{dir}}" } }
+    - { label: "Into {{dir2}}", action: git_clone, args: { url: "{{url}}", dir: "{{dir2}}" }, when: { has_alt: { equals: true } } }
+    - { label: Choose folder, action: clone_pick, args: { url: "{{url}}" } }

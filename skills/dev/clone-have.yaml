@@ -1,0 +1,17 @@
+id: dev.clone-have
+name: Already cloned
+description: When you copy a link to a repo you already have, offer to open or pull it, or start an agent in it, instead of cloning again.
+priority: 60
+cooldown_secs: 5
+dedupe: "{{path}}"
+trigger:
+  event: dev.clone_offer
+  where:
+    cloned: { equals: true }
+suggestion:
+  title: "You have {{slug}}"
+  detail: "{{path}}"
+  options:
+    - { label: "Open in {{editor}}", action: open_in_editor, args: { path: "{{path}}" }, requires: ["tool:code"] }
+    - { label: Start an agent here, action: agent_here, args: { path: "{{path}}" } }
+    - { label: Pull, action: git_pull, args: { path: "{{path}}" } }

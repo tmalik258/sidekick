@@ -7,6 +7,7 @@ mod brief;
 mod browser;
 mod chat_prune;
 mod claude_config;
+mod clone;
 mod codex_config;
 mod commands;
 mod composio;
@@ -27,6 +28,7 @@ mod files;
 mod find;
 mod focus;
 mod freeze;
+mod git_watch;
 mod health;
 mod inbox;
 mod instant;
@@ -370,6 +372,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         start_features(app);
     }
     net::start(app);
+    git_watch::start(app);
     tauri::async_runtime::spawn(async move {
         let sensors: Vec<Box<dyn Sensor>> = vec![
             Box::new(DownloadsSensor::new()),

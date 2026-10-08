@@ -47,6 +47,8 @@ export interface Settings {
   codeFolders: string[];
   indexFolders: string[];
   endOfDayHour: number;
+  /** Where clones go, by owner. */
+  cloneRules?: Record<string, string>;
   ai: AiSettings;
   voice: VoiceSettings;
   calendar: { remindMinutes: number };
@@ -266,6 +268,8 @@ export interface AskOpen {
   sentAt?: number;
   /** Which Settings tab to show with view "settings". */
   settingsTab?: string | null;
+  /** Opens Agents with a new session in this project. */
+  project?: string | null;
 }
 
 /** One measured moment, for the timings overlay. */
@@ -377,6 +381,7 @@ export const DEFAULT_SETTINGS: Settings = {
   codeFolders: [],
   indexFolders: [],
   endOfDayHour: 18,
+  cloneRules: {},
   ai: {
     order: ["local", "gemini", "groq", "claude_code", "codex", "anthropic", "openrouter"],
     claudeCode: { enabled: true, path: "", model: FAST_CLAUDE_MODEL },
