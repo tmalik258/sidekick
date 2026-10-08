@@ -728,6 +728,14 @@ function VoiceSection({ voice, onError }: { voice: VoiceSettings; onError: (e: s
         checked={voice.interrupt}
         onChange={(interrupt) => void set({ interrupt })}
       />
+      <Field label="Words voice gets wrong" hint="Comma separated. Sidekick fixes them as you talk.">
+        <TextField
+          label="Words voice gets wrong"
+          value={voice.fixes ?? ""}
+          placeholder="horsepot = hotspot, sidekik = Sidekick"
+          onCommit={(fixes) => void set({ fixes })}
+        />
+      </Field>
       <Toggle
         label="Keep the conversation going"
         hint="Listen for your reply after an answer"

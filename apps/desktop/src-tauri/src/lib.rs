@@ -445,6 +445,8 @@ pub fn start_features(app: &AppHandle) {
     updates::start(app);
     files::start_weekly_check(app);
     promises::start(app);
+    // Picks not made in half a year are forgotten.
+    let _ = state::lock(&state.storage).forget_old_choices(180);
     learned::start_weekly(app, state.data_dir.join("last-learned-week"));
     layout::start(app);
     mcp::start(app, state.mcp_token.clone());

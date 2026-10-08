@@ -331,6 +331,8 @@ pub struct VoiceSettings {
     /// as 1. A voice from an older model is moved to the default once.
     #[serde(default = "voice_model_v1")]
     pub model: u32,
+    /// Words voice gets wrong, comma separated: "horsepot = hotspot".
+    pub fixes: String,
 }
 
 /// Settings saved before the v1.0 voice model had no `model` field.
@@ -353,6 +355,7 @@ impl Default for VoiceSettings {
             voice: "f5".into(),
             speed: 1.0,
             model: VOICE_MODEL,
+            fixes: String::new(),
         }
     }
 }

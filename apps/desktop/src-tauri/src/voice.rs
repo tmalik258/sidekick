@@ -705,6 +705,49 @@ fn build(app: &AppHandle, key: Key, settings: &VoiceSettings) -> Runtime {
     }
 }
 
+/// Your fixes for words voice gets wrong ("horsepot = hotspot"), applied
+/// to whole words, any case.
+pub fn apply_fixes(text: &str, fixes: &str) -> String {
+    let pairs: Vec<(String, &str)> = fixes
+        .split(['\n', ','])
+        .filter_map(|l| l.split_once('='))
+        .map(|(wrong, right)| (wrong.trim().to_lowercase(), right.trim()))
+        .filter(|(wrong, right)| !wrong.is_empty() && !right.is_empty())
+        .collect();
+    if pairs.is_empty() {
+        return text.to_owned();
+    }
+    let mut out = text.to_owned();
+    for (wrong, right) in &pairs {
+        let mut result = String::with_capacity(out.len());
+        let lower = out.to_lowercase();
+        // Lowercasing changed byte offsets (rare letters): leave it as heard.
+        if lower.len() != out.len() {
+            return out;
+        }
+        let mut i = 0;
+        while let Some(at) = lower[i..].find(wrong.as_str()).map(|p| p + i) {
+            let end = at + wrong.len();
+            let edge = |c: Option<char>| c.is_none_or(|c| !c.is_alphanumeric());
+            if edge(lower[..at].chars().next_back()) && edge(lower[end..].chars().next()) {
+                result.push_str(&out[i..at]);
+                result.push_str(right);
+            } else {
+                result.push_str(&out[i..end]);
+            }
+            i = end;
+        }
+        result.push_str(&out[i..]);
+        out = result;
+    }
+    out
+}
+
+fn fixed(app: &AppHandle, text: String) -> String {
+    let fixes = lock(&app.state::<AppState>().settings).voice.fixes.clone();
+    apply_fixes(&text, &fixes)
+}
+
 fn on_heard(app: &AppHandle, heard: Heard) {
     let v = voice(app);
     match heard {
@@ -726,17 +769,17 @@ fn on_heard(app: &AppHandle, heard: Heard) {
             mascot::dispatch(app, MascotEvent::ListenStart);
             emit_heard(app, String::new(), false);
         }
-        Heard::Partial(text) => emit_heard(app, strip_wake(&text), false),
+        Heard::Partial(text) => emit_heard(app, fixed(app, strip_wake(&text)), false),
         // A choice ("open", "not now") is taken when it is final.
         Heard::Pause(text) if lock(&v.choosing).is_none() => {
-            let text = strip_wake(&text);
+            let text = fixed(app, strip_wake(&text));
             if sidekick_voice::text::looks_like_request(&text) {
                 emit_pause(app, text);
             }
         }
         Heard::Pause(_) => {}
         Heard::Final(text) => {
-            let mut text = strip_wake(&text);
+            let mut text = fixed(app, strip_wake(&text));
             let pushed = v.pushed.swap(false, Ordering::SeqCst);
             if let Some((id, labels)) = lock(&v.choosing).take() {
                 mascot::dispatch(app, MascotEvent::Cancelled);
@@ -1206,6 +1249,23 @@ pub fn cancel_download(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn fixes_words_voice_gets_wrong() {
+        let fixes = "horsepot = hotspot, bad line\nsidekik = Sidekick";
+        assert_eq!(
+            apply_fixes("Turn on Horsepot please", fixes),
+            "Turn on hotspot please"
+        );
+        assert_eq!(
+            apply_fixes("horsepots", fixes),
+            "horsepots",
+            "whole words only"
+        );
+        assert_eq!(apply_fixes("no change", ""), "no change");
+        assert_eq!(apply_fixes("hey sidekik", fixes), "hey Sidekick");
+    }
+
     use super::*;
 
     fn labels(l: &[&str]) -> Vec<String> {
