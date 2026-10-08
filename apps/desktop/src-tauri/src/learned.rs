@@ -42,7 +42,8 @@ pub fn list(app: &AppHandle) -> Vec<Learned> {
     let storage = lock(&state.storage);
     let mut out = Vec::new();
     for (key, label, count, _) in storage.all_choices().unwrap_or_default() {
-        if count < 2 {
+        // Per-context counts feed suggestion timing, not this list.
+        if count < 2 || key.starts_with("ctx:") {
             continue;
         }
         out.push(Learned {

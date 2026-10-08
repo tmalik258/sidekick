@@ -325,7 +325,9 @@ pub fn offer(app: &AppHandle, mut proposal: Proposal) {
         && (should_wait(&proposal.skill_id, proposal.priority, in_meeting(app))
             || (proposal.priority < MEETING_FROM
                 && !shows_while_paused(&proposal.skill_id)
-                && (crate::island::fullscreen() || over_cap(Instant::now()))))
+                && (crate::island::fullscreen()
+                    || over_cap(Instant::now())
+                    || crate::learn::quiet_here(app, &proposal.skill_id))))
     {
         keep_for_later(app, proposal, false);
         return;
