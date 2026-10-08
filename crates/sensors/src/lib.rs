@@ -32,7 +32,8 @@ pub use idle::IdleSensor;
 pub use ports::PortsSensor;
 pub use repos::ReposSensor;
 pub use system::{
-    SystemSensor, battery_saver, graphics_memory, total_memory, transparency_effects, user_env,
+    SystemSensor, battery_saver, graphics_memory, on_mains, total_memory, transparency_effects,
+    user_env,
 };
 pub use window::WindowSensor;
 

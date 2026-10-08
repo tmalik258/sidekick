@@ -259,6 +259,11 @@ pub fn total_memory() -> u64 {
     .total_memory()
 }
 
+/// Plugged in, or a desktop without a battery: heavy background work may run.
+pub fn on_mains() -> bool {
+    battery().is_none_or(|(_, mains, _)| mains)
+}
+
 /// Below this, on battery, power saving is offered.
 const BATTERY_LOW_PCT: u8 = 20;
 

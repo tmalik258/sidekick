@@ -199,7 +199,7 @@ fn find_files(app: &AppHandle, query: &str) -> Vec<FileHit> {
     if words.is_empty() {
         return Vec::new();
     }
-    let hits: Vec<(PathBuf, bool)> = match lock(&FILES).as_ref() {
+    let mut hits: Vec<(PathBuf, bool)> = match lock(&FILES).as_ref() {
         Some((_, list)) => list
             .iter()
             .filter(|e| words.iter().all(|w| e.key.contains(w.as_str())))
@@ -212,6 +212,17 @@ fn find_files(app: &AppHandle, query: &str) -> Vec<FileHit> {
             .map(|f| (f.path, f.folder))
             .collect(),
     };
+    // Room left: files anywhere on the PC, from the name index.
+    if hits.len() < MAX_EACH {
+        for h in crate::names::search(query, MAX_EACH * 2).unwrap_or_default() {
+            if hits.len() >= MAX_EACH {
+                break;
+            }
+            if !hits.iter().any(|(p, _)| *p == h.path) {
+                hits.push((h.path, h.folder));
+            }
+        }
+    }
     hits.into_iter()
         .take(MAX_EACH)
         .map(|(path, folder)| FileHit {

@@ -37,6 +37,7 @@ mod mcp;
 mod mcp_oauth;
 mod meetings;
 mod moments;
+mod names;
 mod net;
 mod office;
 mod pipeline;
@@ -430,6 +431,7 @@ pub fn start_features(app: &AppHandle) {
     brief::start(app, state.data_dir.join("last-brief"), roots);
     search::reindex_folders(app);
     search::start_embedder(app);
+    names::start(app);
     updates::start(app);
     files::start_weekly_check(app);
     layout::start(app);
