@@ -184,11 +184,12 @@ impl NameIndex {
 
     /// Removes an entry and, for a folder, everything inside it.
     pub fn remove(&self, path: &str) -> rusqlite::Result<()> {
-        let sep = if path.contains('\\') { '\\' } else { '/' };
-        let inside = format!("{path}{sep}");
+        // Either separator: Windows paths can carry both.
+        let (back, fwd) = (format!("{path}\\"), format!("{path}/"));
         self.conn.execute(
-            "DELETE FROM names WHERE path = ?1 OR substr(path, 1, length(?2)) = ?2",
-            params![path, inside],
+            "DELETE FROM names WHERE path = ?1 OR substr(path, 1, length(?2)) = ?2 \
+             OR substr(path, 1, length(?3)) = ?3",
+            params![path, back, fwd],
         )?;
         Ok(())
     }
@@ -333,7 +334,16 @@ mod tests {
         let n = idx
             .replace_under(
                 &root,
-                vec![(p("proj"), true), (p("proj/budget.xlsx"), false)],
+                vec![
+                    (p("proj"), true),
+                    (
+                        dir.join("proj")
+                            .join("budget.xlsx")
+                            .to_string_lossy()
+                            .into_owned(),
+                        false,
+                    ),
+                ],
             )
             .unwrap();
         assert_eq!(n, 2);
