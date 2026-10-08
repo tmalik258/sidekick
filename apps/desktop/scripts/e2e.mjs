@@ -113,7 +113,7 @@ async function waitFor(what, fn, ms = 5000, arg) {
 }
 const type = (text) => page.keyboard.type(text);
 const clearInput = async () => {
-  await page.evaluate(() => document.querySelector(".ak input")?.select());
+  await page.evaluate(() => document.querySelector(".ak-q")?.select());
   await page.keyboard.press("Backspace");
 };
 const clickText = (text, scope = "body") =>
@@ -155,8 +155,8 @@ try {
     const ms = await waitFor(
       "the Ask input to have focus",
       () => {
-        const i = document.querySelector(".ak input");
-        return !!i && document.activeElement === i && document.querySelectorAll(".ak-tabs [role=tab]").length === 3;
+        const i = document.querySelector(".ak-q");
+        return !!i && document.activeElement === i && document.querySelectorAll(".ak-tabs [role=tab]").length >= 3;
       },
       BUDGET.open,
     );
@@ -190,7 +190,7 @@ try {
     // Off, the chip is just a lock icon: click it by its label.
     if ((await pcPressed()) !== "true") await page.click('.ak-pc[aria-label="This PC only"]');
     if ((await pcPressed()) !== "true") throw new Error("This PC only did not switch on");
-    await page.evaluate(() => document.querySelector(".ak input")?.focus());
+    await page.evaluate(() => document.querySelector(".ak-q")?.focus());
     await type("hello");
     await page.keyboard.press("Enter");
     // No local model on the runner: the answer fails, which is fine here.
@@ -199,7 +199,7 @@ try {
       () => [...document.querySelectorAll(".ak-um")].some((m) => m.textContent.includes("hello")),
       5000,
     );
-    if ((await page.evaluate(() => document.querySelector(".ak input")?.value)) !== "")
+    if ((await page.evaluate(() => document.querySelector(".ak-q")?.value)) !== "")
       throw new Error("the input kept the question");
     await waitFor("an answer or a failure card", () => !!document.querySelector(".ak-ans, .ak-err"), 30_000);
     if ((await pcPressed()) !== "true") throw new Error("This PC only switched off after sending");
