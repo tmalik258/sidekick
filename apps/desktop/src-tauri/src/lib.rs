@@ -239,6 +239,7 @@ pub fn run() {
             commands::pc_switch,
             commands::file_open,
             commands::agent_start,
+            commands::agent_usual,
             commands::agent_handoff,
             commands::agent_send,
             commands::agent_stop,

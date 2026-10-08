@@ -1112,6 +1112,7 @@ commands.suggestion_rates = () => [
   { skill: "files.screenshot", taken: 12, dismissed: 3 },
   { skill: "dev.port-in-use", taken: 2, dismissed: 7 },
 ];
+commands.agent_usual = () => null;
 commands.learned_list = () => [
   {
     kind: "choice",

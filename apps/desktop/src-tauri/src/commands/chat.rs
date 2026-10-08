@@ -27,6 +27,38 @@ pub async fn editors_list(app: AppHandle) -> crate::editors::Editors {
         .unwrap_or_default()
 }
 
+/// The installed agent used most in a project, from `agent:{project}`.
+fn usual_agent(
+    app: &AppHandle,
+    key: &str,
+    settings: &sidekick_core::Settings,
+) -> Option<crate::agents::Agent> {
+    let counts = lock(&app.state::<AppState>().storage)
+        .choice_counts(key)
+        .unwrap_or_default();
+    let mut used: Vec<(String, u32)> = counts.into_iter().collect();
+    used.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+    used.iter()
+        .filter_map(|(id, _)| crate::agents::Agent::from_id(id))
+        .find(|a| a.resolve(settings).is_some())
+}
+
+/// The agent you usually use in this project, for the agent picker.
+#[tauri::command]
+pub async fn agent_usual(app: AppHandle, path: String) -> Option<String> {
+    off_ui(move || {
+        let project = std::path::Path::new(&path)
+            .file_name()?
+            .to_string_lossy()
+            .into_owned();
+        let settings = lock(&app.state::<AppState>().settings).clone();
+        usual_agent(&app, &format!("agent:{project}"), &settings).map(|a| a.id().to_owned())
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
 /// Starts Claude Code or Codex in a project, inside the island.
 #[tauri::command]
 pub async fn agent_start(
@@ -36,15 +68,26 @@ pub async fn agent_start(
     prompt: String,
     mode: crate::sessions::Mode,
 ) -> CmdResult<crate::sessions::Started> {
+    // The agent you use for this project is remembered and picked next
+    // time you do not name one.
+    let project = std::path::Path::new(&path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let key = format!("agent:{project}");
+    let settings = lock(&app.state::<AppState>().settings).clone();
     let agent = match crate::agents::Agent::from_id(&agent) {
         Some(a) => a,
-        None => {
-            let settings = lock(&app.state::<AppState>().settings).clone();
-            crate::agents::chosen(&settings).ok_or(
+        None => usual_agent(&app, &key, &settings)
+            .or_else(|| crate::agents::chosen(&settings))
+            .ok_or(
                 "Install Claude Code, Codex, GitHub Copilot CLI or Cursor first (Settings > AI).",
-            )?
-        }
+            )?,
     };
+    if !project.is_empty() && settings.learning {
+        let ts = chrono::Utc::now().to_rfc3339();
+        let _ = lock(&app.state::<AppState>().storage).record_choice(&key, agent.id(), &ts);
+    }
     crate::sessions::start(&app, agent, std::path::Path::new(&path), &prompt, mode).await
 }
 

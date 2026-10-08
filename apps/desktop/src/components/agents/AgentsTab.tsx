@@ -106,8 +106,22 @@ function NewSession({ sessions }: { sessions: Session[] }) {
     ...(agents?.copilot ? [{ id: "copilot", name: "GitHub Copilot" }] : []),
     ...(agents?.cursor ? [{ id: "cursor", name: "Cursor" }] : []),
   ];
-  const pickedAgent = agent || choices[0]?.id || "";
   const pickedPath = path || projects?.[0]?.path || "";
+  // The agent you used last in this project comes first.
+  const [usual, setUsual] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pickedPath) return;
+    let live = true;
+    void api
+      .agentUsual(pickedPath)
+      .then((id) => live && setUsual(id))
+      .catch(() => live && setUsual(null));
+    return () => {
+      live = false;
+    };
+  }, [pickedPath]);
+  const usualChoice = choices.find((c) => c.id === usual)?.id;
+  const pickedAgent = agent || usualChoice || choices[0]?.id || "";
   useEffect(() => {
     requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
   }, []);

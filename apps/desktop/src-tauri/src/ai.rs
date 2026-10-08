@@ -649,7 +649,22 @@ pub fn chat(
             );
             return;
         }
-        let think = attach.think || question.as_deref().is_some_and(needs_thinking);
+        let think = attach.think
+            || question.as_deref().is_some_and(needs_thinking)
+            || question.as_deref().is_some_and(|q| learned_think(&app, q));
+        // Think harder on a kind of question, three times: that kind
+        // thinks first from then on.
+        if attach.think
+            && let Some(q) = question.as_deref()
+            && crate::learned::on(&app)
+        {
+            let ts = chrono::Utc::now().to_rfc3339();
+            let _ = lock(&app.state::<AppState>().storage).record_choice(
+                "think",
+                &question_kind(q),
+                &ts,
+            );
+        }
         let req = ChatRequest {
             system: system_prompt(&app, &attach),
             messages,
@@ -793,6 +808,26 @@ pub fn looks_multistep(q: &str) -> bool {
     let joins = [" and ", " then ", " after that", ", then"];
     let acts = doing.iter().filter(|w| q.contains(*w)).count();
     acts >= 2 || (acts >= 1 && joins.iter().any(|j| q.contains(j)))
+}
+
+/// What kind of question this is, for learning which kinds need Think
+/// harder: its first word ("how", "write", "summarize").
+pub fn question_kind(q: &str) -> String {
+    q.split(|c: char| !c.is_alphanumeric())
+        .find(|w| !w.is_empty())
+        .unwrap_or("")
+        .to_lowercase()
+}
+
+/// You asked for Think harder on this kind of question 3 times or more.
+fn learned_think(app: &AppHandle, q: &str) -> bool {
+    let kind = question_kind(q);
+    !kind.is_empty()
+        && lock(&app.state::<AppState>().storage)
+            .choice_counts("think")
+            .unwrap_or_default()
+            .get(&kind)
+            .is_some_and(|n| *n >= 3)
 }
 
 /// Questions a small local model answers better after thinking: working
