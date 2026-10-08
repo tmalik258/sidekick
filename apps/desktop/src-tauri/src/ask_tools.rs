@@ -694,7 +694,7 @@ static TOOL_VECTORS: tokio::sync::Mutex<Option<(String, ToolVectors)>> =
 /// embedding model every tool is offered.
 pub async fn pick(app: &AppHandle, question: &str, defs: Vec<ToolDef>) -> Vec<ToolDef> {
     let Some((client, model)) = crate::search::embedder(app) else {
-        return defs;
+        return by_words(question, defs);
     };
     let embed = async {
         let mut cached = TOOL_VECTORS.lock().await;
@@ -726,9 +726,40 @@ pub async fn pick(app: &AppHandle, question: &str, defs: Vec<ToolDef>) -> Vec<To
         Some((q, cached.as_ref()?.1.clone()))
     };
     let Ok(Some((q, tools))) = tokio::time::timeout(PICK_TIMEOUT, embed).await else {
-        return defs;
+        return by_words(question, defs);
     };
     let names = closest(&q, &tools, PICKED);
+    defs.into_iter()
+        .filter(|d| CORE.contains(&d.name.as_str()) || names.contains(&d.name))
+        .collect()
+}
+
+/// Without an embedding model: the tools whose name or description share
+/// the most words with the question, plus the core ones. Every tool when
+/// nothing matches, so a question is never left without the right one.
+fn by_words(question: &str, defs: Vec<ToolDef>) -> Vec<ToolDef> {
+    let words: Vec<String> = question
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.len() >= 4)
+        .map(str::to_lowercase)
+        .collect();
+    let mut scored: Vec<(usize, String)> = defs
+        .iter()
+        .filter(|d| !CORE.contains(&d.name.as_str()))
+        .map(|d| {
+            let text = format!("{} {}", d.name.replace('_', " "), d.description).to_lowercase();
+            (
+                words.iter().filter(|w| text.contains(w.as_str())).count(),
+                d.name.clone(),
+            )
+        })
+        .filter(|(n, _)| *n > 0)
+        .collect();
+    if scored.is_empty() {
+        return defs;
+    }
+    scored.sort_by_key(|a| std::cmp::Reverse(a.0));
+    let names: Vec<String> = scored.into_iter().take(PICKED).map(|(_, n)| n).collect();
     defs.into_iter()
         .filter(|d| CORE.contains(&d.name.as_str()) || names.contains(&d.name))
         .collect()
@@ -1564,6 +1595,20 @@ pub fn runs_code(target: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn picks_tools_by_words_without_embeddings() {
+        let all = defs();
+        let picked = by_words("turn on the bluetooth hotspot", all.clone());
+        assert!(picked.len() < all.len());
+        assert!(picked.len() <= CORE.len() + PICKED);
+        assert_eq!(
+            by_words("hi", all.clone()).len(),
+            all.len(),
+            "nothing matches: every tool"
+        );
+    }
+
     use super::*;
 
     #[test]
