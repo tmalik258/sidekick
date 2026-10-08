@@ -389,7 +389,12 @@ function SessionView({
           </button>
         ) : (
           <Tip label="Close session">
-            <button type="button" aria-label="Close session" onClick={() => closeSession(s.id)} className="ak-ibtn chip">
+            <button
+              type="button"
+              aria-label="Close session"
+              onClick={() => closeSession(s.id)}
+              className="ak-ibtn chip"
+            >
               <Icon name="close" size={13} />
             </button>
           </Tip>

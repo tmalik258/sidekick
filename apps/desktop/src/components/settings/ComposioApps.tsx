@@ -61,9 +61,7 @@ export function ComposioApps({
                 {a.name}
               </span>
             );
-            return (
-              <li key={a.slug}>{a.why ? <Tip label={a.why}>{chip}</Tip> : chip}</li>
-            );
+            return <li key={a.slug}>{a.why ? <Tip label={a.why}>{chip}</Tip> : chip}</li>;
           })}
         </ul>
       )}
