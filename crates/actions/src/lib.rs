@@ -334,7 +334,28 @@ impl Executor {
             }
             "git_pull" => {
                 let path = existing_path(args)?;
-                tokio::task::spawn_blocking(move || dev::pull(&path))
+                let stash = args["stash"] == true || args["stash"] == "true";
+                tokio::task::spawn_blocking(move || dev::pull(&path, stash))
+                    .await
+                    .map_err(fail)?
+            }
+            "git_update_branch" => {
+                let path = existing_path(args)?;
+                tokio::task::spawn_blocking(move || dev::update_branch(&path))
+                    .await
+                    .map_err(fail)?
+            }
+            "git_after_merge" => {
+                let path = existing_path(args)?;
+                let branch = arg(args, "branch")?.to_owned();
+                tokio::task::spawn_blocking(move || dev::after_merge(&path, &branch))
+                    .await
+                    .map_err(fail)?
+            }
+            "git_clone" => {
+                let url = arg(args, "url")?.to_owned();
+                let dir = PathBuf::from(arg(args, "dir")?);
+                tokio::task::spawn_blocking(move || dev::clone(&url, &dir))
                     .await
                     .map_err(fail)?
             }

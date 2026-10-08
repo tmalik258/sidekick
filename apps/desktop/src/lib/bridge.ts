@@ -35,6 +35,7 @@ import type {
   NotifyLevel,
   ProviderStatus,
   Recipe,
+  ReposOverview,
   RoutineItem,
   SearchHit,
   Settings,
@@ -298,6 +299,9 @@ export const api = {
   agentCommands: (id: string) =>
     invoke<{ name: string; description: string; group: string }[]>("agent_commands", { id }),
   aiOpenLink: (target: string) => invoke<string>("ai_open_link", { target }),
+  reposOverview: (fresh: boolean) => invoke<ReposOverview>("repos_overview", { fresh }),
+  repoPull: (path: string, stash: boolean) => invoke<string>("repo_pull", { path, stash }),
+  repoOpen: (path: string) => invoke<void>("repo_open", { path }),
   codexAddNotify: () => invoke<string | null>("codex_add_notify"),
   codexAddMcp: () => invoke<string | null>("codex_add_mcp"),
   guideKeys: (buttons: number) => invoke<void>("guide_keys", { buttons }),

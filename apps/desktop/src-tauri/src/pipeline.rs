@@ -97,6 +97,7 @@ async fn handle(app: &AppHandle, mut event: Event) {
     store(app, event.clone()).await;
     search::index_event(app, &event);
     crate::stuck::observe(app, &event);
+    crate::clone::observe(app, &event);
     crate::routines::observe(app, &event);
 
     if event.kind == IdleSensor::IDLE || event.kind == IdleSensor::ACTIVE {
@@ -122,6 +123,7 @@ async fn handle(app: &AppHandle, mut event: Event) {
         *lock(&app.state::<AppState>().last_window) = Some(event.payload.clone());
         timetrack::on_window(app, &event.payload);
         crate::projects::on_window(app, &event.payload);
+        crate::git_watch::on_window(app, &event.payload);
         crate::moments::on_window(&event.payload);
     }
 

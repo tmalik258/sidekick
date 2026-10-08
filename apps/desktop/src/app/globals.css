@@ -2456,4 +2456,91 @@ select.ak-mi option {
 .ak[data-chat] > .ak-err,
 .ak[data-chat] > .ak-foot {
   order: 2;
+/* Repos list in Agents */
+.ak-repos {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ak-repos-h {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 2px 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--i3);
+}
+.ak-repos-h em {
+  font-style: normal;
+  font-weight: 400;
+}
+.ak-repo {
+  border-radius: 10px;
+}
+.ak-repo[data-open="true"] {
+  background: rgb(255 255 255 / 0.04);
+}
+.ak-repo-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  font-size: 13px;
+  text-align: left;
+}
+.ak-repo-row:hover {
+  background: rgb(255 255 255 / 0.05);
+}
+.ak-repo-name {
+  color: #f5f5f7;
+  font-weight: 500;
+  min-width: 0;
+}
+.ak-repo-branch {
+  color: var(--i3);
+  font-size: 11.5px;
+  min-width: 0;
+  flex: 1;
+}
+.ak-repo-n {
+  flex: none;
+  color: var(--i3);
+  font-size: 11.5px;
+}
+.ak-repo-hot {
+  color: #ff9f0a;
+}
+.ak-repo-more {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 8px 10px;
+  font-size: 12.5px;
+}
+.ak-repo-pr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ak-repo-pr > button:not(.chip) {
+  min-width: 0;
+  flex: 1;
+}
+.ak-repo-pr em {
+  font-style: normal;
+  color: #ff9f0a;
+  font-size: 11.5px;
+}
+.ak-repo-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 2px;
 }

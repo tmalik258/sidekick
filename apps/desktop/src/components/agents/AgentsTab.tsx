@@ -46,6 +46,7 @@ import { Select } from "../settings/ui";
 import { Tip } from "../Tip";
 import { Board } from "./Board";
 import { ChatControls } from "./Controls";
+import { Repos } from "./Repos";
 import { Review } from "./Review";
 
 const MODES: { id: AgentMode; label: string; note: string }[] = [
@@ -197,9 +198,11 @@ function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorC
   const { data: agents } = useCached<Agents>("agents", api.agentsStatus);
   const { data: projects } = useCached<{ name: string; path: string }[]>("projects", api.projectsList);
   const [agent, setAgent] = useState<string>("");
-  const [path, setPath] = useState("");
+  const draftPath = useAgents((s) => s.draftPath);
+  const [path, setPath] = useState(draftPath ?? "");
   const [mode, setMode] = useState<AgentMode>("edit");
-  const [prompt, setPrompt] = useState("");
+  const draftPrompt = useAgents((s) => s.draftPrompt);
+  const [prompt, setPrompt] = useState(draftPrompt ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [model, setModel] = useState<string | null>(null);
@@ -326,6 +329,7 @@ function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorC
           {error && <p className="ak-err">{error}</p>}
         </>
       )}
+      <Repos />
     </>
   );
 }

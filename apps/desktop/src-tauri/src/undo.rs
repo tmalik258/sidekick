@@ -16,6 +16,15 @@ const MOVE_BACK: &str = "move-back:";
 const WINDOW_HOURS: i64 = 24;
 
 pub fn undo_path(action: &str, produced: Option<&str>) -> Option<String> {
+    // A pull's record resets the repo back to where it was.
+    if action == "git_pull" || action == "git_update_branch" {
+        return produced
+            .filter(|p| p.starts_with(sidekick_actions::dev::RESET_TO))
+            .map(str::to_owned);
+    }
+    if action == "git_clone" {
+        return produced.map(str::to_owned);
+    }
     UNDOABLE
         .contains(&action)
         .then(|| produced.map(str::to_owned))
@@ -56,6 +65,26 @@ pub fn undo(app: &AppHandle, id: i64) -> Result<String, String> {
         .with_timezone(&Utc);
     if Utc::now() - when > chrono::Duration::hours(WINDOW_HOURS) {
         return Err("Undo is only kept for 24 hours".into());
+    }
+    if let Some(rest) = path.strip_prefix(sidekick_actions::dev::RESET_TO) {
+        let (repo, sha) = rest
+            .split_once('\n')
+            .ok_or("This action cannot be undone")?;
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(["reset", "--keep", sha])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            return Err(
+                "Your changes since then are in the way; undo by hand with git reset".into(),
+            );
+        }
+        lock(&state.storage)
+            .mark_undone(id)
+            .map_err(|e| e.to_string())?;
+        return Ok("Put the repo back to before the pull".into());
     }
     if let Some(rest) = path.strip_prefix(MOVE_BACK) {
         let (now, from) = rest

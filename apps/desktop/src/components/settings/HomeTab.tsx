@@ -70,6 +70,7 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
         keywords="code folders repos git projects end of day wsl"
       >
         <CodeFolders chosen={settings.codeFolders} onChange={(codeFolders) => save({ codeFolders })} />
+        <CloneRules rules={settings.cloneRules ?? {}} onChange={(cloneRules) => save({ cloneRules })} />
         <Field label="My day ends at">
           <Select
             label="My day ends at"
@@ -230,6 +231,72 @@ function CodeFolders({ chosen, onChange }: { chosen: string[]; onChange: (next: 
         empty={data ? "No git repos found in the usual places. Add the folder that holds your projects." : ""}
       />
     </>
+  );
+}
+
+/** Where clones go by owner: learned from your clones, editable here. */
+function CloneRules({
+  rules,
+  onChange,
+}: {
+  rules: Record<string, string>;
+  onChange: (r: Record<string, string>) => void;
+}) {
+  const [owner, setOwner] = useState("");
+  const [folder, setFolder] = useState("");
+  const entries = Object.entries(rules);
+  const add = () => {
+    if (!owner.trim() || !folder.trim()) return;
+    onChange({ ...rules, [owner.trim()]: folder.trim() });
+    setOwner("");
+    setFolder("");
+  };
+  return (
+    <Field
+      label="Where clones go"
+      hint="Copy a repo link and Sidekick offers to clone it here. Learned from where you clone."
+    >
+      <div className="flex flex-col gap-1.5">
+        {entries.map(([o, f]) => (
+          <div key={o} className="flex items-center gap-2 text-[13px]">
+            <span className="mono min-w-0 flex-1 truncate">
+              {o} goes to {f}
+            </span>
+            <button
+              type="button"
+              className="chip"
+              onClick={() => {
+                const next = { ...rules };
+                delete next[o];
+                onChange(next);
+              }}
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+        <div className="flex items-center gap-2">
+          <input
+            className="min-w-0 flex-1"
+            value={owner}
+            onChange={(e) => setOwner(e.target.value)}
+            placeholder="Owner, e.g. acme"
+            aria-label="Owner"
+          />
+          <input
+            className="min-w-0 flex-[2]"
+            value={folder}
+            onChange={(e) => setFolder(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && add()}
+            placeholder="Folder, e.g. D:\\Acme"
+            aria-label="Folder"
+          />
+          <button type="button" className="chip" onClick={add}>
+            Add
+          </button>
+        </div>
+      </div>
+    </Field>
   );
 }
 

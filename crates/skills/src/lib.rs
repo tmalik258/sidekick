@@ -161,6 +161,38 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/dev/repo-status.yaml"),
     ),
     (
+        "dev/incoming.yaml",
+        include_str!("../../../skills/dev/incoming.yaml"),
+    ),
+    (
+        "dev/base-moved.yaml",
+        include_str!("../../../skills/dev/base-moved.yaml"),
+    ),
+    (
+        "dev/clone.yaml",
+        include_str!("../../../skills/dev/clone.yaml"),
+    ),
+    (
+        "dev/clone-have.yaml",
+        include_str!("../../../skills/dev/clone-have.yaml"),
+    ),
+    (
+        "dev/cloned.yaml",
+        include_str!("../../../skills/dev/cloned.yaml"),
+    ),
+    (
+        "dev/github-ci.yaml",
+        include_str!("../../../skills/dev/github-ci.yaml"),
+    ),
+    (
+        "dev/github-review.yaml",
+        include_str!("../../../skills/dev/github-review.yaml"),
+    ),
+    (
+        "dev/github-merged.yaml",
+        include_str!("../../../skills/dev/github-merged.yaml"),
+    ),
+    (
         "dev/stuck.yaml",
         include_str!("../../../skills/dev/stuck.yaml"),
     ),
@@ -268,6 +300,11 @@ pub const ACTIONS: &[&str] = &[
     "ask_ai",
     "fathom_followup",
     "git_pull",
+    "git_clone",
+    "clone_pick",
+    "agent_here",
+    "git_after_merge",
+    "git_update_branch",
     "install_deps",
     "create_env",
     "start_docker",

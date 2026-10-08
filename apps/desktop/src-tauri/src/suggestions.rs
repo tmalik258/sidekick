@@ -729,6 +729,38 @@ async fn execute(
                     path: None,
                 });
         }
+        "clone_pick" => {
+            return crate::clone::pick_and_clone(app, arg("url").unwrap_or_default()).await;
+        }
+        "git_clone" => {
+            let out = crate::state::executor(&app.state::<AppState>())
+                .run(&option.action, &option.args)
+                .await
+                .map_err(|e| e.to_string())?;
+            if let Some(path) = &out.path {
+                crate::clone::after_clone(
+                    app,
+                    arg("url").unwrap_or_default(),
+                    arg("dir").unwrap_or_default(),
+                    path,
+                );
+            }
+            return Ok(out);
+        }
+        "agent_here" => {
+            crate::ask::open(
+                app,
+                crate::ask::Open {
+                    project: arg("path").map(str::to_owned),
+                    prompt: arg("prompt").map(str::to_owned),
+                    ..Default::default()
+                },
+            );
+            return Ok(sidekick_actions::Outcome {
+                message: "Opened Agents".into(),
+                path: None,
+            });
+        }
         "fathom_followup" => {
             return crate::fathom::follow_up(
                 app,

@@ -94,6 +94,8 @@ pub struct Open {
     /// A tool to start with: "screen" asks about the screen, "clipboard"
     /// shows clipboard history.
     pub tool: Option<&'static str>,
+    /// Opens Agents with a new session in this project.
+    pub project: Option<String>,
     /// Which Settings tab to show with view "settings" ("memory").
     pub settings_tab: Option<&'static str>,
     /// When the open was asked for (ms since 1970), for the open-to-ready

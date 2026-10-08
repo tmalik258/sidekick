@@ -95,7 +95,7 @@ fn git(repo: &Path, args: &[&str]) -> Option<String> {
 
 /// Runs `git fetch` quietly, giving up after `timeout` (no prompts: a repo
 /// that needs a password just stays stale).
-fn fetch(repo: &Path, timeout: Duration) {
+pub fn fetch(repo: &Path, timeout: Duration) {
     let mut cmd = Command::new("git");
     cmd.arg("-C")
         .arg(repo)

@@ -47,6 +47,8 @@ export interface Settings {
   codeFolders: string[];
   indexFolders: string[];
   endOfDayHour: number;
+  /** Where clones go, by owner. */
+  cloneRules?: Record<string, string>;
   ai: AiSettings;
   voice: VoiceSettings;
   calendar: { remindMinutes: number };
@@ -266,6 +268,8 @@ export interface AskOpen {
   sentAt?: number;
   /** Which Settings tab to show with view "settings". */
   settingsTab?: string | null;
+  /** Opens Agents with a new session in this project. */
+  project?: string | null;
 }
 
 /** One measured moment, for the timings overlay. */
@@ -377,6 +381,7 @@ export const DEFAULT_SETTINGS: Settings = {
   codeFolders: [],
   indexFolders: [],
   endOfDayHour: 18,
+  cloneRules: {},
   ai: {
     order: ["local", "gemini", "groq", "claude_code", "codex", "anthropic", "openrouter"],
     claudeCode: { enabled: true, path: "", model: FAST_CLAUDE_MODEL },
@@ -713,6 +718,39 @@ export interface AgentInfo {
   fix: string | null;
   /** Runs on this PC; nothing leaves it. */
   local?: boolean;
+}
+
+/** One open pull request in the Repos list. */
+export interface RepoPr {
+  number: number;
+  title: string;
+  url: string;
+  branch: string;
+  mine: boolean;
+  ci: "pass" | "fail" | "pending" | "none";
+  /** The first failing check and its link. */
+  failing: [string, string] | null;
+  reviewRequested: boolean;
+}
+
+/** One repo in the Repos list. */
+export interface RepoRow {
+  name: string;
+  path: string;
+  slug: string | null;
+  branch: string;
+  ahead: number;
+  behind: number;
+  changed: number;
+  prs: RepoPr[];
+  ci: RepoPr["ci"];
+  reviews: number;
+}
+
+export interface ReposOverview {
+  /** How GitHub is reached: the gh sign-in, Composio, or not at all. */
+  via: "gh" | "composio" | "none";
+  repos: RepoRow[];
 }
 
 /** How much a notification interrupts. */
