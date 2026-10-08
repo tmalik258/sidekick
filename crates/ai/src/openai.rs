@@ -280,7 +280,8 @@ impl OpenAiCompat {
             // Words reach the user as they are written; a round that turns
             // out to call tools just carries on below what it said.
             let gap = if shown.is_empty() { "" } else { "\n\n" };
-            let round = self.stream_round(&body, sink, gap, cancel).await?;
+            let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+            let round = self.stream_round(&body, &names, sink, gap, cancel).await?;
             shown.push_str(&round.text);
             let msg = json!({ "content": round.raw, "tool_calls": round.calls });
             let msg = &msg;
@@ -370,6 +371,25 @@ fn may_be_call(t: &str) -> bool {
     t.starts_with('{') || prefix_of("```") || prefix_of("<tool_call>")
 }
 
+/// Whether text so far could still be a tool's name on a line of its own,
+/// which small models echo before answering ("pc_status\nWi-Fi is ...").
+fn may_be_name(t: &str, names: &[&str]) -> bool {
+    !t.contains(char::is_whitespace) && names.iter().any(|n| n.starts_with(t) || t.starts_with(n))
+}
+
+/// `text` without a leading tool name the model echoed.
+fn without_name<'a>(text: &'a str, names: &[&str]) -> &'a str {
+    let t = text.trim_start();
+    for n in names {
+        if let Some(rest) = t.strip_prefix(n)
+            && rest.starts_with(char::is_whitespace)
+        {
+            return rest.trim_start();
+        }
+    }
+    text
+}
+
 /// A tool call the model wrote as text (`{"name": ..., "arguments": ...}`,
 /// maybe fenced or tagged), when it names one of the `offered` tools.
 fn text_call(text: &str, offered: &[&str]) -> Option<Value> {
@@ -414,6 +434,7 @@ impl OpenAiCompat {
     async fn stream_round(
         &self,
         body: &Value,
+        names: &[&str],
         sink: &Sink,
         gap: &str,
         cancel: &CancellationToken,
@@ -458,11 +479,13 @@ impl OpenAiCompat {
                     if holding {
                         held.push_str(&visible);
                         let t = held.trim_start();
-                        if t.is_empty() || may_be_call(t) {
+                        if t.is_empty() || may_be_call(t) || may_be_name(t, names) {
                             return Ok(true);
                         }
                         holding = false;
-                        show(&std::mem::take(&mut held), &mut text);
+                        let shown = without_name(&held, names).to_owned();
+                        held.clear();
+                        show(&shown, &mut text);
                     } else {
                         show(&visible, &mut text);
                     }
@@ -507,7 +530,7 @@ impl OpenAiCompat {
                     calls.push(call);
                     raw.clear();
                 }
-                _ => show(&held, &mut text),
+                _ => show(without_name(&held, names), &mut text),
             }
         }
         Ok(Round { raw, text, calls })
@@ -852,6 +875,22 @@ mod tests {
         assert_eq!(strip_thinking("<think>hmm</think>\n\nHello"), "Hello");
         assert_eq!(strip_thinking("<think>never closed"), "");
         assert_eq!(strip_thinking("  plain  "), "plain");
+    }
+
+    #[test]
+    fn an_echoed_tool_name_is_hidden() {
+        let names = ["pc_status", "search"];
+        assert!(may_be_name("pc_st", &names));
+        assert!(!may_be_name("Wi-Fi is", &names));
+        assert_eq!(
+            without_name("pc_status\nWi-Fi is on", &names),
+            "Wi-Fi is on"
+        );
+        assert_eq!(without_name("search Find apps", &names), "Find apps");
+        assert_eq!(
+            without_name("searching the web", &names),
+            "searching the web"
+        );
     }
 
     #[test]
