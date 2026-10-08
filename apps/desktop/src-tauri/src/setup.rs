@@ -214,14 +214,15 @@ pub fn chat_model_for(graphics: u64, memory: u64) -> ChatPick {
 }
 
 /// Ollama settings for a smaller, faster local model (see "Lighter Ollama").
-const OLLAMA_LIGHT: [(&str, &str); 3] = [
+const OLLAMA_LIGHT: [(&str, &str); 4] = [
+    ("OLLAMA_CONTEXT_LENGTH", "8192"),
     ("OLLAMA_NUM_PARALLEL", "1"),
     ("OLLAMA_FLASH_ATTENTION", "1"),
     ("OLLAMA_KV_CACHE_TYPE", "q8_0"),
 ];
 
 /// Quits Ollama so it starts again with new settings, then starts it.
-const OLLAMA_RESTART: &str = "Get-Process 'ollama app','ollama' -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 1; $env:OLLAMA_NUM_PARALLEL='1'; $env:OLLAMA_FLASH_ATTENTION='1'; $env:OLLAMA_KV_CACHE_TYPE='q8_0'; $app = Join-Path (Split-Path (Get-Command ollama).Source) 'ollama app.exe'; if (Test-Path $app) { Start-Process $app }";
+const OLLAMA_RESTART: &str = "Get-Process 'ollama app','ollama' -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 1; $env:OLLAMA_CONTEXT_LENGTH='8192'; $env:OLLAMA_NUM_PARALLEL='1'; $env:OLLAMA_FLASH_ATTENTION='1'; $env:OLLAMA_KV_CACHE_TYPE='q8_0'; $app = Join-Path (Split-Path (Get-Command ollama).Source) 'ollama app.exe'; if (Test-Path $app) { Start-Process $app }";
 
 /// Starts the Ollama app if it is not running and waits until it answers,
 /// so `ollama pull` right after an install works.
@@ -290,6 +291,33 @@ pub async fn ollama_models(base_url: &str) -> Option<Vec<String>> {
             .filter_map(|m| m["id"].as_str().map(str::to_owned))
             .collect(),
     )
+}
+
+/// Tool prompts and a short chat do not fit Ollama's default 4K context: the
+/// start of the chat is cut and small models lose the question.
+const MIN_CONTEXT: u64 = 8192;
+
+/// The smallest context a loaded Ollama model runs with, when one is loaded.
+async fn loaded_context(base_url: &str) -> Option<u64> {
+    let root = sidekick_ai::loopback(base_url.trim_end_matches('/'));
+    let root = root.trim_end_matches("/v1");
+    let v: serde_json::Value = reqwest::Client::builder()
+        .timeout(Duration::from_millis(1500))
+        .no_proxy()
+        .build()
+        .ok()?
+        .get(format!("{root}/api/ps"))
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    v["models"]
+        .as_array()?
+        .iter()
+        .filter_map(|m| m["context_length"].as_u64())
+        .min()
 }
 
 fn found(name: &str) -> bool {
@@ -365,7 +393,8 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     let caps_fut = tauri::async_runtime::spawn_blocking(sidekick_actions::Capabilities::detect);
     let models_fut = ollama_models(&base_url);
     let gh_fut = gh_signed_in();
-    let (caps_res, models, gh_ok) = tokio::join!(caps_fut, models_fut, gh_fut);
+    let ctx_fut = loaded_context(&base_url);
+    let (caps_res, models, gh_ok, context) = tokio::join!(caps_fut, models_fut, gh_fut, ctx_fut);
 
     let caps = caps_res.unwrap_or_else(|_| executor(&state).capabilities().clone());
     *state
@@ -543,25 +572,30 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     }
     items.push(vision_item);
 
-    // Ollama's defaults keep room for four answers at once and full-size
-    // caches. One at a time, flash attention and an 8-bit cache roughly
-    // halve the memory a model holds and speed up answers.
-    let lighter = OLLAMA_LIGHT
-        .iter()
-        .all(|(k, v)| sidekick_sensors::user_env(k).as_deref() == Some(v));
+    // Ollama's defaults keep room for four answers at once, full-size
+    // caches and a 4K context. One at a time, flash attention and an 8-bit
+    // cache roughly halve the memory a model holds, which pays for the 8K
+    // context Sidekick's tools need.
+    let short = context.is_some_and(|c| c < MIN_CONTEXT);
+    let lighter = !short
+        && OLLAMA_LIGHT
+            .iter()
+            .all(|(k, v)| sidekick_sensors::user_env(k).as_deref() == Some(v));
     let mut light = SetupItem::new(
         "ollama_light",
         Group::Ai,
         "Lighter Ollama",
-        "Uses about half the memory and answers faster. Restarts Ollama.",
+        "8K context with about half the memory, so answers keep the whole question. Restarts Ollama.",
     )
     .done(
         lighter,
         "On",
-        if ollama_installed {
-            "Off"
-        } else {
+        if !ollama_installed {
             "Needs Ollama"
+        } else if short {
+            "4K context: set Context length to 8K in Ollama's settings"
+        } else {
+            "Off"
         },
     );
     if ollama_installed {
