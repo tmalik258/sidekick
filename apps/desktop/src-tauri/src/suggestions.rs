@@ -702,6 +702,20 @@ async fn execute(
                 path: None,
             });
         }
+        "open_memory" => {
+            crate::ask::open(
+                app,
+                crate::ask::Open {
+                    view: Some("settings"),
+                    settings_tab: Some("memory"),
+                    ..Default::default()
+                },
+            );
+            return Ok(sidekick_actions::Outcome {
+                message: "Opened Memory".into(),
+                path: None,
+            });
+        }
         "skill_auto" => {
             let skill = arg("skill").ok_or("no skill")?;
             return crate::learn::make_auto(app, skill).map(|message| sidekick_actions::Outcome {

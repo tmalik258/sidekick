@@ -946,7 +946,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           newChat();
           useSidekick.setState({ chatPage: open.page });
         }
-        const settingsTab = resumeSettingsTab ?? undefined;
+        const settingsTab = open.settingsTab ?? resumeSettingsTab ?? undefined;
         resumeSettingsTab = null;
         // This PC only belongs to the chat: it stays while the chat goes on.
         const prev = useSidekick.getState();

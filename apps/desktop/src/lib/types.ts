@@ -262,6 +262,8 @@ export interface AskOpen {
   tool?: "screen" | "clipboard" | null;
   /** When the open was asked for (ms since 1970), for the timings. */
   sentAt?: number;
+  /** Which Settings tab to show with view "settings". */
+  settingsTab?: string | null;
 }
 
 /** One measured moment, for the timings overlay. */

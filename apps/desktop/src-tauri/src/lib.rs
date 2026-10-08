@@ -443,6 +443,7 @@ pub fn start_features(app: &AppHandle) {
     names::start(app);
     updates::start(app);
     files::start_weekly_check(app);
+    learned::start_weekly(app, state.data_dir.join("last-learned-week"));
     layout::start(app);
     mcp::start(app, state.mcp_token.clone());
     meetings::start(app);
