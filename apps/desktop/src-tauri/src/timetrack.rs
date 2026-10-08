@@ -263,6 +263,69 @@ pub fn day_summary(rows: &[sidekick_core::AppTime], done: &Done) -> Option<Event
     ))
 }
 
+/// The hour you were last at the PC, per day ("2026-10-08" -> 19), kept
+/// for two weeks to learn when your day really ends.
+const LAST_HOURS: &str = "day-ends.json";
+const DEFAULT_DAY_END: u32 = 18;
+
+fn last_hours(app: &AppHandle) -> std::collections::BTreeMap<String, u32> {
+    std::fs::read_to_string(app.state::<AppState>().data_dir.join(LAST_HOURS))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn note_active_hour(app: &AppHandle, day: &str, hour: u32) {
+    let mut hours = last_hours(app);
+    if hours.get(day) == Some(&hour) {
+        return;
+    }
+    hours.insert(day.to_owned(), hour);
+    while hours.len() > 14 {
+        let first = hours.keys().next().cloned().unwrap_or_default();
+        hours.remove(&first);
+    }
+    if let Ok(json) = serde_json::to_string(&hours) {
+        let _ = std::fs::write(app.state::<AppState>().data_dir.join(LAST_HOURS), json);
+    }
+}
+
+/// When your day usually ends: the middle of your last hours at the PC,
+/// once there are five days to go on (today left out, it is not over).
+pub fn learned_day_end(
+    hours: &std::collections::BTreeMap<String, u32>,
+    today: &str,
+) -> Option<u32> {
+    let mut past: Vec<u32> = hours
+        .iter()
+        .filter(|(d, _)| d.as_str() != today)
+        .map(|(_, h)| *h)
+        .collect();
+    if past.len() < 5 {
+        return None;
+    }
+    past.sort_unstable();
+    Some(past[past.len() / 2])
+}
+
+/// The learned day end, when there is one (for Memory).
+pub fn learned_end(app: &AppHandle) -> Option<u32> {
+    learned_day_end(&last_hours(app), &today())
+}
+
+pub fn forget_day_ends(app: &AppHandle) {
+    let _ = std::fs::remove_file(app.state::<AppState>().data_dir.join(LAST_HOURS));
+}
+
+/// The day-end hour: yours if set, else the one learned from your days.
+pub fn day_end(app: &AppHandle) -> u32 {
+    let set = lock(&app.state::<AppState>().settings).end_of_day_hour;
+    if set != DEFAULT_DAY_END || !crate::learned::on(app) {
+        return set;
+    }
+    learned_day_end(&last_hours(app), &today()).unwrap_or(set)
+}
+
 pub fn start(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -283,6 +346,7 @@ pub fn start(app: &AppHandle) {
                 let mut current = lock(&state.tracker.current);
                 if let Some(span) = current.as_mut() {
                     write(&app, span, now);
+                    note_active_hour(&app, &today(), chrono::Timelike::hour(&Local::now()));
                     if span.editor
                         && !span.focus_offered
                         && span
@@ -296,7 +360,7 @@ pub fn start(app: &AppHandle) {
             }
             // Once a day, after the end-of-day hour, offer the summary.
             let local = Local::now();
-            let eod = lock(&state.settings).end_of_day_hour;
+            let eod = day_end(&app);
             if chrono::Timelike::hour(&local) >= eod && summarized != Some(local.date_naive()) {
                 summarized = Some(local.date_naive());
                 let rows = lock(&state.storage)
@@ -333,6 +397,23 @@ pub fn start(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn learns_when_the_day_ends() {
+        let mut hours = std::collections::BTreeMap::new();
+        for (d, h) in [("01", 17), ("02", 19), ("03", 19), ("04", 20)] {
+            hours.insert(format!("2026-10-{d}"), h);
+        }
+        assert_eq!(
+            learned_day_end(&hours, "2026-10-08"),
+            None,
+            "four days is too few"
+        );
+        hours.insert("2026-10-05".into(), 19);
+        hours.insert("2026-10-08".into(), 9);
+        assert_eq!(learned_day_end(&hours, "2026-10-08"), Some(19));
+    }
+
     use super::*;
 
     #[test]
