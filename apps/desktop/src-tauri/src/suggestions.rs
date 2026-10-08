@@ -523,6 +523,19 @@ fn expire_when_ignored(app: &AppHandle, id: String) {
     });
 }
 
+/// Shift+click: open a link option in a private window, in any browser.
+pub fn make_private(app: &AppHandle, id: &str, index: usize) {
+    let state = app.state::<AppState>();
+    let mut current = lock(&state.active);
+    if let Some(active) = current.as_mut().filter(|a| a.ui.id == id)
+        && let Some(option) = active.proposal.options.get_mut(index)
+        && option.action == "open_url"
+        && let Some(args) = option.args.as_object_mut()
+    {
+        args.insert("private".into(), "true".into());
+    }
+}
+
 pub fn choose(app: &AppHandle, id: &str, index: usize) -> Result<(), String> {
     run_choice(app, id, index, false)
 }
@@ -540,6 +553,10 @@ fn run_choice(app: &AppHandle, id: &str, index: usize, auto: bool) -> Result<(),
         && let Some(key) = &active.proposal.remember
     {
         let ts = Utc::now().to_rfc3339();
+        // A kind ("url:github.com") also counts toward all of them ("url").
+        if let Some((all, _)) = key.split_once(':') {
+            let _ = lock(&app.state::<AppState>().storage).record_choice(all, &option.label, &ts);
+        }
         if let Err(err) =
             lock(&app.state::<AppState>().storage).record_choice(key, &option.label, &ts)
         {
