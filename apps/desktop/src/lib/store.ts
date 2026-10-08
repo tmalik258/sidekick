@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Expression } from "@/components/orb/expressions";
+import { startHere } from "./agents";
 import { api, EVENTS, listen } from "./bridge";
 import { putCached, SETUP_STATUS_CACHE_KEY } from "./cache";
 import { firstToday, isThanks, type Mood, moodForSkill, SUGGESTION_MOOD_MS } from "./mood";
@@ -979,6 +980,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
             settingsTab,
           },
         });
+        if (open.project) startHere(open.project);
         if (open.ask && open.prompt) sendChat(open.prompt, { clipboard: clip });
       }),
       listen(EVENTS.askClose, (payload) => {

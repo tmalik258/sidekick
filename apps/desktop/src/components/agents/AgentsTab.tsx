@@ -105,7 +105,8 @@ function NewSession({ sessions }: { sessions: Session[] }) {
   const { data: agents } = useCached<Agents>("agents", api.agentsStatus);
   const { data: projects } = useCached<{ name: string; path: string }[]>("projects", api.projectsList);
   const [agent, setAgent] = useState<string>("");
-  const [path, setPath] = useState("");
+  const draftPath = useAgents((s) => s.draftPath);
+  const [path, setPath] = useState(draftPath ?? "");
   const [mode, setMode] = useState<AgentMode>("edit");
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState<string | null>(null);

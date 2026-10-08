@@ -25,7 +25,7 @@ const LIST_TTL: Duration = Duration::from_secs(10 * 60);
 static CHECKED: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
 static LIST: Mutex<Option<(Instant, Vec<PathBuf>)>> = Mutex::new(None);
 
-fn roots(app: &AppHandle) -> Vec<PathBuf> {
+pub fn roots(app: &AppHandle) -> Vec<PathBuf> {
     let folders = lock(&app.state::<AppState>().settings).code_folders.clone();
     if folders.is_empty() {
         ReposSensor::default_roots()
