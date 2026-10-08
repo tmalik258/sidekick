@@ -63,7 +63,7 @@ export function Chat({ turns }: { turns: Turn[] }) {
         const steps = t.steps ?? [];
         return (
           // biome-ignore lint/suspicious/noArrayIndexKey: turns only ever append
-          <div key={i} className="group grid gap-2">
+          <div key={i} className="group grid grid-cols-[minmax(0,1fr)] gap-2">
             {steps.length > 0 && !t.streaming && <Steps steps={steps} running={false} tookMs={t.tookMs} />}
             {t.streaming && steps.length > 1 && <Steps steps={steps} running tookMs={t.tookMs} />}
             {t.content ? (
