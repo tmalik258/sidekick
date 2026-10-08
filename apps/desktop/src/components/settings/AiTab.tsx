@@ -378,62 +378,10 @@ function CloudCard({
   onChanged: () => void;
   onError: (e: string) => void;
 }) {
-  const { data: keys, refresh } = useCached<Record<CloudId, boolean>>("cloud-keys", api.cloudKeys);
-  const [key, setKey] = useState("");
-  const [busy, setBusy] = useState(false);
   const info = CLOUD_KEYS[id];
-  const has = keys?.[id] ?? false;
-  const done = () => {
-    setKey("");
-    void refresh().catch(() => undefined);
-    onChanged();
-  };
-  const saveKey = () => {
-    setBusy(true);
-    api
-      .cloudKeySet(id, key)
-      .then(done, (e: unknown) => onError(String(e)))
-      .finally(() => setBusy(false));
-  };
   return (
     <>
-      {has ? (
-        <Field label="Key" hint="Saved in Windows Credential Manager">
-          <Button small onClick={() => void api.cloudKeyClear(id).then(done, (e: unknown) => onError(String(e)))}>
-            Remove key
-          </Button>
-        </Field>
-      ) : (
-        <Field
-          label="Key"
-          hint={
-            <>
-              Free from{" "}
-              <button type="button" className="underline" onClick={() => void api.aiOpenLink(info.url)}>
-                {info.site}
-              </button>
-            </>
-          }
-        >
-          <div className="flex items-center gap-2">
-            <input
-              type="password"
-              aria-label={`${PROVIDER_LABELS[id]} key`}
-              value={key}
-              placeholder="Paste key"
-              autoComplete="off"
-              onChange={(e) => setKey(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && key.trim()) saveKey();
-              }}
-              className="w-40 rounded-lg border border-(--border) bg-transparent px-2 py-1 font-mono text-[12.5px]"
-            />
-            <Button small primary onClick={saveKey} disabled={busy || !key.trim()}>
-              {busy ? "Checking..." : "Save"}
-            </Button>
-          </div>
-        </Field>
-      )}
+      <CloudKey id={id} onChanged={onChanged} onError={onError} />
       {id === "openrouter" ? (
         <RouterModels value={model || info.model} onChange={onModel} onError={onError} />
       ) : (
@@ -449,6 +397,74 @@ function CloudCard({
         </Field>
       )}
     </>
+  );
+}
+
+/** Paste and check a cloud provider's key, or remove the saved one. */
+export function CloudKey({
+  id,
+  onChanged,
+  onError,
+}: {
+  id: CloudId;
+  onChanged?: () => void;
+  onError: (e: string) => void;
+}) {
+  const { data: keys, refresh } = useCached<Record<CloudId, boolean>>("cloud-keys", api.cloudKeys);
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const info = CLOUD_KEYS[id];
+  const done = () => {
+    setKey("");
+    void refresh().catch(() => undefined);
+    onChanged?.();
+  };
+  const saveKey = () => {
+    setBusy(true);
+    api
+      .cloudKeySet(id, key)
+      .then(done, (e: unknown) => onError(String(e)))
+      .finally(() => setBusy(false));
+  };
+  if (keys?.[id]) {
+    return (
+      <Field label="Key" hint="Saved in Windows Credential Manager">
+        <Button small onClick={() => void api.cloudKeyClear(id).then(done, (e: unknown) => onError(String(e)))}>
+          Remove key
+        </Button>
+      </Field>
+    );
+  }
+  return (
+    <Field
+      label="Key"
+      hint={
+        <>
+          Free from{" "}
+          <button type="button" className="underline" onClick={() => void api.aiOpenLink(info.url)}>
+            {info.site}
+          </button>
+        </>
+      }
+    >
+      <div className="flex items-center gap-2">
+        <input
+          type="password"
+          aria-label={`${PROVIDER_LABELS[id]} key`}
+          value={key}
+          placeholder="Paste key"
+          autoComplete="off"
+          onChange={(e) => setKey(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && key.trim()) saveKey();
+          }}
+          className="w-40 rounded-lg border border-(--border) bg-transparent px-2 py-1 font-mono text-[12.5px]"
+        />
+        <Button small primary onClick={saveKey} disabled={busy || !key.trim()}>
+          {busy ? "Checking..." : "Save"}
+        </Button>
+      </div>
+    </Field>
   );
 }
 

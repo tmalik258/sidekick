@@ -19,6 +19,7 @@ import { SetupChecklist } from "./SetupChecklist";
 import { SpokenLine, wasHeard } from "./SpokenLine";
 import { Extras } from "./welcome/Extras";
 import { FoundCard } from "./welcome/FoundCard";
+import { FreeAi } from "./welcome/FreeAi";
 import { WelcomeIntro } from "./welcome/WelcomeIntro";
 
 const STEPS = ["Welcome", "Your AI", "Connect", "Tools", "Extras"] as const;
@@ -180,7 +181,9 @@ export function IslandWelcome() {
             {step === 1 && (
               <>
                 <FoundCard onDone={() => undefined} />
+                {codes === false && <FreeAi />}
                 <SetupChecklist groups={["ai"]} inlineGuides />
+                {codes !== false && <FreeAi />}
               </>
             )}
             {step === 2 && <SetupChecklist groups={["connect"]} inlineGuides />}
