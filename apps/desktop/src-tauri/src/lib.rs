@@ -126,6 +126,7 @@ pub fn run() {
             commands::cloud_key_set,
             commands::cloud_key_clear,
             commands::openrouter_models,
+            commands::copilot_ask,
             commands::crash_pending,
             commands::crash_dismiss,
             commands::settings_get,
