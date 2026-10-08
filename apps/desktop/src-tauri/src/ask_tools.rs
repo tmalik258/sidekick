@@ -271,7 +271,9 @@ pub fn defs() -> Vec<ToolDef> {
                 type_here {text} puts text into the field the user is in (to rewrite a \
                 selection, read it, then type_here the new text); click_text {text} finds those \
                 words on the screen and clicks them, for apps whose read shows no controls. \
-                Read before acting and after."
+                Read before acting and after. For \"how do I use this\" or \"where is\", read, \
+                answer in at most three short steps, then act do:point on the first step's \
+                control to outline it on screen without pressing it."
                 .into(),
             parameters: json!({
                 "type": "object",
@@ -279,7 +281,7 @@ pub fn defs() -> Vec<ToolDef> {
                     "action": { "type": "string", "enum": ["read", "act", "keys", "selection", "type_here", "click_text"] },
                     "app": { "type": "string", "description": "App or window name; the app the user was in when left out" },
                     "ref": { "type": "string" },
-                    "do": { "type": "string", "enum": ["click", "type", "select", "focus"] },
+                    "do": { "type": "string", "enum": ["click", "type", "select", "focus", "point"] },
                     "text": { "type": "string" }
                 },
                 "required": ["action"],

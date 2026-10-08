@@ -493,6 +493,13 @@ pub async fn desktop(app: &AppHandle, chat_id: &str, args: &Value) -> String {
             let Ok(n) = r.parse::<usize>() else {
                 return "Error: say which control (its number from read).".into();
             };
+            // Pointing only outlines the control, so it never needs a tap.
+            if what == "point" {
+                let t = target.clone();
+                return blocking(move || uia::act(&t, n, &name, "point", ""))
+                    .await
+                    .map_or_else(|e| format!("Error: {e}"), |o| o.message);
+            }
             let place = target
                 .app
                 .clone()

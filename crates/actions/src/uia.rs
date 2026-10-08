@@ -127,6 +127,7 @@ switch($env:SK_DO){
     Write-Output "#error`tNo option like $want"
   }
   'focus' { $e.SetFocus(); Write-Output "#ok`tFocused $($c.Name)" }
+  'point' { Write-Output "#ok`tShowing $($c.Name)" }
   default { Write-Output "#error`tUnknown action $($env:SK_DO)" }
 }
 "##;
@@ -232,7 +233,7 @@ pub fn snapshot(target: &Target) -> Result<Snapshot, ActionError> {
     parse_snapshot(&out).map_err(fail)
 }
 
-/// Click, type, select or focus control `n` (checked against `name`).
+/// Click, type, select, focus or point at (outline only) control `n` (checked against `name`).
 pub fn act(
     target: &Target,
     n: usize,
@@ -240,7 +241,7 @@ pub fn act(
     what: &str,
     text: &str,
 ) -> Result<Outcome, ActionError> {
-    if !matches!(what, "click" | "type" | "select" | "focus") {
+    if !matches!(what, "click" | "type" | "select" | "focus" | "point") {
         return Err(ActionError::Invalid(format!("unknown action {what}")));
     }
     let mut env = target.env();
@@ -248,8 +249,8 @@ pub fn act(
     env.push(("SK_NAME", name.to_owned()));
     env.push(("SK_DO", what.to_owned()));
     env.push(("SK_TEXT", text.to_owned()));
-    // Clicks and typing show where they land first.
-    let highlight = matches!(what, "click" | "type" | "select");
+    // Clicks and typing show where they land first; point only shows.
+    let highlight = matches!(what, "click" | "type" | "select" | "point");
     env.push(("SK_HIGHLIGHT", if highlight { "1" } else { "0" }.to_owned()));
     let out = run(&on_window(&[OUTLINE, ACT]), &env)?;
     if let Some(e) = error_of(&out) {
