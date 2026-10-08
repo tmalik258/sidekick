@@ -244,7 +244,7 @@ try {
       5000,
     );
     const missing = [];
-    for (const label of ["Home", "Appearance", "AI", "Apps", "Privacy", "Skills"]) {
+    for (const label of ["Home", "Appearance", "AI", "Apps", "Memory", "Shortcuts", "Storage", "Privacy", "Skills"]) {
       if (!(await clickText(label))) {
         missing.push(label);
         continue;

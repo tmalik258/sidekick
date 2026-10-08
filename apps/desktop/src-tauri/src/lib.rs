@@ -204,6 +204,8 @@ pub fn run() {
             commands::routines_today,
             commands::routines_forget,
             commands::user_guess_name,
+            commands::disk_groups,
+            commands::disk_clean,
             commands::focus_start,
             commands::focus_stop,
             commands::focus_status,

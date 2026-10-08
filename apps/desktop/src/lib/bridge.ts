@@ -178,6 +178,8 @@ export const api = {
   routinesToday: () => invoke<RoutineItem[]>("routines_today"),
   routinesForget: () => invoke<number>("routines_forget"),
   learnedList: () => invoke<Learned[]>("learned_list"),
+  diskGroups: () => invoke<DiskGroup[]>("disk_groups"),
+  diskClean: (group: string, paths: string[]) => invoke<string>("disk_clean", { group, paths }),
   userGuessName: () => invoke<string>("user_guess_name"),
   focusStart: (minutes?: number) => invoke<string>("focus_start", { minutes }),
   focusStop: () => invoke<string>("focus_stop"),
@@ -312,3 +314,14 @@ export const api = {
   askDeferWelcome: () => invoke<void>("ask_defer_welcome"),
   askResumeWelcome: () => invoke<void>("ask_resume_welcome"),
 };
+
+/** One group in the Storage view. */
+export interface DiskGroup {
+  id: string;
+  label: string;
+  what: string;
+  bytes: number;
+  partial: boolean;
+  items: { path: string; bytes: number }[];
+  clearable: boolean;
+}

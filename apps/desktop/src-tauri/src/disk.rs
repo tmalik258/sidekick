@@ -206,6 +206,306 @@ pub fn report() -> String {
     out
 }
 
+/// One group in the disk view: what it is, how big, and its biggest parts.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Group {
+    pub id: &'static str,
+    pub label: &'static str,
+    /// What it is, in plain words.
+    pub what: &'static str,
+    pub bytes: u64,
+    /// The scan ran out of time, so the size is "at least".
+    pub partial: bool,
+    /// Its parts, biggest first (at most `SHOWN`).
+    pub items: Vec<GroupItem>,
+    /// Items here can go to the Recycle Bin after review.
+    pub clearable: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct GroupItem {
+    pub path: String,
+    pub bytes: u64,
+}
+
+const SHOWN: usize = 40;
+/// Build folders to look for in code projects.
+const BUILD_DIRS: &[&str] = &["node_modules", "target", ".next", ".turbo", "__pycache__"];
+/// How deep to look for projects under the home folder.
+const PROJECT_DEPTH: usize = 5;
+
+/// What can be cleared, from the last scan; cleanup only takes these.
+static LAST: std::sync::Mutex<Vec<(&'static str, Vec<PathBuf>)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Every group, biggest first. Reads only; takes up to about 15 seconds.
+pub fn groups() -> Vec<Group> {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let home = dirs::home_dir().unwrap_or_default();
+    let local = dirs::data_local_dir().unwrap_or_default();
+    let mut out = Vec::new();
+
+    if let Some(dl) = dirs::download_dir() {
+        let (installers, old) = downloads_to_clear(&dl, SystemTime::now());
+        out.push(files_group(
+            "installers",
+            "Old installers",
+            "Setup files in Downloads, already installed or not needed.",
+            installers,
+            true,
+        ));
+        out.push(files_group(
+            "downloads",
+            "Old downloads",
+            "Files in Downloads you have not touched for a month.",
+            old,
+            true,
+        ));
+    }
+
+    // Build folders inside projects: rebuilt by the next install or build.
+    let mut builds = Vec::new();
+    find_build_dirs(&home, 0, deadline, &mut builds);
+    let mut partial = Instant::now() > deadline;
+    let mut sized = Vec::new();
+    for dir in builds {
+        let u = folder_size(&dir, deadline, &mut Vec::new());
+        partial |= u.partial;
+        sized.push((u.bytes, dir));
+    }
+    let mut g = files_group(
+        "build",
+        "Build folders",
+        "node_modules, target and .next in your projects. The next install or build makes them again.",
+        sized,
+        true,
+    );
+    g.partial |= partial;
+    out.push(g);
+
+    let caches = [
+        local.join("Temp"),
+        local.join("npm-cache"),
+        local.join("pip").join("cache"),
+        local.join("Yarn").join("Cache"),
+        local.join("pnpm-cache"),
+        home.join(".cache"),
+        home.join(".cargo").join("registry"),
+        local.join("NuGet").join("v3-cache"),
+    ];
+    out.push(folders_group(
+        "caches",
+        "Caches",
+        "Temporary files and package caches. Storage Sense clears the safe ones.",
+        &caches,
+        deadline,
+        false,
+    ));
+
+    out.push(folders_group(
+        "games",
+        "Games",
+        "Steam and Epic libraries. Uninstall a game from its launcher.",
+        &game_dirs(),
+        deadline,
+        false,
+    ));
+
+    let mut vms: Vec<(u64, PathBuf)> = Vec::new();
+    let packages = local.join("Packages");
+    if let Ok(entries) = std::fs::read_dir(&packages) {
+        for e in entries.flatten() {
+            let disk = e.path().join("LocalState").join("ext4.vhdx");
+            if let Ok(m) = disk.metadata() {
+                vms.push((m.len(), disk));
+            }
+        }
+    }
+    for p in [
+        local
+            .join("Docker")
+            .join("wsl")
+            .join("disk")
+            .join("docker_data.vhdx"),
+        local
+            .join("Docker")
+            .join("wsl")
+            .join("data")
+            .join("ext4.vhdx"),
+    ] {
+        if let Ok(m) = p.metadata() {
+            vms.push((m.len(), p));
+        }
+    }
+    out.push(files_group(
+        "vms",
+        "WSL and Docker",
+        "Linux disks grow and do not shrink on their own. Prune inside Docker or compact the disk.",
+        vms,
+        false,
+    ));
+
+    out.retain(|g| g.bytes > 0);
+    out.sort_by_key(|g| std::cmp::Reverse(g.bytes));
+    if let Ok(mut last) = LAST.lock() {
+        *last = out
+            .iter()
+            .filter(|g| g.clearable)
+            .map(|g| {
+                (
+                    g.id,
+                    g.items.iter().map(|i| PathBuf::from(&i.path)).collect(),
+                )
+            })
+            .collect();
+    }
+    out
+}
+
+fn files_group(
+    id: &'static str,
+    label: &'static str,
+    what: &'static str,
+    mut files: Vec<(u64, PathBuf)>,
+    clearable: bool,
+) -> Group {
+    files.sort_by_key(|x| std::cmp::Reverse(x.0));
+    Group {
+        id,
+        label,
+        what,
+        bytes: files.iter().map(|x| x.0).sum(),
+        partial: false,
+        items: files
+            .into_iter()
+            .take(SHOWN)
+            .map(|(bytes, p)| GroupItem {
+                path: p.display().to_string(),
+                bytes,
+            })
+            .collect(),
+        clearable,
+    }
+}
+
+fn folders_group(
+    id: &'static str,
+    label: &'static str,
+    what: &'static str,
+    dirs: &[PathBuf],
+    deadline: Instant,
+    clearable: bool,
+) -> Group {
+    let mut partial = false;
+    let sized = dirs
+        .iter()
+        .filter(|d| d.is_dir())
+        .map(|d| {
+            let u = folder_size(d, deadline, &mut Vec::new());
+            partial |= u.partial;
+            (u.bytes, d.clone())
+        })
+        .filter(|x| x.0 > 0)
+        .collect();
+    let mut g = files_group(id, label, what, sized, clearable);
+    g.partial = partial;
+    g
+}
+
+/// node_modules, target and the like under `dir`, not looking inside them.
+fn find_build_dirs(dir: &Path, depth: usize, deadline: Instant, out: &mut Vec<PathBuf>) {
+    if depth > PROJECT_DEPTH || Instant::now() > deadline {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let Ok(ft) = e.file_type() else { continue };
+        if !ft.is_dir() || ft.is_symlink() {
+            continue;
+        }
+        let name = e.file_name().to_string_lossy().to_lowercase();
+        if BUILD_DIRS.contains(&name.as_str()) {
+            // "target" counts only in a Rust project.
+            if name != "target" || dir.join("Cargo.toml").is_file() {
+                out.push(e.path());
+            }
+            continue;
+        }
+        // App data and hidden folders hold no projects worth this walk.
+        if name.starts_with('.') || name == "appdata" || SKIP.contains(&name.as_str()) {
+            continue;
+        }
+        find_build_dirs(&e.path(), depth + 1, deadline, out);
+    }
+}
+
+/// Steam and Epic game folders found on this PC.
+fn game_dirs() -> Vec<PathBuf> {
+    let mut libs = vec![
+        PathBuf::from(r"C:\Program Files (x86)\Steam\steamapps\common"),
+        PathBuf::from(r"C:\Program Files\Epic Games"),
+    ];
+    // Other Steam libraries are listed in libraryfolders.vdf.
+    let vdf = PathBuf::from(r"C:\Program Files (x86)\Steam\steamapps\libraryfolders.vdf");
+    if let Ok(text) = std::fs::read_to_string(vdf) {
+        for line in text.lines() {
+            let line = line.trim();
+            if let Some(rest) = line.strip_prefix("\"path\"") {
+                let path = rest.trim().trim_matches('"').replace("\\\\", "\\");
+                libs.push(PathBuf::from(path).join("steamapps").join("common"));
+            }
+        }
+    }
+    libs.sort();
+    libs.dedup();
+    libs.into_iter()
+        .filter(|l| l.is_dir())
+        .flat_map(|l| {
+            std::fs::read_dir(l)
+                .map(|r| {
+                    r.flatten()
+                        .map(|e| e.path())
+                        .filter(|p| p.is_dir())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+/// Sends the chosen items of a clearable group to the Recycle Bin. Only
+/// paths the last scan listed in that group are taken.
+pub fn clean(group: &str, paths: &[String]) -> Result<(usize, u64), String> {
+    let allowed: Vec<PathBuf> = LAST
+        .lock()
+        .map_err(|e| e.to_string())?
+        .iter()
+        .find(|(id, _)| *id == group)
+        .map(|(_, p)| p.clone())
+        .ok_or("Scan again first")?;
+    let mut count = 0;
+    let mut freed = 0;
+    for p in paths {
+        let path = PathBuf::from(p);
+        if !allowed.contains(&path) {
+            return Err(format!("{p} was not in the list"));
+        }
+        let size = if path.is_dir() {
+            folder_size(&path, Instant::now() + BUDGET, &mut Vec::new()).bytes
+        } else {
+            path.metadata().map(|m| m.len()).unwrap_or(0)
+        };
+        if trash::delete(&path).is_ok() {
+            count += 1;
+            freed += size;
+        }
+    }
+    Ok((count, freed))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,6 +542,32 @@ mod tests {
         assert_eq!(installers.len(), 1);
         assert_eq!(old.len(), 1, "notes.txt is a month old by then");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn finds_build_folders_in_projects_only() {
+        let dir = std::env::temp_dir().join(format!("sidekick-build-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("web").join("node_modules").join("x")).unwrap();
+        std::fs::create_dir_all(dir.join("rs").join("target")).unwrap();
+        std::fs::write(dir.join("rs").join("Cargo.toml"), "").unwrap();
+        std::fs::create_dir_all(dir.join("photos").join("target")).unwrap();
+        let mut found = Vec::new();
+        find_build_dirs(&dir, 0, Instant::now() + BUDGET, &mut found);
+        found.sort();
+        assert_eq!(
+            found,
+            vec![
+                dir.join("rs").join("target"),
+                dir.join("web").join("node_modules")
+            ]
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn cleans_only_what_the_scan_listed() {
+        assert!(clean("build", &["C:\\Windows".into()]).is_err());
     }
 
     #[test]
