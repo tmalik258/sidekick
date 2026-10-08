@@ -2450,3 +2450,12 @@ select.ak-mi option {
   display: flex;
   gap: 2px;
 }
+
+/* In a chat the field sits under the answers; home and History keep it on top. */
+.ak[data-chat] > .ak-bar {
+  order: 1;
+}
+.ak[data-chat] > .ak-err,
+.ak[data-chat] > .ak-foot {
+  order: 2;
+}
