@@ -17,7 +17,6 @@ use sherpa_onnx::{
 
 use crate::audio::Mic;
 use crate::models::{SPEECH, WAKE};
-use crate::text::WAKE_KEYWORDS;
 use crate::{MIC_RATE, Result, VoiceError};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -205,7 +204,12 @@ impl Engine {
                 keywords_score: 2.5,
                 keywords_threshold: 0.05,
                 num_trailing_blanks: 1,
-                keywords_buf: Some(WAKE_KEYWORDS.to_owned()),
+                keywords_buf: Some(crate::text::wake_keywords(
+                    std::fs::read(WAKE.path(models).join("bpe.model"))
+                        .ok()
+                        .map(|b| crate::text::read_vocab(&b))
+                        .as_ref(),
+                )),
                 ..Default::default()
             };
             let spotter = KeywordSpotter::create(&config)

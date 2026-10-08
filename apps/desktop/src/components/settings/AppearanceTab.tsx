@@ -6,7 +6,7 @@
 import { updateSettings, useSidekick } from "@/lib/store";
 import { ISLAND_COLORS, type IslandColor, THEMES } from "@/lib/types";
 import { Orb, THEME_STYLES } from "../Orb";
-import { Field, Section, Select, Toggle } from "./ui";
+import { Field, Section, Select, TextField, Toggle } from "./ui";
 
 const COLLAPSE_OPTIONS: [string, string][] = [
   ["4", "4 seconds"],
@@ -68,6 +68,17 @@ export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
           ))}
         </div>
       </Section>
+      <Section title="Name" keywords="name rename wake word hey call assistant orbi">
+        <Field label="Assistant name" hint={nameHint(settings.assistantName)}>
+          <TextField
+            label="Assistant name"
+            value={settings.assistantName}
+            placeholder="Sidekick"
+            onCommit={(assistantName) => save({ assistantName: assistantName || "Sidekick" })}
+          />
+        </Field>
+      </Section>
+
       <Section
         title="Island"
         hint="The capsule around the mascot when it opens. Menus always use Graphite."
@@ -133,4 +144,13 @@ export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
       </Section>
     </>
   );
+}
+
+/** What saying the name does, and a warning for names that wake by mistake. */
+function nameHint(name: string): string {
+  const said = `Say "Hey ${name || "Sidekick"}" to talk. "Hey Sidekick" keeps working too.`;
+  const vowels = (name.toLowerCase().match(/[aeiouy]+/g) ?? []).length;
+  return name.length < 4 || vowels < 2
+    ? `${said} Short names wake by mistake more often; two syllables or more work best.`
+    : said;
 }

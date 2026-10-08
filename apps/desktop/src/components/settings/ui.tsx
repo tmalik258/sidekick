@@ -860,8 +860,31 @@ export function ShortcutRecorder({
           Off
         </Button>
       )}
+      {reservedBy(value) && !recording && (
+        <span className="text-[11px] text-[#ff9f0a]">Also used by {reservedBy(value)}</span>
+      )}
     </div>
   );
+}
+
+/** Keys other apps commonly take, with who takes them. */
+const RESERVED: Record<string, string> = {
+  "Alt+R": "the NVIDIA overlay",
+  "Alt+Z": "the NVIDIA overlay",
+  "Alt+F9": "the NVIDIA overlay",
+  "Alt+F10": "the NVIDIA overlay",
+  "Alt+Shift+F10": "the NVIDIA overlay",
+  "Alt+Tab": "Windows",
+  "Alt+F4": "Windows",
+  "Ctrl+Shift+Escape": "Windows",
+  "Super+G": "the Xbox Game Bar",
+  "Super+Alt+R": "the Xbox Game Bar",
+  "Alt+Space": "Windows (PowerToys Run)",
+};
+
+/** Who else uses `keys`, or null. */
+export function reservedBy(keys: string): string | null {
+  return RESERVED[keys] ?? null;
 }
 
 const KEY_NAMES: Record<string, string> = {

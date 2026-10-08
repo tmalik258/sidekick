@@ -1095,3 +1095,6 @@ export function uiVolume(): number {
   const { settings } = useSidekick.getState();
   return settings.muted ? 0 : settings.masterVolume * 0.7;
 }
+
+/** The assistant's name, "Sidekick" unless the user renamed it. */
+export const useAssistantName = () => useSidekick((s) => s.settings.assistantName || "Sidekick");
