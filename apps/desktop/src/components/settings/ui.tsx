@@ -10,10 +10,12 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { setOverlayHit } from "@/lib/store";
 import { Tip } from "../Tip";
 
 /** The settings search text; empty shows everything. */
@@ -298,7 +300,8 @@ export function Select({
   group,
   current: currentLabel,
   variant = "chip",
-  portal,
+  overlay,
+  searchable,
 }: {
   value: string;
   options: SelectOption[];
@@ -311,9 +314,11 @@ export function Select({
   current?: string;
   /** "plain": text with a chevron, for a line of details (Agents). */
   variant?: "chip" | "plain";
-  /** Shows the menu in this element, in the page's flow, so a panel that
-   * fits its content grows to fit the menu instead of cutting it off. */
-  portal?: HTMLElement | null;
+  /** Float the menu over the UI (portal to body) so a size-to-content
+   * panel does not grow. */
+  overlay?: boolean;
+  /** A filter field at the top of the menu (long lists). */
+  searchable?: boolean;
 }) {
   const rows = options.map(toRow);
   // Keep an unknown current value visible, but never invent a second row that
@@ -326,6 +331,11 @@ export function Select({
   })();
   const current = currentLabel ?? list.find((r) => r.value === value)?.label ?? (value || "Default");
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const shown = q
+    ? list.filter((r) => `${r.label} ${r.sub ?? ""} ${r.value}`.toLowerCase().includes(q))
+    : list;
   const [active, setActive] = useState(() =>
     Math.max(
       0,
@@ -334,26 +344,52 @@ export function Select({
   );
   const root = useRef<HTMLDivElement>(null);
   const menu = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const listId = useId();
   const rich = list.some((r) => r.sub || r.icon);
   // Opens upward when the panel has no room below the chip.
   const [up, setUp] = useState(false);
+  const [float, setFloat] = useState<{ left: number; top: number; width: number; above: boolean } | null>(null);
+
+  const menuChrome = (group ? 30 : 0) + (searchable ? 44 : 0) + 16;
+  const placeOverlay = () => {
+    const el = root.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const want = Math.min(288, Math.max(shown.length, 1) * (rich ? 44 : 32) + menuChrome);
+    const above = window.innerHeight - r.bottom < want && r.top - want > 0;
+    const width = Math.min(296, Math.max(rich ? 220 : r.width, r.width));
+    const left = Math.min(Math.max(8, r.left), window.innerWidth - width - 8);
+    const top = above ? r.top - 4 : r.bottom + 4;
+    setUp(above);
+    setFloat({ left, top, width, above });
+    // Expand the island's clickable area so the menu is not click-through.
+    setOverlayHit({
+      x: left,
+      y: above ? top - want : top,
+      width,
+      height: want,
+    });
+  };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: list is rebuilt every render; reseat from value when opened
   useEffect(() => {
-    if (!open) return;
-    setActive(
-      Math.max(
-        0,
-        list.findIndex((r) => r.value === value),
-      ),
-    );
+    if (!open) {
+      setFloat(null);
+      setQuery("");
+      if (overlay) setOverlayHit(null);
+      return;
+    }
+    const idx = shown.findIndex((r) => r.value === value);
+    setActive(Math.max(0, idx));
     const el = root.current;
-    if (el && !portal) {
+    if (el && overlay) {
+      placeOverlay();
+    } else if (el) {
       let box: Element | null = el.parentElement;
       while (box && box !== document.body && getComputedStyle(box).overflowY === "visible") box = box.parentElement;
       const limit = box && box !== document.body ? box.getBoundingClientRect().bottom : window.innerHeight;
-      const want = Math.min(288, list.length * (rich ? 44 : 32) + (group ? 30 : 0) + 16);
+      const want = Math.min(288, Math.max(shown.length, 1) * (rich ? 44 : 32) + menuChrome);
       const r = el.getBoundingClientRect();
       setUp(limit - r.bottom < want && r.top - want > 0);
     }
@@ -361,13 +397,75 @@ export function Select({
       const t = e.target as Node;
       if (!root.current?.contains(t) && !menu.current?.contains(t)) setOpen(false);
     };
+    const onReposition = () => {
+      if (overlay) placeOverlay();
+      else setOpen(false);
+    };
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open, value]);
+    if (overlay) {
+      window.addEventListener("resize", onReposition);
+      window.addEventListener("scroll", onReposition, true);
+    }
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
+      if (overlay) setOverlayHit(null);
+    };
+  }, [open, value, overlay]);
+
+  useEffect(() => {
+    if (!open || !searchable) return;
+    requestAnimationFrame(() => searchRef.current?.focus({ preventScroll: true }));
+  }, [open, searchable]);
+
+  // Keep the highlight on a visible row while filtering.
+  useEffect(() => {
+    if (!open) return;
+    setActive((i) => (shown.length === 0 ? 0 : Math.min(i, shown.length - 1)));
+  }, [q, open, shown.length]);
+
+  // Prefer the painted menu box once it exists (estimated height can be high).
+  useLayoutEffect(() => {
+    if (!open || !overlay || !float) return;
+    const m = menu.current;
+    if (!m) return;
+    const r = m.getBoundingClientRect();
+    setOverlayHit({ x: r.left, y: r.top, width: r.width, height: r.height });
+  }, [open, overlay, float, shown.length, query]);
 
   const pick = (v: string) => {
     onChange(v);
     setOpen(false);
+  };
+
+  const move = (dir: 1 | -1) => {
+    if (shown.length === 0) return;
+    setActive((i) => (i + dir + shown.length) % shown.length);
+  };
+
+  const onMenuKey = (e: ReactKeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      if (query) setQuery("");
+      else setOpen(false);
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      move(1);
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      move(-1);
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const next = shown[active];
+      if (next) pick(next.value);
+    }
   };
 
   const onKey = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -382,8 +480,7 @@ export function Select({
         setOpen(true);
         return;
       }
-      const dir = e.key === "ArrowDown" ? 1 : -1;
-      setActive((i) => (i + dir + list.length) % list.length);
+      move(e.key === "ArrowDown" ? 1 : -1);
       return;
     }
     if (e.key === "Enter" || e.key === " ") {
@@ -392,33 +489,18 @@ export function Select({
         setOpen(true);
         return;
       }
-      const next = list[active];
+      const next = shown[active];
       if (next) pick(next.value);
     }
   };
 
-  const menuList = (
-    <div
-      id={listId}
-      role="listbox"
-      aria-label={label}
-      ref={menu}
-      className={`menu island-scroll z-30 max-h-72 overflow-y-auto rounded-[15px] p-1.5 ${
-        portal
-          ? "mt-1.5 w-full max-w-[296px] [--menu-origin:top_left]"
-          : `absolute ${variant === "plain" ? "left-0" : "right-0"} ${
-              up ? "bottom-[calc(100%+4px)] [--menu-origin:bottom_right]" : "top-[calc(100%+4px)]"
-            } ${rich ? "w-[296px]" : "w-max min-w-full max-w-64"}`
-      }`}
-    >
-      {group && (
-        <div className="px-[9px] pt-2 pb-[3px] text-[10.5px] tracking-[0.06em] text-white/45 uppercase">{group}</div>
-      )}
-      {list.map((r, i) => {
+  const optionsList = (
+    <>
+      {shown.map((r, i) => {
         const selected = r.value === value;
         return (
           <div key={r.value || "__default"}>
-            {r.sepBefore && <div className="mx-[9px] my-[5px] h-px scale-y-50 bg-white/12" />}
+            {r.sepBefore && !q && <div className="mx-[9px] my-[5px] h-px scale-y-50 bg-white/12" />}
             <div
               role="option"
               tabIndex={-1}
@@ -463,6 +545,56 @@ export function Select({
           </div>
         );
       })}
+      {shown.length === 0 && (
+        <div className="px-[9px] py-2.5 text-[12.5px] text-white/45">No matches</div>
+      )}
+    </>
+  );
+
+  const menuList = (
+    <div
+      id={listId}
+      role="listbox"
+      aria-label={label}
+      ref={menu}
+      onKeyDown={onMenuKey}
+      className={`menu z-30 flex max-h-72 flex-col rounded-[15px] p-1.5 ${
+        overlay
+          ? `[--menu-origin:${up ? "bottom_left" : "top_left"}]`
+          : `absolute ${variant === "plain" ? "left-0" : "right-0"} ${
+              up ? "bottom-[calc(100%+4px)] [--menu-origin:bottom_right]" : "top-[calc(100%+4px)]"
+            } ${rich ? "w-[296px]" : "w-max min-w-full max-w-64"}`
+      }`}
+      style={
+        overlay && float
+          ? {
+              position: "fixed",
+              left: float.left,
+              top: float.above ? undefined : float.top,
+              bottom: float.above ? window.innerHeight - float.top : undefined,
+              width: float.width,
+              zIndex: 100,
+            }
+          : undefined
+      }
+    >
+      {searchable && (
+        <input
+          ref={searchRef}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={`Search ${label.toLowerCase()}…`}
+          spellCheck={false}
+          aria-label={`Search ${label}`}
+          className="mb-1 w-full shrink-0 rounded-[9px] bg-white/[0.08] px-2.5 py-1.5 text-[12.5px] text-white outline-none placeholder:text-white/35 focus:bg-white/[0.11]"
+        />
+      )}
+      {group && (
+        <div className="shrink-0 px-[9px] pt-1 pb-[3px] text-[10.5px] tracking-[0.06em] text-white/45 uppercase">
+          {group}
+        </div>
+      )}
+      <div className="island-scroll min-h-0 flex-1 overflow-y-auto">{optionsList}</div>
     </div>
   );
 
@@ -498,8 +630,8 @@ export function Select({
           />
         </svg>
       </button>
-      {open && !portal && menuList}
-      {open && portal && createPortal(menuList, portal)}
+      {open && !overlay && menuList}
+      {open && overlay && float && createPortal(menuList, document.body)}
     </div>
   );
 }

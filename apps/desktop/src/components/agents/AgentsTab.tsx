@@ -86,8 +86,6 @@ function NewSession({ sessions }: { sessions: Session[] }) {
   const { data: agents } = useCached<Agents>("agents", api.agentsStatus);
   const { data: projects } = useCached<{ name: string; path: string }[]>("projects", api.projectsList);
   const [agent, setAgent] = useState<string>("");
-  // Where the agent and project menus open, so the island grows to show them.
-  const [menuSlot, setMenuSlot] = useState<HTMLDivElement | null>(null);
   const [path, setPath] = useState("");
   const [mode, setMode] = useState<AgentMode>("edit");
   const [prompt, setPrompt] = useState("");
@@ -129,14 +127,13 @@ function NewSession({ sessions }: { sessions: Session[] }) {
               <span className="ak-mi b">
                 <Select
                   variant="plain"
-                  portal={menuSlot}
+                  overlay
                   label="Agent"
                   value={pickedAgent}
                   onChange={setAgent}
                   options={choices.map((c) => ({
                     value: c.id,
                     label: c.name,
-                    sub: c.id === "codex" ? "Your ChatGPT plan" : "Your Claude plan",
                     icon: c.id === "codex" ? "X" : "C",
                     color: c.id === "codex" ? "#10a37f" : "#d97757",
                   }))}
@@ -148,7 +145,8 @@ function NewSession({ sessions }: { sessions: Session[] }) {
             <span className="ak-mi max-w-44">
               <Select
                 variant="plain"
-                portal={menuSlot}
+                overlay
+                searchable
                 label="Project"
                 value={pickedPath}
                 onChange={setPath}
@@ -163,7 +161,6 @@ function NewSession({ sessions }: { sessions: Session[] }) {
             </span>
             <ModeSwitch mode={mode} onChange={setMode} />
           </div>
-          <div ref={setMenuSlot} />
           <div className="ak-composer">
             <input
               ref={inputRef}

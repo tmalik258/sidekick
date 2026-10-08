@@ -319,11 +319,21 @@ export function Island() {
           : morphOpen
       : morphClose;
 
+  const overlayHit = useSidekick((s) => s.overlayHit);
   // Report the target shape as the interactive area; outside it the window
-  // stays click-through. Sent once per change, not per animation frame.
+  // stays click-through. A floating menu expands the rect so it stays usable.
   useEffect(() => {
-    void api.islandSetHitRect({ x: (window.innerWidth - width) / 2, y: TOP, width, height });
-  }, [width, height]);
+    const base = { x: (window.innerWidth - width) / 2, y: TOP, width, height };
+    const rect = overlayHit
+      ? {
+          x: Math.min(base.x, overlayHit.x),
+          y: Math.min(base.y, overlayHit.y),
+          width: Math.max(base.x + base.width, overlayHit.x + overlayHit.width) - Math.min(base.x, overlayHit.x),
+          height: Math.max(base.y + base.height, overlayHit.y + overlayHit.height) - Math.min(base.y, overlayHit.y),
+        }
+      : base;
+    void api.islandSetHitRect(rect);
+  }, [width, height, overlayHit]);
 
   // A small squish when something gets the mascot's attention while compact.
   useEffect(() => {
