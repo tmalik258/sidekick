@@ -293,7 +293,7 @@ export function ChatControls({
                   <span>How hard it thinks</span>
                   <span className="ak-dots" aria-hidden="true">
                     {LEVELS.map(([v], i) => (
-                      <i key={v} data-on={level ? i <= LEVELS.indexOf(level) : false} />
+                      <i key={v} className="ak-dot" data-on={level ? i <= LEVELS.indexOf(level) : false} />
                     ))}
                   </span>
                 </div>
@@ -334,7 +334,7 @@ export function ChatControls({
             chip={
               <>
                 <span className="ak-ring" aria-hidden="true">
-                  <i style={{ "--p": ringPct } as CSSProperties} />
+                  <i className="ak-cring" style={{ "--p": ringPct } as CSSProperties} />
                 </span>
                 {usageText}
               </>
@@ -351,7 +351,7 @@ export function ChatControls({
                       </span>
                     </div>
                     <div className="ak-pbar">
-                      <i style={{ width: `${ctxPct}%` }} />
+                      <i className="ak-pfill" style={{ width: `${ctxPct}%` }} />
                     </div>
                   </>
                 )}
@@ -369,7 +369,10 @@ export function ChatControls({
                         </span>
                       </div>
                       <div className="ak-pbar">
-                        <i style={{ width: `${planPct}%`, background: planPct > 65 ? "#ff9f0a" : undefined }} />
+                        <i
+                          className="ak-pfill"
+                          style={{ width: `${planPct}%`, background: planPct > 65 ? "#ff9f0a" : undefined }}
+                        />
                       </div>
                     </div>
                   </>

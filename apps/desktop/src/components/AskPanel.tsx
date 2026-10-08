@@ -736,8 +736,28 @@ export function AskPanel() {
               ["board", "Board"],
             ] as const
           ).map(([id, label]) => (
-            <button key={id} type="button" aria-pressed={layout === id} onClick={() => setLayout(id)} className="chip">
-              {label}
+            <button
+              key={id}
+              type="button"
+              aria-pressed={layout === id}
+              aria-label={label}
+              title={label}
+              onClick={() => setLayout(id)}
+              className="chip"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5">
+                {id === "one" ? (
+                  <rect x="3" y="3" width="10" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.4" />
+                ) : (
+                  <path
+                    d="M3 3h4v4H3zM9 3h4v4H9zM3 9h4v4H3zM9 9h4v4H9z"
+                    fill="currentColor"
+                    stroke="currentColor"
+                    strokeWidth="0.6"
+                    strokeLinejoin="round"
+                  />
+                )}
+              </svg>
             </button>
           ))}
         </fieldset>

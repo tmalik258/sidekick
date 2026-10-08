@@ -796,7 +796,7 @@ function SessionView({
 }
 
 /** The short tag in front of each step, as in a terminal log. */
-const STEP_TAG: Record<string, string> = {
+export const STEP_TAG: Record<string, string> = {
   Read: "Read",
   Edit: "Edit",
   MultiEdit: "Edit",
