@@ -135,7 +135,7 @@ impl OpenAiCompat {
         // Qwen3 thinks before every answer by default, and Ollama sends none
         // of it until it is done: 10 to 25 seconds before the first word on
         // a laptop, for questions that do not need it.
-        let system = if thinks_by_default(model) {
+        let system = if thinks_by_default(model) && !req.think {
             format!("{}\n/no_think", req.system).trim_start().to_owned()
         } else {
             req.system.clone()
@@ -848,6 +848,7 @@ mod tests {
                 system: "Be brief.".into(),
                 messages: vec![Message::user("hi")],
                 image: None,
+                think: false,
             },
             true,
         );
@@ -907,6 +908,9 @@ mod tests {
         };
         let body = OpenAiCompat::body("qwen3:1.7b", &req, true);
         assert_eq!(body["messages"][0]["content"], "Be brief.\n/no_think");
+        let req = ChatRequest { think: true, ..req };
+        let body = OpenAiCompat::body("qwen3:1.7b", &req, true);
+        assert_eq!(body["messages"][0]["content"], "Be brief.");
     }
 
     #[test]
@@ -1084,6 +1088,7 @@ mod tests {
                     system: "s".into(),
                     messages: vec![Message::user("my issues?")],
                     image: None,
+                    think: false,
                 },
                 &list_tool(),
                 &runner,
@@ -1140,6 +1145,7 @@ mod tests {
                     system: String::new(),
                     messages: vec![Message::user("two at once")],
                     image: None,
+                    think: false,
                 },
                 &list_tool(),
                 &Slow(parallel),
@@ -1184,6 +1190,7 @@ mod tests {
                     system: String::new(),
                     messages: vec![Message::user("loop")],
                     image: None,
+                    think: false,
                 },
                 &list_tool(),
                 &runner,

@@ -257,6 +257,7 @@ mod tests {
             system: "Be brief.".into(),
             messages: vec![Message::user("hi")],
             image: None,
+            think: false,
         });
         assert_eq!(body["model"], DEFAULT_MODEL);
         assert_eq!(body["system"], "Be brief.");
@@ -271,6 +272,7 @@ mod tests {
             system: String::new(),
             messages: vec![Message::user("what is this?")],
             image: Some(vec![1, 2, 3]),
+            think: false,
         });
         let content = &body["messages"][0]["content"];
         assert_eq!(content[0]["type"], "image");

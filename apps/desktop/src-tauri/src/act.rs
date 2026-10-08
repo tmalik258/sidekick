@@ -663,6 +663,7 @@ async fn find_on_screen(app: &AppHandle, want: &str) -> Result<(i32, i32, &'stat
         ),
         messages: vec![sidekick_ai::Message::user(format!("Where is: {want}"))],
         image: Some(png),
+        think: false,
     };
     let answer = tokio::time::timeout(Duration::from_secs(40), model.complete(&req, json!({})))
         .await
@@ -920,6 +921,29 @@ mod tests {
             "reply to Ali and attach the invoice"
         ));
         assert!(!super::super::ai::looks_multistep("what is on my screen"));
+    }
+
+    #[test]
+    fn thinks_only_when_the_question_needs_it() {
+        use super::super::ai::needs_thinking;
+        for q in [
+            "why is my laptop slow",
+            "compare cursor vs vs code",
+            "what is 15% of 2400 / 3",
+            "plan my week",
+            "should i upgrade my RAM?",
+        ] {
+            assert!(needs_thinking(q), "{q}");
+        }
+        for q in [
+            "turn on hotspot",
+            "can you access internet?",
+            "open cursor",
+            "what is on my screen",
+            "whys",
+        ] {
+            assert!(!needs_thinking(q), "{q}");
+        }
     }
 
     #[test]

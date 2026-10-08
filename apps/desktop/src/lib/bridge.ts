@@ -190,6 +190,8 @@ export const api = {
       prefer?: string | null;
       /** Started early at a pause in speech: hidden until aiRelease. */
       hold?: boolean;
+      /** "Think harder": let the local model reason before answering. */
+      think?: boolean;
     },
     localOnly: boolean,
   ) => invoke<void>("ai_chat", { id, messages, attach, localOnly }),

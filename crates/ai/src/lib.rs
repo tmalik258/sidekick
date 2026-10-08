@@ -63,6 +63,9 @@ pub struct ChatRequest {
     pub messages: Vec<Message>,
     /// A PNG the latest question is about (a screenshot), if any.
     pub image: Option<Vec<u8>>,
+    /// Let a model that can think before answering do so. Off, it answers
+    /// straight away (see `needs_thinking`).
+    pub think: bool,
 }
 
 impl ChatRequest {
@@ -233,6 +236,7 @@ mod tests {
                 Message::user("what is 2+2?"),
             ],
             image: None,
+            think: false,
         };
         let t = transcript(&req);
         assert!(t.starts_with("Be brief."));
@@ -246,6 +250,7 @@ mod tests {
             system: String::new(),
             messages: vec![Message::user("hello")],
             image: None,
+            think: false,
         };
         assert_eq!(transcript(&req), "hello");
     }

@@ -12,6 +12,7 @@ async fn run(p: &dyn AiProvider, prompt: &str) -> (Result<String, String>, Strin
         system: String::new(),
         messages: vec![Message::user(prompt)],
         image: None,
+        think: false,
     };
     let r = p
         .chat(&req, &sink, &CancellationToken::new())
@@ -77,6 +78,7 @@ done
             Message::user("and again"),
         ],
         image: None,
+        think: false,
     };
     let second = p
         .chat(&req, &Sink::new(tx), &CancellationToken::new())
