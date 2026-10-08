@@ -132,8 +132,16 @@ impl OpenAiCompat {
 
     fn body(model: &str, req: &ChatRequest, stream: bool) -> Value {
         let mut messages = Vec::with_capacity(req.messages.len() + 1);
-        if !req.system.is_empty() {
-            messages.push(json!({"role": "system", "content": req.system}));
+        // Qwen3 thinks before every answer by default, and Ollama sends none
+        // of it until it is done: 10 to 25 seconds before the first word on
+        // a laptop, for questions that do not need it.
+        let system = if thinks_by_default(model) {
+            format!("{}\n/no_think", req.system).trim_start().to_owned()
+        } else {
+            req.system.clone()
+        };
+        if !system.is_empty() {
+            messages.push(json!({"role": "system", "content": system}));
         }
         messages.extend(req.messages.iter().map(|m| json!(m)));
         if let (Some(data), Some(last)) = (req.image_base64(), messages.last_mut()) {
@@ -165,6 +173,16 @@ impl OpenAiCompat {
             .unwrap_or_default()
             .to_owned())
     }
+}
+
+/// Qwen3 models that think unless told `/no_think` (the 2507 instruct
+/// builds never think; the thinking builds ignore it).
+fn thinks_by_default(model: &str) -> bool {
+    let m = model.to_ascii_lowercase();
+    m.starts_with("qwen3")
+        && !m.starts_with("qwen3-")
+        && !m.contains("2507")
+        && !m.contains("instruct")
 }
 
 /// Warming the same model again within this time does nothing.
@@ -875,6 +893,20 @@ mod tests {
         assert_eq!(strip_thinking("<think>hmm</think>\n\nHello"), "Hello");
         assert_eq!(strip_thinking("<think>never closed"), "");
         assert_eq!(strip_thinking("  plain  "), "plain");
+    }
+
+    #[test]
+    fn qwen3_answers_without_thinking() {
+        assert!(thinks_by_default("qwen3:1.7b"));
+        assert!(!thinks_by_default("qwen3:4b-instruct-2507-q4_K_M"));
+        assert!(!thinks_by_default("qwen3-coder:30b"));
+        assert!(!thinks_by_default("llama3.2:3b"));
+        let req = ChatRequest {
+            system: "Be brief.".into(),
+            ..Default::default()
+        };
+        let body = OpenAiCompat::body("qwen3:1.7b", &req, true);
+        assert_eq!(body["messages"][0]["content"], "Be brief.\n/no_think");
     }
 
     #[test]

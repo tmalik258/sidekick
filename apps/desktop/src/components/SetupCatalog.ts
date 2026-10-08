@@ -56,7 +56,7 @@ export const SETUP_CATALOG: Array<{
     id: "ollama_light",
     group: "ai",
     title: "Lighter Ollama",
-    why: "Uses about half the memory and answers faster. Restarts Ollama.",
+    why: "8K context with about half the memory, so answers keep the whole question. Restarts Ollama.",
     recommended: true,
   },
   {
