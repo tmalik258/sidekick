@@ -485,7 +485,9 @@ function SessionView({
                 <p>
                   {s.agent} wants to: <span className="font-medium text-white">{s.question.label}</span>
                 </p>
-                {s.question.detail && <code className="mono">{s.question.detail}</code>}
+                {s.question.detail && (
+                  <code className="mono ak-scroll">{s.question.detail.replace(/\\\\/g, "\\")}</code>
+                )}
                 <div className="ak-chips">
                   <button type="button" onClick={() => answerQuestion(s.id, "allow")} className="ak-chip primary chip">
                     Allow{" "}

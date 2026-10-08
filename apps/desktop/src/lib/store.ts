@@ -4,7 +4,7 @@ import { api, EVENTS, listen } from "./bridge";
 import { putCached, SETUP_STATUS_CACHE_KEY } from "./cache";
 import { firstToday, isThanks, type Mood, moodForSkill, SUGGESTION_MOOD_MS } from "./mood";
 import { type NetNotice, watchNet } from "./net";
-import { cueVolume, playCue, playMood, playSound, preloadSounds, setDndQuiet } from "./sound";
+import { cueVolume, playCue, playMood, playSound, preloadSounds } from "./sound";
 import type { SynthSound } from "./synth";
 import { timings } from "./timings";
 import { toolStatus } from "./tools";
@@ -1104,19 +1104,9 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
     () => setMood("happy", 2500),
   );
 
-  // Quiet in Do Not Disturb: checked now and every minute.
-  const checkDnd = () =>
-    void api
-      .dndGet()
-      .then((on) => setDndQuiet(on === true))
-      .catch(() => undefined);
-  checkDnd();
-  const dndTimer = setInterval(checkDnd, 60_000);
-
   return () => {
     disposed = true;
     stopNet();
-    clearInterval(dndTimer);
     for (const off of unlisteners) off();
   };
 }

@@ -158,14 +158,7 @@ export function cueVolume(settings: Settings, cue: Cue): number {
   return settings.masterVolume * (settings.cueVolumes[cue] ?? 1);
 }
 
-/** Windows Do Not Disturb is on: Sidekick makes no sound either. */
-let dnd = false;
-export function setDndQuiet(on: boolean) {
-  dnd = on;
-}
-
 export function playCue(cue: Cue, volume: number, kitId: string): void {
-  if (dnd) return;
   if (cue === "settle") {
     if (volume > 0 && typeof window !== "undefined") {
       const { ac, out } = audio();
@@ -184,7 +177,7 @@ export function playCue(cue: Cue, volume: number, kitId: string): void {
 /** A mascot sound (hello, sparkle, mwah...): its own voice in the Sidekick
  * kit, the closest designed sound otherwise. */
 export function playMood(sound: SynthSound, volume: number, kitId: string): void {
-  if (dnd || volume <= 0 || typeof window === "undefined") return;
+  if (volume <= 0 || typeof window === "undefined") return;
   if (kitId === SYNTH_KIT) {
     const { ac, out } = audio();
     playSynth(ac, out, sound, volume);
@@ -196,7 +189,7 @@ export function playMood(sound: SynthSound, volume: number, kitId: string): void
 
 /** Plays one sound from a kit. Used for cues and for chip presses. */
 export function playSound(sound: SndSound, volume: number, kitId: string): void {
-  if (dnd || volume <= 0 || typeof window === "undefined") return;
+  if (volume <= 0 || typeof window === "undefined") return;
   if (kitId === SYNTH_KIT) {
     playMood(SYNTH_FOR[sound], volume, kitId);
     return;

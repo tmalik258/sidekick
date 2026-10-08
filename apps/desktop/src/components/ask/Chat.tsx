@@ -244,6 +244,8 @@ function AnswerActions({
 }) {
   const [copied, setCopied] = useState(false);
   const [pinned, setPinned] = useState(false);
+  const speaking = useSidekick((s) => s.speaking);
+  const read = () => void (speaking ? api.voiceStop() : api.voiceRead(text));
   const copy = () => {
     void navigator.clipboard.writeText(text).then(() => setCopied(true));
   };
@@ -255,6 +257,7 @@ function AnswerActions({
       if (k === "c") copy();
       else if (k === "t" && again) askAgain();
       else if (k === "k" && think) thinkHarder();
+      else if (k === "l") read();
       else return;
       e.preventDefault();
     };
@@ -274,6 +277,22 @@ function AnswerActions({
         <button type="button" onClick={copy} onMouseLeave={() => setCopied(false)} className="ak-act chip">
           <ActIcon d="M8 8h12v12H8zM16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
           {copied ? "Copied" : "Copy"} {key("C")}
+        </button>
+        <button
+          type="button"
+          onClick={read}
+          aria-label={speaking ? "Stop reading" : "Read aloud"}
+          title={speaking ? "Stop reading" : "Read aloud"}
+          className="ak-act chip"
+        >
+          <ActIcon
+            d={
+              speaking
+                ? "M11 5 6 9H3v6h3l5 4zM16 9l5 6M21 9l-5 6"
+                : "M11 5 6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"
+            }
+          />
+          {key("L")}
         </button>
         {again && (
           <button type="button" onClick={() => askAgain()} className="ak-act chip">

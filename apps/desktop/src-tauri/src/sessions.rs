@@ -1237,7 +1237,7 @@ async fn run_codex(
                 {
                     let p = &v["params"];
                     let (label, detail) = if method.contains("commandExecution") {
-                        ("Run a command".to_owned(), p["command"].as_str().unwrap_or_default().to_owned())
+                        ("Run a command".to_owned(), shown_command(p["command"].as_str().unwrap_or_default()))
                     } else {
                         ("Change files".to_owned(), p["reason"].as_str().unwrap_or_default().to_owned())
                     };
@@ -1379,7 +1379,7 @@ pub fn codex_events(v: &Value) -> Vec<Value> {
                 Some("commandExecution") => (
                     "Bash",
                     "Run a command".to_owned(),
-                    item["command"].as_str().unwrap_or_default().to_owned(),
+                    shown_command(item["command"].as_str().unwrap_or_default()),
                 ),
                 Some("fileChange") => {
                     let files: Vec<String> = item["changes"]
@@ -1451,9 +1451,38 @@ pub fn codex_events(v: &Value) -> Vec<Value> {
     out
 }
 
+/// The command as the user would type it. Codex wraps each one as
+/// `"C:\\...\\pwsh.exe" -Command "..."`; only the inner part matters.
+fn shown_command(cmd: &str) -> String {
+    let cmd = cmd.trim();
+    let lower = cmd.to_ascii_lowercase();
+    let wrapped = lower.starts_with('"')
+        || lower.contains("powershell")
+        || lower.contains("pwsh")
+        || lower.contains("cmd.exe");
+    let inner = ["-command ", "-c ", "/c "]
+        .iter()
+        .filter(|_| wrapped)
+        .find_map(|flag| lower.find(flag).map(|i| &cmd[i + flag.len()..]))
+        .unwrap_or(cmd)
+        .trim();
+    let inner = inner
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .unwrap_or(inner);
+    inner.replace("\\\\", "\\")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shown_command_unwraps_the_shell() {
+        let raw = r#""C:\\Program Files\\WindowsApps\\PowerShell\\pwsh.exe" -Command "git status --short""#;
+        assert_eq!(shown_command(raw), "git status --short");
+        assert_eq!(shown_command("pnpm test"), "pnpm test");
+    }
 
     #[test]
     fn plain_agents_get_what_the_mode_allows() {

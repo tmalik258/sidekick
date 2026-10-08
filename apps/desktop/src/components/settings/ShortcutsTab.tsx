@@ -14,6 +14,7 @@ const ISLAND_KEYS: [string, string][] = [
   ["Think harder", "Alt K"],
   ["Undo", "Alt U"],
   ["Speaker on or off", "Alt S"],
+  ["Read the answer aloud", "Alt L"],
   ["Talk", "Alt V"],
   ["Pick the model", "Alt M"],
   ["This PC only", "Alt P"],
