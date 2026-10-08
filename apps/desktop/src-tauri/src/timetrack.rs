@@ -132,6 +132,13 @@ pub fn on_away(app: &AppHandle) {
 }
 
 /// The user is at the computer with an app in front.
+/// The app in front now ("Code"), if any.
+pub fn current_app(app: &AppHandle) -> Option<String> {
+    lock(&app.state::<AppState>().tracker.current)
+        .as_ref()
+        .map(|s| s.app.clone())
+}
+
 pub fn is_active(app: &AppHandle) -> bool {
     lock(&app.state::<AppState>().tracker.current).is_some()
 }

@@ -45,6 +45,7 @@ mod office;
 mod pipeline;
 mod privacy;
 mod projects;
+mod promises;
 mod quick;
 mod recipes;
 mod review;
@@ -443,6 +444,7 @@ pub fn start_features(app: &AppHandle) {
     names::start(app);
     updates::start(app);
     files::start_weekly_check(app);
+    promises::start(app);
     learned::start_weekly(app, state.data_dir.join("last-learned-week"));
     layout::start(app);
     mcp::start(app, state.mcp_token.clone());
