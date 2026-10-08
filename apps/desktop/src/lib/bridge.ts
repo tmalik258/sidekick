@@ -149,6 +149,7 @@ export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
   systemLook: () => invoke<{ transparency: boolean; batterySaver: boolean }>("system_look"),
   diagnostics: () => invoke<string>("diagnostics"),
+  reportSave: () => invoke<string>("report_save"),
   crashPending: () => invoke<string | null>("crash_pending"),
   crashDismiss: () => invoke<void>("crash_dismiss"),
   settingsGet: () => invoke<Settings>("settings_get"),
