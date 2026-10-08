@@ -360,7 +360,11 @@ export function Select({
     const left = Math.min(Math.max(8, r.left), window.innerWidth - width - 8);
     const top = above ? r.top - 4 : r.bottom + 4;
     setUp(above);
-    setFloat({ left, top, width, above });
+    setFloat((prev) =>
+      prev && prev.left === left && prev.top === top && prev.width === width && prev.above === above
+        ? prev
+        : { left, top, width, above },
+    );
     // Expand the island's clickable area so the menu is not click-through.
     setOverlayHit({
       x: left,
@@ -395,19 +399,21 @@ export function Select({
       const t = e.target as Node;
       if (!root.current?.contains(t) && !menu.current?.contains(t)) setOpen(false);
     };
-    const onReposition = () => {
+    const onScroll = (e: Event) => {
+      // Scrolling the menu itself must not re-place it (jitters at the edges).
+      if (e.target instanceof Node && menu.current?.contains(e.target)) return;
       if (overlay) placeOverlay();
       else setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     if (overlay) {
-      window.addEventListener("resize", onReposition);
-      window.addEventListener("scroll", onReposition, true);
+      window.addEventListener("resize", placeOverlay);
+      window.addEventListener("scroll", onScroll, true);
     }
     return () => {
       document.removeEventListener("mousedown", onDoc);
-      window.removeEventListener("resize", onReposition);
-      window.removeEventListener("scroll", onReposition, true);
+      window.removeEventListener("resize", placeOverlay);
+      window.removeEventListener("scroll", onScroll, true);
       if (overlay) setOverlayHit(null);
     };
   }, [open, value, overlay]);

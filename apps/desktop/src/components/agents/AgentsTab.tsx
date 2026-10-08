@@ -4,7 +4,17 @@
 // step by step, answer its questions here, steer it, and keep or undo each
 // change when it is done.
 
-import { type CSSProperties, Fragment, type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  Fragment,
+  type KeyboardEvent,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import {
   answerQuestion,
   COMPACT_AT,
@@ -24,8 +34,9 @@ import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { useNow } from "@/lib/hooks";
 import { Markdown } from "@/lib/markdown";
+import { setOverlayHit } from "@/lib/store";
 import type { AgentMode, Agents, EditorList } from "@/lib/types";
-import { KeyHint } from "../ask/parts";
+import { KeyHint, scrollIfActive } from "../ask/parts";
 import { Icon } from "../Icon";
 import { Select } from "../settings/ui";
 import { Tip } from "../Tip";
@@ -780,7 +791,13 @@ function Composer({
   const [commands, setCommands] = useState<Slash[]>([]);
   const [files, setFiles] = useState<string[]>([]);
   const [sel, setSel] = useState(0);
+  const [float, setFloat] = useState<{ left: number; bottom: number; maxWidth: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
+  }, [s.id]);
   useEffect(() => {
     void api
       .agentCommands(s.id)
@@ -810,6 +827,50 @@ function Composer({
   const shownCommands = slash ? commands.filter((c) => c.name.startsWith(text.toLowerCase())) : [];
   const count = slash ? shownCommands.length : query !== null ? files.length : 0;
   const at = Math.min(sel, Math.max(count - 1, 0));
+  const placePop = () => {
+    const el = wrapRef.current;
+    if (!el || count === 0) {
+      setFloat(null);
+      setOverlayHit(null);
+      return;
+    }
+    const r = el.getBoundingClientRect();
+    // Cap at the composer / viewport; actual width comes from content.
+    const maxWidth = Math.max(200, Math.min(r.width, window.innerWidth - 16));
+    const left = Math.min(Math.max(8, r.left), window.innerWidth - maxWidth - 8);
+    const bottom = window.innerHeight - r.top + 6;
+    const want = Math.min(200, 28 + count * 36);
+    setFloat((prev) =>
+      prev && prev.left === left && prev.bottom === bottom && prev.maxWidth === maxWidth
+        ? prev
+        : { left, bottom, maxWidth },
+    );
+    // Estimate until the pop mounts and the next effect measures it.
+    setOverlayHit({
+      x: left,
+      y: Math.max(8, r.top - 6 - want),
+      width: maxWidth,
+      height: want + 8,
+    });
+  };
+  useLayoutEffect(() => {
+    placePop();
+    if (count === 0) return;
+    // Composer sits outside the timeline scroller; only the viewport size
+    // moves it. Listening to scroll re-placed the pop on every wheel tick
+    // inside the menu and fought the list.
+    window.addEventListener("resize", placePop);
+    return () => {
+      window.removeEventListener("resize", placePop);
+      setOverlayHit(null);
+    };
+  }, [count, slash, query, text]);
+  useLayoutEffect(() => {
+    if (!float || !popRef.current) return;
+    const r = popRef.current.getBoundingClientRect();
+    const hit = { x: r.left, y: r.top, width: r.width, height: r.height };
+    setOverlayHit(hit);
+  }, [float, count]);
   const runCommand = (c: Slash) => {
     setText("");
     if (c.name === "/clear") onClear();
@@ -835,58 +896,82 @@ function Composer({
     } else if (e.key === "Enter") {
       e.preventDefault();
       onSend();
+    } else if (e.key === "Escape" && count) {
+      e.preventDefault();
+      setText(slash ? "" : text.replace(/(^|\s)@[^\s@]*$/, "$1"));
+      setSel(0);
     }
   };
   let lastGroup = "";
-  return (
-    <>
-      {count > 0 && (
-        <div className="ak-pop ak-in" role="listbox" aria-label={slash ? "Commands" : "Files"}>
-          {slash ? (
-            shownCommands.map((c, i) => {
-              const head = c.group !== lastGroup;
-              lastGroup = c.group;
-              return (
-                <Fragment key={c.name}>
-                  {head && <p className="g">{c.group}</p>}
+  const pop =
+    count > 0 && float
+      ? createPortal(
+          <div
+            ref={popRef}
+            className="ak-pop ak-pop-float ak-in"
+            role="listbox"
+            aria-label={slash ? "Commands" : "Files"}
+            style={{
+              position: "fixed",
+              left: float.left,
+              bottom: float.bottom,
+              width: "max-content",
+              maxWidth: float.maxWidth,
+              zIndex: 100,
+            }}
+          >
+            {slash ? (
+              shownCommands.map((c, i) => {
+                const head = c.group !== lastGroup;
+                lastGroup = c.group;
+                return (
+                  <Fragment key={c.name}>
+                    {head && <p className="g">{c.group}</p>}
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={i === at}
+                      data-sel={i === at}
+                      ref={scrollIfActive(i === at)}
+                      onMouseMove={() => setSel(i)}
+                      onClick={() => runCommand(c)}
+                      className="it"
+                    >
+                      <span className="c mono">{c.name}</span>
+                      <span className="d">{c.description}</span>
+                    </button>
+                  </Fragment>
+                );
+              })
+            ) : (
+              <>
+                <p className="g">Files in {s.project}</p>
+                {files.map((f, i) => (
                   <button
+                    key={f}
                     type="button"
                     role="option"
                     aria-selected={i === at}
                     data-sel={i === at}
+                    ref={scrollIfActive(i === at)}
                     onMouseMove={() => setSel(i)}
-                    onClick={() => runCommand(c)}
+                    onClick={() => pickFile(f)}
                     className="it"
                   >
-                    <span className="c mono">{c.name}</span>
-                    <span className="d">{c.description}</span>
+                    <span className="c mono">{f.split("/").pop()}</span>
+                    <span className="d">{f.split("/").slice(0, -1).join("/")}</span>
                   </button>
-                </Fragment>
-              );
-            })
-          ) : (
-            <>
-              <p className="g">Files in {s.project}</p>
-              {files.map((f, i) => (
-                <button
-                  key={f}
-                  type="button"
-                  role="option"
-                  aria-selected={i === at}
-                  data-sel={i === at}
-                  onMouseMove={() => setSel(i)}
-                  onClick={() => pickFile(f)}
-                  className="it"
-                >
-                  <span className="c mono">{f.split("/").pop()}</span>
-                  <span className="d">{f.split("/").slice(0, -1).join("/")}</span>
-                </button>
-              ))}
-            </>
-          )}
-        </div>
-      )}
-      <div className="ak-composer relative">
+                ))}
+              </>
+            )}
+          </div>,
+          document.body,
+        )
+      : null;
+  return (
+    <>
+      {pop}
+      <div ref={wrapRef} className="ak-composer relative">
         <input
           ref={inputRef}
           value={text}

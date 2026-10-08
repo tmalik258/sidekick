@@ -142,13 +142,13 @@ export function AskPanel() {
   }, []);
   // Alt shortcuts work wherever focus is in Ask. What they act on changes
   // every render, so they read it from here.
-  const altKeys = useRef<Record<string, () => void>>({});
+  const altKeys = useRef<Record<string, (back?: boolean) => void>>({});
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
-      // Ctrl Tab moves between Ask, Agents and History.
+      // Ctrl Tab / Ctrl Shift Tab move between Ask, Agents and History.
       if (e.ctrlKey && e.key === "Tab") {
         e.preventDefault();
-        altKeys.current.tab?.();
+        altKeys.current.tab?.(e.shiftKey);
         return;
       }
       if (!e.altKey || e.ctrlKey || e.metaKey || e.repeat) return;
@@ -581,7 +581,10 @@ export function AskPanel() {
         .then(setChats)
         .catch(() => setChats([]));
     }
-    requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
+    // Agents focuses its own composer; Ask/History use this input.
+    if (next !== "agents") {
+      requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
+    }
   };
 
   altKeys.current = {
@@ -589,9 +592,13 @@ export function AskPanel() {
     v: () => (hearing !== null ? stopListening() : voiceReady && !streaming && startListening()),
     p: () => setAsk({ localOnly: !ask.localOnly }),
     h: () => !streaming && goTab(tab === "history" ? "ask" : "history"),
-    tab: () => {
+    tab: (back) => {
       const order: AskTab[] = ["ask", "agents", "history"];
-      goTab(order[(order.indexOf(tab) + 1) % order.length]);
+      const i = order.indexOf(tab);
+      const next = back
+        ? order[(i - 1 + order.length) % order.length]
+        : order[(i + 1) % order.length];
+      goTab(next);
     },
     m: () => {
       if (choices.length < 2) return;

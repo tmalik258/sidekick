@@ -22,6 +22,7 @@ const ISLAND_KEYS: [string, string][] = [
   ["Pick option 1 to 9", "Alt 1–9"],
   ["Ignore a suggestion", "Alt 0"],
   ["Switch tab", "Ctrl Tab"],
+  ["Previous tab", "Ctrl Shift Tab"],
 ];
 
 export function ShortcutsTab({ onError }: { onError: (e: string) => void }) {

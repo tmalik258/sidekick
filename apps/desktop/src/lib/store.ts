@@ -848,7 +848,21 @@ function updateLastTurn(id: string, fn: (t: Turn) => Turn) {
 export const setHovered = (hovered: boolean) => useSidekick.setState({ hovered });
 
 /** Grow the clickable area around a floating menu so it is not click-through. */
-export const setOverlayHit = (overlayHit: HitRect | null) => useSidekick.setState({ overlayHit });
+export const setOverlayHit = (overlayHit: HitRect | null) => {
+  const prev = useSidekick.getState().overlayHit;
+  if (prev === overlayHit) return;
+  if (
+    prev &&
+    overlayHit &&
+    prev.x === overlayHit.x &&
+    prev.y === overlayHit.y &&
+    prev.width === overlayHit.width &&
+    prev.height === overlayHit.height
+  ) {
+    return;
+  }
+  useSidekick.setState({ overlayHit });
+};
 
 export function updateSettings(patch: Partial<Settings>): Promise<Settings> {
   const next = { ...useSidekick.getState().settings, ...patch };
