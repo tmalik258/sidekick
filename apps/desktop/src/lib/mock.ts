@@ -1016,6 +1016,7 @@ function speakWelcome(step = 0) {
 commands.voice_welcome = () => welcome;
 commands.voice_welcome_step = (a) => speakWelcome(Number(a.step) || 0);
 commands.voice_say = () => undefined;
+commands.voice_read = () => undefined;
 commands.voice_test = () => undefined;
 commands.search = (a) => [
   {
