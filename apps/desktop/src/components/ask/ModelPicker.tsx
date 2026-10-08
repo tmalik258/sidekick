@@ -7,6 +7,7 @@ import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { setAskModel } from "@/lib/store";
 import { PROVIDER_LABELS, type ProviderStatus } from "@/lib/types";
 import { Icon } from "../Icon";
+import { Tip } from "../Tip";
 import { KeyHint } from "./parts";
 
 /** What each model costs or where it runs, under its name in the menu. */
@@ -73,18 +74,19 @@ export function ModelPicker({
   const shown = picked ?? best;
   return (
     <span className="relative shrink-0">
-      <button
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title="Model (Alt M)"
-        onClick={() => setOpen((o) => !o)}
-        className="ak-model chip"
-      >
-        <span className="ak-dot" aria-hidden="true" />
-        {picked ? (SHORT[shown.id] ?? shown.id) : "Auto"}
-        <Icon name="chevron" size={10} />
-      </button>
+      <Tip label="Model (Alt M)">
+        <button
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+          className="ak-model chip"
+        >
+          <span className="ak-dot" aria-hidden="true" />
+          {picked ? (SHORT[shown.id] ?? shown.id) : "Auto"}
+          <Icon name="chevron" size={10} />
+        </button>
+      </Tip>
       <KeyHint show={keys}>Alt M</KeyHint>
       {open && (
         <>

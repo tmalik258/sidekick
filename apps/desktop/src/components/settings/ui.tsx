@@ -14,6 +14,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { Tip } from "../Tip";
 
 /** The settings search text; empty shows everything. */
 export const SettingsQuery = createContext("");
@@ -506,18 +507,19 @@ export function Select({
 export function StatusDot({ state }: { state: "ok" | "off" | "checking" }) {
   const label = state === "ok" ? "Ready" : state === "off" ? "Not reachable" : "Checking";
   return (
-    <span
-      role="img"
-      aria-label={label}
-      title={label}
-      className={`size-2 shrink-0 rounded-full ${
-        state === "ok"
-          ? "bg-[#30d158]"
-          : state === "off"
-            ? "bg-black/20 dark:bg-white/25"
-            : "animate-pulse bg-amber-400"
-      }`}
-    />
+    <Tip label={label}>
+      <span
+        role="img"
+        aria-label={label}
+        className={`size-2 shrink-0 rounded-full ${
+          state === "ok"
+            ? "bg-[#30d158]"
+            : state === "off"
+              ? "bg-black/20 dark:bg-white/25"
+              : "animate-pulse bg-amber-400"
+        }`}
+      />
+    </Tip>
   );
 }
 
@@ -571,21 +573,19 @@ export function ChipList({
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap gap-1.5">
         {items.map((i) => (
-          <span
-            key={i}
-            title={i}
-            className="flex items-center gap-1 rounded-full bg-black/5 py-0.5 pr-1 pl-2.5 text-[12px] dark:bg-white/10"
-          >
-            {format(i)}
-            <button
-              type="button"
-              aria-label={`Remove ${format(i)}`}
-              onClick={() => onChange(items.filter((x) => x !== i))}
-              className="grid size-4 place-items-center rounded-full text-(--muted) hover:bg-black/10 hover:text-(--text) dark:hover:bg-white/15"
-            >
-              ×
-            </button>
-          </span>
+          <Tip key={i} label={i}>
+            <span className="flex items-center gap-1 rounded-full bg-black/5 py-0.5 pr-1 pl-2.5 text-[12px] dark:bg-white/10">
+              {format(i)}
+              <button
+                type="button"
+                aria-label={`Remove ${format(i)}`}
+                onClick={() => onChange(items.filter((x) => x !== i))}
+                className="grid size-4 place-items-center rounded-full text-(--muted) hover:bg-black/10 hover:text-(--text) dark:hover:bg-white/15"
+              >
+                ×
+              </button>
+            </span>
+          </Tip>
         ))}
         {items.length === 0 && <span className="text-[12px] text-(--muted)">None</span>}
       </div>

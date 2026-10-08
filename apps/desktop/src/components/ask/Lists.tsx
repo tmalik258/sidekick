@@ -2,6 +2,7 @@
 import { api } from "@/lib/bridge";
 import type { ChatSummary, SearchHit } from "@/lib/types";
 import { Icon } from "../Icon";
+import { Tip } from "../Tip";
 import { ago, Kbd, Snippet, SOURCE_LABELS, scrollIfActive } from "./parts";
 
 /** Past Ask chats: arrows or the mouse pick, Enter or a click opens one.
@@ -47,18 +48,19 @@ export function ChatHistory({
             <span className="shrink-0 text-[11px] text-[rgb(235_235_245/0.45)]">{ago(c.updated)}</span>
             {i === active && <Kbd>Enter</Kbd>}
           </button>
-          <button
-            type="button"
-            aria-label={`Delete ${c.title}`}
-            title="Delete"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(c.id);
-            }}
-            className="chip grid size-7 shrink-0 place-items-center rounded-full text-white/55 hover:bg-white/[0.12] hover:text-white/90"
-          >
-            <Icon name="close" size={14} />
-          </button>
+          <Tip label="Delete">
+            <button
+              type="button"
+              aria-label={`Delete ${c.title}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(c.id);
+              }}
+              className="chip grid size-7 shrink-0 place-items-center rounded-full text-white/55 hover:bg-white/[0.12] hover:text-white/90"
+            >
+              <Icon name="close" size={14} />
+            </button>
+          </Tip>
         </li>
       ))}
     </ul>

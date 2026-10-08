@@ -5,6 +5,7 @@
 import { sendChat, setAsk, useSidekick } from "@/lib/store";
 import type { AskContext, CalendarToday } from "@/lib/types";
 import { Icon, type IconName } from "../Icon";
+import { Tip } from "../Tip";
 import { KeyHint } from "./parts";
 
 export interface Command {
@@ -53,34 +54,36 @@ export function ContextLine({ keys }: { keys: boolean }) {
       {offline && <span className="ak-offl">Offline</span>}
       {items.map((it) => (
         <span key={it.id} className={`flex min-w-0 items-center ${it.id === "clip" ? "shrink" : "shrink-0"}`}>
-          <button
-            type="button"
-            aria-pressed={it.on}
-            onMouseDown={keepFocus}
-            title={`${it.on ? "Goes with your question. Click to leave it out" : "Left out. Click to add it"}${
-              it.title ? `: ${it.title}` : ""
-            }`}
-            onClick={it.toggle}
-            className={`ak-ctx-i chip ${it.id === "clip" ? "cpy" : ""}`}
+          <Tip
+            label={`${it.on ? "Click to exclude" : "Click to include"}${it.title ? ` · ${it.title}` : ""}`}
           >
-            <Icon name={it.on ? "check" : "plus"} size={10} />
-            <span className="truncate">{it.label}</span>
-          </button>
+            <button
+              type="button"
+              aria-pressed={it.on}
+              onMouseDown={keepFocus}
+              onClick={it.toggle}
+              className={`ak-ctx-i chip ${it.id === "clip" ? "cpy" : ""}`}
+            >
+              <Icon name={it.on ? "check" : "plus"} size={10} />
+              <span className="truncate">{it.label}</span>
+            </button>
+          </Tip>
         </span>
       ))}
       {context.clipboardSecret && <span className="ak-ctx-i cpy">Clipboard hidden (looks like a secret)</span>}
       <span className="relative ml-auto shrink-0">
-        <button
-          type="button"
-          aria-pressed={ask.localOnly}
-          onMouseDown={keepFocus}
-          title="Only use a model on this PC (Alt P)"
-          onClick={() => setAsk({ localOnly: !ask.localOnly })}
-          className="ak-pc chip"
-        >
-          <Icon name={ask.localOnly ? "check" : "lock"} size={10} />
-          This PC only
-        </button>
+        <Tip label="This PC only (Alt P)">
+          <button
+            type="button"
+            aria-pressed={ask.localOnly}
+            onMouseDown={keepFocus}
+            onClick={() => setAsk({ localOnly: !ask.localOnly })}
+            className="ak-pc chip"
+          >
+            <Icon name={ask.localOnly ? "check" : "lock"} size={10} />
+            This PC only
+          </button>
+        </Tip>
         <KeyHint show={keys} side="right">
           Alt P
         </KeyHint>

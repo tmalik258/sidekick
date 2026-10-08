@@ -25,6 +25,7 @@ import {
   type StoredEvent,
 } from "@/lib/types";
 import { SetupChecklist, usePendingByTab } from "../SetupChecklist";
+import { Tip } from "../Tip";
 import { Button, ChipList, Field, FolderPicker, Section, Select, ShortcutRecorder, Slider, Toggle } from "./ui";
 
 const SOUND_KITS: [string, string][] = [
@@ -228,15 +229,15 @@ function LeftElsewhere({ onOpenTab }: { onOpenTab: (tab: string) => void }) {
     <div className="flex flex-wrap items-center gap-1.5 text-[12.5px]">
       <span className="text-(--muted)">Also to set up:</span>
       {tabs.map((t) => (
-        <button
-          key={t}
-          type="button"
-          onClick={() => onOpenTab(t)}
-          title={pending[t].map((i) => i.title).join(", ")}
-          className="chip rounded-full bg-white/[0.08] px-2.5 py-1 font-medium text-white/90 hover:bg-white/[0.14]"
-        >
-          {TAB_NAMES[t]} ({pending[t].length})
-        </button>
+        <Tip key={t} label={pending[t].map((i) => i.title).join(", ")}>
+          <button
+            type="button"
+            onClick={() => onOpenTab(t)}
+            className="chip rounded-full bg-white/[0.08] px-2.5 py-1 font-medium text-white/90 hover:bg-white/[0.14]"
+          >
+            {TAB_NAMES[t]} ({pending[t].length})
+          </button>
+        </Tip>
       ))}
     </div>
   );

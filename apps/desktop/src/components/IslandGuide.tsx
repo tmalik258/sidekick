@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
 import { backgroundWaiting, cancelWaiting, minimizeWaiting, type Waiting } from "@/lib/store";
+import { Tip } from "./Tip";
 
 interface GuideButton {
   label: string;
@@ -137,10 +138,9 @@ function GuideChip({ button, hint, done }: { button: GuideButton; hint: string |
       : button.kind === "copy"
         ? "max-w-full truncate bg-white/[0.08] text-white/90 ring-1 ring-white/10 ring-inset hover:bg-white/[0.14]"
         : "bg-white/12 text-white/90 hover:bg-white/20";
-  return (
+  const chip = (
     <button
       type="button"
-      title={button.title}
       onClick={button.run}
       className={`chip rounded-full px-3 py-1.5 text-left text-[12.5px] font-medium ${style}`}
     >
@@ -154,4 +154,5 @@ function GuideChip({ button, hint, done }: { button: GuideButton; hint: string |
       )}
     </button>
   );
+  return button.title ? <Tip label={button.title}>{chip}</Tip> : chip;
 }

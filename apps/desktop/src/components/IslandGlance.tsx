@@ -14,6 +14,7 @@ import { type AppTime, type CalendarToday, formatDuration, type LaterItem } from
 import { Icon } from "./Icon";
 import { AgentsGlance, AwayCard, useAway } from "./IslandAgents";
 import { CardChips, CardHead, CardNote } from "./IslandCard";
+import { Tip } from "./Tip";
 
 /** A meeting this close (or already on) takes the headline. */
 const MEETING_SOON_MIN = 60;
@@ -267,15 +268,16 @@ function UpdateButton() {
 
 export function RoundButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className="chip grid size-8 place-items-center rounded-full bg-white/12 text-white/90 hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff]"
-    >
-      {children}
-    </button>
+    <Tip label={label}>
+      <button
+        type="button"
+        aria-label={label}
+        onClick={onClick}
+        className="chip grid size-8 place-items-center rounded-full bg-white/12 text-white/90 hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff]"
+      >
+        {children}
+      </button>
+    </Tip>
   );
 }
 

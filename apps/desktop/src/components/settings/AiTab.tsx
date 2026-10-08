@@ -20,6 +20,7 @@ import {
   type VoiceSettings,
 } from "@/lib/types";
 import { SetupItems } from "../SetupChecklist";
+import { Tip } from "../Tip";
 import { Button, Field, Section, Segmented, Select, StatusDot, Switch, TextField, Toggle } from "./ui";
 
 /** Shown instead of On/Off while a model cannot be used. */
@@ -559,30 +560,31 @@ function DragRow({
 }) {
   const controls = useDragControls();
   const handle = (
-    <button
-      type="button"
-      aria-label="Drag to reorder, or use the arrow keys"
-      title="Drag to reorder"
-      onPointerDown={(e) => controls.start(e)}
-      onKeyDown={(e) => {
-        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-          e.preventDefault();
-          onStep(e.key === "ArrowUp" ? -1 : 1);
-        }
-      }}
-      className="chip grid h-8 w-5 shrink-0 cursor-grab touch-none place-items-center rounded-md text-white/40 hover:text-white/80 active:cursor-grabbing"
-    >
-      <svg aria-hidden="true" viewBox="0 0 8 14" className="h-3.5 w-2">
-        <g fill="currentColor">
-          <circle cx="2" cy="2" r="1.2" />
-          <circle cx="6" cy="2" r="1.2" />
-          <circle cx="2" cy="7" r="1.2" />
-          <circle cx="6" cy="7" r="1.2" />
-          <circle cx="2" cy="12" r="1.2" />
-          <circle cx="6" cy="12" r="1.2" />
-        </g>
-      </svg>
-    </button>
+    <Tip label="Drag to reorder">
+      <button
+        type="button"
+        aria-label="Drag to reorder, or use the arrow keys"
+        onPointerDown={(e) => controls.start(e)}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+            e.preventDefault();
+            onStep(e.key === "ArrowUp" ? -1 : 1);
+          }
+        }}
+        className="chip grid h-8 w-5 shrink-0 cursor-grab touch-none place-items-center rounded-md text-white/40 hover:text-white/80 active:cursor-grabbing"
+      >
+        <svg aria-hidden="true" viewBox="0 0 8 14" className="h-3.5 w-2">
+          <g fill="currentColor">
+            <circle cx="2" cy="2" r="1.2" />
+            <circle cx="6" cy="2" r="1.2" />
+            <circle cx="2" cy="7" r="1.2" />
+            <circle cx="6" cy="7" r="1.2" />
+            <circle cx="2" cy="12" r="1.2" />
+            <circle cx="6" cy="12" r="1.2" />
+          </g>
+        </svg>
+      </button>
+    </Tip>
   );
   return (
     <Reorder.Item
