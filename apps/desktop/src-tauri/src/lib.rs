@@ -23,6 +23,7 @@ mod extension;
 mod fathom;
 mod files;
 mod find;
+mod focus;
 mod freeze;
 mod health;
 mod inbox;
@@ -202,6 +203,9 @@ pub fn run() {
             commands::choices_reset,
             commands::routines_today,
             commands::routines_forget,
+            commands::focus_start,
+            commands::focus_stop,
+            commands::focus_status,
             commands::learned_list,
             commands::learned_forget,
             commands::learned_forget_all,

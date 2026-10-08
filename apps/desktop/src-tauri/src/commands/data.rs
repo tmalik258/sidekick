@@ -327,3 +327,20 @@ pub fn backup_import(app: AppHandle, text: String) -> CmdResult<String> {
         if restored { "settings and " } else { "" }
     ))
 }
+
+/// Starts Focus mode: Do Not Disturb, notifications held, suggestions waiting.
+#[tauri::command]
+pub fn focus_start(app: AppHandle, minutes: Option<u32>) -> String {
+    crate::focus::start(&app, minutes.unwrap_or(crate::focus::DEFAULT_MINUTES))
+}
+
+/// Ends Focus mode and shows what was held.
+#[tauri::command]
+pub fn focus_stop(app: AppHandle) -> String {
+    crate::focus::stop(&app)
+}
+
+#[tauri::command]
+pub fn focus_status() -> crate::focus::Status {
+    crate::focus::status()
+}

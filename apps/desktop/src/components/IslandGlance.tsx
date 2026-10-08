@@ -253,6 +253,7 @@ function QuickActions({ paused }: { paused: boolean }) {
       <RoundButton label={`Ask ${name} (${hotkey})`} onClick={() => void api.askOpen()}>
         <Icon name="ask" size={15} />
       </RoundButton>
+      <FocusButton />
       <RoundButton
         label={paused ? "Resume" : "Pause 15 minutes"}
         onClick={() => void (paused ? api.sensorsResume() : api.sensorsPause(15))}
@@ -264,6 +265,21 @@ function QuickActions({ paused }: { paused: boolean }) {
       </RoundButton>
       <UpdateButton />
     </>
+  );
+}
+
+/** Starts 25 minutes of focus, or ends it. */
+function FocusButton() {
+  const focusing = useSidekick((s) => s.focusUntil !== null && s.focusUntil > Date.now());
+  const keys = useSidekick((s) => s.settings.shortcuts.focus);
+  const hint = keys ? ` (${keys})` : "";
+  return (
+    <RoundButton
+      label={focusing ? `End focus${hint}` : `Focus 25 minutes${hint}`}
+      onClick={() => void (focusing ? api.focusStop() : api.focusStart(25))}
+    >
+      <Icon name="focus" size={15} />
+    </RoundButton>
   );
 }
 

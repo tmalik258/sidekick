@@ -293,6 +293,15 @@ pub fn offer(app: &AppHandle, mut proposal: Proposal) {
         }
         return;
     }
+    // Focusing: everything waits, and the end-of-focus list names it.
+    if crate::focus::active()
+        && proposal.trust != Trust::Auto
+        && !shows_while_paused(&proposal.skill_id)
+    {
+        crate::focus::hold(&proposal.title, &proposal.detail);
+        keep_for_later(app, proposal, false);
+        return;
+    }
     if proposal.trust != Trust::Auto
         && should_wait(&proposal.skill_id, proposal.priority, in_meeting(app))
     {

@@ -36,6 +36,7 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("dismiss", "Ctrl+Alt+Backspace"),
     ("screen", "Ctrl+Alt+S"),
     ("clipboard", "Ctrl+Alt+V"),
+    ("focus", "Ctrl+Alt+F"),
     ("pause", "Ctrl+Alt+P"),
     ("settings", "Ctrl+Alt+Comma"),
 ];
