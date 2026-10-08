@@ -2745,93 +2745,129 @@ select.ak-mi option {
   order: 2;
 }
 
-/* Repos list in Agents */
+/* Repos tab */
 .ak-repos {
-  margin-top: 12px;
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 2px;
+  padding: 0 0 6px;
 }
-.ak-repos-h {
+.ak-rh {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  padding: 0 2px 4px;
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  min-height: 40px;
+  padding: 2px 4px 6px 50px;
+  font-size: 12px;
   color: var(--i3);
 }
-.ak-repos-h em {
-  font-style: normal;
-  font-weight: 400;
+.ak-rcheck:hover {
+  color: #f5f5f7;
+}
+.ak-rempty,
+.ak-rnote {
+  font-size: 12px;
+  color: var(--i3);
+  padding: 4px 10px;
+}
+.ak-rempty {
+  padding: 14px 4px 10px 50px;
 }
 .ak-repo {
-  border-radius: 10px;
+  border-radius: 14px;
+  transition: background 160ms;
 }
+.ak-repo:hover,
 .ak-repo[data-open="true"] {
-  background: rgb(255 255 255 / 0.04);
-}
-.ak-repo-row {
-  display: flex;
-  width: 100%;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 10px;
-  font-size: 13px;
-  text-align: left;
-}
-.ak-repo-row:hover {
   background: rgb(255 255 255 / 0.05);
 }
-.ak-repo-name {
-  color: #f5f5f7;
-  font-weight: 500;
-  min-width: 0;
-}
-.ak-repo-branch {
-  color: var(--i3);
-  font-size: 11.5px;
-  min-width: 0;
-  flex: 1;
-}
-.ak-repo-n {
-  flex: none;
-  color: var(--i3);
-  font-size: 11.5px;
-}
-.ak-repo-hot {
-  color: #ff9f0a;
-}
-.ak-repo-more {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 2px 8px 10px;
-  font-size: 12.5px;
-}
-.ak-repo-pr {
-  display: flex;
+.ak-rrow {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
+  width: 100%;
+  padding: 10px;
+  text-align: left;
 }
-.ak-repo-pr > button:not(.chip) {
-  min-width: 0;
-  flex: 1;
+.ak-rdot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
 }
-.ak-repo-pr em {
-  font-style: normal;
+.ak-rn {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #f5f5f7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ak-rb {
+  display: block;
+  font:
+    11px ui-monospace,
+    Consolas,
+    monospace;
+  color: var(--i3);
+}
+.ak-rtags {
+  display: flex;
+  gap: 4px;
+}
+.ak-rtag {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.08);
+  color: var(--i2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ak-rtag[data-k="behind"] {
+  background: rgb(255 159 10 / 0.14);
   color: #ff9f0a;
-  font-size: 11.5px;
 }
-.ak-repo-acts {
+.ak-rtag[data-k="ahead"] {
+  background: rgb(100 210 255 / 0.12);
+  color: #64d2ff;
+}
+.ak-rx {
+  display: grid;
+  gap: 8px;
+  padding: 0 10px 10px 28px;
+}
+.ak-rci {
+  display: grid;
+  gap: 7px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  background: rgb(255 69 58 / 0.09);
+  box-shadow: inset 0 0 0 1px rgb(255 69 58 / 0.18);
+  font-size: 12.5px;
+  color: var(--i2);
+}
+.ak-rci b {
+  color: #ff6961;
+  font-weight: 600;
+}
+.ak-rline {
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--i2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ak-rline:hover {
+  color: #f5f5f7;
+}
+.ak-rbtns {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding-top: 2px;
 }
 
 /* Chat box chips: model, thinking, usage, each with a popover above it */

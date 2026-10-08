@@ -151,8 +151,11 @@ async fn handle(app: &AppHandle, mut event: Event) {
 
 /// Runs the skills on `event` and offers what matched.
 fn propose(app: &AppHandle, event: &Event) {
+    // "Do you work with code?" No: no repo or agent cards.
+    let coder = lock(&app.state::<AppState>().settings).codes != Some(false);
     if let Some(proposal) = evaluate(app, event)
         && !crate::learn::is_muted(app, &proposal.skill_id)
+        && (coder || !proposal.skill_id.starts_with("dev."))
     {
         // Ranking may ask a model, so it runs beside the event loop.
         let app = app.clone();

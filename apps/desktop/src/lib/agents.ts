@@ -69,7 +69,7 @@ export function dismissCompact(id: string) {
   update(id, (s) => ({ ...s, compactDismissed: true }));
 }
 
-export type AskTab = "ask" | "agents" | "history";
+export type AskTab = "ask" | "agents" | "repos" | "history";
 
 /** One session big, or the board of live tiles. */
 export type AgentsLayout = "one" | "board";

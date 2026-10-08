@@ -42,6 +42,7 @@ import {
   type SearchHit,
 } from "@/lib/types";
 import { AgentsTab } from "./agents/AgentsTab";
+import { Repos } from "./agents/Repos";
 import { Chat, useAgentName } from "./ask/Chat";
 import { Clips, Results } from "./ask/Lists";
 import { ModelPicker } from "./ask/ModelPicker";
@@ -144,6 +145,8 @@ export function AskPanel() {
   const tab = useAgents((s) => s.tab);
   const layout = useAgents((s) => s.layout);
   const working = useAgents((s) => activeCount(s.sessions));
+  // "Do you work with code?" No hides Agents and Repos; unanswered counts as yes.
+  const coder = useSidekick((s) => s.settings.codes !== false);
   useEffect(listenToAgents, []);
   const speak = useSidekick((s) => s.settings.voice.speakAnswers);
   const toggleSpeak = useCallback(() => {
@@ -295,6 +298,7 @@ export function AskPanel() {
         context: ask?.context ?? null,
         page: chatPage,
         meeting: soonestMeeting(calendar),
+        coder,
         // After the row runs (which clears the input), type the prefix in.
         focusInput: (prefix) =>
           requestAnimationFrame(() => {
@@ -302,7 +306,7 @@ export function AskPanel() {
             inputRef.current?.focus({ preventScroll: true });
           }),
       }),
-    [ask?.context, chatPage, calendar],
+    [ask?.context, chatPage, calendar, coder],
   );
   const resetChat = useCallback(() => {
     if (useSidekick.getState().hearing !== null) stopListening();
@@ -603,7 +607,7 @@ export function AskPanel() {
     p: () => setAsk({ localOnly: !ask.localOnly }),
     h: () => !streaming && goTab(tab === "history" ? "ask" : "history"),
     tab: (back) => {
-      const order: AskTab[] = ["ask", "agents", "history"];
+      const order: AskTab[] = coder ? ["ask", "agents", "repos", "history"] : ["ask", "history"];
       const i = order.indexOf(tab);
       const next = back ? order[(i - 1 + order.length) % order.length] : order[(i + 1) % order.length];
       goTab(next);
@@ -717,17 +721,27 @@ export function AskPanel() {
         [
           ["ask", "Ask", null],
           ["agents", "Agents", working],
+          ["repos", "Repos", null],
           ["history", "History", "Alt H"],
         ] as const
-      ).map(([id, label, extra]) => (
-        <span key={id} className="relative">
-          <button type="button" role="tab" aria-selected={tab === id} onClick={() => goTab(id)} className="ak-tab chip">
-            {label}
-            {typeof extra === "number" && extra > 0 && <i className="n not-italic">{extra}</i>}
-          </button>
-          {typeof extra === "string" && <KeyHint show={alt}>{extra}</KeyHint>}
-        </span>
-      ))}
+      )
+        // Not a coder: no Agents or Repos.
+        .filter(([id]) => coder || (id !== "agents" && id !== "repos"))
+        .map(([id, label, extra]) => (
+          <span key={id} className="relative">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === id}
+              onClick={() => goTab(id)}
+              className="ak-tab chip"
+            >
+              {label}
+              {typeof extra === "number" && extra > 0 && <i className="n not-italic">{extra}</i>}
+            </button>
+            {typeof extra === "string" && <KeyHint show={alt}>{extra}</KeyHint>}
+          </span>
+        ))}
       {tab === "agents" && (
         <fieldset aria-label="Layout" className="ak-lay ak-seg border-0">
           {(
@@ -765,7 +779,16 @@ export function AskPanel() {
     </div>
   );
 
-  if (tab === "agents") {
+  if (tab === "repos" && coder) {
+    return (
+      <div className="ak">
+        {tabs}
+        <Repos />
+      </div>
+    );
+  }
+
+  if (tab === "agents" && coder) {
     return (
       <div className="ak">
         {tabs}

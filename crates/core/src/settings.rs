@@ -721,6 +721,11 @@ impl Settings {
 
     /// Clamps values that came from the UI or a hand-edited file.
     pub fn sanitized(mut self) -> Self {
+        // Set up before "Do you work with code?" was asked: keep everything
+        // they had, Agents included.
+        if self.onboarded && self.codes.is_none() {
+            self.codes = Some(true);
+        }
         self.master_volume = self.master_volume.clamp(0.0, 1.0);
         for v in self.cue_volumes.values_mut() {
             *v = v.clamp(0.0, 1.0);
@@ -803,6 +808,31 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn people_set_up_before_the_code_question_keep_agents() {
+        let old = Settings {
+            onboarded: true,
+            codes: None,
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(old.codes, Some(true));
+        let new = Settings {
+            onboarded: false,
+            codes: None,
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(new.codes, None);
+        let no = Settings {
+            onboarded: true,
+            codes: Some(false),
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(no.codes, Some(false));
+    }
 
     #[test]
     fn moves_older_voices_to_the_new_default_once() {

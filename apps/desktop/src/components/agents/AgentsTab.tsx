@@ -46,7 +46,6 @@ import { Select } from "../settings/ui";
 import { Tip } from "../Tip";
 import { Board } from "./Board";
 import { ChatControls } from "./Controls";
-import { Repos } from "./Repos";
 import { Review } from "./Review";
 
 const MODES: { id: AgentMode; label: string; note: string }[] = [
@@ -329,7 +328,6 @@ function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorC
           {error && <p className="ak-err">{error}</p>}
         </>
       )}
-      <Repos />
     </>
   );
 }
