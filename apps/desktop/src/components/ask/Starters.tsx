@@ -54,9 +54,7 @@ export function ContextLine({ keys }: { keys: boolean }) {
       {offline && <span className="ak-offl">Offline</span>}
       {items.map((it) => (
         <span key={it.id} className={`flex min-w-0 items-center ${it.id === "clip" ? "shrink" : "shrink-0"}`}>
-          <Tip
-            label={`${it.on ? "Click to exclude" : "Click to include"}${it.title ? ` · ${it.title}` : ""}`}
-          >
+          <Tip label={`${it.on ? "Click to exclude" : "Click to include"}${it.title ? ` · ${it.title}` : ""}`}>
             <button
               type="button"
               aria-pressed={it.on}

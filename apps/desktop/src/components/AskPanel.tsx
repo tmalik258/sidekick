@@ -41,10 +41,10 @@ import { ContextLine, contextStarters, soonestMeeting } from "./ask/Starters";
 import { FirstRun } from "./ask/States";
 import { Timings } from "./ask/Timings";
 import { Icon } from "./Icon";
-import { Tip } from "./Tip";
 import { markSeen } from "./IslandAgents";
 import { SETTINGS_TABS } from "./SettingsPanel";
 import { SetupSpinner } from "./SetupChecklistRow";
+import { Tip } from "./Tip";
 
 /** Space the island's orb takes at the top-left in Settings and the welcome. */
 export const ASK_ORB = 30;

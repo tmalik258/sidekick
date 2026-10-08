@@ -68,6 +68,7 @@ export function Tip({
     }, TIP_DELAY_MS);
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, on unmount
   useEffect(() => () => clearTimer(), []);
 
   if (!label) return children;
@@ -79,14 +80,8 @@ export function Tip({
     : children;
 
   return (
-    <span
-      ref={wrapRef}
-      className={className}
-      onPointerEnter={show}
-      onPointerLeave={hide}
-      onFocus={show}
-      onBlur={hide}
-    >
+    // biome-ignore lint/a11y/noStaticElementInteractions: hover and focus come from the wrapped control
+    <span ref={wrapRef} className={className} onPointerEnter={show} onPointerLeave={hide} onFocus={show} onBlur={hide}>
       {trigger}
       {open &&
         pos &&

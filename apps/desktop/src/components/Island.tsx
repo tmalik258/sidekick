@@ -777,9 +777,7 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
         </motion.button>
       ))}
       {alwaysAt >= 0 && (
-        <Tip
-          label={`From now on, "${suggestion.options[alwaysAt]}" without asking. Undo in Settings > Skills.`}
-        >
+        <Tip label={`From now on, "${suggestion.options[alwaysAt]}" without asking. Undo in Settings > Skills.`}>
           <motion.button
             type="button"
             onClick={() => always(suggestion, alwaysAt)}

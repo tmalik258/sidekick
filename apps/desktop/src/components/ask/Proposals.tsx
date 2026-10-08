@@ -114,6 +114,7 @@ export function Proposals({ items, keys }: { items: Proposal[]; keys: boolean })
         {items.map((p, i) => {
           const button = (
             <button
+              key={p.id}
               type="button"
               disabled={!!p.ran || busy}
               onClick={() => void runProposal(p.id)}
