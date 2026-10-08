@@ -238,7 +238,11 @@ pub fn refresh(app: &AppHandle) {
         (s.voice.clone(), s.pause.is_active(Utc::now()), s.onboarded)
     };
     let v = voice(app);
-    let wanted = settings.enabled && !paused && models::all_installed(&v.models);
+    // The speaker also runs for typed answers when "Speak answers" is on,
+    // even with the wake word and microphone off.
+    let listen = settings.enabled && models::all_installed(&v.models);
+    let speak = settings.speak_answers && models::VOICE.installed(&v.models);
+    let wanted = !paused && (listen || speak);
     if !wanted {
         // Taken out first: dropping it joins the listener thread, which may
         // be waiting for this lock.
@@ -255,7 +259,7 @@ pub fn refresh(app: &AppHandle) {
         interrupt: settings.interrupt,
         voice: settings.voice.clone(),
         speed: settings.speed,
-        listen: onboarded,
+        listen: onboarded && listen,
     };
     if lock(&v.runtime).as_ref().is_some_and(|r| r.key == key) {
         return;
@@ -264,6 +268,37 @@ pub fn refresh(app: &AppHandle) {
         return;
     }
     let app = app.clone();
+    // Only the voice or speed changed: swap the speaker and keep the
+    // microphone listening. The old voice answers until the new one loads.
+    let same_ears = lock(&v.runtime).as_ref().is_some_and(|r| {
+        r.key.wake_word == key.wake_word
+            && r.key.interrupt == key.interrupt
+            && r.key.listen == key.listen
+    });
+    if same_ears {
+        std::thread::spawn(move || {
+            let v = voice(&app);
+            match Speaker::start_with_events(
+                &v.models,
+                &settings.voice,
+                settings.speed,
+                Some(speech_events(&app)),
+            ) {
+                Ok(speaker) => {
+                    let old = lock(&v.runtime).as_mut().and_then(|r| {
+                        r.key = key;
+                        r.speaker.replace(speaker)
+                    });
+                    drop(old);
+                }
+                Err(e) => log::warn!("voice swap: {e}"),
+            }
+            v.starting.store(false, Ordering::SeqCst);
+            emit_state(&app);
+            refresh(&app);
+        });
+        return;
+    }
     std::thread::spawn(move || {
         // Stop the old one first so the microphone is free.
         let old = lock(&voice(&app).runtime).take();
@@ -666,6 +701,8 @@ fn on_heard(app: &AppHandle, heard: Heard) {
         Heard::Wake => {
             // Talking over an answer stops it.
             stop_speaking(app);
+            // Load the model while the question is still being spoken.
+            crate::ai::warm_up(app);
             if lock(&v.choosing).is_some() {
                 // Listening for a choice, not a question: Ask stays closed.
                 mascot::dispatch(app, MascotEvent::ListenStart);
@@ -1040,13 +1077,43 @@ pub fn match_choice(text: &str, labels: &[String]) -> Choice {
 }
 
 /// Says a sample with the chosen voice.
+/// Says a sample line with the chosen voice and speed. Waits (up to 20 s)
+/// while a new voice loads, so the button can show it is loading.
 pub fn test(app: &AppHandle) -> Result<(), String> {
     let v = voice(app);
-    let runtime = lock(&v.runtime);
-    let Some(s) = runtime.as_ref().and_then(|r| r.speaker.as_ref()) else {
-        return Err("Turn voice on first; the voice loads in a moment.".into());
-    };
-    s.say("Hi, I'm Sidekick. Say hey Sidekick whenever you need me.");
+    if !models::VOICE.installed(&v.models) {
+        return Err("The voice is still downloading.".into());
+    }
+    let started = std::time::Instant::now();
+    while v.starting.load(Ordering::SeqCst)
+        && started.elapsed() < std::time::Duration::from_secs(20)
+    {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let wanted = lock(&app.state::<AppState>().settings).voice.clone();
+    let line = "Hi, I'm Sidekick. Say hey Sidekick whenever you need me.";
+    {
+        let runtime = lock(&v.runtime);
+        if let Some(s) = runtime
+            .as_ref()
+            .filter(|r| r.key.voice == wanted.voice && r.key.speed == wanted.speed)
+            .and_then(|r| r.speaker.as_ref())
+        {
+            s.say(line);
+            return Ok(());
+        }
+    }
+    // Voice off and speaking off: a one-off speaker with the chosen voice.
+    let s = Speaker::start_with_events(
+        &v.models,
+        &wanted.voice,
+        wanted.speed,
+        Some(speech_events(app)),
+    )
+    .map_err(|e| e.to_string())?;
+    s.say(line);
+    let mut greeter = lock(&v.greeter);
+    *greeter = Some(s);
     Ok(())
 }
 

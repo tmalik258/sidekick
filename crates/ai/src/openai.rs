@@ -258,6 +258,28 @@ impl OpenAiCompat {
     /// A chat where the model may call `tools` through `runner`. Each round
     /// is one non-streamed completion; the final answer goes to `sink` in
     /// one piece.
+    /// Keeps the model loaded for 30 more minutes. Every chat request resets
+    /// Ollama's unload timer to its 5 minute default, so this runs after each
+    /// local answer: the next question does not wait for a cold load.
+    pub async fn keep_loaded(&self) {
+        let Some(root) = ollama_root(&self.base_url) else {
+            return;
+        };
+        let Ok(model) = self.pick_model().await else {
+            return;
+        };
+        let sent = self
+            .client
+            .post(format!("{root}/api/generate"))
+            .json(&json!({ "model": model, "keep_alive": "30m" }))
+            .timeout(Duration::from_secs(120))
+            .send()
+            .await;
+        if let Err(err) = sent {
+            log::debug!("could not keep {model} loaded: {err}");
+        }
+    }
+
     pub async fn chat_with_tools(
         &self,
         req: &ChatRequest,
@@ -740,7 +762,7 @@ impl AiProvider for OpenAiCompat {
     }
 
     /// Ollama unloads a model after a few idle minutes; this loads it (and
-    /// keeps it for 10 minutes) while the user types. Every Ask open renews it.
+    /// keeps it for 30 minutes) while the user types. Every Ask open renews it.
     async fn warm(&self) {
         let Some(root) = ollama_root(&self.base_url) else {
             return;
@@ -761,7 +783,7 @@ impl AiProvider for OpenAiCompat {
         let sent = self
             .client
             .post(format!("{root}/api/generate"))
-            .json(&json!({ "model": model, "keep_alive": "10m" }))
+            .json(&json!({ "model": model, "keep_alive": "30m" }))
             .timeout(Duration::from_secs(120))
             .send()
             .await;

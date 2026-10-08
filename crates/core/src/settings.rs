@@ -561,14 +561,15 @@ pub const SENSORS_OFF_BY_DEFAULT: [&str; 0] = [];
 pub const THEMES: [&str; 7] = [
     "pearl", "aurora", "chrome", "peach", "mint", "lilac", "onyx",
 ];
-/// Island colours; the glass ones are a deep tint with a light rim.
+/// Island colours, the default first; the glass ones are a deep tint with
+/// a light rim.
 pub const ISLAND_COLORS: [&str; 6] = [
+    "solid_black",
     "black_glass",
     "graphite",
     "midnight",
     "smoke",
     "warm_graphite",
-    "solid_black",
 ];
 /// "sidekick" is synthesized in the app (soft tones with character);
 /// "01" is the SND kit.
@@ -848,7 +849,7 @@ mod tests {
     }
 
     #[test]
-    fn old_dark_orbs_become_onyx_and_islands_default_to_glass() {
+    fn old_dark_orbs_become_onyx_and_islands_default_to_solid_black() {
         let s = Settings {
             theme: "midnight".into(),
             island_color: "neon".into(),
@@ -856,8 +857,8 @@ mod tests {
         }
         .sanitized();
         assert_eq!(s.theme, "onyx");
-        assert_eq!(s.island_color, "black_glass");
-        assert_eq!(Settings::default().island_color, "black_glass");
+        assert_eq!(s.island_color, "solid_black");
+        assert_eq!(Settings::default().island_color, "solid_black");
     }
 
     #[test]

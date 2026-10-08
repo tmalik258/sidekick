@@ -495,13 +495,18 @@ export function retryLast(): boolean {
   return sendChat(question.content);
 }
 
-/** Asks the last question again, letting the local model think first. */
-export function thinkHarder(): boolean {
+/** Asks the last question again; `think` lets the local model reason first. */
+export function askAgain(think = false): boolean {
   const { turns, chatId } = useSidekick.getState();
   const question = turns[turns.length - 2];
   if (chatId || question?.role !== "user") return false;
   useSidekick.setState({ turns: turns.slice(0, -2) });
-  return sendChat(question.content, { think: true });
+  return sendChat(question.content, { think });
+}
+
+/** Asks the last question again, letting the local model think first. */
+export function thinkHarder(): boolean {
+  return askAgain(true);
 }
 
 /** Sends a question; false when it could not start (empty, or one running). */
@@ -560,11 +565,11 @@ function helloOncePerDay() {
   if (firstToday()) setTimeout(() => setMood("hello", 2600, "hello"), 900);
 }
 
-type ChatAttach = { clipboard?: boolean; screen?: boolean; speak?: boolean; think?: boolean };
+type ChatAttach = { clipboard?: boolean; screen?: boolean; speak?: boolean; voice?: boolean; think?: boolean };
 
 /** What `api.aiChat` needs for question `q` in the chat as it is now. */
 function chatRequest(q: string, attach?: ChatAttach) {
-  const { ask, turns, chatPage, chatSkill, askModel } = useSidekick.getState();
+  const { ask, turns, chatPage, chatSkill, askModel, settings } = useSidekick.getState();
   const history: ChatMessage[] = [
     ...turns.filter((t) => !t.error).map(({ role, content }) => ({ role, content })),
     { role: "user", content: q },
@@ -578,7 +583,9 @@ function chatRequest(q: string, attach?: ChatAttach) {
       page: chatPage,
       skill: chatSkill,
       screen: attach?.screen ?? false,
-      speak: attach?.speak ?? false,
+      // Every answer follows the speaker button, typed or spoken.
+      speak: attach?.speak ?? settings.voice.speakAnswers,
+      voice: attach?.voice ?? false,
       think: attach?.think ?? false,
       prefer: askModel,
     },
@@ -609,7 +616,7 @@ function startEarly(q: string, speak: boolean) {
   if (!q || useSidekick.getState().chatId || early?.q === q) return;
   dropEarly();
   const id = crypto.randomUUID();
-  const req = chatRequest(q, { speak });
+  const req = chatRequest(q, { speak, voice: true });
   early = { id, q, tools: [], proposals: [] };
   timings.sent(id);
   void api.aiChat(id, req.history, { ...req.attach, hold: true }, req.localOnly);
@@ -958,7 +965,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           } else {
             useSidekick.setState({ hearing: null });
           }
-          const started = sendChat(q, { speak: settings.voice.speakAnswers });
+          const started = sendChat(q, { speak: settings.voice.speakAnswers, voice: true });
           if (!started && !ask) useSidekick.setState({ voiceQuestion: null });
         } else {
           useSidekick.setState({ hearing: null });

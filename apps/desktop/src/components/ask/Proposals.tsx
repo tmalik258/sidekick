@@ -237,7 +237,7 @@ export function AnswerOptions({ options: all, start }: { options: string[]; star
 
 /** A task's steps, shown before anything runs: Run (Enter) does them in
  * order, ticking each off, and stops at the first that fails. Undo all
- * (Alt Z) puts back what can be put back. */
+ * (Alt U) puts back what can be put back. */
 function Plan({ items, keys }: { items: Proposal[]; keys: boolean }) {
   const [state, setState] = useState<"ready" | "running" | "cancelled">("ready");
   const [at, setAt] = useState<string | null>(null);
@@ -280,7 +280,7 @@ function Plan({ items, keys }: { items: Proposal[]; keys: boolean }) {
       if (e.key === "Enter" && !e.altKey && !e.ctrlKey && !e.shiftKey && empty && !started) {
         e.preventDefault();
         void runRef.current();
-      } else if (e.altKey && !e.ctrlKey && e.key.toLowerCase() === "z") {
+      } else if (e.altKey && !e.ctrlKey && e.key.toLowerCase() === "u") {
         e.preventDefault();
         void undoRef.current();
       }
@@ -340,7 +340,7 @@ function Plan({ items, keys }: { items: Proposal[]; keys: boolean }) {
             <button type="button" onClick={() => void undoAll()} className="ak-chip chip">
               Undo all{" "}
               <kbd>
-                <i className="alt-pre">Alt </i>Z
+                <i className="alt-pre">Alt </i>U
               </kbd>
             </button>
           )}

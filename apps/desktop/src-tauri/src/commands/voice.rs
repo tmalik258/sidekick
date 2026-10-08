@@ -48,7 +48,10 @@ pub fn voice_say(app: AppHandle, text: String) {
     crate::voice::say_now(&app, &text);
 }
 
+/// Off the UI thread: it waits while a new voice loads.
 #[tauri::command]
-pub fn voice_test(app: AppHandle) -> CmdResult<()> {
-    crate::voice::test(&app)
+pub async fn voice_test(app: AppHandle) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || crate::voice::test(&app))
+        .await
+        .map_err(|e| e.to_string())?
 }

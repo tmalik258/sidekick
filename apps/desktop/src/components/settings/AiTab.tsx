@@ -525,9 +525,7 @@ function VoiceSection({ voice, onError }: { voice: VoiceSettings; onError: (e: s
             options={(status?.voices ?? []).map((v) => [v.id, v.label])}
             onChange={(v) => void set({ voice: v })}
           />
-          <Button small onClick={() => api.voiceTest().catch((e) => onError(String(e)))}>
-            Test
-          </Button>
+          <VoiceTest onError={onError} />
         </div>
       </Field>
       <Field label={`Speed ${voice.speed.toFixed(1)}x`}>
@@ -597,5 +595,35 @@ function DragRow({
     >
       {children(handle)}
     </Reorder.Item>
+  );
+}
+
+/** Test with a loading state while a new voice loads, then Playing. */
+function VoiceTest({ onError }: { onError: (e: string) => void }) {
+  const [loading, setLoading] = useState(false);
+  const speaking = useSidekick((s) => s.speaking);
+  const [asked, setAsked] = useState(false);
+  useEffect(() => {
+    if (!speaking && asked && !loading) setAsked(false);
+  }, [speaking, asked, loading]);
+  const playing = asked && speaking;
+  return (
+    <Button
+      small
+      disabled={loading}
+      onClick={() => {
+        setLoading(true);
+        setAsked(true);
+        api
+          .voiceTest()
+          .catch((e) => {
+            setAsked(false);
+            onError(String(e));
+          })
+          .finally(() => setLoading(false));
+      }}
+    >
+      {loading ? "Loading voice…" : playing ? "Playing…" : "Test"}
+    </Button>
   );
 }

@@ -40,6 +40,7 @@ mod office;
 mod pipeline;
 mod privacy;
 mod projects;
+mod quick;
 mod recipes;
 mod review;
 mod routines;
