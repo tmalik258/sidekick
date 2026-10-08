@@ -70,6 +70,8 @@ interface SidekickState {
   voiceQuestion: string | null;
   /** A short "done" line in the compact island ("Hotspot is on"). */
   donePill: string | null;
+  /** When Focus mode ends (ms since epoch), or null when not focusing. */
+  focusUntil: number | null;
   /** Where the conversation is saved, so it can be picked up later. */
   conversation: string;
   /** Sidekick's voice is playing; the mascot talks along. */
@@ -187,6 +189,7 @@ export const useSidekick = create<SidekickState>(() => ({
   askModel: savedModel(),
   voiceQuestion: null,
   donePill: null,
+  focusUntil: null,
   conversation: crypto.randomUUID(),
   hearing: null,
   speaking: false,
@@ -845,6 +848,10 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
   let disposed = false;
   const unlisteners: Array<() => void> = [];
 
+  void api.focusStatus().then(
+    (f) => !disposed && useSidekick.setState({ focusUntil: f.until }),
+    () => {},
+  );
   void (async () => {
     const offs = await Promise.all([
       listen(EVENTS.mascotState, (t) => {
@@ -1017,6 +1024,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         }
         updateLastTurn(chatId, (t) => ({ ...t, proposals: [...(t.proposals ?? []), { id, label, step }] }));
       }),
+      listen(EVENTS.islandFocus, ({ until }) => useSidekick.setState({ focusUntil: until })),
       listen(EVENTS.islandDone, ({ id, text }) => {
         updateLastTurn(id, (t) => ({ ...t, content: text }));
         showDone(text);

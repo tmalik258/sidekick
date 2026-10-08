@@ -609,6 +609,7 @@ export const SHORTCUT_ACTIONS: { id: string; label: string }[] = [
   { id: "dismiss", label: "Stop or Not now" },
   { id: "screen", label: "Ask about the screen" },
   { id: "clipboard", label: "Clipboard history" },
+  { id: "focus", label: "Focus on or off" },
   { id: "pause", label: "Pause or resume" },
   { id: "settings", label: "Settings" },
 ];

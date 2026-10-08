@@ -82,11 +82,13 @@ export const EVENTS = {
   updateAvailable: "update://available",
   timing: "timing://recorded",
   islandDone: "island://done",
+  islandFocus: "island://focus",
 } as const;
 
 export interface EventPayloads {
   [EVENTS.mascotState]: Transition;
   [EVENTS.islandDone]: { id: string; text: string };
+  [EVENTS.islandFocus]: { until: number | null; held: number | unknown[]; ended?: boolean };
   [EVENTS.suggestionNew]: Suggestion;
   [EVENTS.suggestionClear]: string;
   [EVENTS.islandHover]: boolean;
@@ -176,6 +178,9 @@ export const api = {
   routinesToday: () => invoke<RoutineItem[]>("routines_today"),
   routinesForget: () => invoke<number>("routines_forget"),
   learnedList: () => invoke<Learned[]>("learned_list"),
+  focusStart: (minutes?: number) => invoke<string>("focus_start", { minutes }),
+  focusStop: () => invoke<string>("focus_stop"),
+  focusStatus: () => invoke<{ until: number | null; held: number }>("focus_status"),
   learnedForget: (kind: string, key: string, label: string) => invoke<void>("learned_forget", { kind, key, label }),
   learnedForgetAll: () => invoke<void>("learned_forget_all"),
   routinesRemove: (kind: string, key: string) => invoke<number>("routines_remove", { kind, key }),

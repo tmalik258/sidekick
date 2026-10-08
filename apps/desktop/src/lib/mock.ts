@@ -985,6 +985,19 @@ commands.time_today = () => [
 ];
 commands.browser_info = () => ({ token: "browser-preview-pairing-code", port: 47822 });
 commands.action_undo = () => "Moved photo.webp to the Recycle Bin";
+let mockFocusUntil: number | null = null;
+commands.focus_start = (args) => {
+  const minutes = Number((args as { minutes?: number } | undefined)?.minutes ?? 25);
+  mockFocusUntil = Date.now() + minutes * 60_000;
+  emit("island://focus", { until: mockFocusUntil, held: 0 });
+  return `Focusing for ${minutes} minutes`;
+};
+commands.focus_stop = () => {
+  mockFocusUntil = null;
+  emit("island://focus", { until: null, held: [], ended: true });
+  return "Focus done. Nothing came in.";
+};
+commands.focus_status = () => ({ until: mockFocusUntil, held: 0 });
 commands.learned_list = () => [
   {
     kind: "choice",
