@@ -133,3 +133,96 @@ mod tests {
         assert_eq!(skill_name("clipboard.open-url"), "Open url");
     }
 }
+
+/// Once a week (Friday afternoon), Sidekick shows a few of its guesses
+/// about you so you can fix the wrong ones in Memory.
+pub const WEEKLY_SKILL: &str = "learn.weekly";
+const WEEKLY_DAY: chrono::Weekday = chrono::Weekday::Fri;
+const WEEKLY_FROM_HOUR: u32 = 14;
+const WEEKLY_CHECK: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+
+/// The card: the three newest-looking guesses, or None when there are none.
+pub fn weekly_card(items: &[Learned]) -> Option<sidekick_skills::Proposal> {
+    use sidekick_skills::{Proposal, ProposedOption, Trust};
+    if items.is_empty() {
+        return None;
+    }
+    let lines: Vec<&str> = items.iter().take(3).map(|l| l.text.as_str()).collect();
+    let more = items.len().saturating_sub(3);
+    let detail = if more > 0 {
+        format!("{}. And {more} more.", lines.join(". "))
+    } else {
+        format!("{}.", lines.join(". "))
+    };
+    let opt = |label: &str, action: &str| ProposedOption {
+        label: label.into(),
+        action: action.into(),
+        args: serde_json::json!({ "message": "OK" }),
+        skill_id: WEEKLY_SKILL.into(),
+    };
+    Some(Proposal {
+        skill_id: WEEKLY_SKILL.into(),
+        skill_ids: vec![WEEKLY_SKILL.into()],
+        title: "What I learned about you this week".into(),
+        detail,
+        options: vec![
+            opt("Review and fix", "open_memory"),
+            opt("Looks right", "noop"),
+        ],
+        trust: Trust::Suggest,
+        remember: None,
+        priority: 50,
+    })
+}
+
+pub fn start_weekly(app: &AppHandle, marker: std::path::PathBuf) {
+    use chrono::{Datelike, Timelike};
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(WEEKLY_CHECK).await;
+            let now = chrono::Local::now();
+            let week = format!("{}-{}", now.iso_week().year(), now.iso_week().week());
+            if now.weekday() != WEEKLY_DAY
+                || now.hour() < WEEKLY_FROM_HOUR
+                || std::fs::read_to_string(&marker).unwrap_or_default() == week
+                || !on(&app)
+                || !crate::timetrack::is_active(&app)
+            {
+                continue;
+            }
+            let _ = std::fs::write(&marker, &week);
+            let app2 = app.clone();
+            let items = tokio::task::spawn_blocking(move || list(&app2))
+                .await
+                .unwrap_or_default();
+            if let Some(card) = weekly_card(&items) {
+                crate::suggestions::offer(&app, card);
+            }
+        }
+    });
+}
+
+#[cfg(test)]
+mod weekly_tests {
+    use super::*;
+
+    fn item(text: &str) -> Learned {
+        Learned {
+            kind: "choice".into(),
+            key: String::new(),
+            label: String::new(),
+            text: text.into(),
+            why: String::new(),
+        }
+    }
+
+    #[test]
+    fn weekly_card_lists_three_guesses() {
+        assert!(weekly_card(&[]).is_none());
+        let items: Vec<Learned> = ["A", "B", "C", "D", "E"].map(item).into();
+        let card = weekly_card(&items).unwrap();
+        assert_eq!(card.detail, "A. B. C. And 2 more.");
+        assert_eq!(card.options[0].action, "open_memory");
+    }
+}
