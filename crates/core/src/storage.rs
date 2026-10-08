@@ -90,6 +90,9 @@ const MIGRATIONS: &[&str] = &[
         seq INTEGER NOT NULL,
         PRIMARY KEY (day, kind, key)
     );",
+    // How often each kind of suggestion was taken or waved away.
+    "ALTER TABLE skill_habits ADD COLUMN accepted INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE skill_habits ADD COLUMN dismissed INTEGER NOT NULL DEFAULT 0;",
 ];
 
 /// A saved Ask conversation, without its turns.
@@ -169,6 +172,9 @@ pub struct Habit {
     pub accept_streak: i64,
     /// The "do this automatically?" offer was already made.
     pub offered: bool,
+    /// Times a suggestion of this kind was taken, and waved away.
+    pub accepted: i64,
+    pub dismissed: i64,
 }
 
 /// One search hit, with where it came from so it can be opened.
@@ -455,7 +461,7 @@ impl Storage {
 
     pub fn habit(&self, skill_id: &str) -> Result<Habit, StorageError> {
         let mut stmt = self.conn.prepare(
-            "SELECT dismiss_streak, muted_until, last_label, accept_streak, offered
+            "SELECT dismiss_streak, muted_until, last_label, accept_streak, offered, accepted, dismissed
              FROM skill_habits WHERE skill_id = ?1",
         )?;
         let mut rows = stmt.query_map([skill_id], |r| {
@@ -466,6 +472,8 @@ impl Storage {
                 last_label: r.get(2)?,
                 accept_streak: r.get(3)?,
                 offered: r.get(4)?,
+                accepted: r.get(5)?,
+                dismissed: r.get(6)?,
             })
         })?;
         Ok(rows.next().transpose()?.unwrap_or_else(|| Habit {
@@ -476,14 +484,35 @@ impl Storage {
 
     pub fn save_habit(&self, h: &Habit) -> Result<(), StorageError> {
         self.conn.execute(
-            "INSERT INTO skill_habits (skill_id, dismiss_streak, muted_until, last_label, accept_streak, offered)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO skill_habits (skill_id, dismiss_streak, muted_until, last_label, accept_streak, offered, accepted, dismissed)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT (skill_id) DO UPDATE SET dismiss_streak = excluded.dismiss_streak,
                muted_until = excluded.muted_until, last_label = excluded.last_label,
-               accept_streak = excluded.accept_streak, offered = excluded.offered",
-            params![h.skill_id, h.dismiss_streak, h.muted_until, h.last_label, h.accept_streak, h.offered],
+               accept_streak = excluded.accept_streak, offered = excluded.offered,
+               accepted = excluded.accepted, dismissed = excluded.dismissed",
+            params![
+                h.skill_id,
+                h.dismiss_streak,
+                h.muted_until,
+                h.last_label,
+                h.accept_streak,
+                h.offered,
+                h.accepted,
+                h.dismissed
+            ],
         )?;
         Ok(())
+    }
+
+    /// Every kind of suggestion that was ever taken or waved away, most
+    /// seen first: (skill, taken, waved away).
+    pub fn suggestion_rates(&self) -> Result<Vec<(String, i64, i64)>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT skill_id, accepted, dismissed FROM skill_habits
+             WHERE accepted + dismissed > 0 ORDER BY accepted + dismissed DESC",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// Adds or replaces one searchable item (same source and ref replace).

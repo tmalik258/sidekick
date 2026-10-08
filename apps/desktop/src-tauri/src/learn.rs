@@ -64,6 +64,7 @@ pub fn on_dismiss(app: &AppHandle, skill_id: &str, reason: &str) {
         return;
     };
     h.dismiss_streak += 1;
+    h.dismissed += 1;
     h.accept_streak = 0;
     if h.dismiss_streak >= DISMISSALS_TO_MUTE {
         h.dismiss_streak = 0;
@@ -87,6 +88,7 @@ pub fn on_accept(
     }
     let mut h = load(app, &proposal.skill_id)?;
     h.dismiss_streak = 0;
+    h.accepted += 1;
     if h.last_label == option.label {
         h.accept_streak += 1;
     } else {
