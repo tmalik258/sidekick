@@ -985,6 +985,7 @@ commands.time_today = () => [
 ];
 commands.browser_info = () => ({ token: "browser-preview-pairing-code", port: 47822 });
 commands.action_undo = () => "Moved photo.webp to the Recycle Bin";
+commands.user_guess_name = () => "Taimoor";
 let mockFocusUntil: number | null = null;
 commands.focus_start = (args) => {
   const minutes = Number((args as { minutes?: number } | undefined)?.minutes ?? 25);

@@ -203,6 +203,7 @@ pub fn run() {
             commands::choices_reset,
             commands::routines_today,
             commands::routines_forget,
+            commands::user_guess_name,
             commands::focus_start,
             commands::focus_stop,
             commands::focus_status,

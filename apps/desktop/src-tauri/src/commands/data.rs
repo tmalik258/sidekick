@@ -350,3 +350,52 @@ pub fn focus_stop(app: AppHandle) -> String {
 pub fn focus_status() -> crate::focus::Status {
     crate::focus::status()
 }
+
+/// A first name to offer during setup: the Windows account name, tidied
+/// ("ali.khan" reads as "Ali"). Empty when it looks like a machine name.
+#[tauri::command]
+pub fn user_guess_name() -> String {
+    guess_name(&std::env::var("USERNAME").unwrap_or_default())
+}
+
+fn guess_name(account: &str) -> String {
+    let first = account
+        .split(['.', '_', '-', ' '])
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches(|c: char| c.is_ascii_digit());
+    let generic = [
+        "user",
+        "admin",
+        "administrator",
+        "owner",
+        "pc",
+        "runneradmin",
+    ];
+    if first.len() < 2 || generic.contains(&first.to_lowercase().as_str()) {
+        return String::new();
+    }
+    let mut chars = first.chars();
+    chars
+        .next()
+        .map(|c| {
+            c.to_uppercase()
+                .chain(chars.flat_map(char::to_lowercase))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::guess_name;
+
+    #[test]
+    fn guesses_a_first_name_from_the_account() {
+        assert_eq!(guess_name("ali.khan"), "Ali");
+        assert_eq!(guess_name("TAIMOOR"), "Taimoor");
+        assert_eq!(guess_name("sara92"), "Sara");
+        assert_eq!(guess_name("Administrator"), "");
+        assert_eq!(guess_name(""), "");
+    }
+}

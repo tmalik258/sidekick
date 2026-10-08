@@ -34,7 +34,6 @@ const NOT_READY: Record<AiProviderId, string> = {
 export function AiTab({ onError }: { onError: (e: string) => void }) {
   const ai = useSidekick((s) => s.settings.ai);
   const voice = useSidekick((s) => s.settings.voice);
-  const name = useAssistantName();
   return (
     <>
       <Section
@@ -405,6 +404,7 @@ function Ranking({ ai, onError }: { ai: AiSettings; onError: (e: string) => void
 }
 
 function VoiceSection({ voice, onError }: { voice: VoiceSettings; onError: (e: string) => void }) {
+  const name = useAssistantName();
   const status = useSidekick((s) => s.voiceStatus);
   const [progress, setProgress] = useState<VoiceDownload | null>(null);
   useEffect(() => {
