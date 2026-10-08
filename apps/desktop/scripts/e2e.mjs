@@ -187,7 +187,8 @@ try {
   });
 
   await test("This PC only stays on after sending", async () => {
-    if ((await pcPressed()) !== "true") await clickText("This PC only");
+    // Off, the chip is just a lock icon: click it by its label.
+    if ((await pcPressed()) !== "true") await page.click('.ak-pc[aria-label="This PC only"]');
     if ((await pcPressed()) !== "true") throw new Error("This PC only did not switch on");
     await page.evaluate(() => document.querySelector(".ak input")?.focus());
     await type("hello");

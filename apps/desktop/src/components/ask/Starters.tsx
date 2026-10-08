@@ -74,6 +74,7 @@ export function ContextLine({ keys }: { keys: boolean }) {
           <button
             type="button"
             aria-pressed={ask.localOnly}
+            aria-label="This PC only"
             onMouseDown={keepFocus}
             onClick={() => setAsk({ localOnly: !ask.localOnly })}
             className="ak-pc chip"
