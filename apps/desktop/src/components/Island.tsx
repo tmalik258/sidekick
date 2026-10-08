@@ -752,6 +752,9 @@ function ExpandedContent({
           >
             {detail}
           </p>
+          {suggestion?.why && (
+            <p className="mt-1 truncate text-[11.5px] leading-4 text-[rgb(235_235_245/0.42)]">{suggestion.why}</p>
+          )}
         </div>
         {!suggestion && reporting && (result?.path || result?.undoId) ? (
           <div className="flex shrink-0 gap-1.5">
