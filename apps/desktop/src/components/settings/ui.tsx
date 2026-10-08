@@ -583,7 +583,7 @@ export function Select({
           placeholder={`Search ${label.toLowerCase()}…`}
           spellCheck={false}
           aria-label={`Search ${label}`}
-          className="mb-1 w-full shrink-0 rounded-[9px] bg-white/[0.08] px-2.5 py-1.5 text-[12.5px] text-white outline-none placeholder:text-white/35 focus:bg-white/[0.11]"
+          className="mb-1 w-full shrink-0 rounded-[9px] bg-white/[0.08] px-2.5 py-1.5 text-[12.5px] text-white outline-none placeholder:text-white/40 focus:bg-white/[0.11]"
         />
       )}
       {group && (
