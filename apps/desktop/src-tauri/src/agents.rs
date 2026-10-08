@@ -22,6 +22,8 @@ pub enum Agent {
     Copilot,
     /// Cursor's agent CLI (`cursor-agent`).
     Cursor,
+    /// A coding model on this PC through Ollama, run by Sidekick itself.
+    Local,
 }
 
 impl Agent {
@@ -31,6 +33,7 @@ impl Agent {
             Agent::Codex => "Codex",
             Agent::Copilot => "GitHub Copilot",
             Agent::Cursor => "Cursor",
+            Agent::Local => "Local",
         }
     }
 
@@ -41,6 +44,7 @@ impl Agent {
             Agent::Codex => "codex",
             Agent::Copilot => "copilot",
             Agent::Cursor => "cursor",
+            Agent::Local => "local",
         }
     }
 
@@ -50,6 +54,7 @@ impl Agent {
             Agent::Codex,
             Agent::Copilot,
             Agent::Cursor,
+            Agent::Local,
         ]
         .into_iter()
         .find(|a| a.id() == id)
@@ -61,6 +66,7 @@ impl Agent {
             Agent::Codex => "codex",
             Agent::Copilot => "copilot",
             Agent::Cursor => "cursor-agent",
+            Agent::Local => "ollama",
         }
     }
 
@@ -68,7 +74,7 @@ impl Agent {
         match self {
             Agent::ClaudeCode => s.ai.claude_code.path.trim().to_owned(),
             Agent::Codex => s.ai.codex.path.trim().to_owned(),
-            Agent::Copilot | Agent::Cursor => String::new(),
+            Agent::Copilot | Agent::Cursor | Agent::Local => String::new(),
         }
     }
 
@@ -155,6 +161,8 @@ pub struct AgentInfo {
     pub limited: bool,
     /// The one step to fix it, when it is not ready.
     pub fix: Option<String>,
+    /// Runs on this PC; nothing leaves it.
+    pub local: bool,
 }
 
 impl Agent {
@@ -164,6 +172,7 @@ impl Agent {
             Agent::Codex => "npm install -g @openai/codex",
             Agent::Copilot => "npm install -g @github/copilot",
             Agent::Cursor => "Install the Cursor CLI from cursor.com/cli",
+            Agent::Local => "Install Ollama from ollama.com",
         }
     }
 
@@ -173,6 +182,7 @@ impl Agent {
             Agent::Codex => "codex login",
             Agent::Copilot => "copilot, then /login",
             Agent::Cursor => "cursor-agent login",
+            Agent::Local => "",
         }
     }
 
@@ -197,6 +207,8 @@ impl Agent {
                     return None;
                 }
             }
+            // Nothing to sign in to.
+            Agent::Local => true,
             Agent::Cursor => {
                 if env("CURSOR_API_KEY") {
                     true
@@ -225,6 +237,7 @@ impl Agent {
             signed_in,
             limited,
             fix,
+            local: self == Agent::Local,
         }
     }
 }
@@ -238,10 +251,16 @@ pub fn status(s: &Settings) -> Agents {
         copilot: Agent::Copilot.resolve(s).is_some(),
         cursor: Agent::Cursor.resolve(s).is_some(),
         handoff: chosen(s).map(|a| a.name().to_owned()),
-        list: [Agent::ClaudeCode, Agent::Codex, Agent::Copilot, Agent::Cursor]
-            .into_iter()
-            .map(|a| a.info(s))
-            .collect(),
+        list: [
+            Agent::ClaudeCode,
+            Agent::Codex,
+            Agent::Copilot,
+            Agent::Cursor,
+            Agent::Local,
+        ]
+        .into_iter()
+        .map(|a| a.info(s))
+        .collect(),
     }
 }
 
@@ -364,6 +383,8 @@ pub async fn hand_off(
         // Both start interactively with the first prompt already sent.
         Agent::Copilot => args.push("-i".into()),
         Agent::Cursor => {}
+        // Never picked for handoffs: it cannot finish what the local model could not.
+        Agent::Local => return Err("The local agent runs inside Sidekick.".into()),
     }
     args.push(HANDOFF_PROMPT.into());
     launch(&dir, &exe, &args, &env)?;

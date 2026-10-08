@@ -7,6 +7,8 @@
 //! (`--permission-prompt-tool`). Codex runs as `codex app-server` and asks
 //! for approvals as JSON-RPC requests.
 
+mod local;
+
 use sidekick_sensors::classify::mask;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -298,6 +300,7 @@ fn spawn_run(
         Agent::ClaudeCode => Some(settings.ai.claude_code.model.clone()),
         Agent::Codex => Some(settings.ai.codex.model.clone()),
         Agent::Copilot | Agent::Cursor => None,
+        Agent::Local => Some(settings.ai.local.model.clone()),
     }
     .filter(|m| !m.trim().is_empty());
     let mcp_config = app
@@ -323,6 +326,18 @@ fn spawn_run(
             Agent::Codex => run_codex(&app2, &id2, &exe, &path2, mode, model, resume, rx).await,
             Agent::Copilot | Agent::Cursor => {
                 run_plain(&app2, &id2, agent, &exe, &path2, mode, rx).await
+            }
+            Agent::Local => {
+                local::run(
+                    &app2,
+                    &id2,
+                    &path2,
+                    mode,
+                    model,
+                    &settings.ai.local.base_url,
+                    rx,
+                )
+                .await
             }
         };
         let changes = review_count(&id2);
@@ -703,6 +718,9 @@ pub fn open_terminal(app: &AppHandle, id: &str) -> Result<(), String> {
             .map(|h| (h.agent, h.path.clone(), h.resume.clone()))
     })
     .ok_or("That session has ended.")?;
+    if agent == Agent::Local {
+        return Err("The local agent runs inside Sidekick, not in a terminal.".into());
+    }
     let settings = lock(&app.state::<AppState>().settings).clone();
     let exe = agent
         .resolve(&settings)

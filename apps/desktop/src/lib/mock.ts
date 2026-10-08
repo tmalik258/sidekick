@@ -261,6 +261,7 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
         limited: false,
         fix: "Install the Cursor CLI from cursor.com/cli",
       },
+      { id: "local", name: "Local", installed: true, signedIn: true, limited: false, fix: null, local: true },
     ],
   }),
   codex_add_notify: () => "C:\\Users\\you\\.codex\\config.toml.sidekick-backup-20261002",
