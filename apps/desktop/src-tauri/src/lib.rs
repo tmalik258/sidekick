@@ -19,6 +19,8 @@ mod disk;
 #[cfg(test)]
 mod drift_test;
 mod editors;
+#[cfg(test)]
+mod eval_test;
 mod extension;
 mod fathom;
 mod files;

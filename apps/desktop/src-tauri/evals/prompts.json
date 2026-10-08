@@ -1,0 +1,626 @@
+[
+ {
+  "prompt": "turn the volume up",
+  "tool": "pc_control",
+  "args": {
+   "what": "volume_up"
+  }
+ },
+ {
+  "prompt": "mute",
+  "tool": "pc_control",
+  "args": {
+   "what": "mute"
+  }
+ },
+ {
+  "prompt": "turn on dark mode",
+  "tool": "pc_control",
+  "args": {
+   "what": "dark_mode_on"
+  }
+ },
+ {
+  "prompt": "turn bluetooth on",
+  "tool": "pc_control",
+  "args": {
+   "what": "bluetooth_on"
+  }
+ },
+ {
+  "prompt": "turn off wifi",
+  "tool": "pc_control",
+  "args": {
+   "what": "wifi_off"
+  }
+ },
+ {
+  "prompt": "do not disturb on",
+  "tool": "pc_control",
+  "args": {
+   "what": "dnd_on"
+  }
+ },
+ {
+  "prompt": "turn on my hotspot",
+  "tool": "pc_control",
+  "args": {
+   "what": "hotspot_on"
+  }
+ },
+ {
+  "prompt": "stop sharing internet from this pc",
+  "tool": "pc_control",
+  "args": {
+   "what": "hotspot_off"
+  }
+ },
+ {
+  "prompt": "airplane mode on",
+  "tool": "pc_control",
+  "args": {
+   "what": "airplane_on"
+  }
+ },
+ {
+  "prompt": "turn night light on",
+  "tool": "pc_control",
+  "args": {
+   "what": "night_light_on"
+  }
+ },
+ {
+  "prompt": "lock my pc",
+  "tool": "pc_control",
+  "args": {
+   "what": "lock"
+  }
+ },
+ {
+  "prompt": "which speakers can I use",
+  "tool": "pc_control",
+  "args": {
+   "what": "audio_outputs"
+  }
+ },
+ {
+  "prompt": "set volume to 30",
+  "tool": "pc_control",
+  "args": {
+   "what": "set_volume",
+   "level": 30
+  }
+ },
+ {
+  "prompt": "brightness 70 percent",
+  "tool": "pc_control",
+  "args": {
+   "what": "brightness",
+   "level": 70
+  }
+ },
+ {
+  "prompt": "open bluetooth settings",
+  "tool": "pc_control",
+  "args": {
+   "what": "open_settings",
+   "page": "bluetooth"
+  }
+ },
+ {
+  "prompt": "extend my screen to the monitor",
+  "tool": "pc_control",
+  "args": {
+   "what": "display",
+   "page": "extend"
+  }
+ },
+ {
+  "prompt": "play sound through my headphones",
+  "tool": "pc_control",
+  "args": {
+   "what": [
+    "audio_output",
+    "audio_outputs"
+   ]
+  }
+ },
+ {
+  "prompt": "is bluetooth on?",
+  "tool": "pc_status"
+ },
+ {
+  "prompt": "how much battery do I have",
+  "tool": "pc_status"
+ },
+ {
+  "prompt": "am I on wifi",
+  "tool": "pc_status"
+ },
+ {
+  "prompt": "is dark mode on right now",
+  "tool": "pc_status"
+ },
+ {
+  "prompt": "my C drive is full",
+  "tool": "storage"
+ },
+ {
+  "prompt": "what is taking up space on my pc",
+  "tool": "storage"
+ },
+ {
+  "prompt": "what can I delete to free space",
+  "tool": "storage"
+ },
+ {
+  "prompt": "Steam keeps crashing",
+  "tool": "app_doctor"
+ },
+ {
+  "prompt": "why does Photoshop close by itself",
+  "tool": "app_doctor"
+ },
+ {
+  "prompt": "my game will not start",
+  "tool": "app_doctor"
+ },
+ {
+  "prompt": "Discord freezes all the time",
+  "tool": "app_doctor"
+ },
+ {
+  "prompt": "where is my resume",
+  "tool": [
+   "find_files",
+   "search"
+  ]
+ },
+ {
+  "prompt": "find the invoice from march",
+  "tool": [
+   "find_files",
+   "search"
+  ]
+ },
+ {
+  "prompt": "find my sidekick project folder",
+  "tool": [
+   "find_files",
+   "search"
+  ]
+ },
+ {
+  "prompt": "where did I save tax return 2025",
+  "tool": [
+   "find_files",
+   "search"
+  ]
+ },
+ {
+  "prompt": "find budget.xlsx",
+  "tool": [
+   "find_files",
+   "search"
+  ]
+ },
+ {
+  "prompt": "show me where report.pdf is",
+  "tool": [
+   "find_files",
+   "search"
+  ]
+ },
+ {
+  "prompt": "what did I copy about the landlord deposit",
+  "tool": [
+   "search",
+   "find_files"
+  ]
+ },
+ {
+  "prompt": "search my notes for the api key rotation",
+  "tool": [
+   "search",
+   "find_files"
+  ]
+ },
+ {
+  "prompt": "find the chat where we talked about pricing",
+  "tool": [
+   "search",
+   "find_files"
+  ]
+ },
+ {
+  "prompt": "what did I work on today",
+  "tool": [
+   "today",
+   "recent"
+  ]
+ },
+ {
+  "prompt": "summarize my day",
+  "tool": [
+   "today",
+   "recent"
+  ]
+ },
+ {
+  "prompt": "what files did I open recently",
+  "tool": [
+   "recent",
+   "today"
+  ]
+ },
+ {
+  "prompt": "what was I doing a few minutes ago",
+  "tool": [
+   "recent",
+   "today"
+  ]
+ },
+ {
+  "prompt": "what does this error on my screen mean",
+  "tool": "screen_text"
+ },
+ {
+  "prompt": "read what is on my screen",
+  "tool": "screen_text"
+ },
+ {
+  "prompt": "translate the text on my screen",
+  "tool": "screen_text"
+ },
+ {
+  "prompt": "what is the latest version of node",
+  "tool": "web_search"
+ },
+ {
+  "prompt": "weather in Lahore today",
+  "tool": "web_search"
+ },
+ {
+  "prompt": "who won the champions league final",
+  "tool": "web_search"
+ },
+ {
+  "prompt": "price of bitcoin now",
+  "tool": "web_search"
+ },
+ {
+  "prompt": "what is new in python 3.14",
+  "tool": "web_search"
+ },
+ {
+  "prompt": "news about OpenAI today",
+  "tool": "web_search"
+ },
+ {
+  "prompt": "read https://example.com/docs and summarize",
+  "tool": "read_page",
+  "args": {
+   "url": "example.com"
+  }
+ },
+ {
+  "prompt": "summarize https://blog.rust-lang.org",
+  "tool": "read_page",
+  "args": {
+   "url": "rust-lang"
+  }
+ },
+ {
+  "prompt": "open spotify",
+  "tool": "windows",
+  "args": {
+   "action": "launch",
+   "name": "spotify"
+  }
+ },
+ {
+  "prompt": "start vs code",
+  "tool": "windows",
+  "args": {
+   "action": "launch",
+   "name": "code"
+  }
+ },
+ {
+  "prompt": "switch to chrome",
+  "tool": "windows",
+  "args": {
+   "action": "focus",
+   "name": "chrome"
+  }
+ },
+ {
+  "prompt": "close notepad",
+  "tool": "windows",
+  "args": {
+   "action": "close",
+   "name": "notepad"
+  }
+ },
+ {
+  "prompt": "is zoom installed",
+  "tool": "windows",
+  "args": {
+   "action": "find",
+   "name": "zoom"
+  }
+ },
+ {
+  "prompt": "what windows do I have open",
+  "tool": "windows",
+  "args": {
+   "action": "list"
+  }
+ },
+ {
+  "prompt": "install 7zip",
+  "tool": "apps",
+  "args": {
+   "action": "search"
+  }
+ },
+ {
+  "prompt": "install vlc",
+  "tool": "apps",
+  "args": {
+   "action": "search"
+  }
+ },
+ {
+  "prompt": "update firefox",
+  "tool": "apps",
+  "args": {
+   "action": [
+    "update",
+    "search"
+   ]
+  }
+ },
+ {
+  "prompt": "what wifi networks are around",
+  "tool": "apps",
+  "args": {
+   "action": "wifi_networks"
+  }
+ },
+ {
+  "prompt": "connect to the HomeNet wifi",
+  "tool": "apps",
+  "args": {
+   "action": "wifi_connect",
+   "name": "homenet"
+  }
+ },
+ {
+  "prompt": "draft an email to Sara about the meeting moving to friday",
+  "tool": "office",
+  "args": {
+   "action": "email_draft"
+  }
+ },
+ {
+  "prompt": "make a word document with my packing list: shoes, charger, passport",
+  "tool": "office",
+  "args": {
+   "action": "word_create"
+  }
+ },
+ {
+  "prompt": "turn C:\\Users\\me\\Documents\\report.docx into a pdf",
+  "tool": "office",
+  "args": {
+   "action": "to_pdf"
+  }
+ },
+ {
+  "prompt": "read the totals from C:\\Users\\me\\sales.xlsx",
+  "tool": "office",
+  "args": {
+   "action": "excel_read"
+  }
+ },
+ {
+  "prompt": "every friday at 5 remind me to send the timesheet",
+  "tool": "recipes",
+  "args": {
+   "action": "create"
+  }
+ },
+ {
+  "prompt": "what recipes do I have",
+  "tool": "recipes",
+  "args": {
+   "action": "list"
+  }
+ },
+ {
+  "prompt": "run my morning setup recipe",
+  "tool": "recipes",
+  "args": {
+   "action": "run"
+  }
+ },
+ {
+  "prompt": "remember my manager is Ali Khan",
+  "tool": "remember",
+  "args": {
+   "fact": "ali"
+  }
+ },
+ {
+  "prompt": "remember I keep invoices in D:\\Invoices",
+  "tool": "remember",
+  "args": {
+   "fact": "invoices"
+  }
+ },
+ {
+  "prompt": "forget that my manager is Ali",
+  "tool": "remember",
+  "args": {
+   "forget": true
+  }
+ },
+ {
+  "prompt": "did anyone message me",
+  "tool": "notifications"
+ },
+ {
+  "prompt": "any important notifications in the last hour",
+  "tool": "notifications",
+  "args": {
+   "level": "important"
+  }
+ },
+ {
+  "prompt": "what did slack say",
+  "tool": "notifications",
+  "args": {
+   "from": "slack"
+  }
+ },
+ {
+  "prompt": "what tabs do I have open",
+  "tool": "browser",
+  "args": {
+   "action": "tabs"
+  }
+ },
+ {
+  "prompt": "summarize this page",
+  "tool": "browser",
+  "args": {
+   "action": [
+    "read",
+    "extract"
+   ]
+  }
+ },
+ {
+  "prompt": "go back in the browser",
+  "tool": "browser",
+  "args": {
+   "action": "back"
+  }
+ },
+ {
+  "prompt": "get the table from this page",
+  "tool": "browser",
+  "args": {
+   "action": "extract"
+  }
+ },
+ {
+  "prompt": "what is selected in word",
+  "tool": "desktop",
+  "args": {
+   "action": "selection"
+  }
+ },
+ {
+  "prompt": "type hello team in the teams chat box",
+  "tool": "desktop",
+  "args": {
+   "action": [
+    "type_here",
+    "read"
+   ]
+  }
+ },
+ {
+  "prompt": "how do I use pivot tables in this excel window",
+  "tool": "desktop",
+  "args": {
+   "action": "read"
+  }
+ },
+ {
+  "prompt": "rewrite the selected text to be more formal",
+  "tool": "desktop",
+  "args": {
+   "action": "selection"
+  }
+ },
+ {
+  "prompt": "open https://github.com",
+  "tool": "open",
+  "args": {
+   "target": "github.com"
+  }
+ },
+ {
+  "prompt": "open my downloads folder",
+  "tool": [
+   "open",
+   "find_files"
+  ]
+ },
+ {
+  "prompt": "show C:\\Users\\me\\report.pdf in its folder",
+  "tool": "show_in_folder",
+  "args": {
+   "path": "report.pdf"
+  }
+ },
+ {
+  "prompt": "send an email to bob@example.com saying I am running late",
+  "tool": "app_action"
+ },
+ {
+  "prompt": "post 'deploy done' in the #eng slack channel",
+  "tool": "app_action"
+ },
+ {
+  "prompt": "move invoice.pdf from downloads to documents",
+  "tool": [
+   "find_files",
+   "search",
+   "propose"
+  ]
+ },
+ {
+  "prompt": "hi",
+  "tool": null
+ },
+ {
+  "prompt": "thanks!",
+  "tool": null
+ },
+ {
+  "prompt": "what is 17 times 23",
+  "tool": null
+ },
+ {
+  "prompt": "write a haiku about rain",
+  "tool": null
+ },
+ {
+  "prompt": "explain what a closure is in javascript",
+  "tool": null
+ },
+ {
+  "prompt": "give me a regex for an email address",
+  "tool": null
+ },
+ {
+  "prompt": "what is the difference between let and const",
+  "tool": null
+ },
+ {
+  "prompt": "tell me a joke",
+  "tool": null
+ },
+ {
+  "prompt": "convert 5 km to miles",
+  "tool": null
+ },
+ {
+  "prompt": "what does HTTP 404 mean",
+  "tool": null
+ }
+]
