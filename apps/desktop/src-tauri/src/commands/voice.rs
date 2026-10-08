@@ -3,8 +3,9 @@
 use super::*;
 
 #[tauri::command]
-pub fn voice_status(app: AppHandle) -> crate::voice::VoiceStatus {
-    crate::voice::status(&app)
+pub async fn voice_status(app: AppHandle) -> CmdResult<crate::voice::VoiceStatus> {
+    // Reads model files and audio devices: off the UI thread.
+    super::off_ui(move || crate::voice::status(&app)).await
 }
 
 #[tauri::command]
