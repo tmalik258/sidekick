@@ -9,6 +9,7 @@ pub mod cleanup;
 mod convert;
 pub mod dev;
 pub mod dnd;
+pub mod doctor;
 mod editors;
 mod files;
 pub mod office;
@@ -286,6 +287,19 @@ impl Executor {
                 let id = arg(args, "id")?.to_owned();
                 let upgrade = action == "update_app";
                 tokio::task::spawn_blocking(move || pc::app_install(&id, upgrade))
+                    .await
+                    .map_err(fail)?
+            }
+            "set_compat" => {
+                let exe = arg(args, "exe")?.to_owned();
+                let mode = arg(args, "mode")?.to_owned();
+                tokio::task::spawn_blocking(move || doctor::set_compat(&exe, &mode))
+                    .await
+                    .map_err(fail)?
+            }
+            "clear_compat" => {
+                let exe = arg(args, "exe")?.to_owned();
+                tokio::task::spawn_blocking(move || doctor::clear_compat(&exe))
                     .await
                     .map_err(fail)?
             }
