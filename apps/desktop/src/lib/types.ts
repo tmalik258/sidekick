@@ -661,7 +661,9 @@ export interface FileChange {
 export interface Agents {
   claudeCode: boolean;
   codex: boolean;
-  /** "Claude Code" or "Codex", or null when neither is installed. */
+  copilot: boolean;
+  cursor: boolean;
+  /** The agent that gets handoffs by name, or null when none is installed. */
   handoff: string | null;
 }
 

@@ -99,6 +99,8 @@ const CODING_AGENTS: [string, string][] = [
   ["auto", "Higher of Claude Code / Codex in the list above"],
   ["claude_code", "Claude Code"],
   ["codex", "Codex"],
+  ["copilot", "GitHub Copilot CLI"],
+  ["cursor", "Cursor agent CLI"],
 ];
 
 function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => void }) {

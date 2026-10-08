@@ -36,13 +36,13 @@ pub async fn agent_start(
     prompt: String,
     mode: crate::sessions::Mode,
 ) -> CmdResult<crate::sessions::Started> {
-    let agent = match agent.as_str() {
-        "codex" => crate::agents::Agent::Codex,
-        "claude_code" => crate::agents::Agent::ClaudeCode,
-        _ => {
+    let agent = match crate::agents::Agent::from_id(&agent) {
+        Some(a) => a,
+        None => {
             let settings = lock(&app.state::<AppState>().settings).clone();
-            crate::agents::chosen(&settings)
-                .ok_or("Install Claude Code or Codex first (Settings > AI).")?
+            crate::agents::chosen(&settings).ok_or(
+                "Install Claude Code, Codex, GitHub Copilot CLI or Cursor first (Settings > AI).",
+            )?
         }
     };
     crate::sessions::start(&app, agent, std::path::Path::new(&path), &prompt, mode).await
