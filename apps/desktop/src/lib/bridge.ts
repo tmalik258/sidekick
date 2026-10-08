@@ -18,6 +18,7 @@ import type {
   CapabilityInfo,
   ChatMessage,
   ChatSummary,
+  CloudId,
   ComposioStatus,
   EditorList,
   ExtensionGuide,
@@ -145,11 +146,26 @@ export async function listen<K extends keyof EventPayloads>(
   return listen<EventPayloads[K]>(event, (e) => handler(e.payload));
 }
 
+/** A model OpenRouter offers; prices in US dollars per million tokens. */
+export interface RouterModel {
+  id: string;
+  name: string;
+  free: boolean;
+  input: number;
+  output: number;
+  context: number;
+  tools: boolean;
+}
+
 export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
   systemLook: () => invoke<{ transparency: boolean; batterySaver: boolean }>("system_look"),
   diagnostics: () => invoke<string>("diagnostics"),
   reportSave: () => invoke<string>("report_save"),
+  cloudKeys: () => invoke<Record<CloudId, boolean>>("cloud_keys"),
+  cloudKeySet: (id: CloudId, key: string) => invoke<Settings>("cloud_key_set", { id, key }),
+  cloudKeyClear: (id: CloudId) => invoke<Settings>("cloud_key_clear", { id }),
+  openrouterModels: () => invoke<RouterModel[]>("openrouter_models"),
   crashPending: () => invoke<string | null>("crash_pending"),
   crashDismiss: () => invoke<void>("crash_dismiss"),
   settingsGet: () => invoke<Settings>("settings_get"),

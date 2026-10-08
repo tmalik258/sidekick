@@ -17,7 +17,33 @@ pub struct OpenAiCompat {
     client: reqwest::Client,
     /// The loaded model's context in tokens, once Ollama has said (by model).
     context: std::sync::Mutex<Option<(String, usize)>>,
+    /// "local", or the cloud provider this is ("gemini", "groq", "openrouter").
+    id: &'static str,
+    /// A cloud provider's API key was given (sent as a bearer token).
+    keyed: bool,
 }
+
+/// Cloud providers with an OpenAI-compatible API: (id, base URL, default model).
+pub const CLOUD: [(&str, &str, &str); 3] = [
+    (
+        "gemini",
+        "https://generativelanguage.googleapis.com/v1beta/openai",
+        "gemini-2.5-flash",
+    ),
+    (
+        "groq",
+        "https://api.groq.com/openai/v1",
+        "llama-3.3-70b-versatile",
+    ),
+    (
+        "openrouter",
+        "https://openrouter.ai/api/v1",
+        "openrouter/auto",
+    ),
+];
+
+/// Cloud models take far longer prompts than a laptop's local model.
+const CLOUD_CONTEXT: usize = 32_000;
 
 /// Ollama's own default when it does not say; smaller than most prompts with tools.
 const DEFAULT_CONTEXT: usize = 4_096;
@@ -39,12 +65,55 @@ impl OpenAiCompat {
             model: model.unwrap_or_default().trim().to_owned(),
             client: client.build().unwrap_or_default(),
             context: std::sync::Mutex::new(None),
+            id: "local",
+            keyed: false,
         }
+    }
+
+    /// A cloud provider from [`CLOUD`] with its API key; None for an unknown id.
+    pub fn cloud(id: &str, key: &str, model: Option<String>) -> Option<Self> {
+        let &(id, url, default) = CLOUD.iter().find(|(i, _, _)| *i == id)?;
+        let mut headers = reqwest::header::HeaderMap::new();
+        let mut auth =
+            reqwest::header::HeaderValue::from_str(&format!("Bearer {}", key.trim())).ok()?;
+        auth.set_sensitive(true);
+        headers.insert(reqwest::header::AUTHORIZATION, auth);
+        if id == "openrouter" {
+            // OpenRouter lists apps by these; harmless elsewhere.
+            headers.insert(
+                "X-Title",
+                reqwest::header::HeaderValue::from_static("Sidekick"),
+            );
+            headers.insert(
+                "HTTP-Referer",
+                reqwest::header::HeaderValue::from_static("https://github.com/tmalik258/sidekick"),
+            );
+        }
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(5))
+            .default_headers(headers)
+            .build()
+            .ok()?;
+        let model = model
+            .map(|m| m.trim().to_owned())
+            .filter(|m| !m.is_empty())
+            .unwrap_or_else(|| default.to_owned());
+        Some(Self {
+            base_url: url.to_owned(),
+            model,
+            client,
+            context: std::sync::Mutex::new(None),
+            id,
+            keyed: true,
+        })
     }
 
     /// How many tokens `model` can take, from Ollama's list of loaded models;
     /// the default when the server is not Ollama or has not loaded it yet.
     async fn context_tokens(&self, model: &str) -> usize {
+        if self.keyed {
+            return CLOUD_CONTEXT;
+        }
         if let Ok(c) = self.context.lock()
             && let Some((m, n)) = c.as_ref()
             && m == model
@@ -95,7 +164,7 @@ impl OpenAiCompat {
         let resp = self
             .client
             .get(format!("{}/models", self.base_url))
-            .timeout(Duration::from_millis(1500))
+            .timeout(Duration::from_millis(if self.keyed { 6000 } else { 1500 }))
             .send()
             .await
             .ok()?;
@@ -865,7 +934,7 @@ impl OpenAiCompat {
 #[async_trait]
 impl AiProvider for OpenAiCompat {
     fn id(&self) -> &'static str {
-        "local"
+        self.id
     }
 
     fn is_local(&self) -> bool {
@@ -873,7 +942,9 @@ impl AiProvider for OpenAiCompat {
     }
 
     async fn available(&self) -> bool {
-        self.models().await.is_some_and(|m| !m.is_empty())
+        // A cloud key is checked when it is saved; asking each time would
+        // add a round trip to every question.
+        self.keyed || self.models().await.is_some_and(|m| !m.is_empty())
     }
 
     /// Ollama unloads a model after a few idle minutes; this loads it (and

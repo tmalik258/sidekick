@@ -259,7 +259,7 @@ export function TextField({
   );
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-4 text-[13px]">
       <span className="min-w-0">

@@ -18,12 +18,14 @@ use crate::suggestions;
 use crate::windows;
 
 mod chat;
+mod cloud;
 mod data;
 mod diag;
 mod notify;
 mod setup;
 mod voice;
 pub use chat::*;
+pub use cloud::*;
 pub use data::*;
 pub use diag::*;
 pub use notify::*;
