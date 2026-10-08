@@ -27,6 +27,7 @@ import type {
   InboxStatus,
   InstantResults,
   LaterItem,
+  Learned,
   LocalModels,
   MascotState,
   NotifyLevel,
@@ -80,10 +81,12 @@ export const EVENTS = {
   netStatus: "net://status",
   updateAvailable: "update://available",
   timing: "timing://recorded",
+  islandDone: "island://done",
 } as const;
 
 export interface EventPayloads {
   [EVENTS.mascotState]: Transition;
+  [EVENTS.islandDone]: { id: string; text: string };
   [EVENTS.suggestionNew]: Suggestion;
   [EVENTS.suggestionClear]: string;
   [EVENTS.islandHover]: boolean;
@@ -172,6 +175,9 @@ export const api = {
   choicesReset: () => invoke<number>("choices_reset"),
   routinesToday: () => invoke<RoutineItem[]>("routines_today"),
   routinesForget: () => invoke<number>("routines_forget"),
+  learnedList: () => invoke<Learned[]>("learned_list"),
+  learnedForget: (kind: string, key: string, label: string) => invoke<void>("learned_forget", { kind, key, label }),
+  learnedForgetAll: () => invoke<void>("learned_forget_all"),
   routinesRemove: (kind: string, key: string) => invoke<number>("routines_remove", { kind, key }),
   actionsRecent: (limit = 30) => invoke<ActionRecord[]>("actions_recent", { limit }),
   revealPath: (path: string) => invoke<void>("reveal_path", { path }),

@@ -2199,3 +2199,47 @@ select.ak-mi option {
   font-size: 11.5px;
   color: rgb(235 235 245 / 0.45);
 }
+
+/* Option keys appear while Alt is held; the answer actions keep theirs. */
+.ak-chip kbd {
+  display: none;
+}
+:root[data-alt] .ak-chip kbd {
+  display: inline;
+}
+.ak-pc[aria-pressed="false"] {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+/* "Ignore" on a suggestion: the fill shows when the island closes by itself. */
+.ak-ignore {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  background: rgb(255 255 255 / 0.04);
+}
+.ak-ignore-fill {
+  position: absolute;
+  inset: 0;
+  background: rgb(255 255 255 / 0.1);
+  transform-origin: left;
+  animation: ak-ignore linear forwards;
+}
+.island-shell:hover .ak-ignore-fill {
+  animation: none;
+}
+@keyframes ak-ignore {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ak-ignore-fill {
+    display: none;
+  }
+}

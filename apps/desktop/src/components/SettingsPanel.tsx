@@ -8,7 +8,9 @@ import { AiTab } from "./settings/AiTab";
 import { AppearanceTab } from "./settings/AppearanceTab";
 import { ConnectionsTab } from "./settings/ConnectionsTab";
 import { HomeTab } from "./settings/HomeTab";
+import { MemoryTab } from "./settings/MemoryTab";
 import { PrivacyTab } from "./settings/PrivacyTab";
+import { ShortcutsTab } from "./settings/ShortcutsTab";
 import { SkillsTab } from "./settings/SkillsTab";
 import { SettingsQuery } from "./settings/ui";
 
@@ -17,6 +19,8 @@ export const SETTINGS_TABS = [
   { id: "appearance", label: "Appearance" },
   { id: "ai", label: "AI" },
   { id: "connections", label: "Apps" },
+  { id: "memory", label: "Memory" },
+  { id: "shortcuts", label: "Shortcuts" },
   { id: "privacy", label: "Privacy" },
   { id: "skills", label: "Skills" },
 ] as const;
@@ -52,7 +56,7 @@ function recent() {
   return leftAt && Date.now() - leftAt.at < REMEMBER_MS ? leftAt : null;
 }
 
-/** Settings, shown inside the island: five tabs and a search over all of them. */
+/** Settings, shown inside the island: tabs and a search over all of them. */
 export function SettingsPanel() {
   const ready = useSidekick((s) => s.ready);
   const [tab, setTab] = useState<SettingsTab>(() => recent()?.tab ?? "home");
@@ -184,6 +188,8 @@ export function SettingsPanel() {
           {show("ai") && <AiTab onError={report} />}
           {show("connections") && <ConnectionsTab onError={report} />}
           {show("privacy") && <PrivacyTab onError={report} />}
+          {show("memory") && <MemoryTab onError={report} />}
+          {show("shortcuts") && <ShortcutsTab onError={report} />}
           {show("skills") && <SkillsTab onError={report} />}
         </div>
       </SettingsQuery.Provider>

@@ -4,7 +4,8 @@
 // Graphite menu under it. Alt M steps through the choices.
 
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
-import { setAskModel } from "@/lib/store";
+import { createPortal } from "react-dom";
+import { setAskModel, setOverlayHit } from "@/lib/store";
 import { PROVIDER_LABELS, type ProviderStatus } from "@/lib/types";
 import { Icon } from "../Icon";
 import { Tip } from "../Tip";
@@ -40,6 +41,9 @@ export function ModelPicker({
 }) {
   const [open, setOpen] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const chipRef = useRef<HTMLSpanElement>(null);
+  // The menu floats over the window, so the island keeps its size.
+  const [at, setAt] = useState<{ left: number; top: number } | null>(null);
   const items: { id: string | null; title: string; note: string }[] = [
     {
       id: null,
@@ -53,8 +57,20 @@ export function ModelPicker({
     })),
   ];
   useEffect(() => {
-    if (open) listRef.current?.querySelector<HTMLButtonElement>("[aria-checked=true]")?.focus();
-  }, [open]);
+    if (!open) {
+      setAt(null);
+      return;
+    }
+    const r = chipRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const width = 256;
+    const left = Math.min(Math.max(8, r.right - width), window.innerWidth - width - 8);
+    const top = r.bottom + 6;
+    setAt({ left, top });
+    setOverlayHit({ x: left, y: top, width, height: 30 + items.length * 46 });
+    requestAnimationFrame(() => listRef.current?.querySelector<HTMLButtonElement>("[aria-checked=true]")?.focus());
+    return () => setOverlayHit(null);
+  }, [open, items.length]);
   const choose = (id: string | null) => {
     setAskModel(id);
     setOpen(false);
@@ -73,7 +89,7 @@ export function ModelPicker({
   };
   const shown = picked ?? best;
   return (
-    <span className="relative shrink-0">
+    <span ref={chipRef} className="relative shrink-0">
       <Tip label="Model (Alt M)">
         <button
           type="button"
@@ -88,45 +104,51 @@ export function ModelPicker({
         </button>
       </Tip>
       <KeyHint show={keys}>Alt M</KeyHint>
-      {open && (
-        <>
-          <button
-            type="button"
-            aria-label="Close menu"
-            tabIndex={-1}
-            className="fixed inset-0 z-20 cursor-default"
-            onClick={() => setOpen(false)}
-          />
-          <div
-            ref={listRef}
-            role="menu"
-            aria-label="Model"
-            onKeyDown={onListKey}
-            className="menu absolute top-full right-0 z-30 mt-1.5 flex w-64 flex-col gap-0.5 rounded-[14px] p-1 text-[13px]"
-          >
-            <p className="px-2.5 pt-1 pb-0.5 text-[11px] font-medium text-[rgb(235_235_245/0.45)]">Answers come from</p>
-            {items.map((it) => {
-              const on = (picked?.id ?? null) === it.id;
-              return (
-                <button
-                  key={it.id ?? "auto"}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={on}
-                  onClick={() => choose(it.id)}
-                  className="menu-item"
-                >
-                  <span className="font-medium">{it.title}</span>
-                  <span className="row-span-2 text-[#0a84ff]" aria-hidden="true">
-                    {on && <Icon name="check" size={14} />}
-                  </span>
-                  {it.note && <small>{it.note}</small>}
-                </button>
-              );
-            })}
-          </div>
-        </>
-      )}
+      {open &&
+        at &&
+        createPortal(
+          <>
+            <button
+              type="button"
+              aria-label="Close menu"
+              tabIndex={-1}
+              className="fixed inset-0 z-20 cursor-default"
+              onClick={() => setOpen(false)}
+            />
+            <div
+              ref={listRef}
+              role="menu"
+              aria-label="Model"
+              onKeyDown={onListKey}
+              style={{ left: at.left, top: at.top }}
+              className="menu fixed z-30 flex w-64 flex-col gap-0.5 rounded-[14px] p-1 text-[13px]"
+            >
+              <p className="px-2.5 pt-1 pb-0.5 text-[11px] font-medium text-[rgb(235_235_245/0.45)]">
+                Answers come from
+              </p>
+              {items.map((it) => {
+                const on = (picked?.id ?? null) === it.id;
+                return (
+                  <button
+                    key={it.id ?? "auto"}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={on}
+                    onClick={() => choose(it.id)}
+                    className="menu-item"
+                  >
+                    <span className="font-medium">{it.title}</span>
+                    <span className="row-span-2 text-[#0a84ff]" aria-hidden="true">
+                      {on && <Icon name="check" size={14} />}
+                    </span>
+                    {it.note && <small>{it.note}</small>}
+                  </button>
+                );
+              })}
+            </div>
+          </>,
+          document.body,
+        )}
     </span>
   );
 }

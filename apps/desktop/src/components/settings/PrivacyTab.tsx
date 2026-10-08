@@ -71,13 +71,6 @@ export function PrivacyTab({ onError }: { onError: (e: string) => void }) {
         />
       </Section>
       <Section
-        title="What Sidekick remembers"
-        hint='Every model gets these. Say "remember that..." in Ask to add one.'
-        keywords="memory remember facts about me know-how forget"
-      >
-        <Memory onError={onError} />
-      </Section>
-      <Section
         title="Search"
         hint="Files here are searchable from Ask. Stays on this PC."
         keywords="index folders notes documents semantic meaning embedding"
@@ -266,7 +259,7 @@ function Capabilities({ onError }: { onError: (e: string) => void }) {
 }
 
 /** Facts about the user, given to every model, plus learned paths. */
-function Memory({ onError }: { onError: (e: string) => void }) {
+export function Memory({ onError }: { onError: (e: string) => void }) {
   const memory = useSidekick((s) => s.settings.memory);
   const [draft, setDraft] = useState("");
   const [cleared, setCleared] = useState(false);

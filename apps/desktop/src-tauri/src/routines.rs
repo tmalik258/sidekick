@@ -359,6 +359,9 @@ pub fn observe(app: &AppHandle, event: &Event) {
         browser,
         seq,
     };
+    if !crate::learned::on(app) {
+        return;
+    }
     let storage = app.state::<AppState>().storage.clone();
     tauri::async_runtime::spawn_blocking(move || {
         if let Err(err) = lock(&storage).record_open(&open) {

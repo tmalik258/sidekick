@@ -481,7 +481,10 @@ fn run_choice(app: &AppHandle, id: &str, index: usize, auto: bool) -> Result<(),
         .get(index)
         .cloned()
         .ok_or("option out of range")?;
-    if !auto && let Some(key) = &active.proposal.remember {
+    if !auto
+        && crate::learned::on(app)
+        && let Some(key) = &active.proposal.remember
+    {
         let ts = Utc::now().to_rfc3339();
         if let Err(err) =
             lock(&app.state::<AppState>().storage).record_choice(key, &option.label, &ts)
