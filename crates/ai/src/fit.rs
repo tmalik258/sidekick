@@ -104,7 +104,13 @@ mod tests {
         let start = std::time::Instant::now();
         fit(&mut m, 12_000);
         let took = start.elapsed();
-        assert!(took < std::time::Duration::from_millis(50), "took {took:?}");
+        // Shared CI runners (Windows above all) stall for tens of ms while
+        // other tests run, so the budget leaves room; a real slowdown is
+        // far past it.
+        assert!(
+            took < std::time::Duration::from_millis(250),
+            "took {took:?}"
+        );
         // Only the rules and the newest turn are left.
         assert!(m.len() <= 4, "{} messages left", m.len());
     }

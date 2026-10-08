@@ -2451,6 +2451,7 @@ select.ak-mi option {
 }
 
 /* In a chat the field sits under the answers; home and History keep it on top. */
+.ak[data-chat] > .ak-ctx,
 .ak[data-chat] > .ak-bar {
   order: 1;
 }
