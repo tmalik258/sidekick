@@ -297,6 +297,7 @@ export function Board({ sessions, keys }: { sessions: Session[]; keys: boolean }
             onModel={(m) => tuneSession(target.id, m, target.effort ?? null)}
             onEffort={(e) => tuneSession(target.id, target.model ?? null, e)}
             usage={target.usage}
+            localModel={target.localModel}
             limit={target.limit}
             keys="Enter send"
           />

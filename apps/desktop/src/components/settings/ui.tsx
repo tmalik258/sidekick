@@ -302,6 +302,7 @@ export function Select({
   variant = "chip",
   overlay = true,
   searchable,
+  menuWidth,
 }: {
   value: string;
   options: SelectOption[];
@@ -319,6 +320,8 @@ export function Select({
   overlay?: boolean;
   /** A filter field at the top of the menu (long lists). */
   searchable?: boolean;
+  /** A wider menu than the chip, for rows with a line under each. */
+  menuWidth?: number;
 }) {
   const rows = options.map(toRow);
   // Keep an unknown current value visible, but never invent a second row that
@@ -356,7 +359,7 @@ export function Select({
     const r = el.getBoundingClientRect();
     const want = Math.min(288, Math.max(shown.length, 1) * (rich ? 44 : 32) + menuChrome);
     const above = window.innerHeight - r.bottom < want && r.top - want > 0;
-    const width = Math.min(296, Math.max(rich ? 220 : r.width, r.width));
+    const width = menuWidth ?? Math.min(296, Math.max(rich ? 220 : r.width, r.width));
     const left = Math.min(Math.max(8, r.left), window.innerWidth - width - 8);
     const top = above ? r.top - 4 : r.bottom + 4;
     setUp(above);

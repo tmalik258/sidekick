@@ -2546,3 +2546,155 @@ select.ak-mi option {
   gap: 6px;
   padding-top: 2px;
 }
+
+/* Chat box chips: model, thinking, usage, each with a popover above it */
+.ak-cchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: var(--i2);
+  white-space: nowrap;
+  transition:
+    background 140ms,
+    color 140ms;
+}
+button.ak-cchip:hover,
+.ak-cchip[aria-expanded="true"] {
+  background: rgb(255 255 255 / 0.1);
+  color: #fff;
+}
+.ak-cquiet {
+  color: var(--i3);
+  font-weight: 400;
+}
+.ak-cdot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+.ak-cmodel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 0 0 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--i2);
+}
+.ak-cmodel:hover {
+  background: rgb(255 255 255 / 0.1);
+}
+.ak-cusage {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--i3);
+  font-variant-numeric: tabular-nums;
+}
+.ak-pop {
+  position: fixed;
+  z-index: 60;
+  width: 324px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  color: #fff;
+  font-size: 13px;
+  border-radius: 16px;
+  animation: popin 220ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  transform-origin: bottom left;
+}
+.ak-pop-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-weight: 600;
+}
+.ak-pop-m {
+  color: rgb(235 235 245 / 0.62);
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.ak-pop-link {
+  margin-left: 8px;
+  color: #64d2ff;
+}
+.ak-pop-btn {
+  flex: none;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: rgb(255 255 255 / 0.1);
+}
+.ak-pop-sep {
+  height: 1px;
+  background: rgb(255 255 255 / 0.1);
+}
+.ak-dots {
+  display: flex;
+  gap: 3px;
+}
+.ak-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.18);
+}
+.ak-dots i[data-on="true"] {
+  background: #fff;
+}
+.ak-tseg {
+  border: 0;
+  margin: 0;
+  min-width: 0;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 11px;
+  background: rgb(255 255 255 / 0.07);
+}
+.ak-tseg button {
+  padding: 6px 0;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--i2);
+}
+.ak-tseg button[aria-pressed="true"] {
+  background: rgb(255 255 255 / 0.16);
+  color: #fff;
+  font-weight: 500;
+}
+.ak-pbar {
+  height: 5px;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 0.1);
+  overflow: hidden;
+}
+.ak-pbar i {
+  display: block;
+  height: 100%;
+  background: #0a84ff;
+}
+.ak-lim {
+  display: grid;
+  gap: 5px;
+}
+@keyframes popin {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+}
+.ak-cusage .ak-ring i {
+  background: conic-gradient(#0a84ff calc(var(--p) * 1%), rgb(255 255 255 / 0.15) 0);
+}

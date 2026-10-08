@@ -114,6 +114,7 @@ fn thinking_tokens(effort: &str) -> Option<&'static str> {
         "low" => Some("4000"),
         "medium" => Some("10000"),
         "high" => Some("31999"),
+        "max" => Some("63999"),
         _ => None,
     }
 }
@@ -1480,7 +1481,7 @@ async fn run_codex(
                             let mut params = json!({ "threadId": t, "input": input });
                             let tune = tuned(id);
                             if let Some(m) = tune.model { params["model"] = json!(m); }
-                            if let Some(e) = tune.effort.filter(|e| e != "off") { params["effort"] = json!(e); }
+                            if let Some(e) = tune.effort.filter(|e| e != "off") { params["effort"] = json!(if e == "max" { "xhigh" } else { e.as_str() }); }
                             json!({ "id": next_id, "method": "turn/start", "params": params })
                         }
                     };

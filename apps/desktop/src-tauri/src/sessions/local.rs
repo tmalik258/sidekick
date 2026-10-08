@@ -266,6 +266,7 @@ pub async fn run(
             Some(m) => m.clone(),
             None => match ensure_model(app, id, &http, &root, chosen.clone()).await {
                 Ok(m) => {
+                    emit(app, id, json!({"kind":"model","name":m}));
                     model = Some(m.clone());
                     m
                 }
@@ -281,7 +282,10 @@ pub async fn run(
         for _ in 0..MAX_ROUNDS {
             let req = http
                 .post(format!("{root}/api/chat"))
-                .json(&json!({"model":m,"messages":messages,"tools":tools(mode),"stream":false}))
+                .json(
+                    &json!({"model":m,"messages":messages,"tools":tools(mode),"stream":false,
+                    "think": super::tuned(id).effort.as_deref() != Some("off")}),
+                )
                 .send();
             let reply: Value = tokio::select! {
                 r = req => match r {

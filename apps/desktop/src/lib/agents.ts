@@ -49,6 +49,8 @@ export interface Session extends AgentStarted {
   note?: string | null;
   /** Cut off by a restart: nothing runs until Resume. */
   restored?: boolean;
+  /** The Ollama model a Local session runs. */
+  localModel?: string;
   /** Picked in the chat box; null is the agent's default. */
   model?: string | null;
   /** Thinking: off, low, medium, high; null is the default. */
@@ -346,6 +348,8 @@ function onEvent(e: { session: string; kind: string } & Record<string, unknown>)
       });
     case "stuck":
       return update(id, (s) => ({ ...s, stuck: true }));
+    case "model":
+      return update(id, (s) => ({ ...s, localModel: String(e.name ?? "") }));
     case "plan":
       return update(id, (s) => ({ ...s, plan: (e.items as PlanItem[]) ?? [] }));
     case "usage":
@@ -437,6 +441,11 @@ function noteUsage(agent: string, u: SeenUsage) {
   } catch {
     // Not kept: the picker just shows nothing for this agent.
   }
+}
+
+/** The last plan usage Sidekick saw for an agent, if any. */
+export function seenUsage(agent: string): SeenUsage | null {
+  return seenAll()[agent] ?? null;
 }
 
 /** "85% of 5-hour, 20 min ago"; "ready" once that window has reset; null when never seen. */

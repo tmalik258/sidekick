@@ -1160,6 +1160,7 @@ function Composer({
           onModel={(m) => tuneSession(s.id, m, s.effort ?? null)}
           onEffort={(e) => tuneSession(s.id, s.model ?? null, e)}
           usage={s.usage}
+          localModel={s.localModel}
           limit={s.limit}
           onCompact={
             s.agent === "Claude Code" && s.status !== "working" && s.status !== "ended"
