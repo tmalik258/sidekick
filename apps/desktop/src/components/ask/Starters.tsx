@@ -79,7 +79,7 @@ export function ContextLine({ keys }: { keys: boolean }) {
             className="ak-pc chip"
           >
             <Icon name={ask.localOnly ? "check" : "lock"} size={10} />
-            This PC only
+            {ask.localOnly && "This PC only"}
           </button>
         </Tip>
         <KeyHint show={keys} side="right">

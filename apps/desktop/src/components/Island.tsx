@@ -129,6 +129,8 @@ export function Island() {
   // island opens only when the answer starts.
   const hearing = useSidekick((s) => (s.ask ? null : s.hearing));
   const voiceQuestion = useSidekick((s) => (s.ask ? null : s.voiceQuestion));
+  // Something finished that needs nothing more: a short done pill.
+  const donePill = useSidekick((s) => (s.ask ? null : s.donePill));
   const reduced = useReducedMotion() ?? false;
   const look = useSystemLook();
   const now = useNow(15_000);
@@ -168,16 +170,19 @@ export function Island() {
   // Voice / in-flight Ask with Ask closed: Listening / Thinking / Working pill.
   // Stay non-bare so the hit rect stays usable (Idle alone would shrink to a
   // pinprick and lock out).
-  const voiceBusy = hearing !== null || voiceQuestion !== null || mascot === "listening" || working !== null;
-  const voicePill: { text: string; thinking: boolean; working?: boolean } | null = asking
+  const voiceBusy =
+    hearing !== null || voiceQuestion !== null || donePill !== null || mascot === "listening" || working !== null;
+  const voicePill: { text: string; thinking: boolean; working?: boolean; done?: boolean } | null = asking
     ? null
-    : voiceQuestion !== null
-      ? { text: voiceQuestion, thinking: true }
-      : hearing !== null || mascot === "listening"
-        ? { text: hearing ?? "", thinking: false }
-        : working !== null
-          ? { text: working, thinking: true, working: true }
-          : null;
+    : donePill !== null
+      ? { text: donePill, thinking: false, done: true }
+      : voiceQuestion !== null
+        ? { text: voiceQuestion, thinking: true }
+        : hearing !== null || mascot === "listening"
+          ? { text: hearing ?? "", thinking: false }
+          : working !== null
+            ? { text: working, thinking: true, working: true }
+            : null;
   // Only agents at work: hover lists them (and answers in place) instead of
   // opening Ask.
   const agentsOnly = voiceQuestion === null && hearing === null && chatWorking === null && agentWorking !== null;
@@ -285,7 +290,7 @@ export function Island() {
           ? GUIDE_WIDTH
           : EXPANDED.width
       : voicePill
-        ? voiceShellWidth(voicePill.text, voicePill.thinking, voicePill.working)
+        ? voiceShellWidth(voicePill.text, voicePill.thinking, voicePill.working || voicePill.done)
         : waiting
           ? COMPACT.waitWidth
           : busy
@@ -563,8 +568,18 @@ function voiceShellWidth(text: string, thinking: boolean, working?: boolean): nu
 
 /** Voice in the compact island: green bars and the words as they come
  * while listening, then "Thinking" with the question until the answer. */
-function VoicePill({ text, thinking, working }: { text: string; thinking: boolean; working?: boolean }) {
-  const label = voiceLabel(text, thinking, working);
+function VoicePill({
+  text,
+  thinking,
+  working,
+  done,
+}: {
+  text: string;
+  thinking: boolean;
+  working?: boolean;
+  done?: boolean;
+}) {
+  const label = voiceLabel(text, thinking, working || done);
   return (
     <motion.div
       className="absolute top-0 right-0 flex h-9 items-center gap-2.5 pr-3.5"
@@ -581,7 +596,15 @@ function VoicePill({ text, thinking, working }: { text: string; thinking: boolea
       >
         {label}
       </span>
-      {thinking ? <Activity /> : <VoiceBars />}
+      {done ? (
+        <span className="text-[#30d158]">
+          <Icon name="check" size={14} />
+        </span>
+      ) : thinking ? (
+        <Activity />
+      ) : (
+        <VoiceBars />
+      )}
     </motion.div>
   );
 }
@@ -806,10 +829,16 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.2, delay: 0.12 + suggestion.options.length * 0.04 }}
-        className="chip rounded-full px-2.5 py-1.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
+        className="ak-ignore chip rounded-full px-3 py-1.5 text-[13px] text-[rgb(235_235_245/0.7)] hover:text-white"
       >
-        Not now
-        <kbd className="ml-1.5 font-sans text-[11px] text-white/45">
+        {/* Empties as the island's own close timer runs; full again on hover. */}
+        <span
+          className="ak-ignore-fill"
+          aria-hidden="true"
+          style={{ animationDuration: `${useSidekick.getState().settings.collapseAfterSecs}s` }}
+        />
+        <span className="relative">Ignore</span>
+        <kbd className="relative ml-1.5 font-sans text-[11px] text-white/45">
           <i className="alt-pre">Alt </i>0
         </kbd>
       </motion.button>

@@ -723,6 +723,41 @@ impl Storage {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
+    /// Every remembered pick: (key, label, count, last time), most used first.
+    pub fn all_choices(&self) -> Result<Vec<(String, String, u32, String)>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT key, label, count, last_ts FROM choices ORDER BY count DESC, last_ts DESC",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn forget_choice(&self, key: &str, label: &str) -> Result<usize, StorageError> {
+        Ok(self.conn.execute(
+            "DELETE FROM choices WHERE key = ?1 AND label = ?2",
+            params![key, label],
+        )?)
+    }
+
+    /// Skills resting after being dismissed, with until when.
+    pub fn muted_habits(&self, now: &str) -> Result<Vec<(String, String)>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT skill_id, muted_until FROM skill_habits WHERE muted_until IS NOT NULL AND muted_until > ?1",
+        )?;
+        let rows = stmt.query_map([now], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn clear_habit(&self, skill_id: &str) -> Result<usize, StorageError> {
+        Ok(self
+            .conn
+            .execute("DELETE FROM skill_habits WHERE skill_id = ?1", [skill_id])?)
+    }
+
+    pub fn clear_habits(&self) -> Result<usize, StorageError> {
+        Ok(self.conn.execute("DELETE FROM skill_habits", [])?)
+    }
+
     pub fn clear_choices(&self) -> Result<usize, StorageError> {
         Ok(self.conn.execute("DELETE FROM choices", [])?)
     }

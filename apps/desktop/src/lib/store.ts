@@ -68,6 +68,8 @@ interface SidekickState {
   /** A spoken question asked with Ask closed: the island stays compact
    * ("Thinking...") until the answer starts, then opens to show it. */
   voiceQuestion: string | null;
+  /** A short "done" line in the compact island ("Hotspot is on"). */
+  donePill: string | null;
   /** Where the conversation is saved, so it can be picked up later. */
   conversation: string;
   /** Sidekick's voice is playing; the mascot talks along. */
@@ -184,6 +186,7 @@ export const useSidekick = create<SidekickState>(() => ({
   chatSkill: false,
   askModel: savedModel(),
   voiceQuestion: null,
+  donePill: null,
   conversation: crypto.randomUUID(),
   hearing: null,
   speaking: false,
@@ -290,6 +293,16 @@ export function minimizeWaiting(minimized: boolean) {
 export function backgroundWaiting() {
   const waiting = useSidekick.getState().waiting;
   if (waiting) useSidekick.setState({ waiting: { ...waiting, minimized: true, background: true } });
+}
+
+/** How long a done pill stays before the island settles. */
+const DONE_PILL_MS = 2600;
+let doneTimer: ReturnType<typeof setTimeout> | undefined;
+/** Shows a compact done pill for a moment: nothing needs you. */
+export function showDone(text: string) {
+  clearTimeout(doneTimer);
+  useSidekick.setState({ donePill: text, voiceQuestion: null });
+  doneTimer = setTimeout(() => useSidekick.setState({ donePill: null }), DONE_PILL_MS);
 }
 
 /** How long the island keeps the Done card after a waited step. */
@@ -860,6 +873,10 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       }),
       listen(EVENTS.actionResult, (lastResult) => {
         useSidekick.setState({ lastResult, running: null });
+        // Done with nothing to undo or open: a compact pill, not a card.
+        if (lastResult.ok && !lastResult.undoId && !lastResult.path && !useSidekick.getState().ask) {
+          showDone(lastResult.message);
+        }
         reactToResult(lastResult, sounds);
       }),
       listen(EVENTS.suggestionClear, (id) => {
@@ -999,6 +1016,10 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           return;
         }
         updateLastTurn(chatId, (t) => ({ ...t, proposals: [...(t.proposals ?? []), { id, label, step }] }));
+      }),
+      listen(EVENTS.islandDone, ({ id, text }) => {
+        updateLastTurn(id, (t) => ({ ...t, content: text }));
+        showDone(text);
       }),
       listen(EVENTS.aiDone, ({ id, provider, error, handoff, cost }) => {
         flushText();

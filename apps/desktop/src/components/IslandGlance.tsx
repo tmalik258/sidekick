@@ -10,6 +10,7 @@ import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { useNow } from "@/lib/hooks";
 import { updateSettings, useSidekick } from "@/lib/store";
+import { pickTip } from "@/lib/tips";
 import { type AppTime, type CalendarToday, formatDuration, type LaterItem } from "@/lib/types";
 import { Icon } from "./Icon";
 import { AgentsGlance, AwayCard, useAway } from "./IslandAgents";
@@ -59,7 +60,26 @@ function DayGlance({ paused }: { paused: boolean }) {
       </div>
       <FullscreenSwitch />
       <LaterList />
+      {head.quiet && <QuietTip />}
     </div>
+  );
+}
+
+/** About one hover in four, when nothing needs you: one short tip, never
+ * the same one twice in a row. */
+function QuietTip() {
+  const on = useSidekick((s) => s.settings.tips);
+  const later = useSidekick((s) => s.later);
+  const [tip] = useState(pickTip);
+  if (!on || later > 0 || !tip) return null;
+  return (
+    <p
+      className="mt-3 flex items-baseline gap-2 rounded-xl bg-white/[0.05] px-3 py-2 text-[12.5px] text-[rgb(235_235_245/0.7)]"
+      style={{ marginLeft: "calc(var(--orb-indent, 0px) * -1)" }}
+    >
+      <span className="text-[10.5px] font-semibold tracking-[0.04em] text-[rgb(235_235_245/0.45)] uppercase">Tip</span>
+      {tip}
+    </p>
   );
 }
 
@@ -105,6 +125,8 @@ function FullscreenSwitch() {
 interface Headline {
   title: string;
   detail: string;
+  /** Nothing pressing: a tip may show. */
+  quiet?: boolean;
   join?: string | null;
 }
 
@@ -115,9 +137,9 @@ function headline(now: number, paused: boolean, calendar: CalendarToday | null, 
   const hour = new Date(now).getHours();
   const title = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const total = (time ?? []).reduce((sum, t) => sum + t.secs, 0);
-  if (total < 60) return { title, detail: "Nothing needs you right now." };
+  if (total < 60) return { title, detail: "Nothing needs you right now.", quiet: true };
   const top = topFocus(time ?? []);
-  return { title, detail: `${formatDuration(total)} at your PC today${top ? `, mostly ${top}` : ""}.` };
+  return { title, detail: `${formatDuration(total)} at your PC today${top ? `, mostly ${top}` : ""}.`, quiet: true };
 }
 
 /** Today's meetings come as local "HH:MM". */
@@ -302,7 +324,7 @@ function CrashCard({ note, onDone }: { note: string; onDone: () => void }) {
       <CardNote>
         <span className="line-clamp-3">{note}</span>
       </CardNote>
-      <CardChips options={[{ label: "Report it", run: report }]} quiet={{ label: "Not now", run: dismiss }} />
+      <CardChips options={[{ label: "Report it", run: report }]} quiet={{ label: "Ignore", run: dismiss }} />
     </div>
   );
 }

@@ -53,6 +53,17 @@ export const ASK_MASCOT = { size: 36, x: 10, y: 40 } as const;
 /** Ask's padding inside the island: top, sides, bottom. */
 export const ASK_PAD = { top: 8, x: 10, bottom: 10 } as const;
 
+/** The "Hold Alt" hint shows in the first five sessions only. */
+const EARLY_SESSIONS = (() => {
+  try {
+    const n = Number(localStorage.getItem("sk-sessions") ?? "0") + 1;
+    localStorage.setItem("sk-sessions", String(n));
+    return n <= 5;
+  } catch {
+    return true;
+  }
+})();
+
 /** Input + chips + footer + gaps; scroll area keeps the rest under the Ask cap. */
 const ASK_CHROME = 118;
 const ASK_SCROLL_CAP = 330;
@@ -700,7 +711,6 @@ export function AskPanel() {
           {typeof extra === "string" && <KeyHint show={alt}>{extra}</KeyHint>}
         </span>
       ))}
-      <span className="ak-tabkey mono">Ctrl Tab</span>
     </div>
   );
 
@@ -749,13 +759,14 @@ export function AskPanel() {
           <kbd>Esc</kbd> {hearing !== null ? "stop mic" : inChat || streaming ? "new chat" : "close"}
         </span>
       </div>
-    ) : (
+    ) : !inChat && !asking && !inHistory && EARLY_SESSIONS ? (
+      // Only where you are about to type, for your first few sessions.
       <div className="ak-foot">
         <span>
           Hold <kbd>Alt</kbd> for shortcuts · <kbd>/</kbd> for all commands
         </span>
       </div>
-    );
+    ) : null;
 
   return (
     <div className="ak">

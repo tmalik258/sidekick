@@ -124,6 +124,12 @@ export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
           checked={settings.hideInFullscreen}
           onChange={(hideInFullscreen) => save({ hideInFullscreen })}
         />
+        <Toggle
+          label="Tips"
+          hint="Now and then, when nothing needs you."
+          checked={settings.tips}
+          onChange={(tips) => save({ tips })}
+        />
       </Section>
     </>
   );
