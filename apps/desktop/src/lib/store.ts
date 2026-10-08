@@ -491,6 +491,15 @@ export function retryLast(): boolean {
   return sendChat(question.content);
 }
 
+/** Asks the last question again, letting the local model think first. */
+export function thinkHarder(): boolean {
+  const { turns, chatId } = useSidekick.getState();
+  const question = turns[turns.length - 2];
+  if (chatId || question?.role !== "user") return false;
+  useSidekick.setState({ turns: turns.slice(0, -2) });
+  return sendChat(question.content, { think: true });
+}
+
 /** Sends a question; false when it could not start (empty, or one running). */
 let moodTimer: ReturnType<typeof setTimeout> | undefined;
 /** Shows a mood on the mascot for `ms`, with its sound when given. */
@@ -547,7 +556,7 @@ function helloOncePerDay() {
   if (firstToday()) setTimeout(() => setMood("hello", 2600, "hello"), 900);
 }
 
-type ChatAttach = { clipboard?: boolean; screen?: boolean; speak?: boolean };
+type ChatAttach = { clipboard?: boolean; screen?: boolean; speak?: boolean; think?: boolean };
 
 /** What `api.aiChat` needs for question `q` in the chat as it is now. */
 function chatRequest(q: string, attach?: ChatAttach) {
@@ -566,6 +575,7 @@ function chatRequest(q: string, attach?: ChatAttach) {
       skill: chatSkill,
       screen: attach?.screen ?? false,
       speak: attach?.speak ?? false,
+      think: attach?.think ?? false,
       prefer: askModel,
     },
     localOnly: ask?.localOnly ?? false,

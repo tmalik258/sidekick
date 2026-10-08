@@ -53,6 +53,7 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 - Instant results show on the first keystroke: the app and file lists are built in the background when Sidekick starts and when Ask opens, then matched in memory.
 - Agents, chats, editors and the island's look are read off the UI thread, so a slow disk or process scan no longer freezes Sidekick. Session memory is no longer measured on the UI thread every 5 seconds.
 - "Lighter Ollama" in Setup: one answer at a time, flash attention, an 8-bit cache and an 8K context (4K cut the start of chats with tools), about half the memory and faster answers. Setup says when Ollama's own Context length setting holds it at 4K. The local model now unloads after 10 idle minutes instead of 30.
+- Local Qwen3 answers without hidden thinking unless the question needs it (why, compare, plan, maths, long questions), so the first word comes in seconds. "Think harder" (Alt H) under a local answer asks again with thinking on.
 - After you send, the input clears ("Ask a follow-up") and your question shows above the answer.
 - The app, what you copied and This PC only look like toggles again: a tick when on, an outline with + when left out.
 - Holding Alt shows only the letter on each control, like Windows KeyTips.

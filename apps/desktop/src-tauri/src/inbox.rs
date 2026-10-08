@@ -467,6 +467,7 @@ async fn judge(
         system: JUDGE_SYSTEM.into(),
         messages: vec![sidekick_ai::Message::user(prompt)],
         image: None,
+        think: false,
     };
     let answer = tokio::time::timeout(JUDGE_WAIT, model.complete(&req, json!({})))
         .await

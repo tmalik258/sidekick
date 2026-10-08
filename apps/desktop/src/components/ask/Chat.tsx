@@ -10,7 +10,7 @@ import { useNow } from "@/lib/hooks";
 import { Markdown } from "@/lib/markdown";
 import { splitOptions } from "@/lib/options";
 import { useReveal } from "@/lib/reveal";
-import { askWhenOnline, retryLast, useSidekick } from "@/lib/store";
+import { askWhenOnline, retryLast, thinkHarder, useSidekick } from "@/lib/store";
 import { type Agents, type AiSettings, PROVIDER_LABELS, type Turn } from "@/lib/types";
 import { AnswerOptions, Proposals, pendingCount } from "./Proposals";
 import { FailureCard } from "./States";
@@ -91,6 +91,8 @@ export function Chat({ turns }: { turns: Turn[] }) {
                 </b>
                 {t.firstMs !== undefined && <span>first word {seconds(t.firstMs)}</span>}
                 {t.cost !== undefined && <span>{t.cost < 0.01 ? "under 1¢" : `$${t.cost.toFixed(2)}`}</span>}
+                {/* Local answers skip thinking unless the question looks like it needs it. */}
+                {isLast && i > 0 && t.provider === "local" && !skillMode && <ThinkHarder />}
                 <span className="ml-auto opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
                   {isLast && i > 0 && !skillMode && <SaveRecipe prompt={turns[i - 1]?.content ?? ""} />}
                 </span>
@@ -191,6 +193,28 @@ export function Steps({ steps, running, tookMs }: { steps: string[]; running: bo
 export function useAgentName(): string | null {
   const { data } = useCached<Agents>("agents", api.agentsStatus);
   return data?.handoff ?? null;
+}
+
+/** "Think harder" (Alt H) under a local answer: asks again with thinking on. */
+function ThinkHarder() {
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.altKey && !e.ctrlKey && e.key.toLowerCase() === "h") {
+        e.preventDefault();
+        thinkHarder();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  return (
+    <button type="button" onClick={() => thinkHarder()} className="chip hover:text-white">
+      Think harder{" "}
+      <kbd>
+        <i className="alt-pre">Alt </i>H
+      </kbd>
+    </button>
+  );
 }
 
 /** "Try again" (Alt R) under a failed answer. */

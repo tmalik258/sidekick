@@ -273,6 +273,9 @@ pub struct Attach {
     /// `release`, and a cancel drops it unseen.
     #[serde(default)]
     pub hold: bool,
+    /// "Think harder": let the model reason before answering.
+    #[serde(default)]
+    pub think: bool,
 }
 
 /// Chats started early and not shown yet, by id.
@@ -521,10 +524,12 @@ pub fn chat(
         } else {
             None
         };
+        let think = attach.think || question.as_deref().is_some_and(needs_thinking);
         let req = ChatRequest {
             system: system_prompt(&app, &attach),
             messages,
             image,
+            think,
         };
         let handoff = Arc::new(std::sync::Mutex::new(None));
         // A task with several steps goes to the strongest agent in Auto.
@@ -659,6 +664,46 @@ pub fn looks_multistep(q: &str) -> bool {
     let joins = [" and ", " then ", " after that", ", then"];
     let acts = doing.iter().filter(|w| q.contains(*w)).count();
     acts >= 2 || (acts >= 1 && joins.iter().any(|j| q.contains(j)))
+}
+
+/// Questions a small local model answers better after thinking: working
+/// something out, comparing, planning, explaining why. Commands and lookups
+/// answer straight away, since thinking first costs 10 to 25 seconds there.
+pub fn needs_thinking(q: &str) -> bool {
+    let q = q.to_lowercase();
+    let words: Vec<&str> = q.split(|c: char| !c.is_alphanumeric()).collect();
+    let word = [
+        "why",
+        "compare",
+        "versus",
+        "vs",
+        "better",
+        "plan",
+        "calculate",
+        "solve",
+        "prove",
+        "explain",
+        "debug",
+        "estimate",
+        "tradeoff",
+    ];
+    let phrase = [
+        "difference between",
+        "pros and cons",
+        "how much",
+        "how many",
+        "step by step",
+        "figure out",
+        "should i",
+        "which is",
+        "trade-off",
+    ];
+    let math = q.chars().filter(char::is_ascii_digit).count() >= 2
+        && q.contains(['+', '*', '/', '%', '^', '=']);
+    math || words.iter().any(|w| word.contains(w))
+        || phrase.iter().any(|p| q.contains(p))
+        || words.iter().filter(|w| !w.is_empty()).count() > 40
+        || q.matches('?').count() >= 2
 }
 
 /// Claude Code, else Codex, when one is turned on.
