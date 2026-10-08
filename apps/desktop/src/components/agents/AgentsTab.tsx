@@ -30,6 +30,7 @@ import {
   sendToSession,
   startSession,
   tuneSession,
+  usageLine,
   useAgents,
 } from "@/lib/agents";
 import { api } from "@/lib/bridge";
@@ -177,13 +178,19 @@ function NewSession({ sessions }: { sessions: Session[] }) {
                   options={choices.map((c) => ({
                     value: c.id,
                     label: c.name,
+                    sub: usageLine(c.name) ?? undefined,
                     icon: AGENT_MARKS[c.id]?.[0] ?? "C",
                     color: AGENT_MARKS[c.id]?.[1] ?? "#d97757",
                   }))}
                 />
               </span>
             ) : (
-              <span className="ak-mi b">{choices[0]?.name ?? "Claude Code"}</span>
+              <span className="ak-mi b">
+                {choices[0]?.name ?? "Claude Code"}
+                {choices[0] && usageLine(choices[0].name) && (
+                  <em className="ml-1.5 font-normal not-italic opacity-70">{usageLine(choices[0].name)}</em>
+                )}
+              </span>
             )}
             <span className="ak-mi max-w-44">
               <Select

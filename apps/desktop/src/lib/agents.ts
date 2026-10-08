@@ -329,6 +329,16 @@ function onEvent(e: { session: string; kind: string } & Record<string, unknown>)
         return { ...s, usage, compactDismissed };
       });
     case "limit":
+      if (typeof e.used === "number") {
+        const agent = useAgents.getState().sessions.find((x) => x.id === id)?.agent;
+        if (agent)
+          noteUsage(agent, {
+            used: e.used,
+            window: String(e.window ?? ""),
+            resetsAt: typeof e.resetsAt === "number" ? e.resetsAt : null,
+            at: Date.now(),
+          });
+      }
       return update(id, (s) => ({
         ...s,
         limit:
@@ -374,4 +384,42 @@ export function listenToAgents() {
   if (started) return;
   started = true;
   void listen(EVENTS.agentEvent, onEvent);
+}
+
+/** The last plan usage an agent reported, kept so the picker can show it. */
+export interface SeenUsage {
+  used: number;
+  window: string;
+  resetsAt: number | null;
+  at: number;
+}
+
+const USAGE_KEY = "sidekick.agentUsage";
+
+function seenAll(): Record<string, SeenUsage> {
+  try {
+    return JSON.parse(localStorage.getItem(USAGE_KEY) ?? "{}") as Record<string, SeenUsage>;
+  } catch {
+    return {};
+  }
+}
+
+function noteUsage(agent: string, u: SeenUsage) {
+  try {
+    localStorage.setItem(USAGE_KEY, JSON.stringify({ ...seenAll(), [agent]: u }));
+  } catch {
+    // Not kept: the picker just shows nothing for this agent.
+  }
+}
+
+/** "85% of 5-hour, 20 min ago"; "ready" once that window has reset; null when never seen. */
+export function usageLine(agent: string, now = Date.now()): string | null {
+  const u = seenAll()[agent];
+  if (!u) return null;
+  if (u.resetsAt !== null && u.resetsAt * 1000 <= now) return "ready";
+  const pct = Math.round(u.used <= 1 ? u.used * 100 : u.used);
+  const span = u.window === "five_hour" ? "5-hour" : u.window.startsWith("seven_day") ? "week" : "plan";
+  const mins = Math.round((now - u.at) / 60_000);
+  const ago = mins < 1 ? "just now" : mins < 60 ? `${mins} min ago` : `${Math.round(mins / 60)} h ago`;
+  return `${pct}% of ${span}, ${ago}`;
 }
