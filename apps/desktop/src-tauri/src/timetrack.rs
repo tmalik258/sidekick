@@ -163,9 +163,64 @@ pub fn by_name(rows: &[sidekick_core::AppTime]) -> Vec<(String, i64)> {
     by_name
 }
 
+/// What got done today besides time: commits per project and meetings.
+#[derive(Default)]
+pub struct Done {
+    /// (project folder name, commit subjects).
+    pub commits: Vec<(String, Vec<String>)>,
+    pub meetings: Vec<String>,
+}
+
+impl Done {
+    /// ". Fix tool calls, Add eval (3 commits)" for a project, or "".
+    fn about(&self, project: &str) -> String {
+        let Some((_, subjects)) = self
+            .commits
+            .iter()
+            .find(|(p, s)| p == project && !s.is_empty())
+        else {
+            return String::new();
+        };
+        let shown: Vec<&str> = subjects.iter().take(2).map(String::as_str).collect();
+        let n = subjects.len();
+        format!(
+            ". {} ({n} commit{})",
+            shown.join(", "),
+            if n == 1 { "" } else { "s" }
+        )
+    }
+
+    /// Gathers today's commits from the code folders and meetings from the
+    /// calendar. Slow (runs git); call off the UI thread.
+    pub fn gather(app: &AppHandle) -> Self {
+        let (roots, meetings) = {
+            let state = app.state::<AppState>();
+            let roots = crate::repo_roots(&lock(&state.settings));
+            let meetings = sidekick_sensors::calendar::on_day(
+                &lock(&state.calendar).meetings,
+                Local::now().date_naive(),
+            )
+            .into_iter()
+            .map(|m| m.title)
+            .collect();
+            (roots, meetings)
+        };
+        let commits = roots
+            .iter()
+            .flat_map(|r| sidekick_sensors::repos::find_repos(r))
+            .filter_map(|repo| {
+                let subjects = sidekick_actions::gitflow::today_commits(&repo);
+                let name = repo.file_name()?.to_string_lossy().into_owned();
+                (!subjects.is_empty()).then_some((name, subjects))
+            })
+            .collect();
+        Self { commits, meetings }
+    }
+}
+
 /// The day's summary event: time per project (or app), with a
 /// plain-text version ready to paste into a standup or timesheet.
-pub fn day_summary(rows: &[sidekick_core::AppTime]) -> Option<Event> {
+pub fn day_summary(rows: &[sidekick_core::AppTime], done: &Done) -> Option<Event> {
     let total: i64 = rows.iter().map(|r| r.secs).sum();
     if total < MIN_SUMMARY_SECS {
         return None;
@@ -179,9 +234,21 @@ pub fn day_summary(rows: &[sidekick_core::AppTime]) -> Option<Event> {
     let lines: Vec<String> = by_name
         .iter()
         .filter(|(_, s)| *s >= 5 * 60)
-        .map(|(n, s)| format!("- {n}: {}", human(*s)))
+        .map(|(n, s)| format!("- {n}: {}{}", human(*s), done.about(n)))
         .collect();
-    let text = format!("Today ({} total)\n{}", human(total), lines.join("\n"));
+    let mut text = format!("Today ({} total)\n{}", human(total), lines.join("\n"));
+    // Work in projects you did not have open long enough to make the list.
+    for (project, _) in &done.commits {
+        if !by_name.iter().any(|(n, s)| n == project && *s >= 5 * 60) {
+            text.push_str(&format!(
+                "\n- {project}: {}",
+                done.about(project).trim_start_matches(". ")
+            ));
+        }
+    }
+    if !done.meetings.is_empty() {
+        text.push_str(&format!("\nMeetings: {}", done.meetings.join(", ")));
+    }
     Some(Event::new(
         DAY_SUMMARY,
         "time",
@@ -228,7 +295,11 @@ pub fn start(app: &AppHandle) {
                 let rows = lock(&state.storage)
                     .time_for_day(&today())
                     .unwrap_or_default();
-                if let Some(e) = day_summary(&rows) {
+                let app2 = app.clone();
+                let done = tokio::task::spawn_blocking(move || Done::gather(&app2))
+                    .await
+                    .unwrap_or_default();
+                if let Some(e) = day_summary(&rows, &done) {
                     state.bus.publish(e);
                 }
             }
@@ -270,16 +341,28 @@ mod tests {
             row("Chrome", "", 2400),
             row("Slack", "", 120),
         ];
-        let e = day_summary(&rows).unwrap();
+        let done = Done {
+            commits: vec![
+                (
+                    "sidekick".into(),
+                    vec!["Fix tool calls".into(), "Add eval".into(), "Docs".into()],
+                ),
+                ("site".into(), vec!["New hero".into()]),
+            ],
+            meetings: vec!["Standup".into()],
+        };
+        let e = day_summary(&rows, &done).unwrap();
         assert_eq!(e.payload["total_human"], "3 h 12 min");
         assert_eq!(
             e.payload["top"],
             "sidekick 2 h 30 min, Chrome 40 min, Slack 2 min"
         );
         let text = e.payload["text"].as_str().unwrap();
-        assert!(text.contains("- sidekick: 2 h 30 min"));
+        assert!(text.contains("- sidekick: 2 h 30 min. Fix tool calls, Add eval (3 commits)"));
+        assert!(text.contains("- site: New hero (1 commit)"));
+        assert!(text.contains("Meetings: Standup"));
         assert!(!text.contains("Slack"), "under five minutes is left out");
-        assert!(day_summary(&[row("Code", "x", 600)]).is_none());
+        assert!(day_summary(&[row("Code", "x", 600)], &Done::default()).is_none());
     }
 
     #[test]

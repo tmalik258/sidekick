@@ -292,6 +292,26 @@ pub fn merged(path: &Path) -> Result<Vec<String>, ActionError> {
         .collect())
 }
 
+/// Your commit subjects since midnight, newest first (no merges).
+pub fn today_commits(path: &Path) -> Vec<String> {
+    if repo(path).is_err() {
+        return Vec::new();
+    }
+    let me = git(path, &["config", "user.email"]).unwrap_or_default();
+    let mut args = vec!["log", "--since=midnight", "--no-merges", "--format=%s"];
+    let author = format!("--author={}", me.trim());
+    if !me.trim().is_empty() {
+        args.push(&author);
+    }
+    git(path, &args)
+        .unwrap_or_default()
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
 /// Files with merge conflicts right now.
 pub fn conflicts(path: &Path) -> Result<Vec<String>, ActionError> {
     repo(path)?;
