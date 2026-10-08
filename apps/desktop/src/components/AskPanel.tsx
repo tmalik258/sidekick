@@ -595,9 +595,7 @@ export function AskPanel() {
     tab: (back) => {
       const order: AskTab[] = ["ask", "agents", "history"];
       const i = order.indexOf(tab);
-      const next = back
-        ? order[(i - 1 + order.length) % order.length]
-        : order[(i + 1) % order.length];
+      const next = back ? order[(i - 1 + order.length) % order.length] : order[(i + 1) % order.length];
       goTab(next);
     },
     m: () => {
