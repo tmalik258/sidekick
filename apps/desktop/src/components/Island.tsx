@@ -124,6 +124,10 @@ export function Island() {
     return busy[0] ? `${busy[0].agent}: ${busy[0].project}` : null;
   });
   const working = useSidekick((s) => (s.ask ? null : (chatWorking ?? agentWorking)));
+  // An agent waiting on an answer: the mascot looks up curious and the pill
+  // shows an amber dot instead of the busy bars.
+  const agentAsks = useAgents((s) => s.sessions.some((x) => x.status === "waiting"));
+  const asksYou = working !== null && chatWorking === null && agentAsks;
   const guide = useGuide(waiting);
   // Voice with Ask closed: a compact pill while listening and thinking; the
   // island opens only when the answer starts.
@@ -180,20 +184,26 @@ export function Island() {
     mascot === "listening" ||
     working !== null ||
     focusLeft !== null;
-  const voicePill: { text: string; thinking: boolean; working?: boolean; done?: boolean; focus?: boolean } | null =
-    asking
-      ? null
-      : donePill !== null
-        ? { text: donePill, thinking: false, done: true }
-        : voiceQuestion !== null
-          ? { text: voiceQuestion, thinking: true }
-          : hearing !== null || mascot === "listening"
-            ? { text: hearing ?? "", thinking: false }
-            : working !== null
-              ? { text: working, thinking: true, working: true }
-              : focusLeft !== null
-                ? { text: `Focus · ${focusLeft}`, thinking: false, focus: true }
-                : null;
+  const voicePill: {
+    text: string;
+    thinking: boolean;
+    working?: boolean;
+    done?: boolean;
+    focus?: boolean;
+    asks?: boolean;
+  } | null = asking
+    ? null
+    : donePill !== null
+      ? { text: donePill, thinking: false, done: true }
+      : voiceQuestion !== null
+        ? { text: voiceQuestion, thinking: true }
+        : hearing !== null || mascot === "listening"
+          ? { text: hearing ?? "", thinking: false }
+          : working !== null
+            ? { text: working, thinking: !asksYou, working: true, asks: asksYou }
+            : focusLeft !== null
+              ? { text: `Focus · ${focusLeft}`, thinking: false, focus: true }
+              : null;
   // Only agents at work: hover lists them (and answers in place) instead of
   // opening Ask.
   const agentsOnly = voiceQuestion === null && hearing === null && chatWorking === null && agentWorking !== null;
@@ -237,6 +247,7 @@ export function Island() {
   const speaking = useSidekick((s) => s.speaking);
   const face =
     mood?.id ??
+    (asksYou && !voiceQuestion && hearing === null ? "curious" : null) ??
     (focusLeft !== null && !voiceQuestion && hearing === null && mascot !== "listening" ? "focus" : null) ??
     (speaking && mascot !== "listening"
       ? "speak"
@@ -591,12 +602,14 @@ function VoicePill({
   working,
   done,
   focus,
+  asks,
 }: {
   text: string;
   thinking: boolean;
   working?: boolean;
   done?: boolean;
   focus?: boolean;
+  asks?: boolean;
 }) {
   const label = voiceLabel(text, thinking, working || done || focus);
   return (
@@ -628,6 +641,11 @@ function VoicePill({
         >
           End
         </button>
+      ) : asks ? (
+        <span className="relative flex size-2" role="img" aria-label="Waiting for you">
+          <span className="absolute inset-0 animate-ping rounded-full bg-[#ff9f0a]/60 motion-reduce:animate-none" />
+          <span className="relative size-2 rounded-full bg-[#ff9f0a]" />
+        </span>
       ) : thinking ? (
         <Activity />
       ) : (

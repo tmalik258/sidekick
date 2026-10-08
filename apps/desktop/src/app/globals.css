@@ -1105,7 +1105,8 @@ body {
 .ak-tip {
   position: fixed;
   z-index: 100;
-  max-width: min(280px, calc(100vw - 16px));
+  width: max-content;
+  max-width: min(240px, calc(100vw - 16px));
   padding: 5px 9px;
   border-radius: 8px;
   background: rgb(28 28 32 / 0.96);
@@ -1578,10 +1579,14 @@ select.ak-mi option {
   margin-left: auto;
 }
 .ak-tl {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
-  align-content: start;
-  grid-auto-rows: max-content;
+}
+/* Every entry keeps its own height, so a long answer never sits under the next card. */
+.ak-tl > * {
+  flex: none;
+  min-width: 0;
 }
 .ak-todo {
   display: grid;
@@ -1673,9 +1678,10 @@ select.ak-mi option {
   padding: 4px 8px;
   font-size: 11.5px;
   color: rgb(255 255 255 / 0.8);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-height: 96px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 .ak-composer {
   display: flex;
