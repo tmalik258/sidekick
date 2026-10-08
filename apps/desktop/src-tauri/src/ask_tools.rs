@@ -25,6 +25,7 @@ const FIND: &str = "find_files";
 const REVEAL: &str = "show_in_folder";
 const PC_STATUS: &str = "pc_status";
 const STORAGE: &str = "storage";
+const DOCTOR: &str = "app_doctor";
 const PC: &str = "pc_control";
 const WINDOWS: &str = "windows";
 const WEB_SEARCH: &str = "web_search";
@@ -396,6 +397,21 @@ pub fn defs() -> Vec<ToolDef> {
             parameters: json!({ "type": "object", "properties": {} }),
         },
         ToolDef {
+            name: DOCTOR.into(),
+            description: "Why an app crashes, freezes or will not start: reads the last 14 days \
+                of crash records, names the likely cause and the fix Sidekick can run. Offer \
+                fixes with propose, never run them yourself. When no cause is clear, web_search \
+                the exact error code and module with Reddit, PCGamingWiki, Steam forums and the \
+                app's own forums, and say what people found worked. Never suggest crack, repack \
+                or pirated files. A file the user downloads themselves needs their go-ahead and \
+                a Defender scan first."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": { "app": { "type": "string", "description": "App or game name; empty for all recent crashes" } }
+            }),
+        },
+        ToolDef {
             name: PC.into(),
             description: "Change an everyday Windows setting right away: volume_up, volume_down, \
                 mute, set_volume {level}, brightness {level}, dark_mode_on, dark_mode_off, \
@@ -493,6 +509,7 @@ pub fn step_label(name: &str, args: &Value) -> String {
         NOTIFS => "Checking your notifications".into(),
         PC_STATUS => "Checking your PC".into(),
         STORAGE => "Measuring what takes space".into(),
+        DOCTOR => "Reading crash records".into(),
         PC => {
             let what = arg("what").unwrap_or_default();
             let thing = |k: &str| match k {
@@ -574,6 +591,7 @@ pub fn reads_only(name: &str) -> bool {
             | SCREEN
             | PC_STATUS
             | STORAGE
+            | DOCTOR
             | WEB_SEARCH
             | READ_PAGE
             | NOTIFS
@@ -594,6 +612,7 @@ pub fn is_own(name: &str) -> bool {
             | REVEAL
             | PC_STATUS
             | STORAGE
+            | DOCTOR
             | PC
             | WINDOWS
             | WEB_SEARCH
@@ -730,6 +749,10 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
         STORAGE => tokio::task::spawn_blocking(crate::disk::report)
             .await
             .unwrap_or_else(|e| format!("Error: {e}")),
+        DOCTOR => {
+            let app = args["app"].as_str().unwrap_or_default().trim().to_owned();
+            blocking(move || doctor_report((!app.is_empty()).then_some(app.as_str()))).await
+        }
         PC => {
             let what = args["what"].as_str().unwrap_or_default().to_owned();
             let level = args["level"].as_u64().and_then(|v| u8::try_from(v).ok());
@@ -785,6 +808,34 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
 }
 
 /// Runs PC work off the async runtime; errors read as text for the model.
+/// Crash records with their likely causes and fixes, as text for the model.
+fn doctor_report(app: Option<&str>) -> Result<String, sidekick_actions::ActionError> {
+    use sidekick_actions::doctor;
+    let crashes = doctor::crashes(app)?;
+    if crashes.is_empty() {
+        return Ok(match app {
+            Some(a) => format!(
+                "No crash records for {a} in 14 days. Ask what happens when it fails, then web_search that."
+            ),
+            None => "No crash records in 14 days.".into(),
+        });
+    }
+    let mut out = String::new();
+    for c in crashes.iter().take(8) {
+        out.push_str(&format!(
+            "{} {} {} (module {}, code {}) {}\n",
+            c.when, c.kind, c.app, c.module, c.code, c.detail
+        ));
+        for cause in doctor::causes(c) {
+            out.push_str(&format!("  cause: {}\n", cause.what));
+            if let Some((action, args, label)) = cause.fix {
+                out.push_str(&format!("  fix: {label} (action {action}, args {args})\n"));
+            }
+        }
+    }
+    Ok(out)
+}
+
 async fn blocking(
     f: impl FnOnce() -> Result<String, sidekick_actions::ActionError> + Send + 'static,
 ) -> String {
@@ -1429,8 +1480,8 @@ mod tests {
             .filter(|n| !is_web(n))
             .collect();
         let mut expected = vec![
-            SEARCH, TODAY, RECENT, OPEN, SCREEN, PROPOSE, FIND, REVEAL, PC_STATUS, STORAGE, PC,
-            WINDOWS, NOTIFS, DESKTOP, OFFICE, RECIPES, REMEMBER,
+            SEARCH, TODAY, RECENT, OPEN, SCREEN, PROPOSE, FIND, REVEAL, PC_STATUS, STORAGE, DOCTOR,
+            PC, WINDOWS, NOTIFS, DESKTOP, OFFICE, RECIPES, REMEMBER,
         ];
         let mut got: Vec<&str> = offline.iter().map(String::as_str).collect();
         expected.sort_unstable();
@@ -1545,7 +1596,7 @@ mod tests {
             [
                 SEARCH, FIND, REVEAL, TODAY, RECENT, SCREEN, PROPOSE, WEB_SEARCH, READ_PAGE,
                 BROWSER, APP_ACTION, DESKTOP, APPS, OFFICE, RECIPES, REMEMBER, NOTIFS, PC_STATUS,
-                STORAGE, PC, WINDOWS, OPEN
+                STORAGE, DOCTOR, PC, WINDOWS, OPEN
             ]
         );
     }
