@@ -745,11 +745,24 @@ impl Storage {
         &self,
         key: &str,
     ) -> Result<std::collections::HashMap<String, u32>, StorageError> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT label, count FROM choices WHERE key = ?1")?;
-        let rows = stmt.query_map([key], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?)))?;
+        // Habits fade: a pick not made in a month counts half.
+        let month_ago = (chrono::Utc::now() - chrono::Duration::days(30)).to_rfc3339();
+        let mut stmt = self.conn.prepare(
+            "SELECT label, CASE WHEN last_ts < ?2 THEN MAX(count / 2, 1) ELSE count END
+             FROM choices WHERE key = ?1",
+        )?;
+        let rows = stmt.query_map(params![key, month_ago], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?))
+        })?;
         Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Forgets picks not made for `days` days. Returns how many.
+    pub fn forget_old_choices(&self, days: i64) -> Result<usize, StorageError> {
+        let cutoff = (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339();
+        Ok(self
+            .conn
+            .execute("DELETE FROM choices WHERE last_ts < ?1", [cutoff])?)
     }
 
     /// Every remembered pick: (key, label, count, last time), most used first.
@@ -1093,6 +1106,17 @@ mod tests {
         assert_eq!(counts["Chrome"], 1);
         assert!(s.choice_counts("dev:8000").unwrap().is_empty());
         assert_eq!(s.clear_choices().unwrap(), 2);
+
+        // Old habits count half, and very old ones are forgotten.
+        for _ in 0..4 {
+            s.record_choice("url", "Edge", "2020-01-01T00:00:00+00:00")
+                .unwrap();
+        }
+        s.record_choice("url", "Zen", &chrono::Utc::now().to_rfc3339())
+            .unwrap();
+        assert_eq!(s.choice_counts("url").unwrap()["Edge"], 2);
+        assert_eq!(s.forget_old_choices(180).unwrap(), 1);
+        assert!(!s.choice_counts("url").unwrap().contains_key("Edge"));
     }
 
     #[test]

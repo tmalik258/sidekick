@@ -101,6 +101,8 @@ export interface VoiceSettings {
   interrupt: boolean;
   voice: string;
   speed: number;
+  /** Words voice gets wrong: "horsepot = hotspot, sidekik = Sidekick". */
+  fixes?: string;
   /** Which voice model the voice was picked for (3 = Supertonic 3). */
   model?: number;
 }
