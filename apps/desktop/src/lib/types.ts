@@ -666,6 +666,8 @@ export interface AgentStarted {
   branch: string | null;
   /** Changes can be reviewed and undone (the project uses git). */
   reviewable: boolean;
+  /** Its own worktree's branch, when another session was in this repo. */
+  worktree?: string | null;
 }
 
 export interface FileChange {

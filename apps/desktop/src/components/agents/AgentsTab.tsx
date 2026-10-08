@@ -22,12 +22,14 @@ import {
   dismissCompact,
   type Entry,
   messageIndex,
+  renameSession,
   resumeSession,
   rewindSession,
   type Session,
   type Step,
   sendToSession,
   startSession,
+  tuneSession,
   useAgents,
 } from "@/lib/agents";
 import { api } from "@/lib/bridge";
@@ -40,6 +42,8 @@ import { KeyHint, scrollIfActive } from "../ask/parts";
 import { Icon } from "../Icon";
 import { Select } from "../settings/ui";
 import { Tip } from "../Tip";
+import { Board } from "./Board";
+import { ChatControls } from "./Controls";
 import { Review } from "./Review";
 
 const MODES: { id: AgentMode; label: string; note: string }[] = [
@@ -50,7 +54,7 @@ const MODES: { id: AgentMode; label: string; note: string }[] = [
 ];
 
 /** Letter and colour for each agent in the picker. */
-const AGENT_MARKS: Record<string, [string, string]> = {
+export const AGENT_MARKS: Record<string, [string, string]> = {
   claude_code: ["C", "#d97757"],
   codex: ["X", "#10a37f"],
   copilot: ["G", "#8957e5"],
@@ -60,7 +64,9 @@ const AGENT_MARKS: Record<string, [string, string]> = {
 export function AgentsTab({ keys, maxHeight }: { keys: boolean; maxHeight: number }) {
   const sessions = useAgents((s) => s.sessions);
   const current = useAgents((s) => s.current);
+  const layout = useAgents((s) => s.layout);
   const session = sessions.find((s) => s.id === current) ?? null;
+  if (layout === "board") return <Board sessions={sessions} keys={keys} />;
   return session ? (
     <SessionView key={session.id} session={session} sessions={sessions} keys={keys} maxHeight={maxHeight} />
   ) : (
@@ -110,6 +116,8 @@ function NewSession({ sessions }: { sessions: Session[] }) {
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [model, setModel] = useState<string | null>(null);
+  const [effort, setEffort] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const choices = [
     ...(agents?.claudeCode ? [{ id: "claude_code", name: "Claude Code" }] : []),
@@ -140,7 +148,7 @@ function NewSession({ sessions }: { sessions: Session[] }) {
     if (!prompt.trim() || !pickedPath || busy) return;
     setBusy(true);
     setError(null);
-    startSession(pickedAgent, pickedPath, prompt.trim(), mode)
+    startSession(pickedAgent, pickedPath, prompt.trim(), mode, model, effort)
       .then(() => setPrompt(""))
       .catch((e: unknown) => setError(String(e)))
       .finally(() => setBusy(false));
@@ -196,20 +204,29 @@ function NewSession({ sessions }: { sessions: Session[] }) {
             </span>
             <ModeSwitch mode={mode} onChange={setMode} />
           </div>
-          <div className="ak-composer">
-            <input
-              ref={inputRef}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  go();
-                }
-              }}
-              placeholder="What should it do?"
+          <div className="ak-composer ak-two">
+            <div className="ak-row">
+              <input
+                ref={inputRef}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    go();
+                  }
+                }}
+                placeholder="What should it do?"
+              />
+            </div>
+            <ChatControls
+              agent={pickedAgent}
+              model={model}
+              effort={effort}
+              onModel={setModel}
+              onEffort={setEffort}
+              keys={busy ? "Starting..." : "Enter start"}
             />
-            <span className="ckeys mono">{busy ? "Starting..." : "Enter start"}</span>
           </div>
           {error && <p className="ak-err">{error}</p>}
         </>
@@ -239,7 +256,7 @@ function ModeSwitch({ mode, onChange }: { mode: AgentMode; onChange?: (m: AgentM
 }
 
 /** How much of the context window is used, as a small ring. */
-function ContextRing({ used, window, onCompact }: { used: number; window: number; onCompact?: () => void }) {
+export function ContextRing({ used, window, onCompact }: { used: number; window: number; onCompact?: () => void }) {
   const p = Math.round(Math.min(1, used / window) * 100);
   if (!onCompact) {
     return (
@@ -403,18 +420,7 @@ function SessionView({
   return (
     <>
       <div className="ak-head">
-        <span className="ak-title">{s.title}</span>
-        {s.usage && (
-          <ContextRing
-            used={s.usage.used}
-            window={s.usage.window}
-            onCompact={
-              s.agent === "Claude Code" && s.status !== "working" && s.status !== "ended"
-                ? () => sendToSession(s.id, "/compact")
-                : undefined
-            }
-          />
-        )}
+        <NameField id={s.id} title={s.title} />
         {working ? (
           <button type="button" onClick={() => void api.agentStop(s.id)} className="ak-stop chip">
             Stop <kbd>Esc</kbd>
@@ -974,21 +980,60 @@ function Composer({
   return (
     <>
       {pop}
-      <div ref={wrapRef} className="ak-composer relative">
-        <input
-          ref={inputRef}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            setSel(0);
-          }}
-          onKeyDown={onKey}
-          placeholder={working ? "Steer it, it reads this next" : "Ask for more, / for commands, @ for files"}
+      <div ref={wrapRef} className="ak-composer ak-two relative">
+        <div className="ak-row">
+          <input
+            ref={inputRef}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              setSel(0);
+            }}
+            onKeyDown={onKey}
+            placeholder={working ? "Steer it, it reads this next" : "Ask for more, / for commands, @ for files"}
+          />
+          <KeyHint show={keys}>Alt T</KeyHint>
+        </div>
+        <ChatControls
+          agent={s.agent}
+          model={s.model}
+          effort={s.effort}
+          onModel={(m) => tuneSession(s.id, m, s.effort ?? null)}
+          onEffort={(e) => tuneSession(s.id, s.model ?? null, e)}
+          usage={s.usage}
+          limit={s.limit}
+          onCompact={
+            s.agent === "Claude Code" && s.status !== "working" && s.status !== "ended"
+              ? () => sendToSession(s.id, "/compact")
+              : undefined
+          }
+          keys={working ? "Esc interrupt" : "Enter send"}
         />
-        <span className="ckeys mono">{working ? "Esc interrupt" : "Enter send"}</span>
-        <KeyHint show={keys}>Alt T</KeyHint>
       </div>
     </>
+  );
+}
+
+/** The session's name: click to rename, Enter keeps it, Esc puts it back. */
+export function NameField({ id, title }: { id: string; title: string }) {
+  const [v, setV] = useState(title);
+  useEffect(() => setV(title), [title]);
+  return (
+    <input
+      aria-label="Session name"
+      className="ak-title ak-name"
+      value={v}
+      onChange={(e) => setV(e.target.value)}
+      onBlur={() => (v.trim() ? renameSession(id, v) : setV(title))}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        else if (e.key === "Escape") {
+          e.stopPropagation();
+          setV(title);
+          requestAnimationFrame(() => (document.activeElement as HTMLElement | null)?.blur());
+        }
+      }}
+    />
   );
 }
 

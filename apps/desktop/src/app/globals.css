@@ -2264,3 +2264,188 @@ select.ak-mi option {
     display: none;
   }
 }
+
+/* Model, thinking and usage under the chat box's input */
+.ak-composer.ak-two {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 10px 12px 7px;
+}
+.ak-composer.ak-two > .ak-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ak-ctl {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin: 0 -4px;
+  font-size: 12px;
+  color: var(--i3);
+}
+.ak-ctl .ak-mi {
+  font-size: 12px;
+}
+/* The session name, editable in place */
+.ak-name {
+  min-width: 0;
+  flex: 1;
+  background: transparent;
+  outline: none;
+  border-radius: 6px;
+  padding: 1px 4px;
+  margin-left: -4px;
+  text-overflow: ellipsis;
+}
+.ak-name:hover {
+  background: rgb(255 255 255 / 0.05);
+}
+.ak-name:focus {
+  background: rgb(255 255 255 / 0.08);
+}
+.ak-name::placeholder {
+  color: inherit;
+}
+
+/* Board: several sessions at once. */
+.ak-board {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+.ak-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+.ak-grid[data-more="true"] {
+  mask-image: linear-gradient(to bottom, #000 85%, transparent);
+}
+@media (min-width: 1440px) {
+  .ak-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.ak-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 180px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.04);
+  border: 1px solid rgb(255 255 255 / 0.08);
+  text-align: left;
+  outline: none;
+}
+.ak-tile[data-focus="true"] {
+  border-color: rgb(255 255 255 / 0.28);
+}
+.ak-tile[data-s="ask"] {
+  border-color: rgb(255 159 10 / 0.7);
+  box-shadow: 0 0 16px rgb(255 159 10 / 0.25);
+}
+.ak-tile:focus-visible {
+  box-shadow: 0 0 0 2px rgb(10 132 255 / 0.8);
+}
+.ak-th {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  position: relative;
+}
+.ak-th .ak-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+}
+.ak-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  flex: none;
+}
+.ak-pill {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: rgb(255 255 255 / 0.08);
+  color: rgb(235 235 245 / 0.7);
+  flex: none;
+}
+.ak-pill[data-s="run"] {
+  color: #64d2ff;
+}
+.ak-pill[data-s="ask"] {
+  color: #ff9f0a;
+  background: rgb(255 159 10 / 0.14);
+}
+.ak-pill[data-s="done"] {
+  color: #30d158;
+}
+.ak-tsub {
+  font-size: 11.5px;
+  color: rgb(235 235 245 / 0.45);
+}
+.ak-tsteps {
+  flex: 1;
+  font-size: 12px;
+  color: rgb(235 235 245 / 0.72);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ak-tq {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.ak-tfoot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: rgb(235 235 245 / 0.5);
+}
+.ak-tnote {
+  font-size: 11px;
+  color: rgb(235 235 245 / 0.45);
+}
+.ak-empty {
+  border-style: dashed;
+  justify-content: center;
+}
+.ak-empty input {
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+}
+.ak-below {
+  position: absolute;
+  bottom: 4px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 11.5px;
+  color: rgb(235 235 245 / 0.6);
+  pointer-events: none;
+}
+.ak-lay {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+}

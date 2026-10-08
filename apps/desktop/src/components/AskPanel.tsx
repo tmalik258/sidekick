@@ -6,7 +6,16 @@
 // the morph, this owns the content.
 
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type AskTab, activeCount, handOff, listenToAgents, type Session, setTab, useAgents } from "@/lib/agents";
+import {
+  type AskTab,
+  activeCount,
+  handOff,
+  listenToAgents,
+  type Session,
+  setLayout,
+  setTab,
+  useAgents,
+} from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { useAltHeld } from "@/lib/hooks";
@@ -133,6 +142,7 @@ export function AskPanel() {
   const [text, setText] = useState(ask?.prompt ?? "");
   const alt = useAltHeld();
   const tab = useAgents((s) => s.tab);
+  const layout = useAgents((s) => s.layout);
   const working = useAgents((s) => activeCount(s.sessions));
   useEffect(listenToAgents, []);
   const speak = useSidekick((s) => s.settings.voice.speakAnswers);
@@ -718,6 +728,20 @@ export function AskPanel() {
           {typeof extra === "string" && <KeyHint show={alt}>{extra}</KeyHint>}
         </span>
       ))}
+      {tab === "agents" && (
+        <fieldset aria-label="Layout" className="ak-lay ak-seg border-0">
+          {(
+            [
+              ["one", "One"],
+              ["board", "Board"],
+            ] as const
+          ).map(([id, label]) => (
+            <button key={id} type="button" aria-pressed={layout === id} onClick={() => setLayout(id)} className="chip">
+              {label}
+            </button>
+          ))}
+        </fieldset>
+      )}
     </div>
   );
 

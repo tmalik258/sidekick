@@ -7,6 +7,7 @@
 
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "motion/react";
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { listenToAgents, useAgents } from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useNow, useSystemLook } from "@/lib/hooks";
@@ -119,10 +120,35 @@ export function Island() {
   const agentWorking = useAgents((s) => {
     const waiting = s.sessions.find((x) => x.status === "waiting");
     if (waiting) return `${waiting.agent} needs you`;
-    const busy = s.sessions.filter((x) => x.status === "working");
-    if (busy.length > 1) return `${busy.length} agents working`;
+    const live = s.sessions.filter((x) => x.status === "working" || x.status === "waiting");
+    const busy = live.filter((x) => x.status === "working");
+    if (live.length > 1)
+      return busy.length === live.length
+        ? `${live.length} agents working`
+        : `${live.length} agents · ${busy.length} working`;
     return busy[0] ? `${busy[0].agent}: ${busy[0].project}` : null;
   });
+  // One dot per running agent in the compact pill.
+  const agentDots = useAgents(
+    useShallow((s) => s.sessions.filter((x) => x.status === "working" || x.status === "waiting").map((x) => x.status)),
+  );
+  // A question opens the island by itself, unless Do Not Disturb, a
+  // fullscreen app or a pause says to stay small; it shrinks back once
+  // answered.
+  const questionId = useAgents((s) => s.sessions.find((x) => x.question)?.question?.id ?? null);
+  const fullscreen = useSidekick((s) => s.fullscreen);
+  const [dndOn, setDndOn] = useState(false);
+  useEffect(() => {
+    if (!questionId) return;
+    let live = true;
+    void api
+      .dndGet()
+      .then((v) => live && setDndOn(v === true))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [questionId]);
   const working = useSidekick((s) => (s.ask ? null : (chatWorking ?? agentWorking)));
   // An agent waiting on an answer: the mascot looks up curious and the pill
   // shows an amber dot instead of the busy bars.
@@ -191,6 +217,7 @@ export function Island() {
     done?: boolean;
     focus?: boolean;
     asks?: boolean;
+    dots?: string[];
   } | null = asking
     ? null
     : donePill !== null
@@ -200,7 +227,7 @@ export function Island() {
         : hearing !== null || mascot === "listening"
           ? { text: hearing ?? "", thinking: false }
           : working !== null
-            ? { text: working, thinking: !asksYou, working: true, asks: asksYou }
+            ? { text: working, thinking: !asksYou, working: true, asks: asksYou, dots: agentDots }
             : focusLeft !== null
               ? { text: `Focus · ${focusLeft}`, thinking: false, focus: true }
               : null;
@@ -216,8 +243,11 @@ export function Island() {
     !voicePill.done &&
     (settings.voice.listeningStyle ?? "compact") === "full";
   // Suggestions stay normal during thinking — do not gate them on !voicePill.
+  const askOpens =
+    questionId !== null && !dndOn && !fullscreen && !paused && settings.onboarded && agentsOnly && !quiet;
   const expanded =
     asking ||
+    askOpens ||
     fullVoice ||
     preparingVoice ||
     (hovered && (!voicePill || agentsOnly)) ||
@@ -434,7 +464,9 @@ export function Island() {
         </motion.div>
 
         <AnimatePresence initial={false}>
-          {!expanded && voicePill && <VoicePill key="voice" {...voicePill} />}
+          {!expanded && voicePill && (
+            <VoicePill key="voice" {...voicePill} onOpen={agentsOnly ? () => openBoard() : undefined} />
+          )}
           {!expanded && !bare && !voicePill && (
             <CompactTrailing
               key="compact"
@@ -596,6 +628,14 @@ function voiceShellWidth(text: string, thinking: boolean, working?: boolean): nu
 
 /** Voice in the compact island: green bars and the words as they come
  * while listening, then "Thinking" with the question until the answer. */
+/** The compact agents pill opens Agents on the board. */
+function openBoard() {
+  useAgents.setState({ tab: "agents", layout: "board" });
+  void api.askOpen();
+}
+
+const DOT: Record<string, string> = { working: "#64d2ff", waiting: "#ff9f0a" };
+
 function VoicePill({
   text,
   thinking,
@@ -603,6 +643,8 @@ function VoicePill({
   done,
   focus,
   asks,
+  dots,
+  onOpen,
 }: {
   text: string;
   thinking: boolean;
@@ -610,6 +652,8 @@ function VoicePill({
   done?: boolean;
   focus?: boolean;
   asks?: boolean;
+  dots?: string[];
+  onOpen?: () => void;
 }) {
   const label = voiceLabel(text, thinking, working || done || focus);
   return (
@@ -621,13 +665,23 @@ function VoicePill({
       exit={{ opacity: 0, transition: { duration: 0.08 } }}
       aria-live="polite"
     >
-      <span
-        className={`min-w-0 flex-1 truncate text-[12.5px] font-medium ${
-          text.trim() || thinking ? "text-white/90" : "text-white/62"
-        }`}
-      >
-        {label}
-      </span>
+      {onOpen ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="min-w-0 flex-1 truncate text-left text-[12.5px] font-medium text-white/90"
+        >
+          {label}
+        </button>
+      ) : (
+        <span
+          className={`min-w-0 flex-1 truncate text-[12.5px] font-medium ${
+            text.trim() || thinking ? "text-white/90" : "text-white/62"
+          }`}
+        >
+          {label}
+        </span>
+      )}
       {done ? (
         <span className="text-[#30d158]">
           <Icon name="check" size={14} />
@@ -645,6 +699,13 @@ function VoicePill({
         <span className="relative flex size-2" role="img" aria-label="Waiting for you">
           <span className="absolute inset-0 animate-ping rounded-full bg-[#ff9f0a]/60 motion-reduce:animate-none" />
           <span className="relative size-2 rounded-full bg-[#ff9f0a]" />
+        </span>
+      ) : dots && dots.length > 1 ? (
+        <span className="flex items-center gap-1" role="img" aria-label={`${dots.length} agents`}>
+          {dots.map((d, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: one dot per agent, in order
+            <i key={i} className="size-1.5 rounded-full" style={{ background: DOT[d] ?? "rgb(255 255 255 / 0.3)" }} />
+          ))}
         </span>
       ) : thinking ? (
         <Activity />

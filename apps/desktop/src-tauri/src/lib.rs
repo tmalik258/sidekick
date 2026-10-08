@@ -255,6 +255,8 @@ pub fn run() {
             commands::agent_files,
             commands::agent_commands,
             commands::agent_open_editor,
+            commands::agent_tune,
+            commands::agent_finish,
             commands::ask_open,
             commands::ask_ensure_welcome,
             commands::ask_defer_welcome,

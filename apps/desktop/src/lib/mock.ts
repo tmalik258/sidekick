@@ -243,6 +243,8 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   routines_forget: () => 12,
   routines_remove: () => 1,
   ai_open_link: (a) => `Opened ${String(a.target)}`,
+  agent_tune: () => null,
+  agent_finish: () => "Merged wt/store-tests back",
   agents_status: () => ({ claudeCode: true, codex: true, copilot: true, cursor: false, handoff: "Claude Code" }),
   codex_add_notify: () => "C:\\Users\\you\\.codex\\config.toml.sidekick-backup-20261002",
   codex_add_mcp: () => null,
