@@ -104,7 +104,11 @@ pub fn default_browser() -> Option<&'static str> {
         // The handler's program is the truth: Zen registers as
         // "FirefoxURL-..." but runs zen.exe.
         let cmd = std::process::Command::new("reg")
-            .args(["query", &format!(r"HKCR\{prog_id}\shell\open\command"), "/ve"])
+            .args([
+                "query",
+                &format!(r"HKCR\{prog_id}\shell\open\command"),
+                "/ve",
+            ])
             .creation_flags(0x0800_0000)
             .output()
             .ok();
@@ -451,9 +455,11 @@ mod command_tests {
 
     #[test]
     fn reads_the_browser_from_the_handler_program() {
-        let zen = r#"(Default)    REG_SZ    "C:\Program Files\Zen Browser\zen.exe" -osint -url "%1""#;
+        let zen =
+            r#"(Default)    REG_SZ    "C:\Program Files\Zen Browser\zen.exe" -osint -url "%1""#;
         assert_eq!(browser_for_command(zen), Some("zen"));
-        let chrome = r#""C:\Program Files\Google\Chrome\Application\chrome.exe" --single-argument %1"#;
+        let chrome =
+            r#""C:\Program Files\Google\Chrome\Application\chrome.exe" --single-argument %1"#;
         assert_eq!(browser_for_command(chrome), Some("chrome"));
         assert_eq!(browser_for_command("nothing here"), None);
     }
