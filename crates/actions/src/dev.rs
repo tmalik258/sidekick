@@ -129,16 +129,60 @@ pub fn pull(path: &Path, stash: bool) -> Result<Outcome, ActionError> {
     })
 }
 
-/// After your PR merged: back to the main branch, pull it, and delete the
-/// merged branch when git agrees it is merged.
-pub fn after_merge(path: &Path, branch: &str) -> Result<Outcome, ActionError> {
-    repo(path)?;
-    let main = git(
+/// The repo's main branch, from the remote's HEAD; "main" when unknown.
+pub fn main_branch(path: &Path) -> String {
+    git(
         path,
         &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
     )
     .map(|s| s.trim().trim_start_matches("origin/").to_owned())
-    .unwrap_or_else(|_| "main".into());
+    .unwrap_or_else(|_| "main".into())
+}
+
+/// Brings the main branch's new commits into the feature branch you are on,
+/// with a merge, never a rebase, so a branch others share keeps working.
+/// Needs a clean tree; on a conflict it backs out and changes nothing.
+pub fn update_branch(path: &Path) -> Result<Outcome, ActionError> {
+    repo(path)?;
+    let main = main_branch(path);
+    let branch = git(path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    if branch.trim() == main {
+        return Err(ActionError::Failed(
+            "You are on the main branch; Pull updates it".into(),
+        ));
+    }
+    if !git(path, &["status", "--porcelain", "--untracked-files=no"])?
+        .trim()
+        .is_empty()
+    {
+        return Err(ActionError::Failed(
+            "Commit or stash your changes first, then update the branch".into(),
+        ));
+    }
+    let _ = git(path, &["fetch", "--quiet", "--no-tags", "origin", &main]);
+    let before = git(path, &["rev-parse", "HEAD"])?;
+    let base = format!("origin/{main}");
+    if let Err(e) = git(path, &["merge", "--no-edit", "--quiet", &base]) {
+        let _ = git(path, &["merge", "--abort"]);
+        return Err(ActionError::Failed(format!(
+            "{main} clashes with your branch, so nothing changed. Open it in your editor or hand it to an agent ({e})"
+        )));
+    }
+    let after = git(path, &["rev-parse", "HEAD"])?;
+    if before.trim() == after.trim() {
+        return Ok(Outcome::msg(format!("Already up to date with {main}")));
+    }
+    Ok(Outcome {
+        message: format!("Merged {main} into {}", branch.trim()),
+        path: Some(format!("{RESET_TO}{}\n{}", path.display(), before.trim())),
+    })
+}
+
+/// After your PR merged: back to the main branch, pull it, and delete the
+/// merged branch when git agrees it is merged.
+pub fn after_merge(path: &Path, branch: &str) -> Result<Outcome, ActionError> {
+    repo(path)?;
+    let main = main_branch(path);
     if branch.is_empty() || branch == main {
         return Err(ActionError::Failed("That is the main branch".into()));
     }
@@ -372,5 +416,78 @@ mod tests {
         assert_eq!(clone_name("git@gitlab.com:t/app").as_deref(), Some("app"));
         assert!(clone_name("https://github.com/a/..").is_none());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn updates_a_feature_branch_from_main() {
+        let base = std::env::temp_dir().join(format!("sk-ub-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let (origin, a, b) = (base.join("o.git"), base.join("a"), base.join("b"));
+        let run = |dir: &Path, args: &[&str]| {
+            assert!(
+                Command::new("git")
+                    .arg("-C")
+                    .arg(dir)
+                    .args(args)
+                    .output()
+                    .unwrap()
+                    .status
+                    .success(),
+                "{args:?}"
+            );
+        };
+        run(
+            &base,
+            &[
+                "init",
+                "-q",
+                "--bare",
+                "-b",
+                "main",
+                origin.to_str().unwrap(),
+            ],
+        );
+        for d in [&a, &b] {
+            run(
+                &base,
+                &["clone", "-q", origin.to_str().unwrap(), d.to_str().unwrap()],
+            );
+            run(d, &["config", "user.email", "t@t"]);
+            run(d, &["config", "user.name", "T"]);
+        }
+        std::fs::write(a.join("f"), "1").unwrap();
+        run(&a, &["add", "."]);
+        run(&a, &["commit", "-qm", "one"]);
+        run(&a, &["push", "-q", "origin", "HEAD:main"]);
+        run(&b, &["pull", "-q", "origin", "main"]);
+        run(&b, &["remote", "set-head", "origin", "main"]);
+        run(&b, &["checkout", "-q", "-b", "feature"]);
+        std::fs::write(b.join("g"), "mine").unwrap();
+        run(&b, &["add", "."]);
+        run(&b, &["commit", "-qm", "mine"]);
+        std::fs::write(a.join("f"), "2").unwrap();
+        run(&a, &["commit", "-qam", "two"]);
+        run(&a, &["push", "-q", "origin", "HEAD:main"]);
+        let out = update_branch(&b).unwrap();
+        assert_eq!(out.message, "Merged main into feature");
+        assert_eq!(std::fs::read_to_string(b.join("f")).unwrap(), "2");
+        assert!(out.path.unwrap().starts_with(RESET_TO));
+        // A clash backs out and leaves the branch as it was.
+        std::fs::write(b.join("f"), "b").unwrap();
+        run(&b, &["commit", "-qam", "b"]);
+        std::fs::write(a.join("f"), "a").unwrap();
+        run(&a, &["commit", "-qam", "a"]);
+        run(&a, &["push", "-q", "origin", "HEAD:main"]);
+        let head = git(&b, &["rev-parse", "HEAD"]).unwrap();
+        assert!(update_branch(&b).is_err());
+        assert_eq!(git(&b, &["rev-parse", "HEAD"]).unwrap(), head);
+        assert!(
+            git(&b, &["status", "--porcelain"])
+                .unwrap()
+                .trim()
+                .is_empty()
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

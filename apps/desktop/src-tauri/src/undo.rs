@@ -17,7 +17,7 @@ const WINDOW_HOURS: i64 = 24;
 
 pub fn undo_path(action: &str, produced: Option<&str>) -> Option<String> {
     // A pull's record resets the repo back to where it was.
-    if action == "git_pull" {
+    if action == "git_pull" || action == "git_update_branch" {
         return produced
             .filter(|p| p.starts_with(sidekick_actions::dev::RESET_TO))
             .map(str::to_owned);
