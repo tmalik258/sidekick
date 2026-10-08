@@ -137,6 +137,12 @@ impl Executor {
                 system::reveal(&path)?;
                 Ok(Outcome::msg("Shown in folder"))
             }
+            "ask_copilot" => {
+                let text = arg(args, "text")?.to_owned();
+                tokio::task::spawn_blocking(move || system::ask_copilot(&text))
+                    .await
+                    .map_err(fail)?
+            }
             "copy_text" => {
                 let text = arg(args, "text")?;
                 system::set_clipboard_text(text)?;
