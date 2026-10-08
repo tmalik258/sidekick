@@ -412,7 +412,7 @@ fn settings_onboarded(app: &tauri::AppHandle) -> bool {
     state::lock(&app.state::<AppState>().settings).onboarded
 }
 
-fn repo_roots(settings: &Settings) -> Vec<std::path::PathBuf> {
+pub(crate) fn repo_roots(settings: &Settings) -> Vec<std::path::PathBuf> {
     if settings.code_folders.is_empty() {
         ReposSensor::default_roots()
     } else {
