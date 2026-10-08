@@ -698,6 +698,8 @@ export interface AgentInfo {
   limited: boolean;
   /** The one step that makes it ready. */
   fix: string | null;
+  /** Runs on this PC; nothing leaves it. */
+  local?: boolean;
 }
 
 /** How much a notification interrupts. */

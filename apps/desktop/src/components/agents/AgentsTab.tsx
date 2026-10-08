@@ -21,6 +21,7 @@ import {
   closeSession,
   dismissCompact,
   type Entry,
+  handOffSession,
   messageIndex,
   resumeSession,
   rewindSession,
@@ -55,6 +56,7 @@ const AGENT_MARKS: Record<string, [string, string]> = {
   codex: ["X", "#10a37f"],
   copilot: ["G", "#8957e5"],
   cursor: ["R", "#9aa0a6"],
+  local: ["L", "#5e9cff"],
 };
 
 export function AgentsTab({ keys, maxHeight }: { keys: boolean; maxHeight: number }) {
@@ -230,6 +232,7 @@ function ready(a: AgentInfo): boolean {
 /** Where it runs and whether it is ready, in a few words. */
 function readyNote(a: AgentInfo): string {
   if (!a.installed) return "Not installed";
+  if (a.local) return "On this PC. Slower, best for small, clear changes.";
   if (a.signedIn === false) return "Cloud · sign in needed";
   if (a.limited) return "Cloud · out of usage for now";
   return a.signedIn ? "Cloud · ready" : "Cloud · installed";
@@ -635,6 +638,14 @@ function SessionView({
               </div>
             )}
             {s.limit && <p className="ak-note ak-in">{limitNote(s.agent, s.limit)}</p>}
+            {s.stuck && (
+              <p className="ak-note ak-in flex items-center gap-2">
+                <span className="min-w-0 flex-1">{s.agent} is going round in circles on this one.</span>
+                <button type="button" onClick={() => void handOffSession(s)} className="ak-chip chip">
+                  Hand off
+                </button>
+              </p>
+            )}
             {notice && <p className="ak-note ak-in">{notice}</p>}
           </div>
 
