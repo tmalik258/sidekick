@@ -177,6 +177,8 @@ export function AskPanel() {
   const { data: providersData, refresh: refreshProviders } = useCached<ProviderStatus[]>("ai-status", api.aiStatus);
   const providers = providersData ?? [];
   const [handoffError, setHandoffError] = useState<string | null>(null);
+  /** The chat's name when renamed; its first question otherwise. */
+  const [chatName, setChatName] = useState<string | null>(null);
   const [hits, setHits] = useState<{ query: string; items: SearchHit[] } | null>(null);
   const [clips, setClips] = useState<{ text: string; ts: string }[] | null>(null);
   const [historyKind, setHistoryKind] = useState<HistoryKind>("all");
@@ -311,6 +313,7 @@ export function AskPanel() {
   const resetChat = useCallback(() => {
     if (useSidekick.getState().hearing !== null) stopListening();
     newChat();
+    setChatName(null);
     setText("");
     setSelected(0);
     setClips(null);
@@ -842,87 +845,115 @@ export function AskPanel() {
       </div>
     ) : null;
 
+  const field = (
+    <div className="ak-bar">
+      {hearing !== null ? (
+        <Hearing text={hearing} />
+      ) : (
+        <input
+          ref={inputRef}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setSelected(INTENT_PENDING);
+            setPick(0);
+          }}
+          onKeyDown={onKey}
+          placeholder={inHistory ? "Search history" : inChat ? "Ask a follow-up" : "Ask anything"}
+          spellCheck={false}
+          className="ak-q"
+        />
+      )}
+      <div className="ak-right">
+        {inHistory ? (
+          <fieldset className="ak-seg border-0" aria-label="Show">
+            {(["all", "chats", "agents"] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={historyKind === k}
+                onClick={() => setHistoryKind(k)}
+                className="chip capitalize"
+              >
+                {k}
+              </button>
+            ))}
+          </fieldset>
+        ) : hearing !== null ? (
+          <button type="button" onClick={stopListening} className="ak-stop chip">
+            Stop <kbd>Esc</kbd>
+          </button>
+        ) : (
+          <>
+            <IconButton
+              label={speak ? "Speak replies: on (Alt S)" : "Speak replies: off (Alt S)"}
+              pressed={speak}
+              keys={alt}
+              hint="Alt S"
+              onClick={toggleSpeak}
+            >
+              <Icon name={speak ? "speaker" : "speakerOff"} size={14} />
+            </IconButton>
+            {voiceReady && !streaming && (
+              <IconButton
+                label={`Talk, or say Hey ${assistant} (Alt V)`}
+                keys={alt}
+                hint="Alt V"
+                onClick={startListening}
+              >
+                <Icon name="mic" size={14} />
+              </IconButton>
+            )}
+            {streaming ? (
+              <button type="button" onClick={cancelChat} className="ak-stop chip">
+                Stop <kbd>Esc</kbd>
+              </button>
+            ) : (
+              <>
+                {best && <ModelPicker choices={choices} best={best} picked={pickedModel} keys={alt} />}
+                {inChat && !showChat && (
+                  <IconButton label="New chat (Esc)" keys={alt} hint="Esc" onClick={resetChat}>
+                    <Icon name="plus" size={15} />
+                  </IconButton>
+                )}
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="ak" data-chat={showChat || undefined}>
       {tabs}
-      <div className="ak-bar">
-        {hearing !== null ? (
-          <Hearing text={hearing} />
-        ) : (
+      {showChat && (
+        <div className="ak-head">
           <input
-            ref={inputRef}
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              setSelected(INTENT_PENDING);
-              setPick(0);
+            aria-label="Chat name"
+            value={chatName ?? turns.find((t) => t.role === "user")?.content ?? ""}
+            onChange={(e) => setChatName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === "Escape") {
+                e.preventDefault();
+                inputRef.current?.focus();
+              }
             }}
-            onKeyDown={onKey}
-            placeholder={inHistory ? "Search history" : inChat ? "Ask a follow-up" : "Ask anything"}
             spellCheck={false}
-            className="ak-q"
+            className="ak-title ak-cname"
           />
-        )}
-        <div className="ak-right">
-          {inHistory ? (
-            <fieldset className="ak-seg border-0" aria-label="Show">
-              {(["all", "chats", "agents"] as const).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  aria-pressed={historyKind === k}
-                  onClick={() => setHistoryKind(k)}
-                  className="chip capitalize"
-                >
-                  {k}
-                </button>
-              ))}
-            </fieldset>
-          ) : hearing !== null ? (
-            <button type="button" onClick={stopListening} className="ak-stop chip">
-              Stop <kbd>Esc</kbd>
-            </button>
-          ) : (
-            <>
-              <IconButton
-                label={speak ? "Speak replies: on (Alt S)" : "Speak replies: off (Alt S)"}
-                pressed={speak}
-                keys={alt}
-                hint="Alt S"
-                onClick={toggleSpeak}
-              >
-                <Icon name={speak ? "speaker" : "speakerOff"} size={14} />
-              </IconButton>
-              {voiceReady && !streaming && (
-                <IconButton
-                  label={`Talk, or say Hey ${assistant} (Alt V)`}
-                  keys={alt}
-                  hint="Alt V"
-                  onClick={startListening}
-                >
-                  <Icon name="mic" size={14} />
-                </IconButton>
-              )}
-              {streaming ? (
-                <button type="button" onClick={cancelChat} className="ak-stop chip">
-                  Stop <kbd>Esc</kbd>
-                </button>
-              ) : (
-                <>
-                  {best && <ModelPicker choices={choices} best={best} picked={pickedModel} keys={alt} />}
-                  {inChat && (
-                    <IconButton label="New chat (Esc)" keys={alt} hint="Esc" onClick={resetChat}>
-                      <Icon name="plus" size={15} />
-                    </IconButton>
-                  )}
-                </>
-              )}
-            </>
-          )}
+          <IconButton label="New chat (Esc)" keys={alt} hint="Esc" onClick={resetChat}>
+            <Icon name="plus" size={15} />
+          </IconButton>
         </div>
+      )}
+      {/* In a chat the field is a box at the bottom: what goes with the
+          question on top, then the field, then the model and voice. The
+          same wrapper either way, so the input keeps focus on send. */}
+      <div className={showChat ? "ak-askc" : "contents"}>
+        {field}
+        {!inHistory && <ContextLine keys={alt} />}
       </div>
-
-      {!inHistory && <ContextLine keys={alt} />}
 
       {showClips && clips ? (
         <div key="clips" className="ak-scroll ak-in" style={{ maxHeight: scrollMax }}>
