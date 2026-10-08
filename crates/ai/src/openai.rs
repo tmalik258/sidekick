@@ -28,13 +28,16 @@ impl OpenAiCompat {
             .filter(|u| !u.trim().is_empty())
             .unwrap_or_else(|| OLLAMA_URL.into());
         let base_url = loopback(base_url.trim_end_matches('/'));
+        let mut client = reqwest::Client::builder().connect_timeout(Duration::from_secs(3));
+        // A system or VPN proxy cannot reach this PC's own 127.0.0.1, so
+        // Ollama only answered once it was exposed to the network.
+        if is_local_url(&base_url) {
+            client = client.no_proxy();
+        }
         Self {
             base_url,
             model: model.unwrap_or_default().trim().to_owned(),
-            client: reqwest::Client::builder()
-                .connect_timeout(Duration::from_secs(3))
-                .build()
-                .unwrap_or_default(),
+            client: client.build().unwrap_or_default(),
             context: std::sync::Mutex::new(None),
         }
     }
@@ -585,7 +588,7 @@ fn delta(data: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-pub(crate) fn is_local_url(url: &str) -> bool {
+pub fn is_local_url(url: &str) -> bool {
     let rest = url.split("://").nth(1).unwrap_or(url);
     if rest.starts_with("[::1]") {
         return true;

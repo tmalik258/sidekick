@@ -266,10 +266,11 @@ fn read(path: &Path) -> String {
 }
 
 pub async fn ollama_models(base_url: &str) -> Option<Vec<String>> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_millis(1500))
-        .build()
-        .ok()?;
+    let mut client = reqwest::Client::builder().timeout(Duration::from_millis(1500));
+    if sidekick_ai::is_local_url(base_url) {
+        client = client.no_proxy();
+    }
+    let client = client.build().ok()?;
     let resp = client
         .get(format!(
             "{}/models",
