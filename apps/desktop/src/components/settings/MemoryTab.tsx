@@ -16,13 +16,37 @@ export function MemoryTab({ onError }: { onError: (e: string) => void }) {
   const save = (patch: Partial<Settings>) => void updateSettings(patch).catch((e: unknown) => onError(String(e)));
   return (
     <>
-      <Section title="About you" keywords="name code technical developer about me">
+      <Section title="About you" keywords="name code technical developer about me people projects answers style">
         <Field label="Your name">
           <TextField
             label="Your name"
             value={settings.userName}
             placeholder="What should I call you?"
             onCommit={(userName) => save({ userName })}
+          />
+        </Field>
+        <Field label="People you work with" hint="Names help Ask find the right email or chat.">
+          <TextField
+            label="People you work with"
+            value={settings.people}
+            placeholder="Sara (manager), Omar (design)"
+            onCommit={(people) => save({ people })}
+          />
+        </Field>
+        <Field label="Current projects" hint="Used for standups, status and finding files.">
+          <TextField
+            label="Current projects"
+            value={settings.projects}
+            placeholder="Website relaunch, Q4 report"
+            onCommit={(projects) => save({ projects })}
+          />
+        </Field>
+        <Field label="How you like answers" hint="Every model follows this.">
+          <TextField
+            label="How you like answers"
+            value={settings.answerStyle}
+            placeholder="Short, bullet points, no jargon"
+            onCommit={(answerStyle) => save({ answerStyle })}
           />
         </Field>
         <div className="flex items-center justify-between gap-4 text-[14px]">
