@@ -1,5 +1,5 @@
 // Browser-only stand-in for the Rust core, used when the UI runs outside
-// Tauri. It mimics the demo flow loosely; the real rules live in Rust.
+// Tauri. It mimics the app loosely; the real rules live in Rust.
 
 import {
   type CloudId,
@@ -341,20 +341,6 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   debug_emit_event: () => {
     go("noticing");
     later(1200, () => go("idle"));
-  },
-  debug_demo_flow: () => {
-    go("noticing");
-    later(900, () => {
-      suggestion = {
-        id: crypto.randomUUID(),
-        skillId: "debug.demo",
-        title: "Dev server on localhost:3000",
-        detail: "Demo suggestion (browser mock).",
-        options: ["Open in Chrome", "Open in Zen", "Simulate failure"],
-      };
-      emit("suggestion://new", suggestion);
-      go("suggesting");
-    });
   },
 };
 
