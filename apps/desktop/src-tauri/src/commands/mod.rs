@@ -44,10 +44,15 @@ pub struct AppInfo {
 }
 
 #[tauri::command]
-pub fn app_info(app: AppHandle, state: State<'_, AppState>) -> CmdResult<AppInfo> {
-    let event_count = lock(&state.storage)
-        .count_events()
-        .map_err(|e| e.to_string())?;
+pub async fn app_info(app: AppHandle) -> CmdResult<AppInfo> {
+    let counter = app.clone();
+    let event_count = off_ui(move || {
+        lock(&counter.state::<AppState>().storage)
+            .count_events()
+            .map_err(|e| e.to_string())
+    })
+    .await??;
+    let state = app.state::<AppState>();
     Ok(AppInfo {
         version: app.package_info().version.to_string(),
         db_path: state.db_path.display().to_string(),
@@ -186,7 +191,13 @@ pub struct SkillInfo {
 
 /// Every loaded skill with the user's switches applied.
 #[tauri::command]
-pub fn skills_list(state: State<'_, AppState>) -> Vec<SkillInfo> {
+pub async fn skills_list(app: AppHandle) -> Vec<SkillInfo> {
+    off_ui(move || skills_now(&app.state::<AppState>()))
+        .await
+        .unwrap_or_default()
+}
+
+fn skills_now(state: &AppState) -> Vec<SkillInfo> {
     let settings = lock(&state.settings).clone();
     let now = chrono::Utc::now();
     let muted = |id: &str| {
@@ -466,3 +477,14 @@ const SYSTEM_EXES: &[&str] = &[
     "system",
     "memory compression",
 ];
+
+/// Runs `f` on a worker thread. Commands that read the database or disk use
+/// it: the storage lock can be held by a sensor write, and a sync command
+/// would hold the UI thread while it waits (the e2e freeze check).
+pub(crate) async fn off_ui<T: Send + 'static>(
+    f: impl FnOnce() -> T + Send + 'static,
+) -> CmdResult<T> {
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| e.to_string())
+}

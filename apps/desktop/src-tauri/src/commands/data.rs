@@ -3,19 +3,21 @@
 use super::*;
 
 #[tauri::command]
-pub fn events_recent(
-    state: State<'_, AppState>,
-    limit: Option<u32>,
-) -> CmdResult<Vec<StoredEvent>> {
-    lock(&state.storage)
-        .recent_events(limit.unwrap_or(50).min(500))
-        .map_err(|e| e.to_string())
+pub async fn events_recent(app: AppHandle, limit: Option<u32>) -> CmdResult<Vec<StoredEvent>> {
+    off_ui(move || {
+        lock(&app.state::<AppState>().storage)
+            .recent_events(limit.unwrap_or(50).min(500))
+            .map_err(|e| e.to_string())
+    })
+    .await?
 }
 
 /// Today's learned routine, for Settings.
 #[tauri::command]
-pub fn routines_today(app: AppHandle) -> Vec<crate::routines::Item> {
-    crate::routines::today(&app)
+pub async fn routines_today(app: AppHandle) -> Vec<crate::routines::Item> {
+    off_ui(move || crate::routines::today(&app))
+        .await
+        .unwrap_or_default()
 }
 
 /// Takes one app or site out of the morning setup.
@@ -26,8 +28,10 @@ pub fn routines_remove(app: AppHandle, kind: String, key: String) -> CmdResult<u
 
 /// Everything Sidekick has learned, for Settings > Memory.
 #[tauri::command]
-pub fn learned_list(app: AppHandle) -> Vec<crate::learned::Learned> {
-    crate::learned::list(&app)
+pub async fn learned_list(app: AppHandle) -> Vec<crate::learned::Learned> {
+    off_ui(move || crate::learned::list(&app))
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -47,28 +51,26 @@ pub fn routines_forget(app: AppHandle) -> CmdResult<usize> {
 }
 
 #[tauri::command]
-pub fn actions_recent(
-    state: State<'_, AppState>,
-    limit: Option<u32>,
-) -> CmdResult<Vec<ActionRecord>> {
-    lock(&state.storage)
-        .recent_actions(limit.unwrap_or(30).min(200))
-        .map_err(|e| e.to_string())
+pub async fn actions_recent(app: AppHandle, limit: Option<u32>) -> CmdResult<Vec<ActionRecord>> {
+    off_ui(move || {
+        lock(&app.state::<AppState>().storage)
+            .recent_actions(limit.unwrap_or(30).min(200))
+            .map_err(|e| e.to_string())
+    })
+    .await?
 }
 
 /// Today's time per app and project, largest first.
 #[tauri::command]
 pub async fn time_today(app: AppHandle) -> CmdResult<Vec<sidekick_core::AppTime>> {
-    // The storage lock can be held by a sensor write: wait off the UI thread.
-    tauri::async_runtime::spawn_blocking(move || {
+    off_ui(move || {
         let day = chrono::Local::now().format("%Y-%m-%d").to_string();
         let state = app.state::<AppState>();
         lock(&state.storage)
             .time_for_day(&day)
             .map_err(|e| e.to_string())
     })
-    .await
-    .map_err(|e| e.to_string())?
+    .await?
 }
 
 #[tauri::command]
@@ -165,13 +167,17 @@ pub struct ClipItem {
 
 /// Recent clipboard text, newest first. Secrets are never in it.
 #[tauri::command]
-pub fn clipboard_history(app: AppHandle, limit: Option<u32>) -> Vec<ClipItem> {
-    lock(&app.state::<AppState>().storage)
-        .recent_items("clipboard", limit.unwrap_or(60).min(500))
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(_, _, text, ts)| ClipItem { text, ts })
-        .collect()
+pub async fn clipboard_history(app: AppHandle, limit: Option<u32>) -> Vec<ClipItem> {
+    off_ui(move || {
+        lock(&app.state::<AppState>().storage)
+            .recent_items("clipboard", limit.unwrap_or(60).min(500))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(_, _, text, ts)| ClipItem { text, ts })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 /// Puts a history item back on the clipboard.
