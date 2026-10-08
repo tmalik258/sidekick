@@ -234,6 +234,12 @@ export interface Proposal {
   ran?: { ok: boolean; message: string; undoId: number | null; path: string | null; undone?: boolean };
 }
 
+export interface SuggestionRate {
+  skill: string;
+  taken: number;
+  dismissed: number;
+}
+
 export interface AskContext {
   app: string | null;
   title: string | null;

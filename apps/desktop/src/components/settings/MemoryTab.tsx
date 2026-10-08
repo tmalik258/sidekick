@@ -7,7 +7,7 @@ import { useState } from "react";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { updateSettings, useSidekick } from "@/lib/store";
-import type { Learned, Settings } from "@/lib/types";
+import type { Learned, Settings, SuggestionRate } from "@/lib/types";
 import { Memory } from "./PrivacyTab";
 import { Button, Field, Section, Segmented, TextField, Toggle } from "./ui";
 
@@ -73,6 +73,13 @@ export function MemoryTab({ onError }: { onError: (e: string) => void }) {
         <Memory onError={onError} />
       </Section>
       <Section
+        title="Suggestions you take"
+        hint="At most 4 an hour interrupt you. None during meetings or fullscreen apps."
+        keywords="suggestions accept rate taken dismissed quiet cap"
+      >
+        <RateList />
+      </Section>
+      <Section
         title="Learned from your choices"
         hint="Stays on this PC. Older habits fade on their own."
         keywords="learned habits links routines quiet forget"
@@ -132,6 +139,39 @@ function LearnedList({ onError }: { onError: (e: string) => void }) {
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** "files.screenshot" reads "Screenshot". */
+function skillName(id: string): string {
+  const last = id.split(".").pop() ?? id;
+  const words = last.replace(/[-_]/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function RateList() {
+  const { data } = useCached<SuggestionRate[]>("suggestion-rates", api.suggestionRates);
+  const items = data ?? [];
+  if (items.length === 0) {
+    return (
+      <p className="text-[13px] text-(--muted)">Nothing yet. Each kind of suggestion shows here once you answer one.</p>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2 text-[13px]">
+      {items.map((r) => {
+        const total = r.taken + r.dismissed;
+        const pct = Math.round((r.taken / total) * 100);
+        return (
+          <div key={r.skill} className="flex items-center justify-between gap-4">
+            <span className="min-w-0 truncate">{skillName(r.skill)}</span>
+            <span className="shrink-0 text-(--muted)">
+              Taken {pct}% of {total}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

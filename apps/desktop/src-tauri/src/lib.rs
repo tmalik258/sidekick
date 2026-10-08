@@ -219,6 +219,7 @@ pub fn run() {
             commands::focus_stop,
             commands::focus_status,
             commands::learned_list,
+            commands::suggestion_rates,
             commands::learned_forget,
             commands::learned_forget_all,
             commands::routines_remove,
