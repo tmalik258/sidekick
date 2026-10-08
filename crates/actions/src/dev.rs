@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use crate::{ActionError, Outcome, fail, system};
 
-fn hidden(cmd: &mut Command) {
+pub(crate) fn hidden(cmd: &mut Command) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -19,7 +19,7 @@ fn hidden(cmd: &mut Command) {
     let _ = cmd;
 }
 
-fn repo(path: &Path) -> Result<(), ActionError> {
+pub(crate) fn repo(path: &Path) -> Result<(), ActionError> {
     if path.join(".git").exists() {
         Ok(())
     } else {
@@ -30,7 +30,7 @@ fn repo(path: &Path) -> Result<(), ActionError> {
     }
 }
 
-fn git(path: &Path, args: &[&str]) -> Result<String, ActionError> {
+pub(crate) fn git(path: &Path, args: &[&str]) -> Result<String, ActionError> {
     let mut cmd = Command::new("git");
     cmd.arg("-C")
         .arg(path)

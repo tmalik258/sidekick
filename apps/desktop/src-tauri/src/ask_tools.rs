@@ -26,6 +26,8 @@ const REVEAL: &str = "show_in_folder";
 const PC_STATUS: &str = "pc_status";
 const STORAGE: &str = "storage";
 const DOCTOR: &str = "app_doctor";
+const GIT: &str = "git";
+const GITHUB: &str = "github";
 const PC: &str = "pc_control";
 const WINDOWS: &str = "windows";
 const WEB_SEARCH: &str = "web_search";
@@ -80,6 +82,11 @@ const ASK_ACTIONS: &[&str] = &[
     "sleep_pc",
     "empty_recycle_bin",
     "trash_download",
+    "install_app",
+    "set_compat",
+    "clear_compat",
+    "git_commit",
+    "git_delete_branches",
 ];
 
 /// An action waiting for a tap, from one chat.
@@ -414,6 +421,42 @@ pub fn defs() -> Vec<ToolDef> {
             }),
         },
         ToolDef {
+            name: GIT.into(),
+            description: "A git project on this PC (path; the most recent project when left \
+                out): changes shows what a commit would hold, so write a short commit message \
+                (imperative subject, why in the body) and offer it with propose git_commit \
+                {path, message}; branch shows this branch against main, for a PR description; \
+                clean lists merged branches, offered with propose git_delete_branches {path, \
+                branches}; conflicts lists files with merge conflicts, then offer to hand them \
+                to a coding agent."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["changes", "branch", "clean", "conflicts"] },
+                    "path": { "type": "string", "description": "Project folder" }
+                },
+                "required": ["action"],
+            }),
+        },
+        ToolDef {
+            name: GITHUB.into(),
+            description: "GitHub through the user's gh CLI: waiting lists reviews asked of \
+                them, their open PRs and assigned issues; ci shows the latest runs of a project \
+                and the failing log, so explain the cause and the fix; review {number} reads a \
+                pull request to review it (bugs first, then risks, then nits)."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["waiting", "ci", "review"] },
+                    "path": { "type": "string", "description": "Project folder; the most recent project when left out" },
+                    "number": { "type": "integer", "description": "Pull request number" }
+                },
+                "required": ["action"],
+            }),
+        },
+        ToolDef {
             name: PC.into(),
             description: "Change an everyday Windows setting right away: volume_up, volume_down, \
                 mute, set_volume {level}, brightness {level}, dark_mode_on, dark_mode_off, \
@@ -512,6 +555,8 @@ pub fn step_label(name: &str, args: &Value) -> String {
         PC_STATUS => "Checking your PC".into(),
         STORAGE => "Measuring what takes space".into(),
         DOCTOR => "Reading crash records".into(),
+        GIT => "Reading the project's git".into(),
+        GITHUB => "Checking GitHub".into(),
         PC => {
             let what = arg("what").unwrap_or_default();
             let thing = |k: &str| match k {
@@ -594,6 +639,8 @@ pub fn reads_only(name: &str) -> bool {
             | PC_STATUS
             | STORAGE
             | DOCTOR
+            | GIT
+            | GITHUB
             | WEB_SEARCH
             | READ_PAGE
             | NOTIFS
@@ -615,6 +662,8 @@ pub fn is_own(name: &str) -> bool {
             | PC_STATUS
             | STORAGE
             | DOCTOR
+            | GIT
+            | GITHUB
             | PC
             | WINDOWS
             | WEB_SEARCH
@@ -701,7 +750,10 @@ fn closest(q: &[f32], tools: &[(String, Vec<f32>)], n: usize) -> Vec<String> {
 
 /// Tools that reach the internet or other apps, left out for "This PC only".
 pub fn is_web(name: &str) -> bool {
-    matches!(name, WEB_SEARCH | READ_PAGE | BROWSER | APP_ACTION | APPS)
+    matches!(
+        name,
+        WEB_SEARCH | READ_PAGE | BROWSER | APP_ACTION | APPS | GITHUB
+    )
 }
 
 /// Runs a local tool, or `None` when `name` is not one of them.
@@ -751,6 +803,17 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
         STORAGE => tokio::task::spawn_blocking(crate::disk::report)
             .await
             .unwrap_or_else(|e| format!("Error: {e}")),
+        GIT | GITHUB => {
+            let path = args["path"]
+                .as_str()
+                .map(str::trim)
+                .filter(|p| !p.is_empty())
+                .map(std::path::PathBuf::from)
+                .or_else(|| crate::projects::list(app).into_iter().next());
+            let action = args["action"].as_str().unwrap_or_default().to_owned();
+            let number = args["number"].as_u64();
+            blocking(move || git_tool(&action, path.as_deref(), number)).await
+        }
         DOCTOR => {
             let app = args["app"].as_str().unwrap_or_default().trim().to_owned();
             blocking(move || doctor_report((!app.is_empty()).then_some(app.as_str()))).await
@@ -810,6 +873,51 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
 }
 
 /// Runs PC work off the async runtime; errors read as text for the model.
+/// The git and github tools' reads, as text for the model.
+fn git_tool(
+    action: &str,
+    path: Option<&std::path::Path>,
+    number: Option<u64>,
+) -> Result<String, sidekick_actions::ActionError> {
+    use sidekick_actions::{ActionError, gitflow};
+    let need =
+        || path.ok_or_else(|| ActionError::Invalid("no project found; ask which folder".into()));
+    match action {
+        "changes" => gitflow::changes(need()?),
+        "branch" => gitflow::branch(need()?),
+        "clean" => {
+            let p = need()?;
+            let b = gitflow::merged(p)?;
+            Ok(if b.is_empty() {
+                "No merged branches to clean.".into()
+            } else {
+                format!(
+                    "Merged into main, safe to delete in {}:\n{}",
+                    p.display(),
+                    b.join("\n")
+                )
+            })
+        }
+        "conflicts" => {
+            let c = gitflow::conflicts(need()?)?;
+            Ok(if c.is_empty() {
+                "No merge conflicts.".into()
+            } else {
+                format!("Files with conflicts:\n{}", c.join("\n"))
+            })
+        }
+        "waiting" => gitflow::waiting(),
+        "ci" => gitflow::ci(need()?),
+        "review" => match number {
+            Some(n) => gitflow::pr(need()?, n),
+            None => Err(ActionError::Invalid(
+                "say which pull request (number)".into(),
+            )),
+        },
+        other => Err(ActionError::Invalid(format!("unknown git action {other}"))),
+    }
+}
+
 /// Crash records with their likely causes and fixes, as text for the model.
 fn doctor_report(app: Option<&str>) -> Result<String, sidekick_actions::ActionError> {
     use sidekick_actions::doctor;
@@ -1483,13 +1591,13 @@ mod tests {
             .collect();
         let mut expected = vec![
             SEARCH, TODAY, RECENT, OPEN, SCREEN, PROPOSE, FIND, REVEAL, PC_STATUS, STORAGE, DOCTOR,
-            PC, WINDOWS, NOTIFS, DESKTOP, OFFICE, RECIPES, REMEMBER,
+            GIT, PC, WINDOWS, NOTIFS, DESKTOP, OFFICE, RECIPES, REMEMBER,
         ];
         let mut got: Vec<&str> = offline.iter().map(String::as_str).collect();
         expected.sort_unstable();
         got.sort_unstable();
         assert_eq!(got, expected);
-        for web in [WEB_SEARCH, READ_PAGE, BROWSER, APP_ACTION, APPS] {
+        for web in [WEB_SEARCH, READ_PAGE, BROWSER, APP_ACTION, APPS, GITHUB] {
             assert!(is_web(web), "{web} goes online");
         }
     }
@@ -1598,7 +1706,7 @@ mod tests {
             [
                 SEARCH, FIND, REVEAL, TODAY, RECENT, SCREEN, PROPOSE, WEB_SEARCH, READ_PAGE,
                 BROWSER, APP_ACTION, DESKTOP, APPS, OFFICE, RECIPES, REMEMBER, NOTIFS, PC_STATUS,
-                STORAGE, DOCTOR, PC, WINDOWS, OPEN
+                STORAGE, DOCTOR, GIT, GITHUB, PC, WINDOWS, OPEN
             ]
         );
     }
