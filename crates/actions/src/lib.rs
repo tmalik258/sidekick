@@ -339,6 +339,12 @@ impl Executor {
                     .await
                     .map_err(fail)?
             }
+            "git_update_branch" => {
+                let path = existing_path(args)?;
+                tokio::task::spawn_blocking(move || dev::update_branch(&path))
+                    .await
+                    .map_err(fail)?
+            }
             "git_after_merge" => {
                 let path = existing_path(args)?;
                 let branch = arg(args, "branch")?.to_owned();

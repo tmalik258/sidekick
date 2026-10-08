@@ -19,6 +19,7 @@ use tauri::{AppHandle, Manager};
 use crate::state::{AppState, lock};
 
 pub const INCOMING: &str = "dev.incoming";
+pub const BASE_MOVED: &str = "dev.base_moved";
 
 const SWITCH_MIN: Duration = Duration::from_secs(30);
 const ACTIVE_EVERY: Duration = Duration::from_secs(60);
@@ -168,10 +169,56 @@ pub fn incoming(repo: &Path) -> Option<Value> {
     }))
 }
 
+/// What the main branch gained while you work on a feature branch.
+pub fn base_moved(repo: &Path) -> Option<Value> {
+    let base = sidekick_actions::dev::main_branch(repo);
+    let branch = git(repo, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    if branch == base || branch == "HEAD" {
+        return None;
+    }
+    let remote = format!("origin/{base}");
+    let upstream = git(repo, &["rev-parse", &remote])?;
+    let range = format!("HEAD..{remote}");
+    let behind: u64 = git(repo, &["rev-list", "--count", &range])?.parse().ok()?;
+    if behind == 0 {
+        return None;
+    }
+    let log = git(repo, &["log", "--format=%an\x1f%s", "-n", "5", &range]).unwrap_or_default();
+    let commits: Vec<String> = log
+        .lines()
+        .filter_map(|l| l.split_once('\x1f'))
+        .map(|(who, what)| format!("{who}: {what}"))
+        .collect();
+    let dirty = git(repo, &["status", "--porcelain", "--untracked-files=no"])
+        .is_some_and(|s| !s.is_empty());
+    Some(json!({
+        "name": repo.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+        "path": repo.to_string_lossy(),
+        "branch": branch,
+        "base": base,
+        "behind": behind,
+        "upstream": upstream,
+        "commits": commits.join("\n"),
+        "dirty": dirty,
+    }))
+}
+
 /// Fetches one repo and says so when it has new commits not told about yet.
 fn fetch_and_tell(app: &AppHandle, repo: &Path) {
     sidekick_sensors::repos::fetch(repo, FETCH_TIMEOUT);
     with(|w| w.fetched.insert(repo.to_owned(), Instant::now()));
+    if let Some(payload) = base_moved(repo) {
+        // Told once per new main commit, under its own key.
+        let key = repo.join(".sidekick-base");
+        let upstream = payload["upstream"].as_str().unwrap_or_default().to_owned();
+        let new =
+            with(|w| w.told.insert(key, upstream.clone()).as_deref() != Some(upstream.as_str()));
+        if new {
+            app.state::<AppState>()
+                .bus
+                .publish(Event::new(BASE_MOVED, ReposSensor::ID, payload));
+        }
+    }
     let Some(payload) = incoming(repo) else {
         return;
     };
@@ -398,6 +445,19 @@ mod tests {
         assert_eq!(v["behind"], 1);
         assert_eq!(v["commits"], "Ana: fix login");
         assert_eq!(v["diverged"], false);
+        // On a feature branch, main moving is told apart.
+        run(&b, &["pull", "-q", "--ff-only"]);
+        run(&b, &["checkout", "-q", "-b", "feature"]);
+        run(&b, &["remote", "set-head", "origin", "main"]);
+        assert!(base_moved(&b).is_none());
+        std::fs::write(a.join("f"), "3").unwrap();
+        run(&a, &["commit", "-qam", "tidy"]);
+        run(&a, &["push", "-q", "origin", "HEAD:main"]);
+        sidekick_sensors::repos::fetch(&b, FETCH_TIMEOUT);
+        let m = base_moved(&b).unwrap();
+        assert_eq!(m["base"], "main");
+        assert_eq!(m["behind"], 1);
+        assert_eq!(m["commits"], "Ana: tidy");
         let _ = std::fs::remove_dir_all(&base);
     }
 }

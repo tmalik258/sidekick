@@ -165,6 +165,10 @@ const BUILTIN: &[(&str, &str)] = &[
         include_str!("../../../skills/dev/incoming.yaml"),
     ),
     (
+        "dev/base-moved.yaml",
+        include_str!("../../../skills/dev/base-moved.yaml"),
+    ),
+    (
         "dev/clone.yaml",
         include_str!("../../../skills/dev/clone.yaml"),
     ),
@@ -300,6 +304,7 @@ pub const ACTIONS: &[&str] = &[
     "clone_pick",
     "agent_here",
     "git_after_merge",
+    "git_update_branch",
     "install_deps",
     "create_env",
     "start_docker",
