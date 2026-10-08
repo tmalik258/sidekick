@@ -985,6 +985,42 @@ commands.time_today = () => [
 ];
 commands.browser_info = () => ({ token: "browser-preview-pairing-code", port: 47822 });
 commands.action_undo = () => "Moved photo.webp to the Recycle Bin";
+const GB = 1024 ** 3;
+commands.disk_groups = () =>
+  [
+    {
+      id: "build",
+      label: "Build folders",
+      what: "node_modules, target and .next in your projects. The next install or build makes them again.",
+      bytes: 18.4 * GB,
+      partial: false,
+      items: [
+        { path: "C:\\Users\\you\\code\\sidekick\\target", bytes: 11.2 * GB },
+        { path: "C:\\Users\\you\\code\\shop\\node_modules", bytes: 4.1 * GB },
+        { path: "C:\\Users\\you\\code\\blog\\node_modules", bytes: 3.1 * GB },
+      ],
+      clearable: true,
+    },
+    {
+      id: "games",
+      label: "Games",
+      what: "Steam and Epic libraries. Uninstall a game from its launcher.",
+      bytes: 96 * GB,
+      partial: false,
+      items: [{ path: "D:\\SteamLibrary\\steamapps\\common\\Cyberpunk 2077", bytes: 70 * GB }],
+      clearable: false,
+    },
+    {
+      id: "installers",
+      label: "Old installers",
+      what: "Setup files in Downloads, already installed or not needed.",
+      bytes: 2.3 * GB,
+      partial: false,
+      items: [{ path: "C:\\Users\\you\\Downloads\\Docker Desktop Installer.exe", bytes: 0.6 * GB }],
+      clearable: true,
+    },
+  ].sort((a, b) => b.bytes - a.bytes);
+commands.disk_clean = () => "Moved 2 items to the Recycle Bin, 7.2 GB freed";
 commands.user_guess_name = () => "Taimoor";
 let mockFocusUntil: number | null = null;
 commands.focus_start = (args) => {

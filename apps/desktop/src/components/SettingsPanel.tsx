@@ -12,6 +12,7 @@ import { MemoryTab } from "./settings/MemoryTab";
 import { PrivacyTab } from "./settings/PrivacyTab";
 import { ShortcutsTab } from "./settings/ShortcutsTab";
 import { SkillsTab } from "./settings/SkillsTab";
+import { StorageTab } from "./settings/StorageTab";
 import { SettingsQuery } from "./settings/ui";
 
 export const SETTINGS_TABS = [
@@ -21,6 +22,7 @@ export const SETTINGS_TABS = [
   { id: "connections", label: "Apps" },
   { id: "memory", label: "Memory" },
   { id: "shortcuts", label: "Shortcuts" },
+  { id: "storage", label: "Storage" },
   { id: "privacy", label: "Privacy" },
   { id: "skills", label: "Skills" },
 ] as const;
@@ -190,6 +192,7 @@ export function SettingsPanel() {
           {show("privacy") && <PrivacyTab onError={report} />}
           {show("memory") && <MemoryTab onError={report} />}
           {show("shortcuts") && <ShortcutsTab onError={report} />}
+          {show("storage") && <StorageTab onError={report} />}
           {show("skills") && <SkillsTab onError={report} />}
         </div>
       </SettingsQuery.Provider>
