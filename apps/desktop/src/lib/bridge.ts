@@ -178,6 +178,7 @@ export const api = {
   routinesToday: () => invoke<RoutineItem[]>("routines_today"),
   routinesForget: () => invoke<number>("routines_forget"),
   learnedList: () => invoke<Learned[]>("learned_list"),
+  userGuessName: () => invoke<string>("user_guess_name"),
   focusStart: (minutes?: number) => invoke<string>("focus_start", { minutes }),
   focusStop: () => invoke<string>("focus_stop"),
   focusStatus: () => invoke<{ until: number | null; held: number }>("focus_status"),
