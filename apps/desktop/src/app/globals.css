@@ -2456,6 +2456,8 @@ select.ak-mi option {
 .ak[data-chat] > .ak-err,
 .ak[data-chat] > .ak-foot {
   order: 2;
+}
+
 /* Repos list in Agents */
 .ak-repos {
   margin-top: 12px;
