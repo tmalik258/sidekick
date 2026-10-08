@@ -95,6 +95,11 @@ fn providers(app: &AppHandle, ai: &AiSettings, all: bool) -> Vec<Arc<dyn AiProvi
                 out.push(Arc::new(Anthropic::new(Some(ai.anthropic.model.clone()))))
             }
             "local" if all || ai.local.enabled => out.push(Arc::new(local_model(ai))),
+            id if cloud_pref(ai, id).is_some_and(|p| all || p.enabled) => {
+                if let Some(model) = compat_model(ai, id) {
+                    out.push(Arc::new(model));
+                }
+            }
             _ => {}
         }
     }
@@ -108,6 +113,38 @@ pub(crate) fn local_model(ai: &AiSettings) -> OpenAiCompat {
     )
 }
 
+/// Settings for a cloud model reached with an API key.
+pub(crate) fn cloud_pref<'a>(ai: &'a AiSettings, id: &str) -> Option<&'a sidekick_core::CloudPref> {
+    match id {
+        "gemini" => Some(&ai.gemini),
+        "groq" => Some(&ai.groq),
+        "openrouter" => Some(&ai.openrouter),
+        _ => None,
+    }
+}
+
+/// Where a cloud provider's API key is kept in Credential Manager.
+pub(crate) fn key_name(id: &str) -> String {
+    format!("{id}_api_key")
+}
+
+/// Answers through the OpenAI-compatible path, with Sidekick's tools: the
+/// local model and the cloud models with a key.
+pub(crate) fn is_compat(id: &str) -> bool {
+    id == "local" || sidekick_ai::CLOUD.iter().any(|(c, _, _)| *c == id)
+}
+
+/// The OpenAI-compatible model for `id`: the local one, or a cloud one with
+/// its saved key. None when a cloud key is missing.
+pub(crate) fn compat_model(ai: &AiSettings, id: &str) -> Option<OpenAiCompat> {
+    if id == "local" {
+        return Some(local_model(ai));
+    }
+    let pref = cloud_pref(ai, id)?;
+    let key = crate::secrets::get(&key_name(id))?;
+    OpenAiCompat::cloud(id, &key, Some(pref.model.clone()))
+}
+
 /// The router for one Ask-mode chat: the local model always gets Sidekick's
 /// own tools, and Composio's when they are set up and the chat may leave
 /// the PC.
@@ -119,24 +156,29 @@ async fn chat_router(
     prefer: Option<&str>,
 ) -> Router {
     let settings = lock(&app.state::<AppState>().settings).clone();
-    let server = if local_only || !settings.ai.local.enabled {
+    let ai = &settings.ai;
+    let any_compat =
+        ai.local.enabled || ai.gemini.enabled || ai.groq.enabled || ai.openrouter.enabled;
+    let server = if local_only || !any_compat {
         None
     } else {
         crate::composio::server(&settings.composio).await
     };
     let list = providers(app, &settings.ai, false)
         .into_iter()
-        .map(|p| match p.id() {
-            "local" => Arc::new(crate::composio::LocalWithTools {
-                inner: local_model(&settings.ai),
-                app: app.clone(),
-                chat_id: chat_id.to_owned(),
-                handoff: handoff.clone(),
-                server: server.clone(),
-                offline: local_only,
-            }) as Arc<dyn AiProvider>,
-            _ => p,
-        })
+        .map(
+            |p| match compat_model(&settings.ai, p.id()).filter(|_| is_compat(p.id())) {
+                Some(inner) => Arc::new(crate::composio::LocalWithTools {
+                    inner,
+                    app: app.clone(),
+                    chat_id: chat_id.to_owned(),
+                    handoff: handoff.clone(),
+                    server: server.clone(),
+                    offline: local_only,
+                }) as Arc<dyn AiProvider>,
+                None => p,
+            },
+        )
         .collect();
     Router::new(prefer_first(list, prefer))
 }
@@ -676,7 +718,7 @@ pub fn chat(
         let done = match result {
             Ok(answer) => Done {
                 id,
-                handoff: handoff.filter(|_| answer.provider == "local"),
+                handoff: handoff.filter(|_| is_compat(&answer.provider)),
                 cost: cost.filter(|_| answer.provider == "anthropic"),
                 provider: Some(answer.provider),
                 error: None,

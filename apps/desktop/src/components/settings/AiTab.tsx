@@ -5,13 +5,15 @@
 import { Reorder, useDragControls } from "motion/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { CLAUDE_MODELS, CODEX_MODELS, explicitModel, FAST_CLAUDE_MODEL, FAST_CODEX_MODEL } from "@/lib/ai-models";
-import { api, EVENTS, listen } from "@/lib/bridge";
+import { api, EVENTS, listen, type RouterModel } from "@/lib/bridge";
 import { SETUP_STATUS_CACHE_KEY, useCached } from "@/lib/cache";
 import { updateSettings, useAssistantName, useSidekick } from "@/lib/store";
 import {
   AI_PROVIDERS,
   type AiProviderId,
   type AiSettings,
+  CLOUD_IDS,
+  type CloudId,
   type LocalModels,
   PROVIDER_LABELS,
   type ProviderStatus,
@@ -29,6 +31,9 @@ const NOT_READY: Record<AiProviderId, string> = {
   claude_code: "Not installed",
   codex: "Not installed",
   anthropic: "No key",
+  gemini: "No key",
+  groq: "No key",
+  openrouter: "No key",
 };
 
 export function AiTab({ onError }: { onError: (e: string) => void }) {
@@ -67,6 +72,9 @@ const PROVIDER_HINTS: Record<AiProviderId, string> = {
   codex: "Your ChatGPT plan, through the codex CLI.",
   anthropic: "Pay as you go with ANTHROPIC_API_KEY.",
   local: "Ollama on this PC. Nothing leaves it.",
+  gemini: "Free with a Google account. Questions may be used to train Google's models.",
+  groq: "Free and fast; takes over when Gemini is busy. Questions may be used for training.",
+  openrouter: "One key for hundreds of models, each with its price. Some are free.",
 };
 
 /** Setup steps shown inside each provider's card, until they are done. */
@@ -75,6 +83,16 @@ const PROVIDER_SETUP: Record<AiProviderId, string[]> = {
   codex: ["codex", "codex_notify", "codex_mcp"],
   anthropic: ["anthropic"],
   local: ["ollama", "ollama_chat", "ollama_embed", "ollama_vision", "ollama_light"],
+  gemini: [],
+  groq: [],
+  openrouter: [],
+};
+
+/** Where each cloud provider hands out keys, and its default model. */
+const CLOUD_KEYS: Record<CloudId, { url: string; site: string; model: string }> = {
+  gemini: { url: "https://aistudio.google.com/apikey", site: "Google AI Studio", model: "gemini-2.5-flash" },
+  groq: { url: "https://console.groq.com/keys", site: "GroqCloud", model: "llama-3.3-70b-versatile" },
+  openrouter: { url: "https://openrouter.ai/settings/keys", site: "OpenRouter", model: "openrouter/auto" },
 };
 
 const CODING_AGENTS: [string, string][] = [
@@ -137,11 +155,14 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
         ? ai.codex.enabled
         : id === "anthropic"
           ? ai.anthropic.enabled
-          : ai.local.enabled;
+          : isCloud(id)
+            ? ai[id].enabled
+            : ai.local.enabled;
   const setEnabled = (id: AiProviderId, on: boolean) => {
     if (id === "claude_code") void save({ claudeCode: { ...ai.claudeCode, enabled: on } });
     else if (id === "codex") void save({ codex: { ...ai.codex, enabled: on } });
     else if (id === "anthropic") void save({ anthropic: { ...ai.anthropic, enabled: on } });
+    else if (isCloud(id)) void save({ [id]: { ...ai[id], enabled: on } });
     else void save({ local: { ...ai.local, enabled: on } });
   };
   const saved = ai.order.filter((id) => AI_PROVIDERS.includes(id));
@@ -249,6 +270,15 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
                     />
                   </Field>
                 )}
+                {isCloud(id) && (
+                  <CloudCard
+                    id={id}
+                    model={ai[id].model}
+                    onModel={(model) => void save({ [id]: { ...ai[id], model } })}
+                    onChanged={() => void reloadStatus().catch(() => undefined)}
+                    onError={onError}
+                  />
+                )}
                 {id === "local" && (
                   <>
                     <Field
@@ -326,6 +356,180 @@ function Providers({ ai, onError }: { ai: AiSettings; onError: (e: string) => vo
           Check again
         </Button>
       </div>
+    </div>
+  );
+}
+
+function isCloud(id: string): id is CloudId {
+  return (CLOUD_IDS as string[]).includes(id);
+}
+
+/** A cloud provider's key (kept in Credential Manager) and model. */
+function CloudCard({
+  id,
+  model,
+  onModel,
+  onChanged,
+  onError,
+}: {
+  id: CloudId;
+  model: string;
+  onModel: (model: string) => void;
+  onChanged: () => void;
+  onError: (e: string) => void;
+}) {
+  const { data: keys, refresh } = useCached<Record<CloudId, boolean>>("cloud-keys", api.cloudKeys);
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const info = CLOUD_KEYS[id];
+  const has = keys?.[id] ?? false;
+  const done = () => {
+    setKey("");
+    void refresh().catch(() => undefined);
+    onChanged();
+  };
+  const saveKey = () => {
+    setBusy(true);
+    api
+      .cloudKeySet(id, key)
+      .then(done, (e: unknown) => onError(String(e)))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <>
+      {has ? (
+        <Field label="Key" hint="Saved in Windows Credential Manager">
+          <Button small onClick={() => void api.cloudKeyClear(id).then(done, (e: unknown) => onError(String(e)))}>
+            Remove key
+          </Button>
+        </Field>
+      ) : (
+        <Field
+          label="Key"
+          hint={
+            <>
+              Free from{" "}
+              <button type="button" className="underline" onClick={() => void api.aiOpenLink(info.url)}>
+                {info.site}
+              </button>
+            </>
+          }
+        >
+          <div className="flex items-center gap-2">
+            <input
+              type="password"
+              aria-label={`${PROVIDER_LABELS[id]} key`}
+              value={key}
+              placeholder="Paste key"
+              autoComplete="off"
+              onChange={(e) => setKey(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && key.trim()) saveKey();
+              }}
+              className="w-40 rounded-lg border border-(--border) bg-transparent px-2 py-1 font-mono text-[12.5px]"
+            />
+            <Button small primary onClick={saveKey} disabled={busy || !key.trim()}>
+              {busy ? "Checking..." : "Save"}
+            </Button>
+          </div>
+        </Field>
+      )}
+      {id === "openrouter" ? (
+        <RouterModels value={model || info.model} onChange={onModel} onError={onError} />
+      ) : (
+        <Field label="Model" hint={`Empty uses ${info.model}`}>
+          <TextField
+            label={`${PROVIDER_LABELS[id]} model`}
+            value={model}
+            placeholder={info.model}
+            mono
+            className="w-56"
+            onCommit={onModel}
+          />
+        </Field>
+      )}
+    </>
+  );
+}
+
+/** OpenRouter's models with search, prices and a Free only filter. */
+function RouterModels({
+  value,
+  onChange,
+  onError,
+}: {
+  value: string;
+  onChange: (id: string) => void;
+  onError: (e: string) => void;
+}) {
+  const [models, setModels] = useState<RouterModel[] | null>(null);
+  const [query, setQuery] = useState("");
+  const [freeOnly, setFreeOnly] = useState(false);
+  const [open, setOpen] = useState(false);
+  const load = () => {
+    setOpen(true);
+    if (!models) api.openrouterModels().then(setModels, (e: unknown) => onError(String(e)));
+  };
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = (models ?? [])
+    .filter((m) => !freeOnly || m.free)
+    .filter((m) => words.every((w) => `${m.id} ${m.name}`.toLowerCase().includes(w)))
+    .slice(0, 60);
+  const price = (m: RouterModel) =>
+    m.input < 0 ? "Price varies" : m.free ? "Free" : `$${m.input.toFixed(2)} in, $${m.output.toFixed(2)} out`;
+  const current = models?.find((m) => m.id === value);
+  return (
+    <div className="flex flex-col gap-2">
+      <Field label="Model" hint={current ? price(current) : "Prices are per million tokens"}>
+        <Button small onClick={() => (open ? setOpen(false) : load())}>
+          <span className="max-w-48 truncate font-mono">{value}</span>
+        </Button>
+      </Field>
+      {open && (
+        <div className="flex flex-col gap-2 rounded-xl border border-(--border) p-2">
+          <div className="flex items-center gap-2">
+            <input
+              type="search"
+              aria-label="Search models"
+              placeholder="Search models"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="min-w-0 flex-1 rounded-lg border border-(--border) bg-transparent px-2 py-1 text-[12.5px]"
+            />
+            <span className="flex shrink-0 items-center gap-1.5 text-[12.5px]">
+              Free only
+              <Switch checked={freeOnly} onChange={setFreeOnly} label="Free only" />
+            </span>
+          </div>
+          {freeOnly && (
+            <p className="text-[12px] text-(--muted)">
+              Free models allow 20 questions a minute and 50 a day, or 1,000 a day once $10 of credits were ever bought.
+            </p>
+          )}
+          <ul className="settings-scroll flex max-h-56 flex-col overflow-y-auto">
+            {models === null && <li className="px-2 py-1 text-[12.5px] text-(--muted)">Loading...</li>}
+            {shown.map((m) => (
+              <li key={m.id}>
+                <button
+                  type="button"
+                  aria-pressed={m.id === value}
+                  onClick={() => {
+                    onChange(m.id);
+                    setOpen(false);
+                  }}
+                  className="flex w-full items-baseline justify-between gap-3 rounded-lg px-2 py-1 text-left text-[12.5px] hover:bg-(--border) aria-pressed:bg-(--border)"
+                >
+                  <span className="min-w-0 truncate">
+                    {m.name}
+                    {!m.tools && <span className="text-(--muted)"> · no tools</span>}
+                  </span>
+                  <span className="shrink-0 font-mono text-[11.5px] text-(--muted)">{price(m)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

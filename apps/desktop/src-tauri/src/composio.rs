@@ -564,7 +564,7 @@ pub struct LocalWithTools {
 #[async_trait]
 impl AiProvider for LocalWithTools {
     fn id(&self) -> &'static str {
-        "local"
+        self.inner.id()
     }
 
     fn is_local(&self) -> bool {
@@ -627,7 +627,11 @@ impl AiProvider for LocalWithTools {
                 .local
                 .clone();
             let vision_name = ai.vision_model.trim();
-            if !vision_name.is_empty() && !vision_name.eq_ignore_ascii_case("off") {
+            // The local vision model only stands in for the local text model.
+            if self.inner.id() == "local"
+                && !vision_name.is_empty()
+                && !vision_name.eq_ignore_ascii_case("off")
+            {
                 let vision = OpenAiCompat::new(Some(ai.base_url), Some(ai.vision_model));
                 return vision.chat(req, sink, cancel).await;
             }

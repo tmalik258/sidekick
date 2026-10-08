@@ -364,6 +364,11 @@ pub struct AiSettings {
     pub coding_agent: String,
     pub local: LocalModelPref,
     pub anthropic: AnthropicPref,
+    /// Free cloud models: Gemini first, Groq when Gemini is busy.
+    pub gemini: CloudPref,
+    pub groq: CloudPref,
+    /// One key for hundreds of models, some free.
+    pub openrouter: CloudPref,
     pub semif: SemIfPref,
     /// Let SemIf or the local model rank suggestion options.
     pub decisions: bool,
@@ -441,7 +446,24 @@ pub struct SemIfPref {
     pub gguf: String,
 }
 
-pub const AI_PROVIDERS: [&str; 4] = ["local", "claude_code", "codex", "anthropic"];
+pub const AI_PROVIDERS: [&str; 7] = [
+    "local",
+    "gemini",
+    "groq",
+    "claude_code",
+    "codex",
+    "anthropic",
+    "openrouter",
+];
+
+/// A cloud model reached with an API key kept in Credential Manager. On
+/// once a key is saved; `model` empty means the provider's default.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CloudPref {
+    pub enabled: bool,
+    pub model: String,
+}
 
 impl Default for AiSettings {
     fn default() -> Self {
@@ -452,6 +474,9 @@ impl Default for AiSettings {
             coding_agent: "auto".into(),
             local: LocalModelPref::default(),
             anthropic: AnthropicPref::default(),
+            gemini: CloudPref::default(),
+            groq: CloudPref::default(),
+            openrouter: CloudPref::default(),
             semif: SemIfPref::default(),
             decisions: true,
         }
@@ -780,7 +805,18 @@ mod tests {
         s.ai.semif.mode = "weird".into();
         s.palette_hotkey = " ".into();
         let s = s.sanitized();
-        assert_eq!(s.ai.order, ["local", "claude_code", "codex", "anthropic"]);
+        assert_eq!(
+            s.ai.order,
+            [
+                "local",
+                "gemini",
+                "groq",
+                "claude_code",
+                "codex",
+                "anthropic",
+                "openrouter"
+            ]
+        );
         assert_eq!(s.ai.coding_agent, "auto");
         assert_eq!(s.ai.semif.mode, "direct");
         assert_eq!(s.palette_hotkey, DEFAULT_PALETTE_HOTKEY);

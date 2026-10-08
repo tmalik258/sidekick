@@ -143,7 +143,10 @@ export interface VoiceDownload {
   error: string | null;
 }
 
-export const AI_PROVIDERS = ["local", "claude_code", "codex", "anthropic"] as const;
+export const AI_PROVIDERS = ["local", "gemini", "groq", "claude_code", "codex", "anthropic", "openrouter"] as const;
+/** Cloud models reached with an API key kept in Credential Manager. */
+export type CloudId = "gemini" | "groq" | "openrouter";
+export const CLOUD_IDS: CloudId[] = ["gemini", "groq", "openrouter"];
 export type AiProviderId = (typeof AI_PROVIDERS)[number];
 
 export interface AiSettings {
@@ -154,6 +157,9 @@ export interface AiSettings {
   codingAgent: string;
   local: { enabled: boolean; baseUrl: string; model: string; visionModel: string };
   anthropic: { enabled: boolean; model: string };
+  gemini: { enabled: boolean; model: string };
+  groq: { enabled: boolean; model: string };
+  openrouter: { enabled: boolean; model: string };
   semif: {
     enabled: boolean;
     command: string[];
@@ -171,6 +177,9 @@ export const PROVIDER_LABELS: Record<string, string> = {
   codex: "Codex",
   anthropic: "Anthropic API",
   local: "Local model",
+  gemini: "Gemini",
+  groq: "Groq",
+  openrouter: "OpenRouter",
   semif: "SemIf",
 };
 
@@ -354,12 +363,15 @@ export const DEFAULT_SETTINGS: Settings = {
   indexFolders: [],
   endOfDayHour: 18,
   ai: {
-    order: ["local", "claude_code", "codex", "anthropic"],
+    order: ["local", "gemini", "groq", "claude_code", "codex", "anthropic", "openrouter"],
     claudeCode: { enabled: true, path: "", model: FAST_CLAUDE_MODEL },
     codex: { enabled: true, path: "", model: FAST_CODEX_MODEL },
     codingAgent: "auto",
     local: { enabled: true, baseUrl: "http://127.0.0.1:11434/v1", model: "", visionModel: "" },
     anthropic: { enabled: true, model: FAST_CLAUDE_MODEL },
+    gemini: { enabled: false, model: "" },
+    groq: { enabled: false, model: "" },
+    openrouter: { enabled: false, model: "" },
     semif: {
       enabled: true,
       command: ["semif-score"],
