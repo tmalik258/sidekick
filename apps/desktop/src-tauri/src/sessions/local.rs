@@ -289,7 +289,7 @@ pub async fn run(
                     Err(e) => { error = Some(e.to_string()); break; }
                 },
                 c = rx.recv() => match c {
-                    Some(Cmd::Stop) | None => return Ok(()),
+                    Some(Cmd::Stop | Cmd::Restart) | None => return Ok(()),
                     // A message mid-turn waits for the next turn.
                     Some(Cmd::Send(_)) => continue,
                 },
