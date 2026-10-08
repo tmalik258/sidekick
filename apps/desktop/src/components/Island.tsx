@@ -131,6 +131,9 @@ export function Island() {
   const voiceQuestion = useSidekick((s) => (s.ask ? null : s.voiceQuestion));
   // Something finished that needs nothing more: a short done pill.
   const donePill = useSidekick((s) => (s.ask ? null : s.donePill));
+  // Focus mode: a compact pill with the focus face and the time left.
+  const focusUntil = useSidekick((s) => (s.ask ? null : s.focusUntil));
+  const focusLeft = useFocusLeft(focusUntil);
   const reduced = useReducedMotion() ?? false;
   const look = useSystemLook();
   const now = useNow(15_000);
@@ -171,24 +174,37 @@ export function Island() {
   // Stay non-bare so the hit rect stays usable (Idle alone would shrink to a
   // pinprick and lock out).
   const voiceBusy =
-    hearing !== null || voiceQuestion !== null || donePill !== null || mascot === "listening" || working !== null;
-  const voicePill: { text: string; thinking: boolean; working?: boolean; done?: boolean } | null = asking
-    ? null
-    : donePill !== null
-      ? { text: donePill, thinking: false, done: true }
-      : voiceQuestion !== null
-        ? { text: voiceQuestion, thinking: true }
-        : hearing !== null || mascot === "listening"
-          ? { text: hearing ?? "", thinking: false }
-          : working !== null
-            ? { text: working, thinking: true, working: true }
-            : null;
+    hearing !== null ||
+    voiceQuestion !== null ||
+    donePill !== null ||
+    mascot === "listening" ||
+    working !== null ||
+    focusLeft !== null;
+  const voicePill: { text: string; thinking: boolean; working?: boolean; done?: boolean; focus?: boolean } | null =
+    asking
+      ? null
+      : donePill !== null
+        ? { text: donePill, thinking: false, done: true }
+        : voiceQuestion !== null
+          ? { text: voiceQuestion, thinking: true }
+          : hearing !== null || mascot === "listening"
+            ? { text: hearing ?? "", thinking: false }
+            : working !== null
+              ? { text: working, thinking: true, working: true }
+              : focusLeft !== null
+                ? { text: `Focus · ${focusLeft}`, thinking: false, focus: true }
+                : null;
   // Only agents at work: hover lists them (and answers in place) instead of
   // opening Ask.
   const agentsOnly = voiceQuestion === null && hearing === null && chatWorking === null && agentWorking !== null;
   // Full listening style: the island opens while you talk, with a waveform,
   // a timer and your words larger, instead of the slim pill.
-  const fullVoice = voicePill !== null && !voicePill.working && (settings.voice.listeningStyle ?? "compact") === "full";
+  const fullVoice =
+    voicePill !== null &&
+    !voicePill.working &&
+    !voicePill.focus &&
+    !voicePill.done &&
+    (settings.voice.listeningStyle ?? "compact") === "full";
   // Suggestions stay normal during thinking — do not gate them on !voicePill.
   const expanded =
     asking ||
@@ -221,6 +237,7 @@ export function Island() {
   const speaking = useSidekick((s) => s.speaking);
   const face =
     mood?.id ??
+    (focusLeft !== null && !voiceQuestion && hearing === null && mascot !== "listening" ? "focus" : null) ??
     (speaking && mascot !== "listening"
       ? "speak"
       : !online && (mascot === "idle" || mascot === "sleeping")
@@ -573,13 +590,15 @@ function VoicePill({
   thinking,
   working,
   done,
+  focus,
 }: {
   text: string;
   thinking: boolean;
   working?: boolean;
   done?: boolean;
+  focus?: boolean;
 }) {
-  const label = voiceLabel(text, thinking, working || done);
+  const label = voiceLabel(text, thinking, working || done || focus);
   return (
     <motion.div
       className="absolute top-0 right-0 flex h-9 items-center gap-2.5 pr-3.5"
@@ -600,6 +619,15 @@ function VoicePill({
         <span className="text-[#30d158]">
           <Icon name="check" size={14} />
         </span>
+      ) : focus ? (
+        <button
+          type="button"
+          aria-label="End focus"
+          onClick={() => void api.focusStop()}
+          className="rounded-full px-2 py-0.5 text-[11px] text-white/62 hover:bg-white/10 hover:text-white"
+        >
+          End
+        </button>
       ) : thinking ? (
         <Activity />
       ) : (
@@ -901,4 +929,21 @@ function useBlockBrowserKeys() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
+}
+
+/** "24:10" left in Focus mode, ticking each second, or null. */
+function useFocusLeft(until: number | null): string | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (until === null) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [until]);
+  if (until === null || until <= now) return null;
+  const secs = Math.ceil((until - now) / 1000);
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  const two = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`;
 }

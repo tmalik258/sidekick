@@ -9,6 +9,9 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     let menu = Menu::with_items(
         app,
         &[
+            &item(app, "focus_25", "Focus 25 minutes")?,
+            &item(app, "focus_end", "End focus")?,
+            &PredefinedMenuItem::separator(app)?,
             &item(app, "pause_15", "Pause 15 minutes")?,
             &item(app, "pause_60", "Pause 1 hour")?,
             &item(app, "pause_forever", "Pause until resumed")?,
@@ -38,6 +41,14 @@ fn item(app: &AppHandle, id: &str, text: &str) -> tauri::Result<MenuItem<Wry>> {
 
 fn on_menu_event(app: &AppHandle, event: MenuEvent) {
     let result = match event.id().as_ref() {
+        "focus_25" => {
+            crate::focus::start(app, 25);
+            Ok(())
+        }
+        "focus_end" => {
+            crate::focus::stop(app);
+            Ok(())
+        }
         "pause_15" => commands::sensors_pause(app.clone(), Some(15)).map(drop),
         "pause_60" => commands::sensors_pause(app.clone(), Some(60)).map(drop),
         "pause_forever" => commands::sensors_pause(app.clone(), None).map(drop),

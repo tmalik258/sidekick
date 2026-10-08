@@ -8,6 +8,8 @@
 pub struct Command {
     pub what: &'static str,
     pub level: Option<u8>,
+    /// Focus mode's length, when said.
+    pub minutes: Option<u32>,
 }
 
 /// Things that can be switched on and off, with the ways people (and
@@ -104,6 +106,10 @@ pub fn command(text: &str) -> Option<Command> {
     {
         return None;
     }
+    // Focus mode: "focus for 45 minutes", "start focus", "stop focus".
+    if let Some(c) = focus(&t) {
+        return Some(c);
+    }
     // Volume and mute.
     for (phrase, what) in [
         ("unmute", "mute"),
@@ -117,7 +123,11 @@ pub fn command(text: &str) -> Option<Command> {
         ("lock my pc", "lock"),
     ] {
         if take(&t, phrase).is_some_and(|rest| only_filler(&rest)) {
-            return Some(Command { what, level: None });
+            return Some(Command {
+                what,
+                level: None,
+                minutes: None,
+            });
         }
     }
     if let Some(rest) = take(&t, "volume").or_else(|| take(&t, "set volume")) {
@@ -138,6 +148,7 @@ pub fn command(text: &str) -> Option<Command> {
             return Some(Command {
                 what: "set_volume",
                 level: Some(level),
+                minutes: None,
             });
         }
     }
@@ -151,6 +162,7 @@ pub fn command(text: &str) -> Option<Command> {
                         return Some(Command {
                             what: what(id, state),
                             level: None,
+                            minutes: None,
                         });
                     }
                 }
@@ -158,6 +170,48 @@ pub fn command(text: &str) -> Option<Command> {
         }
     }
     None
+}
+
+/// "focus", "focus for 45 minutes", "focus mode on", "end focus".
+fn focus(t: &str) -> Option<Command> {
+    let rest = take(t, "focus mode").or_else(|| take(t, "focus"))?;
+    let ends = OFF.iter().chain(&["end", "done", "finish", "exit"]);
+    if ends
+        .clone()
+        .any(|v| take(&rest, v).is_some_and(|left| only_filler(&left)))
+    {
+        return Some(Command {
+            what: "focus_off",
+            level: None,
+            minutes: None,
+        });
+    }
+    let mut count: Option<u32> = None;
+    let mut hours = false;
+    let mut half = false;
+    for w in rest.split_whitespace() {
+        match w {
+            _ if count.is_none() && w.parse::<u32>().is_ok() => count = w.parse().ok(),
+            "an" | "a" | "one" if count.is_none() => count = Some(1),
+            "half" => half = true,
+            "hour" | "hours" | "hr" | "hrs" => hours = true,
+            "minutes" | "minute" | "mins" | "min" | "for" | "start" | "on" | "turn" | "begin"
+            | "an" | "a" | "of" => {}
+            _ if FILLER.contains(&w) => {}
+            _ => return None,
+        }
+    }
+    let minutes = match (count, hours, half) {
+        (Some(1), true, true) | (None, true, true) => Some(30),
+        (Some(n), true, _) => Some(n * 60),
+        (None, true, false) => Some(60),
+        (n, false, _) => n,
+    };
+    Some(Command {
+        what: "focus_on",
+        level: None,
+        minutes,
+    })
 }
 
 fn what(id: &str, state: &str) -> &'static str {
@@ -202,16 +256,37 @@ mod tests {
             command("set volume to 40%"),
             Some(Command {
                 what: "set_volume",
-                level: Some(40)
+                level: Some(40),
+                minutes: None
             })
         );
         assert_eq!(
             command("volume 70"),
             Some(Command {
                 what: "set_volume",
-                level: Some(70)
+                level: Some(70),
+                minutes: None
             })
         );
+    }
+
+    #[test]
+    fn focus_by_voice() {
+        let m = |t: &str| {
+            command(t)
+                .filter(|c| c.what == "focus_on")
+                .map(|c| c.minutes)
+        };
+        assert_eq!(m("focus"), Some(None));
+        assert_eq!(m("focus for 45 minutes"), Some(Some(45)));
+        assert_eq!(m("hey sidekick focus for an hour"), Some(Some(60)));
+        assert_eq!(m("focus for half an hour"), Some(Some(30)));
+        assert_eq!(m("start focus mode"), Some(None));
+        assert_eq!(m("focus for 2 hours"), Some(Some(120)));
+        assert_eq!(w("stop focus"), Some("focus_off"));
+        assert_eq!(w("end focus mode"), Some("focus_off"));
+        assert_eq!(w("focus on the report"), None);
+        assert_eq!(w("how do I focus"), None);
     }
 
     #[test]

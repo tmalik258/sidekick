@@ -549,13 +549,20 @@ pub fn chat(
             .then(|| question.as_deref().and_then(crate::quick::command))
             .flatten()
         {
-            let result = tokio::task::spawn_blocking(move || {
-                sidekick_actions::pc::control(cmd.what, cmd.level, None)
-                    .map(|o| o.message)
-                    .map_err(|e| e.to_string())
-            })
-            .await
-            .unwrap_or_else(|e| Err(e.to_string()));
+            let result = match cmd.what {
+                "focus_on" => Ok(crate::focus::start(
+                    &app,
+                    cmd.minutes.unwrap_or(crate::focus::DEFAULT_MINUTES),
+                )),
+                "focus_off" => Ok(crate::focus::stop(&app)),
+                _ => tokio::task::spawn_blocking(move || {
+                    sidekick_actions::pc::control(cmd.what, cmd.level, None)
+                        .map(|o| o.message)
+                        .map_err(|e| e.to_string())
+                })
+                .await
+                .unwrap_or_else(|e| Err(e.to_string())),
+            };
             lock(&app.state::<AppState>().chats).remove(&id);
             let speak = attach.speak && crate::voice::begin_answer(&app, &id);
             let (text, error) = match result {
