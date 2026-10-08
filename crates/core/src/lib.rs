@@ -9,6 +9,7 @@
 pub mod bus;
 pub mod event;
 pub mod mascot;
+pub mod names;
 pub mod settings;
 pub mod storage;
 

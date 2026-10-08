@@ -1206,7 +1206,24 @@ async fn find(app: &AppHandle, args: &Value) -> String {
     let roots = crate::find::roots(&home, &code);
     let query = name.clone();
     let found = tokio::task::spawn_blocking(move || {
-        crate::find::find(&roots, &query, folders, crate::find::BUDGET)
+        // Every drive, from the name index; the live walk until it exists
+        // or when it has nothing (a file made since the last build).
+        let indexed: Vec<crate::find::Found> = crate::names::search(&query, 40)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|h| folders.is_none_or(|f| f == h.folder))
+            .take(crate::find::MAX_RESULTS)
+            .map(|h| crate::find::Found {
+                modified: h.path.metadata().and_then(|m| m.modified()).ok(),
+                path: h.path,
+                folder: h.folder,
+            })
+            .collect();
+        if indexed.is_empty() {
+            crate::find::find(&roots, &query, folders, crate::find::BUDGET)
+        } else {
+            indexed
+        }
     })
     .await
     .unwrap_or_default();
