@@ -680,6 +680,31 @@ pub fn is_own(name: &str) -> bool {
 }
 
 /// Always offered: what nearly every question needs.
+/// Greetings and writing help: answered from the words alone, so no tool
+/// list for a small model to read first.
+pub fn needs_no_tools(question: &str) -> bool {
+    let q = question.trim().to_lowercase();
+    let first = q.split_whitespace().next().unwrap_or_default();
+    let small_talk = q.split_whitespace().count() <= 4
+        && [
+            "hi", "hello", "hey", "thanks", "thank", "ok", "okay", "yo", "can", "good", "bye",
+        ]
+        .contains(&first.trim_matches(|c: char| !c.is_alphanumeric()))
+        && !q.contains("file")
+        && !q.contains("open");
+    let writing = [
+        "rewrite",
+        "rephrase",
+        "reword",
+        "translate",
+        "summarize",
+        "proofread",
+    ]
+    .contains(&first)
+        || (first == "write" && !q.contains("file"));
+    small_talk || writing
+}
+
 const CORE: &[&str] = &[SEARCH, FIND, OPEN, PROPOSE];
 /// Tools offered beyond the core, picked by meaning.
 const PICKED: usize = 4;
@@ -693,6 +718,9 @@ static TOOL_VECTORS: tokio::sync::Mutex<Option<(String, ToolVectors)>> =
 /// meaning to the question. Small models pick better from fewer. Without an
 /// embedding model every tool is offered.
 pub async fn pick(app: &AppHandle, question: &str, defs: Vec<ToolDef>) -> Vec<ToolDef> {
+    if needs_no_tools(question) {
+        return Vec::new();
+    }
     let Some((client, model)) = crate::search::embedder(app) else {
         return by_words(question, defs);
     };
@@ -737,7 +765,7 @@ pub async fn pick(app: &AppHandle, question: &str, defs: Vec<ToolDef>) -> Vec<To
 /// Without an embedding model: the tools whose name or description share
 /// the most words with the question, plus the core ones. Every tool when
 /// nothing matches, so a question is never left without the right one.
-fn by_words(question: &str, defs: Vec<ToolDef>) -> Vec<ToolDef> {
+pub fn by_words(question: &str, defs: Vec<ToolDef>) -> Vec<ToolDef> {
     let words: Vec<String> = question
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| w.len() >= 4)
@@ -755,8 +783,13 @@ fn by_words(question: &str, defs: Vec<ToolDef>) -> Vec<ToolDef> {
         })
         .filter(|(n, _)| *n > 0)
         .collect();
+    // Nothing matches ("hi", "rewrite this"): the core tools only, not all
+    // twenty. Every tool is prompt the model must read before its first word.
     if scored.is_empty() {
-        return defs;
+        return defs
+            .into_iter()
+            .filter(|d| CORE.contains(&d.name.as_str()))
+            .collect();
     }
     scored.sort_by_key(|a| std::cmp::Reverse(a.0));
     let names: Vec<String> = scored.into_iter().take(PICKED).map(|(_, n)| n).collect();
@@ -1611,6 +1644,23 @@ pub fn runs_code(target: &str) -> bool {
 }
 
 #[cfg(test)]
+mod no_tools_tests {
+    #[test]
+    fn greetings_and_writing_skip_tools() {
+        assert!(super::needs_no_tools("hi"));
+        assert!(super::needs_no_tools("can you hear me"));
+        assert!(super::needs_no_tools(
+            "rewrite this to sound friendlier: send me the report"
+        ));
+        assert!(super::needs_no_tools(
+            "write a short reply saying I'll be late"
+        ));
+        assert!(!super::needs_no_tools("what's my battery at"));
+        assert!(!super::needs_no_tools("open the file report.docx"));
+    }
+}
+
+#[cfg(test)]
 mod tests {
 
     #[test]
@@ -1621,8 +1671,8 @@ mod tests {
         assert!(picked.len() <= CORE.len() + PICKED);
         assert_eq!(
             by_words("hi", all.clone()).len(),
-            all.len(),
-            "nothing matches: every tool"
+            CORE.len(),
+            "nothing matches: the core tools only"
         );
     }
 

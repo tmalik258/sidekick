@@ -603,19 +603,41 @@ impl AiProvider for LocalWithTools {
             .find(|m| m.role == sidekick_ai::Role::User)
             .map(|m| m.content.as_str())
             .unwrap_or_default();
-        let mut defs = crate::ask_tools::pick(&self.app, question, crate::ask_tools::defs()).await;
+        let started = std::time::Instant::now();
+        // The local model picks tools by words: an embedding call first
+        // would make Ollama swap models on every question.
+        let mut defs = if self.inner.id() == "local" {
+            if crate::ask_tools::needs_no_tools(question) {
+                Vec::new()
+            } else {
+                crate::ask_tools::by_words(question, crate::ask_tools::defs())
+            }
+        } else {
+            crate::ask_tools::pick(&self.app, question, crate::ask_tools::defs()).await
+        };
         if self.offline {
             defs.retain(|d| !crate::ask_tools::is_web(&d.name));
         }
-        if client.is_some() {
-            defs.extend(pick_tools(&tools, question));
-        } else {
-            defs.push(handoff_tool());
+        // Small talk and writing get no tools at all.
+        let chatty = defs.is_empty();
+        if !chatty {
+            if client.is_some() {
+                defs.extend(pick_tools(&tools, question));
+            } else {
+                defs.push(handoff_tool());
+            }
         }
+        log::info!(
+            "ask: {} tools for {} after {} ms",
+            defs.len(),
+            self.inner.id(),
+            started.elapsed().as_millis()
+        );
         let mut with_tools = req.clone();
         // Right after the fixed rules, so the start of the prompt stays the
         // same from message to message and the local server reuses its cache.
         match with_tools.system.find(crate::ai::FIXED_END) {
+            _ if chatty => {}
             Some(at) => with_tools.system.insert_str(at, TOOLS_SYSTEM),
             None => with_tools.system.push_str(TOOLS_SYSTEM),
         }
