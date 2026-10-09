@@ -3268,3 +3268,30 @@ button.ak-cchip:hover,
 .ak-body > .group:not(:last-child):focus-within .ak-acts {
   opacity: 1;
 }
+
+/* Key numbers under an Ask answer ("STAT:" lines). */
+.ak-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 2px 4px;
+}
+.ak-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.06);
+  font-size: 12px;
+  color: rgb(235 235 245 / 0.62);
+}
+.ak-stat b {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.ak-stat.hot b {
+  color: #ff9f0a;
+}

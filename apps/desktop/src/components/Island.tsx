@@ -134,7 +134,7 @@ export function Island() {
         : `${live.length} agents · ${busy.length} working`;
     return busy[0] ? `${busy[0].agent}: ${busy[0].project}` : null;
   });
-  // One dot per running agent in the compact pill.
+  // One ring arc per running agent in the compact pill.
   const agentDots = useAgents(
     useShallow((s) => s.sessions.filter((x) => x.status === "working" || x.status === "waiting").map((x) => x.status)),
   );
@@ -647,6 +647,38 @@ function openBoard() {
 
 const DOT: Record<string, string> = { working: "#64d2ff", waiting: "#ff9f0a" };
 
+// One arc per running agent around a slow-turning ring: blue works, orange waits.
+function AgentRing({ states }: { states: string[] }) {
+  const r = 6;
+  const c = 2 * Math.PI * r;
+  const gap = 2.2;
+  const seg = c / states.length - gap;
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className="size-4 animate-[spin_3s_linear_infinite] motion-reduce:animate-none"
+      role="img"
+      aria-label={`${states.length} agents`}
+    >
+      {states.map((d, i) => (
+        <circle
+          // biome-ignore lint/suspicious/noArrayIndexKey: one arc per agent, in order
+          key={i}
+          cx="8"
+          cy="8"
+          r={r}
+          fill="none"
+          stroke={DOT[d] ?? "rgb(255 255 255 / 0.3)"}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray={`${seg} ${c - seg}`}
+          strokeDashoffset={-i * (seg + gap)}
+        />
+      ))}
+    </svg>
+  );
+}
+
 function VoicePill({
   text,
   thinking,
@@ -712,12 +744,7 @@ function VoicePill({
           <span className="relative size-2 rounded-full bg-[#ff9f0a]" />
         </span>
       ) : dots && dots.length > 1 ? (
-        <span className="flex items-center gap-1" role="img" aria-label={`${dots.length} agents`}>
-          {dots.map((d, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: one dot per agent, in order
-            <i key={i} className="size-1.5 rounded-full" style={{ background: DOT[d] ?? "rgb(255 255 255 / 0.3)" }} />
-          ))}
-        </span>
+        <AgentRing states={dots} />
       ) : thinking ? (
         <Activity />
       ) : (

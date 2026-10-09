@@ -73,6 +73,16 @@ export function Chat({ turns }: { turns: Turn[] }) {
             ) : t.streaming ? (
               <LiveStep step={t.tool ?? null} since={t.startedAt} />
             ) : null}
+            {!t.streaming && splitOptions(t.content).stats.length > 0 && (
+              <div className="ak-stats">
+                {splitOptions(t.content).stats.map((st) => (
+                  <span key={st.label} className={`ak-stat${st.hot ? " hot" : ""}`}>
+                    {st.label}
+                    <b>{st.value}</b>
+                  </span>
+                ))}
+              </div>
+            )}
             {t.streaming && t.content && t.tool && (
               <p className="ak-status">
                 <span className="shimmer-text text-[rgb(235_235_245/0.6)]">{t.tool}...</span>

@@ -62,6 +62,9 @@ pays or deletes waits for the user's tap; prepare it and say so.
 so the user can click them.
 - When there is a clear next step, end with up to three lines, each \"OPTION: \" and a short \
 action in the user's words, like \"OPTION: Open invoice.pdf\".
+- When the answer rests on a few measured numbers (CPU, memory, disk, sizes, counts), put up to four \
+lines before the OPTION lines, each \"STAT: label | value\", adding \"| high\" to a value that is the \
+problem, like \"STAT: Memory | 14.2 of 16 GB | high\". Only real numbers from tools; none otherwise.
 - Code or commands only when asked, in fenced code blocks.
 - Never use em dashes.";
 
@@ -454,7 +457,7 @@ fn system_prompt(app: &AppHandle, attach: &Attach) -> String {
     let mut system = SYSTEM.to_owned();
     if attach.voice {
         system.push_str(
-            "\n\nThe user asked by voice and your answer is read aloud. Answer in one to three short spoken sentences. No markdown, lists, tables, links or OPTION lines unless they ask for them; if code is needed, keep it to one short block.",
+            "\n\nThe user asked by voice and your answer is read aloud. Answer in one to three short spoken sentences. No markdown, lists, tables, links, STAT or OPTION lines unless they ask for them; if code is needed, keep it to one short block.",
         );
     }
     system.push_str(FIXED_END);
