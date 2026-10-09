@@ -1668,7 +1668,9 @@ pub fn has_file_association(path: &str) -> bool {
 fn association_prog_id(ext: &str) -> Option<String> {
     let dot = format!(".{}", ext.to_ascii_lowercase());
     reg_value(
-        &format!(r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\{dot}\UserChoice"),
+        &format!(
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\{dot}\UserChoice"
+        ),
         "ProgId",
     )
     .filter(|id| !id.is_empty())
@@ -1677,8 +1679,7 @@ fn association_prog_id(ext: &str) -> Option<String> {
 
 #[cfg(windows)]
 fn has_shell_open(prog_id: &str) -> bool {
-    reg_default(&format!(r"HKCR\{prog_id}\shell\open\command"))
-        .is_some_and(|cmd| !cmd.is_empty())
+    reg_default(&format!(r"HKCR\{prog_id}\shell\open\command")).is_some_and(|cmd| !cmd.is_empty())
 }
 
 #[cfg(windows)]
@@ -1712,20 +1713,18 @@ fn reg_default(key: &str) -> Option<String> {
         return None;
     }
     let text = String::from_utf8_lossy(&out.stdout);
-    text.lines()
-        .find(|l| l.contains("REG_"))
-        .and_then(|l| {
-            // "    (Default)    REG_SZ    value" — value may be missing.
-            let mut parts = l.split_whitespace();
-            let _ = parts.next()?; // (Default)
-            let _ = parts.next()?; // REG_SZ
-            let rest: Vec<_> = parts.collect();
-            if rest.is_empty() {
-                None
-            } else {
-                Some(rest.join(" "))
-            }
-        })
+    text.lines().find(|l| l.contains("REG_")).and_then(|l| {
+        // "    (Default)    REG_SZ    value" — value may be missing.
+        let mut parts = l.split_whitespace();
+        let _ = parts.next()?; // (Default)
+        let _ = parts.next()?; // REG_SZ
+        let rest: Vec<_> = parts.collect();
+        if rest.is_empty() {
+            None
+        } else {
+            Some(rest.join(" "))
+        }
+    })
 }
 
 #[cfg(test)]

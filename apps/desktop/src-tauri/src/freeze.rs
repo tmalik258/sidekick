@@ -127,10 +127,7 @@ pub fn watch<R: Runtime>(app: &AppHandle<R>) {
         log::info!("freeze heartbeat off (SIDEKICK_NO_FREEZE_WATCH)");
         return;
     }
-    log::info!(
-        "freeze heartbeat every {} ms",
-        BEAT.as_millis()
-    );
+    log::info!("freeze heartbeat every {} ms", BEAT.as_millis());
     let app = app.clone();
     std::thread::spawn(move || {
         loop {

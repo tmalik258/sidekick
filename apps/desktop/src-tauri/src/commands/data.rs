@@ -173,17 +173,18 @@ pub async fn calendar_today(app: AppHandle) -> serde_json::Value {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let today = chrono::Local::now().date_naive();
-        let meetings: Vec<serde_json::Value> = sidekick_sensors::calendar::on_day(&c.meetings, today)
-            .iter()
-            .map(|m| {
-                serde_json::json!({
-                    "title": m.title,
-                    "start": m.start.with_timezone(&chrono::Local).format("%H:%M").to_string(),
-                    "end": m.end.with_timezone(&chrono::Local).format("%H:%M").to_string(),
-                    "joinUrl": m.join_url,
+        let meetings: Vec<serde_json::Value> =
+            sidekick_sensors::calendar::on_day(&c.meetings, today)
+                .iter()
+                .map(|m| {
+                    serde_json::json!({
+                        "title": m.title,
+                        "start": m.start.with_timezone(&chrono::Local).format("%H:%M").to_string(),
+                        "end": m.end.with_timezone(&chrono::Local).format("%H:%M").to_string(),
+                        "joinUrl": m.join_url,
+                    })
                 })
-            })
-            .collect();
+                .collect();
         serde_json::json!({ "meetings": meetings, "error": c.error, "sources": c.sources })
     })
     .await

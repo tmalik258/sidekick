@@ -888,7 +888,11 @@ pub fn chat(
                     sidekick_ai::AiError::NoProvider => no_provider_hint(local_only),
                     other => other.to_string(),
                 };
-                let who = attach.prefer.as_deref().unwrap_or(if local_only { "local" } else { "router" });
+                let who =
+                    attach
+                        .prefer
+                        .as_deref()
+                        .unwrap_or(if local_only { "local" } else { "router" });
                 log_ask_reply(&id, who, started, "", Some(&error));
                 Done {
                     id,

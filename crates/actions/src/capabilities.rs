@@ -437,19 +437,10 @@ mod tests {
 
     #[test]
     fn knows_browsers_from_start_menu_names() {
-        assert_eq!(
-            browser_for_app("Google Chrome", "Chrome"),
-            Some("chrome")
-        );
-        assert_eq!(
-            browser_for_app("Microsoft Edge", "MSEdge"),
-            Some("edge")
-        );
+        assert_eq!(browser_for_app("Google Chrome", "Chrome"), Some("chrome"));
+        assert_eq!(browser_for_app("Microsoft Edge", "MSEdge"), Some("edge"));
         assert_eq!(browser_for_app("Slack", "Slack"), None);
-        assert_eq!(
-            browser_for_app("Chrome Remote Desktop", "crd"),
-            None
-        );
+        assert_eq!(browser_for_app("Chrome Remote Desktop", "crd"), None);
     }
 
     #[test]
