@@ -49,6 +49,20 @@ export function AiTab({ onError }: { onError: (e: string) => void }) {
         <Providers ai={ai} onError={onError} />
       </Section>
       <Section
+        title="Privacy"
+        hint="Chats on this PC only use Ollama and are never handed to Claude Code, Codex or the web."
+        keywords="private local only ollama offline this pc lock cloud"
+      >
+        <Toggle
+          label="New chats on this PC only"
+          hint="Each chat can still turn it off with the lock in Ask (Alt P)."
+          checked={ai.localOnly}
+          onChange={(localOnly) =>
+            void updateSettings({ ai: { ...ai, localOnly } }).catch((e: unknown) => onError(String(e)))
+          }
+        />
+      </Section>
+      <Section
         title="Voice"
         hint="Runs on this PC. Audio is never saved or sent."
         keywords="microphone speak talk wake word hey sidekick supertonic conversation"
