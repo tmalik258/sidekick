@@ -1070,6 +1070,12 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         }
       }),
       listen(EVENTS.aiDelta, ({ id, text }) => {
+        // The model took back what it wrote (a tool call written as text).
+        if (text === "\u0001clear") {
+          pendingText.delete(id);
+          updateLastTurn(id, (t) => ({ ...t, content: "" }));
+          return;
+        }
         // Words arrive faster than the screen paints: one update per frame.
         pendingText.set(id, (pendingText.get(id) ?? "") + text);
         scheduleText();

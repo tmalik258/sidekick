@@ -93,6 +93,9 @@ impl From<reqwest::Error> for AiError {
     }
 }
 
+/// Sent through a [`Sink`] to clear the answer shown so far.
+pub const CLEAR: &str = "\u{1}clear";
+
 /// Where streamed text goes. Remembers whether anything was sent, so the
 /// router only falls back before the user has seen a partial answer.
 pub struct Sink {
@@ -127,6 +130,12 @@ impl Sink {
         }
         self.sent.store(true, Ordering::Relaxed);
         let _ = self.tx.send(text.to_owned());
+    }
+
+    /// Takes back what was shown so far (a tool call written as text): the
+    /// island clears the answer when it gets [`CLEAR`].
+    pub fn reset(&self) {
+        let _ = self.tx.send(CLEAR.to_owned());
     }
 
     pub fn has_sent(&self) -> bool {

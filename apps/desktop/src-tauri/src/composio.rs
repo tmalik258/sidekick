@@ -678,8 +678,38 @@ impl AiProvider for LocalWithTools {
         }
         if end.text.trim().is_empty() {
             lock(&self.handoff).get_or_insert_with(|| "the local model gave no answer".into());
+        } else if looks_like_tool_text(&end.text) {
+            // A small model that writes its tool call as text instead of
+            // making it: not an answer, so offer a stronger model.
+            lock(&self.handoff)
+                .get_or_insert_with(|| "the local model wrote a tool call as text".into());
         }
         Ok(end.text)
+    }
+}
+
+/// `{"name": "notifications", "arguments": {...}}` or "SEARCH: ... RESULT:"
+/// written out as the answer.
+fn looks_like_tool_text(text: &str) -> bool {
+    let t = text.trim();
+    (t.starts_with('{') && t.contains("\"name\"") && t.contains("\"arguments\""))
+        || t.lines().any(|l| {
+            let l = l.trim_start();
+            l.starts_with("SEARCH:") || l.starts_with("RESULT:") || l.starts_with("ACTION:")
+        })
+}
+
+#[cfg(test)]
+mod tool_text_tests {
+    #[test]
+    fn spots_tool_calls_written_as_text() {
+        assert!(super::looks_like_tool_text(
+            r#"{"name": "notifications", "arguments": {"level": "important"}}"#
+        ));
+        assert!(super::looks_like_tool_text(
+            "SEARCH: \"aapl\"\nRESULT: https://x"
+        ));
+        assert!(!super::looks_like_tool_text("Bluetooth is on."));
     }
 }
 

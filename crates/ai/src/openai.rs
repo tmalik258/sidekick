@@ -421,6 +421,7 @@ impl OpenAiCompat {
             .await;
         let mut calls = Vec::new();
         let mut shown = String::new();
+        let mut nudged = false;
         for step in 0..=MAX_TOOL_STEPS {
             let last = step == MAX_TOOL_STEPS;
             crate::fit::fit(&mut messages, budget);
@@ -509,6 +510,23 @@ impl OpenAiCompat {
                 }
                 continue;
             }
+            // Small local models often stop after their tools with no words,
+            // or write the tool call out as text. Ask once more, still
+            // locally, for the answer itself.
+            let bad = shown.trim().is_empty() && !calls.is_empty() || looks_like_tool_text(&shown);
+            if bad && !nudged && !last {
+                nudged = true;
+                if !shown.trim().is_empty() {
+                    sink.reset();
+                }
+                shown.clear();
+                messages.push(json!({ "role": "assistant", "content": round.raw }));
+                messages.push(json!({
+                    "role": "user",
+                    "content": "Now answer my question in one or two plain sentences, using the tool results above. Do not write tool calls or JSON.",
+                }));
+                continue;
+            }
             let text = shown.trim().to_owned();
             return Ok(ToolChatEnd {
                 text,
@@ -518,6 +536,17 @@ impl OpenAiCompat {
         }
         unreachable!("the last round always returns")
     }
+}
+
+/// A tool call written out as the answer: `{"name": ..., "arguments": ...}`
+/// or "SEARCH: ... RESULT: ..." lines.
+pub fn looks_like_tool_text(text: &str) -> bool {
+    let t = text.trim();
+    (t.starts_with('{') && t.contains("\"name\"") && t.contains("\"arguments\""))
+        || t.lines().any(|l| {
+            let l = l.trim_start();
+            l.starts_with("SEARCH:") || l.starts_with("RESULT:") || l.starts_with("ACTION:")
+        })
 }
 
 /// Tool arguments arrive as a JSON string (OpenAI) or an object (some
@@ -1015,6 +1044,15 @@ impl AiProvider for OpenAiCompat {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn spots_tool_calls_written_as_text() {
+        assert!(looks_like_tool_text(
+            r#"{"name": "notifications", "arguments": {"level": "important"}}"#
+        ));
+        assert!(looks_like_tool_text("SEARCH: \"aapl\"\nRESULT: https://x"));
+        assert!(!looks_like_tool_text("Bluetooth is on."));
+    }
 
     #[test]
     fn schema_problems_are_named() {

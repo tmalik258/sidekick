@@ -23,7 +23,9 @@ export function splitOptions(text: string, streaming = false): { body: string; o
     const st = line.match(STAT);
     if (st) {
       const [label, value, flag] = st[1].split("|").map((x) => x.trim());
-      if (label && value && stats.length < MAX_STATS)
+      // A number chip needs a number; "storage | largest files" is a small
+      // model echoing tool names.
+      if (label && value && /\d/.test(value) && stats.length < MAX_STATS)
         stats.push({ label, value, hot: /^(high|hot|!)$/i.test(flag ?? "") });
     } else if (m) {
       if (options.length < MAX) options.push(m[1].replace(/^["']|["']$/g, ""));
@@ -37,5 +39,13 @@ export function splitOptions(text: string, streaming = false): { body: string; o
     const bare = last.replace(/^[-*]\s*/, "");
     if (last && ("option:".startsWith(bare) || "stat:".startsWith(bare) || bare.startsWith("stat:"))) body.pop();
   }
-  return { body: body.join("\n").trimEnd(), options, stats };
+  return { body: tidy(body.join("\n")).trimEnd(), options, stats };
+}
+
+// Small models open with "Hi! I'm Sidekick, your assistant." and emojis.
+const EMOJI = /(?:\p{Extended_Pictographic}|[\u{1F3FB}-\u{1F3FF}]|\u200d|\uFE0F)/gu;
+const INTRO = /(?:^|\s)(?:(?:hi|hello|hey)[!,.]?\s*)?i(?:'|\u2019)?m sidekick[^.!?\n]*[.!?]/gi;
+
+export function tidy(text: string): string {
+  return text.replace(EMOJI, "").replace(/ {2,}/g, " ").replace(INTRO, "");
 }

@@ -95,7 +95,8 @@ const read = () =>
       value: s.querySelector("b")?.textContent?.trim() ?? "",
     }));
     const err = document.querySelector(".ak-err");
-    return { body, options, stats, error: err ? err.innerText.trim() : undefined };
+    const via = [...document.querySelectorAll(".ak-acts")].at(-1)?.dataset.detail ?? "";
+    return { body, options, stats, error: err ? err.innerText.trim() : undefined, via };
   });
 
 const results = [];
@@ -135,7 +136,9 @@ try {
     const a = done ? await read() : { body: "", options: [], stats: [], error: `no answer in ${ANSWER_MS / 1000} s` };
     const problems = [...checkAnswer({ question: c.q, ...a }), ...checkCase(c, a)];
     results.push({ ...c, ...a, ms, problems });
-    console.log(`${problems.length ? "FAIL" : "ok  "}  [${c.group}] ${c.q} (${(ms / 1000).toFixed(1)} s)`);
+    console.log(
+      `${problems.length ? "FAIL" : "ok  "}  [${c.group}] ${c.q} (${(ms / 1000).toFixed(1)} s${a.via ? `, ${a.via}` : ""})`,
+    );
     for (const p of problems) console.log(`        - ${p}`);
     if (problems.length) await page.screenshot({ path: join(OUT, `ask-${results.length}.png`) }).catch(() => undefined);
   }
@@ -152,7 +155,7 @@ const md = [
   ...results.flatMap((r, i) => [
     `## ${i + 1}. ${r.problems.length ? "FAIL" : "ok"}: ${r.q}`,
     "",
-    `Group: ${r.group}. Took ${(r.ms / 1000).toFixed(1)} s.${r.problems.length ? ` Screenshot: ask-${i + 1}.png` : ""}`,
+    `Group: ${r.group}. Took ${(r.ms / 1000).toFixed(1)} s.${r.via ? ` By ${r.via}.` : ""}${r.problems.length ? ` Screenshot: ask-${i + 1}.png` : ""}`,
     "",
     ...(r.problems.length ? ["Problems:", ...r.problems.map((p) => `- ${p}`), ""] : []),
     "Answer:",

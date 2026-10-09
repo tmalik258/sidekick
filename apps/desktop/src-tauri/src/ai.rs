@@ -796,6 +796,10 @@ pub fn cancel(app: &AppHandle, id: &str) {
 }
 
 fn send_text(app: &AppHandle, id: &str, text: String, speak: bool) {
+    if text == sidekick_ai::CLEAR {
+        let _ = app.emit(DELTA_EVENT, Delta { id, text });
+        return;
+    }
     let text = no_dashes(&text);
     if speak {
         crate::voice::answer_text(app, id, &text);

@@ -10,8 +10,8 @@ import { useNow } from "@/lib/hooks";
 import { Markdown } from "@/lib/markdown";
 import { splitOptions } from "@/lib/options";
 import { useReveal } from "@/lib/reveal";
-import { askAgain, askWhenOnline, retryLast, setAsk, thinkHarder, useSidekick } from "@/lib/store";
-import { type Agents, type AiSettings, PROVIDER_LABELS, type Turn } from "@/lib/types";
+import { askAgain, askWhenOnline, retryLast, setAsk, setAskModel, thinkHarder, useSidekick } from "@/lib/store";
+import { type Agents, type AiSettings, PROVIDER_LABELS, type ProviderStatus, type Turn } from "@/lib/types";
 import { AnswerOptions, Proposals, pendingCount } from "./Proposals";
 import { FailureCard } from "./States";
 
@@ -78,8 +78,11 @@ export function Chat({ turns }: { turns: Turn[] }) {
             ) : null}
             {blank(t) && t.provider && (
               <p className="ak-err" role="alert">
-                No answer came back. Ask again, or pick another model.
+                No answer came back. Ask again, or try another model.
               </p>
+            )}
+            {!t.streaming && isLast && t.provider && (blank(t) || t.handoff) && !t.error && (
+              <TryAnother from={t.provider} />
             )}
             {!t.streaming && !blank(t) && splitOptions(t.content).stats.length > 0 && (
               <div className="ak-stats">
@@ -122,8 +125,6 @@ export function Chat({ turns }: { turns: Turn[] }) {
             {skillMode && !t.streaming && yamlBlock(t.content) && <AddSkill yaml={yamlBlock(t.content) ?? ""} />}
             {t.proposals && t.proposals.length > 0 && <Proposals items={t.proposals} keys={isLast} />}
             {isLast && options.length > 0 && <AnswerOptions options={options} start={pendingCount(t.proposals)} />}
-            {/* Offered when the local model gives up; Ctrl Enter works when an agent is installed. */}
-            {!t.streaming && isLast && t.handoff && !t.error && <Handoff turns={turns} reason={t.handoff} />}
           </div>
         );
       })}
@@ -291,7 +292,7 @@ function AnswerActions({
     );
   return (
     <div className="grid gap-1">
-      <div className="ak-acts">
+      <div className="ak-acts" data-detail={detail}>
         <button
           type="button"
           onClick={copy}
@@ -432,6 +433,40 @@ export function Handoff({ turns, reason }: { turns: Turn[]; reason: string | nul
         {state === "opening" ? "Opening..." : local ? `Allow and continue in ${agent}` : `Continue in ${agent}`}
       </button>
       {state !== "idle" && state !== "opening" && <p className="text-[12px] text-[#ffb4ae]">{state}</p>}
+    </div>
+  );
+}
+
+/**
+ * The answer fell short: ask the same question with a model the user picks.
+ * No model is favoured, and a cloud one only runs when they choose it.
+ */
+function TryAnother({ from }: { from: string }) {
+  const [open, setOpen] = useState(false);
+  const { data } = useCached<ProviderStatus[]>("ai-status", api.aiStatus);
+  const local = useSidekick((s) => s.ask?.localOnly ?? false);
+  const others = (data ?? []).filter((p) => p.available && p.id !== from && p.id !== "semif");
+  if (others.length === 0) return null;
+  const pick = (p: ProviderStatus) => {
+    // Picking a cloud model is the opt-in: this chat leaves the PC from here.
+    if (local && !p.local) setAsk({ localOnly: false });
+    setAskModel(p.id);
+    askAgain();
+  };
+  return (
+    <div className="ak-chips">
+      {open ? (
+        others.map((p) => (
+          <button key={p.id} type="button" onClick={() => pick(p)} className="ak-chip chip">
+            {PROVIDER_LABELS[p.id] ?? p.id}
+            <span className="text-[rgb(235_235_245/0.6)]">{p.local ? " · on this PC" : " · sends this chat out"}</span>
+          </button>
+        ))
+      ) : (
+        <button type="button" onClick={() => setOpen(true)} className="ak-chip chip">
+          Try another model
+        </button>
+      )}
     </div>
   );
 }
