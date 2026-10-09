@@ -123,6 +123,7 @@ pub fn run() {
         })
         .invoke_handler(freeze::timed(tauri::generate_handler![
             commands::freeze_report,
+            commands::freeze_summary,
             commands::app_info,
             commands::system_look,
             commands::diagnostics,

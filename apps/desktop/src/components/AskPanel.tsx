@@ -178,6 +178,14 @@ export function AskPanel() {
   const [selected, setSelected] = useState(0);
   const { data: providersData, refresh: refreshProviders } = useCached<ProviderStatus[]>("ai-status", api.aiStatus);
   const providers = providersData ?? [];
+  // While nothing is set up yet, keep checking so FirstRun goes away once a
+  // provider is configured (e.g. This PC install finished writing settings).
+  const anySetUp = providers.some((p) => p.id !== "semif" && p.configured);
+  useEffect(() => {
+    if (anySetUp || providersData === null) return;
+    const id = setInterval(() => void refreshProviders().catch(() => undefined), 3000);
+    return () => clearInterval(id);
+  }, [anySetUp, providersData, refreshProviders]);
   const [handoffError, setHandoffError] = useState<string | null>(null);
   /** The chat's name when renamed; its first question otherwise. */
   const [chatName, setChatName] = useState<string | null>(null);
@@ -917,9 +925,9 @@ export function AskPanel() {
     );
   }
 
-  // No model yet: the first-run card says how to add one, so the footer
-  // keeps its usual line.
-  const firstRun = !best && providersData !== null && !inChat && !asking && !slash && !inHistory && !showClips;
+  // First-run card only when nothing is set up yet. If a provider is
+  // configured but not running, the footer says so — not this picker.
+  const firstRun = !anySetUp && providersData !== null && !inChat && !asking && !slash && !inHistory && !showClips;
   const footer =
     !best && !firstRun ? (
       <div className="ak-foot items-center">

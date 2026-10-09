@@ -165,25 +165,29 @@ pub fn sync_calendar(calendar: &sidekick_sensors::Calendar, settings: &Settings)
 
 /// Today's meetings for Settings > Today.
 #[tauri::command]
-pub fn calendar_today(app: AppHandle) -> serde_json::Value {
-    let state = app.state::<AppState>();
-    let c = state
-        .calendar
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let today = chrono::Local::now().date_naive();
-    let meetings: Vec<serde_json::Value> = sidekick_sensors::calendar::on_day(&c.meetings, today)
-        .iter()
-        .map(|m| {
-            serde_json::json!({
-                "title": m.title,
-                "start": m.start.with_timezone(&chrono::Local).format("%H:%M").to_string(),
-                "end": m.end.with_timezone(&chrono::Local).format("%H:%M").to_string(),
-                "joinUrl": m.join_url,
+pub async fn calendar_today(app: AppHandle) -> serde_json::Value {
+    off_ui(move || {
+        let state = app.state::<AppState>();
+        let c = state
+            .calendar
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let today = chrono::Local::now().date_naive();
+        let meetings: Vec<serde_json::Value> = sidekick_sensors::calendar::on_day(&c.meetings, today)
+            .iter()
+            .map(|m| {
+                serde_json::json!({
+                    "title": m.title,
+                    "start": m.start.with_timezone(&chrono::Local).format("%H:%M").to_string(),
+                    "end": m.end.with_timezone(&chrono::Local).format("%H:%M").to_string(),
+                    "joinUrl": m.join_url,
+                })
             })
-        })
-        .collect();
-    serde_json::json!({ "meetings": meetings, "error": c.error, "sources": c.sources })
+            .collect();
+        serde_json::json!({ "meetings": meetings, "error": c.error, "sources": c.sources })
+    })
+    .await
+    .unwrap_or_else(|_| serde_json::json!({ "meetings": [], "error": null, "sources": [] }))
 }
 
 #[derive(Serialize)]
@@ -253,10 +257,13 @@ pub async fn project_launch(app: AppHandle, path: String) -> CmdResult<String> {
 /// Deletes everything in the search index. Folders are indexed
 /// again on the next re-index.
 #[tauri::command]
-pub fn search_clear(state: State<'_, AppState>) -> CmdResult<usize> {
-    lock(&state.storage)
-        .clear_search(None)
-        .map_err(|e| e.to_string())
+pub async fn search_clear(app: AppHandle) -> CmdResult<usize> {
+    off_ui(move || {
+        lock(&app.state::<AppState>().storage)
+            .clear_search(None)
+            .map_err(|e| e.to_string())
+    })
+    .await?
 }
 
 const BACKUP_VERSION: u32 = 1;
@@ -266,7 +273,11 @@ const BACKUP_VERSION: u32 = 1;
 /// are left out.
 #[tauri::command]
 pub async fn backup_export(app: AppHandle) -> CmdResult<String> {
-    let path = write_backup(&app)?;
+    // Disk read/write and the action history: off the UI thread.
+    let path = {
+        let app = app.clone();
+        off_ui(move || write_backup(&app)).await?
+    }?;
     let _ = executor(&app.state::<AppState>())
         .run("reveal_path", &serde_json::json!({ "path": path }))
         .await;

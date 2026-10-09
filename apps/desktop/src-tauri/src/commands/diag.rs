@@ -104,13 +104,18 @@ pub async fn diagnostics(app: AppHandle) -> String {
     }
     let freezes = crate::freeze::report();
     if !freezes.is_empty() {
+        let sum = crate::freeze::summary();
+        out.push_str(&format!(
+            "UI thread held: {} command(s), {} stall(s), worst {} ms\n",
+            sum.commands, sum.stalls, sum.worst_ms
+        ));
         let list: Vec<String> = freezes
             .iter()
             .rev()
             .take(10)
             .map(|f| format!("{} {} ms at {} s", f.what, f.ms, f.at))
             .collect();
-        out.push_str(&format!("UI thread held: {}\n", list.join("; ")));
+        out.push_str(&format!("UI thread recent: {}\n", list.join("; ")));
     }
     if let Ok(crash) = std::fs::read_to_string(data_dir.join(CRASH_FILE)) {
         out.push_str(&format!("\nLast crash:\n{}\n", crash.trim()));
@@ -180,6 +185,12 @@ pub fn crash_dismiss(state: State<'_, AppState>) -> CmdResult<()> {
 #[tauri::command]
 pub async fn freeze_report() -> Vec<crate::freeze::Freeze> {
     crate::freeze::report()
+}
+
+/// Counts of named command holds vs unlabeled stalls (for triage).
+#[tauri::command]
+pub async fn freeze_summary() -> crate::freeze::FreezeSummary {
+    crate::freeze::summary()
 }
 
 #[cfg(test)]

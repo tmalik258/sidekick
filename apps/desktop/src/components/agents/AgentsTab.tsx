@@ -308,6 +308,7 @@ function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorC
                 variant="plain"
                 overlay
                 searchable
+                menuWidth={340}
                 label="Project"
                 value={pickedPath}
                 onChange={setPath}
@@ -315,8 +316,8 @@ function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorC
                 options={(projects ?? []).map((p) => ({
                   value: p.path,
                   label: p.name,
-                  sub: p.path.replace(/^[A-Za-z]:[\\/]Users[\\/][^\\/]+/, "~").replace(/^\/home\/[^/]+/, "~"),
-                  icon: p.name.slice(0, 1).toUpperCase(),
+                  sub: projectPlace(p.path),
+                  title: p.path,
                 }))}
               />
             </span>
@@ -418,6 +419,17 @@ function NewSessionLoading() {
       </p>
     </div>
   );
+}
+
+/** Repo folder plus its two parents, so same-named projects stay distinct. */
+function projectPlace(path: string): string {
+  const home = path
+    .replace(/^[A-Za-z]:[\\/]Users[\\/][^\\/]+/, "~")
+    .replace(/^\/Users\/[^/]+/, "~")
+    .replace(/^\/home\/[^/]+/, "~");
+  const parts = home.split(/[\\/]+/).filter(Boolean);
+  const tail = parts.length <= 3 ? parts : parts.slice(-3);
+  return tail.join("\\");
 }
 
 /** Ready to start: installed, not known signed out, not out of usage. */

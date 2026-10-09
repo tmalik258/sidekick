@@ -381,10 +381,13 @@ pub async fn chat_save(
 }
 
 #[tauri::command]
-pub fn chat_delete(state: State<'_, AppState>, id: String) -> CmdResult<()> {
-    lock(&state.storage)
-        .delete_chat(&id)
-        .map_err(|e| e.to_string())
+pub async fn chat_delete(app: AppHandle, id: String) -> CmdResult<()> {
+    off_ui(move || {
+        lock(&app.state::<AppState>().storage)
+            .delete_chat(&id)
+            .map_err(|e| e.to_string())
+    })
+    .await?
 }
 
 #[derive(Serialize)]

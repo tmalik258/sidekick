@@ -277,22 +277,70 @@ pub struct ProviderStatus {
     id: &'static str,
     available: bool,
     local: bool,
+    /// Set up to answer later (installed / model / key), even if not running now.
+    configured: bool,
+}
+
+/// Whether this answering path is set up, ignoring "is it running right now".
+fn configured(ai: &AiSettings, id: &str) -> bool {
+    match id {
+        "local" => ai.local.enabled && !ai.local.model.trim().is_empty(),
+        "claude_code" => {
+            ai.claude_code.enabled
+                && ClaudeCode {
+                    path: Some(ai.claude_code.path.trim())
+                        .filter(|p| !p.is_empty())
+                        .map(Into::into),
+                    model: None,
+                    workdir: std::env::temp_dir(),
+                    mcp_config: None,
+                }
+                .resolve()
+                .is_some()
+        }
+        "codex" => {
+            ai.codex.enabled
+                && Codex {
+                    path: Some(ai.codex.path.trim())
+                        .filter(|p| !p.is_empty())
+                        .map(Into::into),
+                    model: None,
+                    workdir: std::env::temp_dir(),
+                    mcp: None,
+                }
+                .resolve()
+                .is_some()
+        }
+        "anthropic" => {
+            ai.anthropic.enabled
+                && std::env::var("ANTHROPIC_API_KEY").is_ok_and(|k| !k.trim().is_empty())
+        }
+        "gemini" | "groq" | "openrouter" => {
+            cloud_pref(ai, id).is_some_and(|p| p.enabled)
+                && crate::secrets::get(&key_name(id)).is_some()
+        }
+        _ => false,
+    }
 }
 
 pub async fn status(app: &AppHandle) -> Vec<ProviderStatus> {
     let ai = lock(&app.state::<AppState>().settings).ai.clone();
+    crate::setup::refresh_user_env("ANTHROPIC_API_KEY");
     let mut out = Vec::new();
     for p in providers(app, &ai, true) {
+        let id = p.id();
         out.push(ProviderStatus {
-            id: p.id(),
+            id,
             available: p.available().await,
             local: p.is_local(),
+            configured: configured(&ai, id),
         });
     }
     out.push(ProviderStatus {
         id: "semif",
         available: semif(app, &ai).available().await,
         local: true,
+        configured: false,
     });
     out
 }

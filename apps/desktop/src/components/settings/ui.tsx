@@ -297,12 +297,22 @@ export function Field({
  * line under it, a letter icon and a separator before it. */
 export type SelectOption =
   | [string, string]
-  | { value: string; label: string; sub?: string; icon?: string; color?: string; sepBefore?: boolean };
+  | {
+      value: string;
+      label: string;
+      sub?: string;
+      /** Full text for the native tooltip (e.g. a complete path). */
+      title?: string;
+      icon?: string;
+      color?: string;
+      sepBefore?: boolean;
+    };
 
 interface Row {
   value: string;
   label: string;
   sub?: string;
+  title?: string;
   icon?: string;
   color?: string;
   sepBefore?: boolean;
@@ -541,6 +551,7 @@ export function Select({
               role="option"
               tabIndex={-1}
               aria-selected={selected}
+              title={r.title}
               onMouseEnter={() => setActive(i)}
               onClick={() => pick(r.value)}
               onKeyDown={(e) => {
@@ -548,7 +559,7 @@ export function Select({
               }}
               className={`grid w-full cursor-default items-center gap-2.5 rounded-[9px] px-[9px] py-1.5 text-left text-[13px] transition-colors duration-100 ${
                 r.icon ? "grid-cols-[24px_1fr_auto]" : "grid-cols-[1fr_auto]"
-              } ${i === active ? "bg-white/[0.09] text-white" : "text-white/85"}`}
+              } ${i === active ? "bg-white/[0.12] text-white" : "text-white/85 hover:bg-white/[0.06]"}`}
             >
               {r.icon && (
                 <span

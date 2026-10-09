@@ -1244,15 +1244,17 @@ commands.learned_list = () => [
 ];
 commands.learned_forget = () => undefined;
 commands.learned_forget_all = () => undefined;
+commands.freeze_report = () => [];
+commands.freeze_summary = () => ({ commands: 0, stalls: 0, worstMs: 0 });
 commands.ai_status = () =>
   previewFlag("nomodel")
     ? []
     : [
-        { id: "claude_code", available: true, local: false },
-        { id: "codex", available: true, local: false },
-        { id: "anthropic", available: false, local: false },
-        { id: "local", available: true, local: true },
-        { id: "semif", available: false, local: true },
+        { id: "claude_code", available: true, local: false, configured: true },
+        { id: "codex", available: true, local: false, configured: true },
+        { id: "anthropic", available: false, local: false, configured: false },
+        { id: "local", available: true, local: true, configured: true },
+        { id: "semif", available: false, local: true, configured: false },
       ];
 
 export const mock = {

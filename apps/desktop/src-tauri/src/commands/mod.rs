@@ -276,11 +276,17 @@ pub async fn capabilities_get(app: AppHandle, rescan: bool) -> CmdResult<Capabil
 
 /// Forgets which options the user picked before.
 #[tauri::command]
-pub fn choices_reset(app: AppHandle, state: State<'_, AppState>) -> CmdResult<usize> {
+pub async fn choices_reset(app: AppHandle) -> CmdResult<usize> {
     decide::clear(&app);
-    lock(&state.storage)
-        .clear_choices()
-        .map_err(|e| e.to_string())
+    off_ui({
+        let app = app.clone();
+        move || {
+            lock(&app.state::<AppState>().storage)
+                .clear_choices()
+                .map_err(|e| e.to_string())
+        }
+    })
+    .await?
 }
 
 /// Shows a file an action produced. Only existing paths, nothing else runs.

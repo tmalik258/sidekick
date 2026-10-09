@@ -314,6 +314,9 @@ export const api = {
   mergeEnd: (path: string, finish: boolean) => invoke<ActionResult>("merge_end", { path, finish }),
   codexAddNotify: () => invoke<string | null>("codex_add_notify"),
   codexAddMcp: () => invoke<string | null>("codex_add_mcp"),
+  freezeReport: () => invoke<{ what: string; ms: number; at: number }[]>("freeze_report"),
+  freezeSummary: () =>
+    invoke<{ commands: number; stalls: number; worstMs: number }>("freeze_summary"),
   guideKeys: (buttons: number) => invoke<void>("guide_keys", { buttons }),
   notificationsStatus: () => invoke<InboxStatus>("notifications_status"),
   notificationsSetLevel: (from: string, level: NotifyLevel | "auto") =>
