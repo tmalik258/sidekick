@@ -520,11 +520,7 @@ export function AskPanel() {
             icon: <span className="text-[11px] font-bold text-white">{a.name.slice(0, 1).toUpperCase()}</span>,
             label: a.name,
             hint: a.minutes >= 60 ? `${Math.round(a.minutes / 60)} h this week` : undefined,
-            run: () =>
-              void api.appLaunch(
-                a.id,
-                privateNamed && browser ? { private: true, browser } : undefined,
-              ),
+            run: () => void api.appLaunch(a.id, privateNamed && browser ? { private: true, browser } : undefined),
           });
           appsGrouped = true;
           if (browser && !privateNamed && !privateBrowsers.has(browser)) {

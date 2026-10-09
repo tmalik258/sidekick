@@ -208,7 +208,7 @@ export function FirstRun() {
     setRunning(i.id);
     void api.setupRun(i.id).catch(() => setRunning(null));
   };
-  const useCloud = (id: string) => {
+  const pickCloud = (id: string) => {
     setAsk({ localOnly: false });
     setAskModel(id);
   };
@@ -227,11 +227,7 @@ export function FirstRun() {
       id: "pc",
       title: "This PC",
       note: "Free and private. Installs Ollama and a model picked for this PC.",
-      action: pcReady
-        ? "Use it"
-        : running === pcStep?.id
-          ? "Setting up..."
-          : (pcStep?.action ?? "Set up"),
+      action: pcReady ? "Use it" : running === pcStep?.id ? "Setting up..." : (pcStep?.action ?? "Set up"),
       recommended: true,
       go: () => (pcReady ? setAskModel("local") : run(pcStep)),
       done: false,
@@ -241,14 +237,14 @@ export function FirstRun() {
       title: "Claude Code",
       note: `Uses your Claude plan. ${item("claude_code")?.done ? "Found on this PC." : "Not installed."}`,
       action: item("claude_code")?.done ? "Use it" : "Install",
-      go: () => (item("claude_code")?.done ? useCloud("claude_code") : run(item("claude_code"))),
+      go: () => (item("claude_code")?.done ? pickCloud("claude_code") : run(item("claude_code"))),
     },
     {
       id: "codex",
       title: "Codex",
       note: `Uses your ChatGPT plan. ${item("codex")?.done ? "Found on this PC." : "Not installed."}`,
       action: item("codex")?.done ? "Use it" : "Install",
-      go: () => (item("codex")?.done ? useCloud("codex") : run(item("codex"))),
+      go: () => (item("codex")?.done ? pickCloud("codex") : run(item("codex"))),
     },
     {
       id: "anthropic",
@@ -274,7 +270,12 @@ export function FirstRun() {
               <span className="ot">{o.title}</span>
               <span className="od">{o.note}</span>
             </span>
-            <button type="button" disabled={running !== null && o.id === "pc" && !pcReady} onClick={o.go} className="ob chip">
+            <button
+              type="button"
+              disabled={running !== null && o.id === "pc" && !pcReady}
+              onClick={o.go}
+              className="ob chip"
+            >
               {o.action}
             </button>
           </div>

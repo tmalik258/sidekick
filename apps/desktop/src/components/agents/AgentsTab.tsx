@@ -73,8 +73,7 @@ const MARK_BY_NAME: Record<string, string> = {
 };
 
 /** Letter and colour from a session's agent display name. */
-export const markFor = (agent: string): [string, string] =>
-  AGENT_MARKS[MARK_BY_NAME[agent] ?? ""] ?? ["L", "#8e8e93"];
+export const markFor = (agent: string): [string, string] => AGENT_MARKS[MARK_BY_NAME[agent] ?? ""] ?? ["L", "#8e8e93"];
 
 /** Chats started in Cursor, refreshed while Agents is open. */
 function useCursorChats(): CursorChat[] {
@@ -362,15 +361,7 @@ function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorC
 }
 
 /** No CLI is ready: past sessions can still be opened; setup goes through Settings. */
-function NoAgentsReady({
-  sessions,
-  cursor,
-  missing,
-}: {
-  sessions: number;
-  cursor: number;
-  missing: AgentInfo[];
-}) {
+function NoAgentsReady({ sessions, cursor, missing }: { sessions: number; cursor: number; missing: AgentInfo[] }) {
   const hasPast = sessions > 0 || cursor > 0;
   return (
     <div className="ak-group flex flex-col gap-2 py-1 text-[13px]">
@@ -398,7 +389,7 @@ function NoAgentsReady({
 /** Skeleton of the new-session form while agents are detected (same idea as ReposLoading). */
 function NewSessionLoading() {
   return (
-    <div className="ak-nload" aria-busy="true" aria-label="Finding coding agents">
+    <div className="ak-nload" role="status" aria-busy="true" aria-label="Finding coding agents">
       <div className="ak-meta ak-rskel" aria-hidden="true">
         <i className="ak-npill" style={{ width: 92 }} />
         <i className="ak-npill" style={{ width: 108 }} />

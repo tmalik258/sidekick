@@ -33,7 +33,7 @@ function numbered(h: Hunk): { n: number; kind: "add" | "del" | "ctxl"; text: str
 /** Placeholder file cards while git diffs are read (same idea as ReposLoading). */
 function ReviewLoading() {
   return (
-    <div className="ak-rv-load" aria-busy="true" aria-label="Reading changes">
+    <div className="ak-rv-load" role="status" aria-busy="true" aria-label="Reading changes">
       <div className="ak-rv-head">
         <b>Review changes</b>
         <span className="shimmer-text">Reading diffs</span>
