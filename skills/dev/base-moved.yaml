@@ -7,8 +7,8 @@ dedupe: "{{path}}:{{upstream}}"
 trigger:
   event: dev.base_moved
 suggestion:
-  title: "{{behind}} new on {{base}}, your branch is behind"
-  detail: "{{commits}}"
+  title: "{{name}}: {{behind}} new on {{base}}, {{branch}} is behind"
+  detail: "By {{who}}. Latest: {{latest}}"
   options:
     - { label: Update my branch, action: git_update_branch, args: { path: "{{path}}" } }
     - { label: Show commits, action: git_show_commits, args: { path: "{{path}}" } }

@@ -132,6 +132,27 @@ pub fn on_window(app: &AppHandle, payload: &Value) {
     });
 }
 
+/// Who made the new commits (up to three names) and the newest subject,
+/// from `git log --format=%an\x1f%s` output, so a card reads at a glance.
+pub fn summary(log: &str) -> (String, String) {
+    let mut names: Vec<&str> = Vec::new();
+    let mut latest = String::new();
+    for (who, what) in log.lines().filter_map(|l| l.split_once('\x1f')) {
+        if latest.is_empty() {
+            latest = what.trim().to_owned();
+        }
+        if !names.iter().any(|n| n.eq_ignore_ascii_case(who.trim())) {
+            names.push(who.trim());
+        }
+    }
+    let who = match names.len() {
+        0 => String::new(),
+        1..=3 => names.join(", "),
+        n => format!("{} and {} more", names[..2].join(", "), n - 2),
+    };
+    (who, latest)
+}
+
 /// What is new upstream, for the card.
 pub fn incoming(repo: &Path) -> Option<Value> {
     let upstream = git(repo, &["rev-parse", "@{u}"])?;
@@ -154,6 +175,7 @@ pub fn incoming(repo: &Path) -> Option<Value> {
         .filter_map(|l| l.split_once('\x1f'))
         .map(|(who, what)| format!("{who}: {what}"))
         .collect();
+    let (who, latest) = summary(&log);
     let dirty = git(repo, &["status", "--porcelain", "--untracked-files=no"])
         .is_some_and(|s| !s.is_empty());
     let branch = git(repo, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default();
@@ -164,6 +186,8 @@ pub fn incoming(repo: &Path) -> Option<Value> {
         "behind": behind,
         "upstream": upstream,
         "commits": commits.join("\n"),
+        "who": who,
+        "latest": latest,
         "dirty": dirty,
         "diverged": ahead > 0,
     }))
@@ -189,6 +213,7 @@ pub fn base_moved(repo: &Path) -> Option<Value> {
         .filter_map(|l| l.split_once('\x1f'))
         .map(|(who, what)| format!("{who}: {what}"))
         .collect();
+    let (who, latest) = summary(&log);
     let dirty = git(repo, &["status", "--porcelain", "--untracked-files=no"])
         .is_some_and(|s| !s.is_empty());
     Some(json!({
@@ -199,6 +224,8 @@ pub fn base_moved(repo: &Path) -> Option<Value> {
         "behind": behind,
         "upstream": upstream,
         "commits": commits.join("\n"),
+        "who": who,
+        "latest": latest,
         "dirty": dirty,
     }))
 }
@@ -389,6 +416,14 @@ mod tests {
                 .status
                 .success()
         );
+    }
+
+    #[test]
+    fn sums_up_who_and_what() {
+        let log = "Ana\x1ffix login\nBo\x1fadd page\nana\x1fstyle";
+        assert_eq!(summary(log), ("Ana, Bo".into(), "fix login".into()));
+        let many = "A\x1fx\nB\x1fy\nC\x1fz\nD\x1fw";
+        assert_eq!(summary(many).0, "A, B and 2 more");
     }
 
     #[test]

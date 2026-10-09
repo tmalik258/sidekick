@@ -7,8 +7,8 @@ dedupe: "{{path}}"
 trigger:
   event: dev.incoming
 suggestion:
-  title: "{{behind}} new on {{branch}}"
-  detail: "{{commits}}"
+  title: "{{name}}: {{behind}} new commits on {{branch}}"
+  detail: "By {{who}}. Latest: {{latest}}"
   options:
     - { label: Pull, action: git_pull, args: { path: "{{path}}" }, when: { dirty: { equals: false }, diverged: { equals: false } } }
     - { label: "Stash, pull, put back", action: git_pull, args: { path: "{{path}}", stash: "true" }, when: { dirty: { equals: true }, diverged: { equals: false } } }
