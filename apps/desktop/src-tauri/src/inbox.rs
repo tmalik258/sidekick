@@ -553,7 +553,7 @@ const IGNORE_NOTIFY: &[&str] = &[
 fn denied(app_name: &str, s: &sidekick_core::Settings) -> bool {
     let lower = app_name.to_lowercase();
     let stem = lower.trim_end_matches(".exe");
-    IGNORE_NOTIFY.iter().any(|a| *a == stem)
+    IGNORE_NOTIFY.contains(&stem)
         || s.deny_apps
             .iter()
             .any(|d| d.trim_end_matches(".exe").eq_ignore_ascii_case(stem))
