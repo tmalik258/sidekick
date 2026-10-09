@@ -65,6 +65,7 @@ export const EVENTS = {
   settingsChanged: "settings://changed",
   voiceState: "voice://state",
   voiceHeard: "voice://heard",
+  voiceSpeaking: "voice://speaking",
   voiceDownload: "voice://download",
   suggestionLater: "suggestion://later",
   composioChanged: "composio://changed",
@@ -97,6 +98,7 @@ export interface EventPayloads {
   [EVENTS.settingsChanged]: Settings;
   [EVENTS.voiceState]: VoiceStatus;
   [EVENTS.voiceHeard]: VoiceHeard;
+  [EVENTS.voiceSpeaking]: boolean;
   [EVENTS.voiceDownload]: VoiceDownload;
   [EVENTS.suggestionLater]: number;
   [EVENTS.composioChanged]: { ok: boolean; message: string };

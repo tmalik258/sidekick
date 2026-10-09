@@ -293,6 +293,11 @@ function mockChat(a: Record<string, unknown>) {
       setTimeout(tick, formatted ? 450 : 28);
     } else {
       const change = /\b(move|send|create|update|delete)\b/i.test(last);
+      // A spoken question's answer is read aloud: the mascot talks for a bit.
+      if ((a.attach as { speak?: boolean } | undefined)?.speak) {
+        emit("voice://speaking", true);
+        setTimeout(() => emit("voice://speaking", false), 3000);
+      }
       emit("ai://done", {
         id,
         provider: "local",

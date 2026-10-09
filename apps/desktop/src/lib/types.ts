@@ -193,6 +193,9 @@ export interface Turn extends ChatMessage {
   steps?: string[];
   /** Actions offered as buttons; each runs on a tap. */
   proposals?: Proposal[];
+  /** When the question was sent (ms since 1970), and how long the answer took. */
+  startedAt?: number;
+  tookMs?: number;
 }
 
 export interface Proposal {

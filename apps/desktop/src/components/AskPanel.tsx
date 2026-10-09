@@ -6,9 +6,10 @@
 // the morph, this owns the content.
 
 import { AnimatePresence, motion } from "motion/react";
-import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
+import { useAltHeld } from "@/lib/hooks";
 import {
   cancelChat,
   newChat,
@@ -26,11 +27,12 @@ import { type CalendarToday, type ChatSummary, isPaused, type ProviderStatus, ty
 import { Chat, useAgentName } from "./ask/Chat";
 import { ChatHistory, Clips, Results } from "./ask/Lists";
 import { ModelPicker } from "./ask/ModelPicker";
-import { Kbd, Pill, Row } from "./ask/parts";
+import { Kbd, KeyHint, Pill, Row } from "./ask/parts";
 import type { Command } from "./ask/Starters";
-import { ContextChips, contextStarters, soonestMeeting } from "./ask/Starters";
+import { ContextLine, contextStarters, soonestMeeting } from "./ask/Starters";
 import { Timings } from "./ask/Timings";
 import { Icon } from "./Icon";
+import { SETTINGS_TABS } from "./SettingsPanel";
 import { SetupSpinner } from "./SetupChecklistRow";
 
 /** Space the island's orb takes at the top-left in Ask mode. */
@@ -55,6 +57,26 @@ export function AskPanel() {
   const voiceReady = useSidekick((s) => s.settings.voice.enabled && (s.voiceStatus?.listening ?? false));
   const settings = useSidekick((s) => s.settings);
   const [text, setText] = useState(ask?.prompt ?? "");
+  const alt = useAltHeld();
+  const speak = useSidekick((s) => s.settings.voice.speakAnswers);
+  const toggleSpeak = useCallback(() => {
+    const voice = useSidekick.getState().settings.voice;
+    void updateSettings({ voice: { ...voice, speakAnswers: !voice.speakAnswers } });
+  }, []);
+  // Alt shortcuts work wherever focus is in Ask. What they act on changes
+  // every render, so they read it from here.
+  const altKeys = useRef<Record<string, () => void>>({});
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey || e.repeat) return;
+      const run = altKeys.current[e.key.toLowerCase()];
+      if (!run) return;
+      e.preventDefault();
+      run();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [selected, setSelected] = useState(0);
   const { data: providersData, refresh: refreshProviders } = useCached<ProviderStatus[]>("ai-status", api.aiStatus);
   const providers = providersData ?? [];
@@ -266,8 +288,32 @@ export function AskPanel() {
         icon: "folder",
         run: () => void api.projectLaunch(p.path),
       }));
-    return [...all.filter((c) => c.label.toLowerCase().includes(q)), ...launch];
-  }, [paused, settings.muted, turns.length, text, projects, starters, resetChat]);
+    // Settings screens and past chats show up by name too.
+    const screens: Command[] = SETTINGS_TABS.filter((t) =>
+      t.label.toLowerCase().includes(q.replace(/^settings?\s*/, "")),
+    )
+      .slice(0, 2)
+      .map((t) => ({
+        id: `settings:${t.id}`,
+        label: `${t.label} settings`,
+        hint: "Settings",
+        icon: "settings",
+        run: () => setAsk({ view: "settings", settingsTab: t.id }),
+        stay: true,
+      }));
+    const past: Command[] = chats
+      .filter((c) => c.title.toLowerCase().includes(q))
+      .slice(0, 2)
+      .map((c) => ({
+        id: `chat:${c.id}`,
+        label: c.title,
+        hint: "Past chat",
+        icon: "history",
+        run: () => void openChat(c.id),
+        stay: true,
+      }));
+    return [...all.filter((c) => c.label.toLowerCase().includes(q)), ...launch, ...screens, ...past];
+  }, [paused, settings.muted, turns.length, text, projects, starters, resetChat, chats]);
 
   if (!ask) return null;
 
@@ -285,18 +331,33 @@ export function AskPanel() {
   const showHistory = historyOpen && !showClips;
   const showHits = hits !== null && !asking && !showClips && !showHistory;
   const showChat = inChat && !showHits && !showClips && !showHistory;
-  // While typing, the first rows are "Ask", "Search" and "Teach a skill".
-  const lead = asking ? 3 : 0;
-  const rows =
-    hearing !== null || showChat || showHits || showClips || showHistory
-      ? 0
-      : asking
-        ? commands.length + lead
-        : commands.length;
+  // While typing: Ask on top, then what matches by name (instant, no AI),
+  // then Search and Teach a skill at the end.
+  const lead = asking ? 1 : 0;
+  const tail = asking ? 2 : 0;
+  const rows = hearing !== null || showChat || showHits || showClips || showHistory ? 0 : lead + commands.length + tail;
+  const searchRow = lead + commands.length;
+  const skillRow = searchRow + 1;
+  // A short name ("slack", "settings") picks its match; a question picks Ask.
+  const intentRow = asking && commands.length > 0 && looksLikeName(text) ? lead : 0;
+  const active = selected === INTENT_PENDING ? intentRow : selected;
   // Models that can answer now; the picked one (if still there) goes first.
   const choices = providers.filter((p) => p.available && (!ask.localOnly || p.local) && p.id !== "semif");
   const pickedModel = choices.find((p) => p.id === askModel) ?? null;
   const best = pickedModel ?? choices[0];
+
+  altKeys.current = {
+    s: toggleSpeak,
+    v: () => (hearing !== null ? stopListening() : voiceReady && !streaming && startListening()),
+    p: () => setAsk({ localOnly: !ask.localOnly }),
+    h: () => !streaming && openHistory(),
+    m: () => {
+      if (choices.length < 2) return;
+      // Auto, then each model that can answer now.
+      const ids = [null, ...choices.map((c) => c.id)];
+      setAskModel(ids[(ids.indexOf(pickedModel?.id ?? null) + 1) % ids.length]);
+    },
+  };
 
   const runRow = (i: number) => {
     if (asking && i === 0) {
@@ -304,13 +365,13 @@ export function AskPanel() {
       setText("");
       return;
     }
-    if (asking && i === 1) {
+    if (asking && i === searchRow) {
       const query = text.trim();
       void api.search(query).then((items) => setHits({ query, items }));
       setText("");
       return;
     }
-    if (asking && i === 2) {
+    if (asking && i === skillRow) {
       startSkill(text.trim());
       setText("");
       return;
@@ -368,19 +429,6 @@ export function AskPanel() {
   };
 
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.altKey && !e.ctrlKey && e.key.toLowerCase() === "h" && !streaming) {
-      // Alt H: chat history.
-      e.preventDefault();
-      openHistory();
-      return;
-    }
-    if (e.altKey && e.key.toLowerCase() === "m" && choices.length > 1) {
-      // Alt M: next model (Auto, then each one that can answer).
-      e.preventDefault();
-      const ids = [null, ...choices.map((c) => c.id)];
-      setAskModel(ids[(ids.indexOf(pickedModel?.id ?? null) + 1) % ids.length]);
-      return;
-    }
     if (listLen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
       e.preventDefault();
       const step = e.key === "ArrowDown" ? 1 : -1;
@@ -390,10 +438,10 @@ export function AskPanel() {
       openListItem(Math.min(pick, listLen - 1));
     } else if (e.key === "ArrowDown" && rows) {
       e.preventDefault();
-      setSelected((s) => (s + 1) % rows);
+      setSelected((active + 1) % rows);
     } else if (e.key === "ArrowUp" && rows) {
       e.preventDefault();
-      setSelected((s) => (s - 1 + rows) % rows);
+      setSelected((active - 1 + rows) % rows);
     } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       // Ctrl Enter: this conversation (and what is typed) goes to the coding agent.
       e.preventDefault();
@@ -413,7 +461,7 @@ export function AskPanel() {
       e.preventDefault();
       // In a conversation Enter sends the follow-up.
       if (asking && showChat) runRow(0);
-      else if (rows) runRow(selected);
+      else if (rows) runRow(active);
     } else if (e.key === "Escape") {
       e.preventDefault();
       if (!e.repeat) escRef.current();
@@ -437,7 +485,7 @@ export function AskPanel() {
             value={text}
             onChange={(e) => {
               setText(e.target.value);
-              setSelected(0);
+              setSelected(INTENT_PENDING);
               setPick(0);
             }}
             onKeyDown={onKey}
@@ -452,51 +500,46 @@ export function AskPanel() {
           <Pill onClick={stopListening}>Stop</Pill>
         ) : (
           <>
+            <IconButton
+              label={speak ? "Speak replies: on (Alt S)" : "Speak replies: off (Alt S)"}
+              pressed={speak}
+              keys={alt}
+              hint="Alt S"
+              onClick={toggleSpeak}
+            >
+              <Icon name={speak ? "speaker" : "speakerOff"} size={15} />
+            </IconButton>
             {voiceReady && !streaming && (
-              <button
-                type="button"
-                aria-label="Talk (or say Hey Sidekick)"
-                title="Talk (or say Hey Sidekick)"
-                onClick={startListening}
-                className="chip grid size-7 shrink-0 place-items-center rounded-full bg-white/[0.12] text-white/85 hover:bg-white/[0.2]"
-              >
+              <IconButton label="Talk, or say Hey Sidekick (Alt V)" keys={alt} hint="Alt V" onClick={startListening}>
                 <Icon name="mic" size={14} />
-              </button>
+              </IconButton>
             )}
             {!streaming && (
-              <button
-                type="button"
-                aria-label="Chat history"
-                title="Chat history (Alt H)"
-                aria-pressed={historyOpen}
+              <IconButton
+                label="Chat history (Alt H)"
+                pressed={historyOpen}
+                keys={alt}
+                hint="Alt H"
                 onClick={openHistory}
-                className={`chip grid size-7 shrink-0 place-items-center rounded-full text-white/85 ${
-                  historyOpen ? "bg-white/[0.22]" : "bg-white/[0.12] hover:bg-white/[0.2]"
-                }`}
               >
                 <Icon name="history" size={14} />
-              </button>
+              </IconButton>
             )}
+            {best && <ModelPicker choices={choices} best={best} picked={pickedModel} keys={alt} />}
             {streaming ? (
               <Pill onClick={cancelChat}>Stop</Pill>
             ) : (
               turns.length > 0 && (
-                <button
-                  type="button"
-                  aria-label="New chat"
-                  title="New chat (Esc)"
-                  onClick={resetChat}
-                  className="chip grid size-7 shrink-0 place-items-center rounded-full bg-white/[0.12] text-white/85 hover:bg-white/[0.2]"
-                >
+                <IconButton label="New chat (Esc)" keys={alt} hint="Esc" onClick={resetChat}>
                   <Icon name="plus" size={16} />
-                </button>
+                </IconButton>
               )
             )}
           </>
         )}
       </div>
 
-      <ContextChips />
+      <ContextLine keys={alt} />
 
       <AnimatePresence initial={false} mode="popLayout">
         {showClips && clips ? (
@@ -578,18 +621,35 @@ export function AskPanel() {
               className="mt-2 -mx-1.5"
             >
               {asking && (
-                <Row active={selected === 0} onHover={() => setSelected(0)} onClick={() => runRow(0)}>
+                <Row active={active === 0} onHover={() => setSelected(0)} onClick={() => runRow(0)}>
                   <span className="grid size-6 place-items-center rounded-full bg-white text-[12px] font-semibold text-black">
                     ?
                   </span>
                   <span className="min-w-0 flex-1 truncate">
-                    Ask <span className="text-[rgb(235_235_245/0.6)]">{text.trim()}</span>
+                    Ask Sidekick <span className="text-[rgb(235_235_245/0.6)]">{text.trim()}</span>
                   </span>
-                  <Kbd>Enter</Kbd>
+                  {active === 0 && <Kbd>Enter</Kbd>}
                 </Row>
               )}
+              {commands.map((c, i) => {
+                const row = i + lead;
+                return (
+                  <Row key={c.id} active={active === row} onHover={() => setSelected(row)} onClick={() => runRow(row)}>
+                    <span className="grid size-6 place-items-center rounded-full bg-white/12 text-white/85">
+                      <Icon name={c.icon} size={13} />
+                    </span>
+                    <span className="flex-1 truncate">{c.label}</span>
+                    {c.hint && <span className="text-[12px] text-[rgb(235_235_245/0.4)]">{c.hint}</span>}
+                    {asking && active === row && <Kbd>Enter</Kbd>}
+                  </Row>
+                );
+              })}
               {asking && (
-                <Row active={selected === 1} onHover={() => setSelected(1)} onClick={() => runRow(1)}>
+                <Row
+                  active={active === searchRow}
+                  onHover={() => setSelected(searchRow)}
+                  onClick={() => runRow(searchRow)}
+                >
                   <span className="grid size-6 place-items-center rounded-full bg-white/[0.12] text-white/85">
                     <Icon name="ask" size={13} />
                   </span>
@@ -599,7 +659,11 @@ export function AskPanel() {
                 </Row>
               )}
               {asking && (
-                <Row active={selected === 2} onHover={() => setSelected(2)} onClick={() => runRow(2)}>
+                <Row
+                  active={active === skillRow}
+                  onHover={() => setSelected(skillRow)}
+                  onClick={() => runRow(skillRow)}
+                >
                   <span className="grid size-6 place-items-center rounded-full bg-white/[0.12] text-white/85">
                     <Icon name="settings" size={13} />
                   </span>
@@ -608,82 +672,120 @@ export function AskPanel() {
                   </span>
                 </Row>
               )}
-              {commands.map((c, i) => {
-                const row = i + lead;
-                return (
-                  <Row
-                    key={c.id}
-                    active={selected === row}
-                    onHover={() => setSelected(row)}
-                    onClick={() => runRow(row)}
-                  >
-                    <span className="grid size-6 place-items-center rounded-full bg-white/12 text-white/85">
-                      <Icon name={c.icon} size={13} />
-                    </span>
-                    <span className="flex-1 truncate">{c.label}</span>
-                    {c.hint && <span className="text-[12px] text-[rgb(235_235_245/0.4)]">{c.hint}</span>}
-                  </Row>
-                );
-              })}
             </motion.ul>
           )
         )}
       </AnimatePresence>
 
       {handoffError && <p className="mt-1.5 text-[12px] text-[#ffb4ae]">{handoffError}</p>}
-      <div className="mt-2 flex items-center gap-2 text-[11px] text-[rgb(235_235_245/0.45)]">
-        {providersData === null && !best ? (
-          <SetupSpinner className="text-white/50" />
-        ) : (
-          <span className={`size-1.5 rounded-full ${best ? "bg-[#30d158]" : "bg-[#ffd60a]"}`} aria-hidden="true" />
-        )}
-        {best ? (
-          <ModelPicker choices={choices} best={best} picked={pickedModel} />
-        ) : providersData === null ? (
-          <span className="truncate" aria-live="polite">
-            Checking AI…
-          </span>
-        ) : (
-          <span className="truncate">
-            {ask.localOnly ? "No local model running" : "No AI set up yet. See Settings > AI"}
-          </span>
-        )}
-        <span className="ml-auto flex shrink-0 items-center gap-2.5">
-          <span>
-            <Kbd>Enter</Kbd> {asking ? "ask" : showClips ? "copy" : showHits ? "open" : "run"}
-          </span>
-          {agent && (asking || turns.length > 0) && (
-            <span>
-              <Kbd>Ctrl Enter</Kbd> continue in {agent}
-            </span>
+      {/* No model to answer: say so. Otherwise the key legend shows only while Alt is held. */}
+      {!best ? (
+        <div className="mt-2 flex items-center gap-2 text-[11px] text-[rgb(235_235_245/0.45)]">
+          {providersData === null ? (
+            <SetupSpinner className="text-white/50" />
+          ) : (
+            <span className="size-1.5 rounded-full bg-[#ffd60a]" aria-hidden="true" />
           )}
-          <span>
-            <Kbd>Esc</Kbd> {hearing !== null ? "stop mic" : inChat || streaming ? "new chat" : "close"}
+          <span className="truncate" aria-live="polite">
+            {providersData === null
+              ? "Checking AI…"
+              : ask.localOnly
+                ? "No local model running"
+                : "No AI set up yet. See Settings > AI"}
           </span>
-        </span>
-      </div>
+        </div>
+      ) : (
+        alt && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[rgb(235_235_245/0.5)]">
+            <span>
+              <Kbd>Enter</Kbd> {asking ? "ask" : showClips ? "copy" : showHits ? "open" : "run"}
+            </span>
+            {agent && (asking || turns.length > 0) && (
+              <span>
+                <Kbd>Ctrl Enter</Kbd> continue in {agent}
+              </span>
+            )}
+            <span>
+              <Kbd>Esc</Kbd> {hearing !== null ? "stop mic" : inChat || streaming ? "new chat" : "close"}
+            </span>
+          </div>
+        )
+      )}
       <Timings />
     </div>
   );
 }
 
-/** Live transcript while listening, with a breathing level bar. */
+/** A round header button with its key badge while Alt is held. */
+function IconButton({
+  label,
+  hint,
+  keys,
+  pressed,
+  onClick,
+  children,
+}: {
+  label: string;
+  hint: string;
+  keys: boolean;
+  pressed?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <span className="relative shrink-0">
+      <button
+        type="button"
+        aria-label={label}
+        title={label}
+        aria-pressed={pressed}
+        onClick={onClick}
+        className={`chip grid size-7 place-items-center rounded-full text-white/85 ${
+          pressed ? "bg-white/[0.22]" : "bg-white/[0.1] hover:bg-white/[0.18]"
+        }`}
+      >
+        {children}
+      </button>
+      <KeyHint show={keys}>{hint}</KeyHint>
+    </span>
+  );
+}
+
+/** Selected row not chosen yet: the panel picks by what was typed. */
+const INTENT_PENDING = -1;
+
+/** A short name ("slack", "dark mode", "settings"), not a question. */
+export function looksLikeName(text: string): boolean {
+  const t = text.trim();
+  if (!t || /[?]/.test(t)) return false;
+  if (/^(what|why|how|who|when|where|which|can|could|should|is|are|do|does|explain|tell|write|summari[sz]e)\b/i.test(t))
+    return false;
+  return t.split(/\s+/).length <= 3;
+}
+
+/** The voice's rainbow bars. */
+export function VoiceBars() {
+  return (
+    <span className="voice-bars shrink-0" role="img" aria-label="Listening">
+      <i />
+      <i />
+      <i />
+      <i />
+      <i />
+      <i />
+    </span>
+  );
+}
+
+/** Live transcript while listening: the bars, then your words a size
+ * larger, or "Listening..." until the first one. */
 export function Hearing({ text }: { text: string }) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2.5" aria-live="polite">
-      <span className="flex h-4 items-center gap-[3px]" role="img" aria-label="Listening">
-        {[0, 1, 2, 3].map((i) => (
-          <motion.span
-            key={i}
-            className="w-[3px] rounded-full bg-[#30d158]"
-            animate={{ height: [4, 14, 4] }}
-            transition={{ duration: 0.8, repeat: Number.POSITIVE_INFINITY, delay: i * 0.12, ease: "easeInOut" }}
-          />
-        ))}
-      </span>
+      <VoiceBars />
       <span
         className={`min-w-0 flex-1 truncate font-display text-[17px] tracking-[-0.015em] ${
-          text ? "text-white" : "text-[rgb(235_235_245/0.4)]"
+          text ? "text-white" : "text-[rgb(235_235_245/0.45)]"
         }`}
       >
         {text || "Listening..."}

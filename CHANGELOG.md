@@ -38,6 +38,21 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 
 - Routines are now Morning setup, under Settings > Skills, with one switch: Ask first, Open by itself or Off. Click an app or site to take it out.
 
+### Ask
+
+- The header holds everything you change often: speak replies (Alt S), talk (Alt V), history (Alt H) and the model (Alt M), in a Graphite menu that says where each model runs.
+- What goes with a question is one quiet line under it: the app you were in and what you copied. Click one to add it or leave it out; This PC only sits at the end (Alt P).
+- Typing shows matches at once, before any AI: commands, projects, settings screens and past chats. A short name selects its match; a question selects Ask, which is always on top.
+- Hold Alt to see every key on its control, and the key legend at the bottom.
+- While it works: one shimmering line with a timer. After: "Local model · 1.2 s" under the answer, and the steps fold to "3 steps · 2.4 s".
+- At most three actions after an answer, the first one solid.
+- Reopening Ask within 10 minutes brings back the last chat; later, a new one starts.
+
+### Voice
+
+- Listening shows rainbow bars and your words, in Ask and in the compact pill.
+- The mascot talks along while it reads an answer aloud.
+
 ## [0.1.0] - Unreleased
 
 The first public release.

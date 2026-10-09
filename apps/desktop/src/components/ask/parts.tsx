@@ -119,6 +119,29 @@ export function ago(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
+/** A key badge that shows on its control while Alt is held. */
+export function KeyHint({
+  show,
+  children,
+  side = "left",
+}: {
+  show: boolean;
+  children: ReactNode;
+  side?: "left" | "right";
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`key-hint pointer-events-none absolute -top-1.5 z-10 rounded-[5px] whitespace-nowrap bg-white px-1 font-sans text-[9.5px] leading-[15px] font-semibold text-black shadow-[0_2px_6px_rgb(0_0_0/0.45)] ${
+        side === "left" ? "-left-1" : "-right-1"
+      }`}
+      data-show={show}
+    >
+      {children}
+    </span>
+  );
+}
+
 export function Kbd({ children }: { children: ReactNode }) {
   return (
     <kbd className="rounded-[5px] bg-white/[0.1] px-1.5 py-px font-sans text-[10px] text-[rgb(235_235_245/0.6)]">
