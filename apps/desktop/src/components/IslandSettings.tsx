@@ -47,7 +47,7 @@ export function IslandSettings() {
   }, [coder]);
 
   return (
-    <div className="ak flex flex-col" style={{ maxHeight: PANEL_MAX_HEIGHT }}>
+    <div className="ak !flex min-h-0 flex-col" style={{ maxHeight: PANEL_MAX_HEIGHT }}>
       <PanelTabs current="settings" onPick={leave} coder={coder} working={working} alt={alt} />
       <SettingsPanel />
     </div>

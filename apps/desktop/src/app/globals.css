@@ -474,49 +474,39 @@ body {
   overscroll-behavior: contain;
 }
 
-/* Slim custom scrollbar for the island. WebView2 draws step arrows with
+/* Slim custom scrollbar for Ask. Glance / Settings / History hide the bar
+   (premium, still scrollable). WebView2 draws step arrows with
    scrollbar-width, so only ::-webkit-scrollbar parts are used (Chromium
-   ignores them once scrollbar-width or scrollbar-color is set).
-   .island-scroll is the shared class for any other scroller. */
-.ask-scroll::-webkit-scrollbar,
-.settings-scroll::-webkit-scrollbar,
-.island-scroll::-webkit-scrollbar {
+   ignores them once scrollbar-width or scrollbar-color is set). */
+.ask-scroll::-webkit-scrollbar {
   width: 4px;
 }
-.ask-scroll::-webkit-scrollbar-track,
-.settings-scroll::-webkit-scrollbar-track,
-.island-scroll::-webkit-scrollbar-track {
+.ask-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
-.ask-scroll::-webkit-scrollbar-thumb,
-.settings-scroll::-webkit-scrollbar-thumb,
-.island-scroll::-webkit-scrollbar-thumb {
+.ask-scroll::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: rgb(255 255 255 / 0.14);
 }
-.ask-scroll::-webkit-scrollbar-thumb:hover,
-.settings-scroll::-webkit-scrollbar-thumb:hover,
-.island-scroll::-webkit-scrollbar-thumb:hover {
+.ask-scroll::-webkit-scrollbar-thumb:hover {
   background: rgb(255 255 255 / 0.28);
 }
-.ask-scroll::-webkit-scrollbar-thumb:active,
-.settings-scroll::-webkit-scrollbar-thumb:active,
-.island-scroll::-webkit-scrollbar-thumb:active {
+.ask-scroll::-webkit-scrollbar-thumb:active {
   background: rgb(255 255 255 / 0.4);
 }
-.ask-scroll::-webkit-scrollbar-button,
-.settings-scroll::-webkit-scrollbar-button,
-.island-scroll::-webkit-scrollbar-button {
+.ask-scroll::-webkit-scrollbar-button {
   display: none;
 }
-.ask-scroll::-webkit-scrollbar-corner,
-.settings-scroll::-webkit-scrollbar-corner,
-.island-scroll::-webkit-scrollbar-corner {
+.ask-scroll::-webkit-scrollbar-corner {
   background: transparent;
 }
 
 .island-scroll {
   overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.island-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 /* ---------- Settings inside the island ---------- */
@@ -552,7 +542,10 @@ body {
     transparent 100%
   );
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+  scrollbar-width: none;
+}
+.settings-scroll::-webkit-scrollbar {
+  display: none;
 }
 .settings-scroll[data-fade-top] {
   --fade-top: 20px;
@@ -3355,8 +3348,12 @@ button.ak-cchip:hover,
 .ak-tab.ak-tabi {
   padding: 4px 7px;
 }
-/* Settings under the tab row: the search field sits beside the mascot, like Ask's input. */
+/* Settings under the tab row: only the search sits beside the mascot (like
+   Ask's input). Section tabs and the body share the same left edge. */
 .ak .island-settings > div:first-child {
-  padding-left: 44px;
   padding-top: 6px;
+}
+.ak .island-settings > div:first-child > input[type="search"] {
+  margin-left: 44px;
+  width: calc(100% - 44px);
 }

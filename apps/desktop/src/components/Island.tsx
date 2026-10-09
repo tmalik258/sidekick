@@ -50,8 +50,8 @@ const DETAIL: Record<MascotState, string> = {
   error: "Details are in the log.",
 };
 
-/** States that hold the island open without hover. */
-const OPEN_STATES: ReadonlySet<MascotState> = new Set(["suggesting", "listening", "working", "success", "error"]);
+/** States that hold the island open without hover. Working and plain Done stay a compact pill. */
+const OPEN_STATES: ReadonlySet<MascotState> = new Set(["suggesting", "listening", "error"]);
 
 const ORB = 44;
 const COMPACT = {
@@ -155,18 +155,39 @@ export function Island() {
       live = false;
     };
   }, [questionId]);
-  const working = useSidekick((s) => (s.ask ? null : (chatWorking ?? agentWorking)));
+  // Skill / action in flight with Ask closed: same slim pill as chat/agents.
+  // Combine outside a store selector so closed-over chat/agent labels stay fresh.
+  const skillWorking = useSidekick((s) => {
+    if (s.ask || s.mascot !== "working") return null;
+    return s.running ? `${s.running}...` : "Working on it";
+  });
+  const working = asking ? null : (chatWorking ?? agentWorking ?? skillWorking);
   // An agent waiting on an answer: the mascot looks up curious and the pill
   // shows an amber dot instead of the busy bars.
   const agentAsks = useAgents((s) => s.sessions.some((x) => x.status === "waiting"));
-  const asksYou = working !== null && chatWorking === null && agentAsks;
+  const asksYou = working !== null && chatWorking === null && skillWorking === null && agentAsks;
   const guide = useGuide(waiting);
   // Voice with Ask closed: a compact pill while listening and thinking; the
   // island opens only when the answer starts.
   const hearing = useSidekick((s) => (s.ask ? null : s.hearing));
   const voiceQuestion = useSidekick((s) => (s.ask ? null : s.voiceQuestion));
   // Something finished that needs nothing more: a short done pill.
-  const donePill = useSidekick((s) => (s.ask ? null : s.donePill));
+  // Also covers mascot success without Undo / Open (e.g. "Switched to Claude"
+  // after Settings closed — showDone was skipped while Ask was open).
+  const donePill = useSidekick((s) => {
+    if (s.ask) return null;
+    if (s.donePill) return s.donePill;
+    if (s.mascot !== "success") return null;
+    const r = s.lastResult;
+    if (r?.undoId != null || r?.path) return null;
+    return r?.message ?? "Done";
+  });
+  // Success that still needs Undo or Open folder: keep the expanded card.
+  const successCard = useSidekick((s) => {
+    if (s.ask || s.mascot !== "success") return false;
+    const r = s.lastResult;
+    return !!(r && (r.undoId != null || r.path));
+  });
   // Focus mode: a compact pill with the focus face and the time left.
   const focusUntil = useSidekick((s) => (s.ask ? null : s.focusUntil));
   const focusLeft = useFocusLeft(focusUntil);
@@ -259,6 +280,7 @@ export function Island() {
     (hovered && (!voicePill || agentsOnly)) ||
     guiding ||
     (OPEN_STATES.has(mascot) && !voicePill) ||
+    successCard ||
     !!suggestion ||
     (!!netNotice && !voicePill) ||
     merging;

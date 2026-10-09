@@ -234,6 +234,10 @@ function CodeFolders({ chosen, onChange }: { chosen: string[]; onChange: (next: 
   );
 }
 
+/** Same chrome as TextField — live value so Add does not race blur. */
+const CLONE_INPUT =
+  "min-w-0 rounded-md border border-(--border) bg-transparent px-2 py-1 text-[13px] outline-none placeholder:text-(--muted) focus:border-(--accent)";
+
 /** Where clones go by owner: learned from your clones, editable here. */
 function CloneRules({
   rules,
@@ -255,6 +259,7 @@ function CloneRules({
     <Field
       label="Where clones go"
       hint="Copy a repo link and Sidekick offers to clone it here. Learned from where you clone."
+      stack
     >
       <div className="flex flex-col gap-1.5">
         {entries.map(([o, f]) => (
@@ -275,23 +280,25 @@ function CloneRules({
             </button>
           </div>
         ))}
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <input
-            className="min-w-0 flex-1"
+            className={`${CLONE_INPUT} flex-1`}
             value={owner}
             onChange={(e) => setOwner(e.target.value)}
             placeholder="Owner, e.g. acme"
             aria-label="Owner"
+            spellCheck={false}
           />
           <input
-            className="min-w-0 flex-[2]"
+            className={`${CLONE_INPUT} flex-[2]`}
             value={folder}
             onChange={(e) => setFolder(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && add()}
             placeholder="Folder, e.g. D:\\Acme"
             aria-label="Folder"
+            spellCheck={false}
           />
-          <button type="button" className="chip" onClick={add}>
+          <button type="button" className="chip shrink-0" onClick={add}>
             Add
           </button>
         </div>

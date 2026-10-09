@@ -259,7 +259,29 @@ export function TextField({
   );
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
+export function Field({
+  label,
+  hint,
+  children,
+  stack = false,
+}: {
+  label: string;
+  hint?: ReactNode;
+  children: ReactNode;
+  /** Label above the control — for wide forms that crush a side-by-side row. */
+  stack?: boolean;
+}) {
+  if (stack) {
+    return (
+      <div className="flex flex-col gap-2 text-[13px]">
+        <span>
+          {label}
+          {hint && <span className="mt-0.5 block text-[11.5px] text-(--muted)">{hint}</span>}
+        </span>
+        {children}
+      </div>
+    );
+  }
   return (
     <div className="flex items-center justify-between gap-4 text-[13px]">
       <span className="min-w-0">
@@ -358,7 +380,11 @@ export function Select({
     if (!el) return;
     const r = el.getBoundingClientRect();
     const want = Math.min(288, Math.max(shown.length, 1) * (rich ? 44 : 32) + menuChrome);
-    const above = window.innerHeight - r.bottom < want && r.top - want > 0;
+    // Prefer above when there is not enough room below. The island window is
+    // short; opening down near the bottom clips the menu off-screen.
+    const spaceBelow = window.innerHeight - r.bottom;
+    const spaceAbove = r.top;
+    const above = spaceBelow < want && spaceAbove >= spaceBelow;
     const width = menuWidth ?? Math.min(296, Math.max(rich ? 220 : r.width, r.width));
     const left = Math.min(Math.max(8, r.left), window.innerWidth - width - 8);
     const top = above ? r.top - 4 : r.bottom + 4;
@@ -396,7 +422,9 @@ export function Select({
       const limit = box && box !== document.body ? box.getBoundingClientRect().bottom : window.innerHeight;
       const want = Math.min(288, Math.max(shown.length, 1) * (rich ? 44 : 32) + menuChrome);
       const r = el.getBoundingClientRect();
-      setUp(limit - r.bottom < want && r.top - want > 0);
+      const spaceBelow = limit - r.bottom;
+      const spaceAbove = r.top - (box && box !== document.body ? box.getBoundingClientRect().top : 0);
+      setUp(spaceBelow < want && spaceAbove >= spaceBelow);
     }
     const onDoc = (e: MouseEvent) => {
       const t = e.target as Node;

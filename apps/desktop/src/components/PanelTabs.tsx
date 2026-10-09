@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import type { AskTab } from "@/lib/agents";
 import { KeyHint } from "./ask/parts";
 import { Icon } from "./Icon";
+import { Tip } from "./Tip";
 
 export type PanelTab = AskTab | "settings";
 
@@ -62,30 +63,32 @@ export function PanelTabs({
       <span className="ak-tabs-end">
         {extra}
         <span className="relative">
+          <Tip label="History (Alt H)">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={current === "history"}
+              aria-label="History"
+              onClick={() => onPick("history")}
+              className="ak-tab ak-tabi chip"
+            >
+              <Icon name="history" size={14} />
+            </button>
+          </Tip>
+          <KeyHint show={alt}>Alt H</KeyHint>
+        </span>
+        <Tip label="Settings">
           <button
             type="button"
             role="tab"
-            aria-selected={current === "history"}
-            aria-label="History"
-            title="History (Alt H)"
-            onClick={() => onPick("history")}
+            aria-selected={current === "settings"}
+            aria-label="Settings"
+            onClick={() => onPick("settings")}
             className="ak-tab ak-tabi chip"
           >
-            <Icon name="history" size={14} />
+            <Icon name="settings" size={14} />
           </button>
-          <KeyHint show={alt}>Alt H</KeyHint>
-        </span>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={current === "settings"}
-          aria-label="Settings"
-          title="Settings"
-          onClick={() => onPick("settings")}
-          className="ak-tab ak-tabi chip"
-        >
-          <Icon name="settings" size={14} />
-        </button>
+        </Tip>
       </span>
     </div>
   );

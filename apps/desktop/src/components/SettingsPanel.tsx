@@ -183,7 +183,7 @@ export function SettingsPanel() {
           onScroll={(e) => {
             scrolled.current = e.currentTarget.scrollTop;
           }}
-          className="settings-scroll -mr-3 flex min-h-0 flex-auto flex-col gap-5 overflow-y-auto pr-3 pl-0.5 pb-3"
+          className="settings-scroll flex min-h-0 flex-auto flex-col gap-5 overflow-y-auto px-0.5 pb-3"
         >
           {show("home") && <HomeTab onError={report} onOpenTab={open} />}
           {show("appearance") && <AppearanceTab onError={report} />}

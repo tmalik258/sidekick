@@ -43,7 +43,7 @@ export function ModelPicker({
   const listRef = useRef<HTMLDivElement>(null);
   const chipRef = useRef<HTMLSpanElement>(null);
   // The menu floats over the window, so the island keeps its size.
-  const [at, setAt] = useState<{ left: number; top: number } | null>(null);
+  const [at, setAt] = useState<{ left: number; top: number; above: boolean; height: number } | null>(null);
   const items: { id: string | null; title: string; note: string }[] = [
     {
       id: null,
@@ -67,10 +67,21 @@ export function ModelPicker({
     const r = chipRef.current?.getBoundingClientRect();
     if (!r) return;
     const width = 256;
+    const height = 30 + items.length * 46;
     const left = Math.min(Math.max(8, r.right - width), window.innerWidth - width - 8);
-    const top = r.bottom + 6;
-    setAt({ left, top });
-    setOverlayHit({ x: left, y: top, width, height: 30 + items.length * 46 });
+    // Ask sits at the bottom of a short island window: open above when there
+    // is not enough room below (otherwise the menu is clipped).
+    const spaceBelow = window.innerHeight - r.bottom;
+    const spaceAbove = r.top;
+    const above = spaceBelow < height && spaceAbove >= spaceBelow;
+    const top = above ? r.top - 6 : r.bottom + 6;
+    setAt({ left, top, above, height });
+    setOverlayHit({
+      x: left,
+      y: above ? top - height : top,
+      width,
+      height,
+    });
     requestAnimationFrame(() => listRef.current?.querySelector<HTMLButtonElement>("[aria-checked=true]")?.focus());
     return () => setOverlayHit(null);
   }, [open, items.length]);
@@ -123,7 +134,11 @@ export function ModelPicker({
               role="menu"
               aria-label="Model"
               onKeyDown={onListKey}
-              style={{ left: at.left, top: at.top }}
+              style={
+                at.above
+                  ? { left: at.left, bottom: window.innerHeight - at.top, width: 256 }
+                  : { left: at.left, top: at.top, width: 256 }
+              }
               className="menu fixed z-30 flex w-64 flex-col gap-0.5 rounded-[14px] p-1 text-[13px]"
             >
               <p className="px-2.5 pt-1 pb-0.5 text-[11px] font-medium text-[rgb(235_235_245/0.45)]">
