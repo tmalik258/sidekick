@@ -62,6 +62,8 @@ pub struct FileHit {
 pub struct Results {
     pub apps: Vec<AppHit>,
     pub files: Vec<FileHit>,
+    /// "18% of 2450" worked out: "441".
+    pub calc: Option<String>,
 }
 
 /// Rebuilds the app and file lists in the background when old or missing.
@@ -113,6 +115,12 @@ pub fn find(app: &AppHandle, query: &str) -> Results {
     if query.chars().count() < 2 {
         return Results::default();
     }
+    if let Some(answer) = sidekick_calc::calculate(query) {
+        return Results {
+            calc: Some(sidekick_calc::format(answer)),
+            ..Results::default()
+        };
+    }
     refresh(app);
     let usage = week_usage(app);
     let apps = lock(&APPS)
@@ -120,7 +128,11 @@ pub fn find(app: &AppHandle, query: &str) -> Results {
         .map(|(_, list)| rank_apps(list, query, &usage))
         .unwrap_or_default();
     let files = find_files(app, query);
-    Results { apps, files }
+    Results {
+        apps,
+        files,
+        calc: None,
+    }
 }
 
 /// Matching apps, the ones used most this week first; among apps not used,

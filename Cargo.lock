@@ -5228,6 +5228,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "sidekick-calc"
+version = "0.1.0"
+
+[[package]]
 name = "sidekick-core"
 version = "0.1.0"
 dependencies = [
@@ -5261,6 +5265,7 @@ dependencies = [
  "sha2",
  "sidekick-actions",
  "sidekick-ai",
+ "sidekick-calc",
  "sidekick-core",
  "sidekick-layout",
  "sidekick-sensors",

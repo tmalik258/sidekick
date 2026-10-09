@@ -397,6 +397,18 @@ export function AskPanel() {
   // name (instant, no AI), then Search and Teach at the end.
   const items: Item[] = [];
   if (!inHistory && !showClips && !showHits && hearing === null) {
+    // Math answers itself: Enter copies the result.
+    if (asking && !inChat && instant.calc) {
+      const result = instant.calc;
+      items.push({
+        id: "calc",
+        group: "Calculator",
+        icon: <span className="text-[12px] font-bold">=</span>,
+        label: result,
+        hint: "Enter copies",
+        run: () => void navigator.clipboard.writeText(result).catch(() => undefined),
+      });
+    }
     if (asking) {
       items.push({
         id: "ask",

@@ -843,6 +843,8 @@ export interface AgentSettings {
 export interface InstantResults {
   apps: { name: string; id: string; minutes: number }[];
   files: { name: string; path: string; folder: boolean; place: string }[];
+  /** "18% of 2450" worked out, when the text is math. */
+  calc?: string | null;
 }
 
 /** Something Sidekick learned, for Settings > Memory. */

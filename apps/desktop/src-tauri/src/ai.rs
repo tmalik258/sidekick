@@ -603,6 +603,29 @@ pub fn chat(
         };
         // "Turn on hotspot", "mute": done at once, no model to misread it.
         // Not while held: the question may still change.
+        // "18% of 2450": worked out here, at once, never by a model.
+        if let Some(answer) = (!attach.hold && !attach.screen)
+            .then(|| question.as_deref().and_then(sidekick_calc::calculate))
+            .flatten()
+        {
+            lock(&app.state::<AppState>().chats).remove(&id);
+            let speak = attach.speak && crate::voice::begin_answer(&app, &id);
+            send_text(&app, &id, sidekick_calc::format(answer), speak);
+            if speak {
+                crate::voice::answer_done(&app, &id, None);
+            }
+            let _ = app.emit(
+                DONE_EVENT,
+                Done {
+                    id,
+                    provider: Some("instant".into()),
+                    error: None,
+                    handoff: None,
+                    cost: None,
+                },
+            );
+            return;
+        }
         if let Some(cmd) = (!attach.hold && !attach.screen)
             .then(|| question.as_deref().and_then(crate::quick::command))
             .flatten()
