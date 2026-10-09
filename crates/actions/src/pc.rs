@@ -43,6 +43,8 @@ pub struct PcState {
     pub charging: Option<bool>,
     pub brightness: Option<u8>,
     pub wifi: Option<String>,
+    /// This PC's Mobile hotspot (sharing its internet), not a phone's.
+    pub hotspot: Switch,
 }
 
 const STATUS_SCRIPT: &str = r#"$ErrorActionPreference='SilentlyContinue'
@@ -59,6 +61,8 @@ $br=Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBrightness | Select
 if($br){"brightness=$($br.CurrentBrightness)"}
 $w=netsh wlan show interfaces | Select-String '^\s+SSID\s+:' | Select-Object -First 1
 if($w){"wifi=$((($w.Line) -split ':',2)[1].Trim())"}
+$c=[Windows.Networking.Connectivity.NetworkInformation,Windows.Networking.Connectivity,ContentType=WindowsRuntime]::GetInternetConnectionProfile()
+if($c){$t=[Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager,Windows.Networking.NetworkOperators,ContentType=WindowsRuntime]::CreateFromConnectionProfile($c);if($t){"hotspot=$($t.TetheringOperationalState)"}}
 "#;
 
 /// Active playback devices: `{endpoint}\tName (Driver)`, from the registry
@@ -256,6 +260,13 @@ pub fn parse_state(text: &str) -> PcState {
             }
             "brightness" => s.brightness = value.parse().ok(),
             "wifi" if !value.is_empty() => s.wifi = Some(value.to_owned()),
+            "hotspot" => {
+                s.hotspot = match value {
+                    "On" | "InTransition" => Switch::On,
+                    "Off" => Switch::Off,
+                    _ => Switch::Unknown,
+                }
+            }
             _ => {}
         }
     }
@@ -290,6 +301,9 @@ pub fn describe(s: &PcState) -> String {
         "Wi-Fi: {}",
         s.wifi.as_deref().unwrap_or("not connected or unknown")
     ));
+    if s.hotspot != Switch::Unknown {
+        out.push(format!("Mobile hotspot (this PC): {}", s.hotspot.as_str()));
+    }
     out.join("\n")
 }
 
@@ -371,6 +385,51 @@ $radios=Await ([Windows.Devices.Radios.Radio]::GetRadiosAsync()) ([System.Collec
 $r=$radios | Where-Object { $_.Kind -eq $env:SK_KIND } | Select-Object -First 1
 if(-not $r){ Write-Output "none"; exit }
 Await ($r.SetStateAsync($env:SK_STATE)) ([Windows.Devices.Radios.RadioAccessStatus])
+"#;
+
+/// Turns this PC's Mobile hotspot on or off (`SK_STATE` On/Off) through the
+/// tethering manager Settings uses. Prints the result status, or "none".
+const HOTSPOT: &str = r#"$ErrorActionPreference='Stop'
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$asTask=([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
+function Await($op,$type){ $t=$asTask.MakeGenericMethod($type).Invoke($null,@($op)); $t.Wait(-1) | Out-Null; $t.Result }
+$c=[Windows.Networking.Connectivity.NetworkInformation,Windows.Networking.Connectivity,ContentType=WindowsRuntime]::GetInternetConnectionProfile()
+if(-not $c){ Write-Output "none"; exit }
+$m=[Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager,Windows.Networking.NetworkOperators,ContentType=WindowsRuntime]::CreateFromConnectionProfile($c)
+[Windows.Networking.NetworkOperators.NetworkOperatorTetheringOperationResult,Windows.Networking.NetworkOperators,ContentType=WindowsRuntime] | Out-Null
+$op=if($env:SK_STATE -eq 'On'){ $m.StartTetheringAsync() } else { $m.StopTetheringAsync() }
+$r=Await $op ([Windows.Networking.NetworkOperators.NetworkOperatorTetheringOperationResult])
+"$($r.Status) $($r.AdditionalErrorMessage)"
+"#;
+
+/// Every radio (Wi-Fi, Bluetooth, mobile) to `SK_STATE`: Windows has no
+/// public switch for airplane mode, so this is what it does to the radios.
+const ALL_RADIOS: &str = r#"$ErrorActionPreference='Stop'
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$asTask=([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
+function Await($op,$type){ $t=$asTask.MakeGenericMethod($type).Invoke($null,@($op)); $t.Wait(-1) | Out-Null; $t.Result }
+[Windows.Devices.Radios.Radio,Windows.System.Devices,ContentType=WindowsRuntime] | Out-Null
+[Windows.Devices.Radios.RadioAccessStatus,Windows.System.Devices,ContentType=WindowsRuntime] | Out-Null
+[Windows.Devices.Radios.RadioState,Windows.System.Devices,ContentType=WindowsRuntime] | Out-Null
+Await ([Windows.Devices.Radios.Radio]::RequestAccessAsync()) ([Windows.Devices.Radios.RadioAccessStatus]) | Out-Null
+$radios=Await ([Windows.Devices.Radios.Radio]::GetRadiosAsync()) ([System.Collections.Generic.IReadOnlyList[Windows.Devices.Radios.Radio]])
+foreach($r in $radios){ Await ($r.SetStateAsync($env:SK_STATE)) ([Windows.Devices.Radios.RadioAccessStatus]) }
+"#;
+
+/// Night light on or off (`SK_STATE` On/Off) by rewriting its state blob the
+/// way Settings does: byte 18 is 0x15 on, 0x13 off, and "on" carries two more
+/// bytes (0x10 0x00) after byte 21. Bumping the timestamp makes Windows apply it.
+const NIGHT_LIGHT: &str = r#"$ErrorActionPreference='Stop'
+$k='HKCU:\Software\Microsoft\Windows\CurrentVersion\CloudStore\Store\DefaultAccount\Current\default$windows.data.bluelightreduction.bluelightreductionstate\windows.data.bluelightreduction.bluelightreductionstate'
+$d=[byte[]](Get-ItemProperty -LiteralPath $k).Data
+$on=$d[18] -eq 0x15
+$want=$env:SK_STATE -eq 'On'
+if($on -eq $want){ Write-Output "already"; exit }
+if($want){ $n=[byte[]]($d[0..21] + [byte[]](0x10,0x00) + $d[22..($d.Length-1)]); $n[18]=0x15 }
+else { $n=[byte[]]($d[0..21] + $d[24..($d.Length-1)]); $n[18]=0x13 }
+for($i=10;$i -lt 15;$i++){ if($n[$i] -ne 0xff){ $n[$i]++; break } }
+Set-ItemProperty -LiteralPath $k -Name Data -Value $n
+Write-Output "done"
 "#;
 
 /// Wi-Fi networks in range, strongest first.
@@ -482,6 +541,8 @@ pub const SETTINGS_PAGES: &[(&str, &str)] = &[
     ("bluetooth", "ms-settings:bluetooth"),
     ("wifi", "ms-settings:network-wifi"),
     ("network", "ms-settings:network"),
+    ("hotspot", "ms-settings:network-mobilehotspot"),
+    ("airplane", "ms-settings:network-airplanemode"),
     ("battery", "ms-settings:batterysaver"),
     ("power", "ms-settings:powersleep"),
     ("storage", "ms-settings:storagesense"),
@@ -592,6 +653,52 @@ pub fn control(what: &str, value: Option<u8>, page: Option<&str>) -> Result<Outc
                 if kind == "WiFi" { "Wi-Fi" } else { kind },
                 on
             )))
+        }
+        "hotspot_on" | "hotspot_off" => {
+            let on = what == "hotspot_on";
+            let out = powershell(HOTSPOT, &[("SK_STATE", if on { "On" } else { "Off" })])?;
+            let out = out.trim();
+            if out == "none" {
+                return Err(ActionError::Failed(
+                    "this PC has no internet connection to share; connect first".into(),
+                ));
+            }
+            if !out.starts_with("Success") {
+                return Err(ActionError::Failed(format!(
+                    "Windows did not switch the Mobile hotspot ({out})"
+                )));
+            }
+            msg(if on {
+                "Mobile hotspot on"
+            } else {
+                "Mobile hotspot off"
+            })
+        }
+        "airplane_on" | "airplane_off" => {
+            let on = what == "airplane_on";
+            // Airplane mode on turns every radio off.
+            let out = powershell(ALL_RADIOS, &[("SK_STATE", if on { "Off" } else { "On" })])?;
+            if out.contains("Denied") {
+                return Err(ActionError::Failed(format!(
+                    "Windows did not allow switching the radios ({})",
+                    out.trim()
+                )));
+            }
+            msg(if on {
+                "Airplane mode on: Wi-Fi and Bluetooth off"
+            } else {
+                "Airplane mode off: Wi-Fi and Bluetooth on"
+            })
+        }
+        "night_light_on" | "night_light_off" => {
+            let on = what == "night_light_on";
+            let out = powershell(NIGHT_LIGHT, &[("SK_STATE", if on { "On" } else { "Off" })])?;
+            let word = if on { "on" } else { "off" };
+            Ok(Outcome::msg(if out.trim() == "already" {
+                format!("Night light was already {word}")
+            } else {
+                format!("Night light {word}")
+            }))
         }
         "dnd_on" | "dnd_off" => set_dnd(what == "dnd_on"),
         "audio_outputs" => {
@@ -709,6 +816,23 @@ pub fn close_window(q: &str) -> Result<Outcome, ActionError> {
 }
 
 /// Installed apps from the Start menu, as (name, AppID).
+/// Every app in the Start menu as (name, app id).
+pub fn installed_apps() -> Result<Vec<(String, String)>, ActionError> {
+    start_apps()
+}
+
+/// Starts an app by its Start menu id, from a list the user picked from.
+pub fn launch_app_id(id: &str) -> Result<Outcome, ActionError> {
+    if id.is_empty() || id.chars().any(|c| c.is_control() || c == '"') {
+        return Err(ActionError::Invalid("not an app id".into()));
+    }
+    powershell(
+        "Start-Process \"shell:AppsFolder\\$env:SIDEKICK_APP_ID\"",
+        &[("SIDEKICK_APP_ID", id)],
+    )?;
+    Ok(Outcome::msg("Opened"))
+}
+
 fn start_apps() -> Result<Vec<(String, String)>, ActionError> {
     let out = powershell(
         "Get-StartApps | ForEach-Object { \"$($_.Name)`t$($_.AppID)\" }",

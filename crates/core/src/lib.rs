@@ -9,6 +9,7 @@
 pub mod bus;
 pub mod event;
 pub mod mascot;
+pub mod names;
 pub mod settings;
 pub mod storage;
 
@@ -16,8 +17,8 @@ pub use bus::EventBus;
 pub use event::{Context, Event, Sensitivity};
 pub use mascot::{Cue, MascotEvent, MascotMachine, MascotState, Transition};
 pub use settings::{
-    AI_PROVIDERS, AgentSettings, AiSettings, ComposioSettings, NOTIFY_LEVELS, NotificationSettings,
-    Pause, Recipe, SHORTCUTS, Settings, SkillPref, Trigger,
+    AI_PROVIDERS, AgentSettings, AiSettings, CloudPref, ComposioSettings, NOTIFY_LEVELS,
+    NotificationSettings, Pause, Recipe, SHORTCUTS, Settings, SkillPref, Trigger,
 };
 pub use storage::{
     ActionRecord, AppTime, ChatRow, ChatSummary, Habit, RoutineOpen, SearchHit, Storage,

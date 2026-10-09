@@ -5,12 +5,17 @@
 // data shows at once and refreshes behind it.
 
 import { type ReactNode, useEffect, useState } from "react";
+import { useAgents } from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { useNow } from "@/lib/hooks";
-import { updateSettings, useSidekick } from "@/lib/store";
+import { updateSettings, useAssistantName, useSidekick } from "@/lib/store";
+import { pickTip } from "@/lib/tips";
 import { type AppTime, type CalendarToday, formatDuration, type LaterItem } from "@/lib/types";
 import { Icon } from "./Icon";
+import { AgentsGlance, AwayCard, useAway } from "./IslandAgents";
+import { CardChips, CardHead, CardNote } from "./IslandCard";
+import { Tip } from "./Tip";
 
 /** A meeting this close (or already on) takes the headline. */
 const MEETING_SOON_MIN = 60;
@@ -18,6 +23,17 @@ const MEETING_SOON_MIN = 60;
 const LATER_SHOWN = 3;
 
 export function Glance({ paused }: { paused: boolean }) {
+  const sessions = useAgents((s) => s.sessions);
+  const away = useAway();
+  const { data: crash, refresh: refreshCrash } = useCached<string | null>("crash", api.crashPending);
+  if (crash) return <CrashCard note={crash} onDone={() => void refreshCrash()} />;
+  if (away.rows.length > 0) return <AwayCard />;
+  if (sessions.some((s) => s.status === "working" || s.status === "waiting"))
+    return <AgentsGlance sessions={sessions} />;
+  return <DayGlance paused={paused} />;
+}
+
+function DayGlance({ paused }: { paused: boolean }) {
   const now = useNow(30_000);
   const { data: calendar } = useCached<CalendarToday>("calendar-today", api.calendarToday);
   const { data: time } = useCached<AppTime[]>("time-today", api.timeToday);
@@ -44,7 +60,26 @@ export function Glance({ paused }: { paused: boolean }) {
       </div>
       <FullscreenSwitch />
       <LaterList />
+      {head.quiet && <QuietTip />}
     </div>
+  );
+}
+
+/** About one hover in four, when nothing needs you: one short tip, never
+ * the same one twice in a row. */
+function QuietTip() {
+  const on = useSidekick((s) => s.settings.tips);
+  const later = useSidekick((s) => s.later);
+  const [tip] = useState(pickTip);
+  if (!on || later > 0 || !tip) return null;
+  return (
+    <p
+      className="mt-3 flex items-baseline gap-2 rounded-xl bg-white/[0.05] px-3 py-2 text-[12.5px] text-[rgb(235_235_245/0.7)]"
+      style={{ marginLeft: "calc(var(--orb-indent, 0px) * -1)" }}
+    >
+      <span className="text-[10.5px] font-semibold tracking-[0.04em] text-[rgb(235_235_245/0.45)] uppercase">Tip</span>
+      {tip}
+    </p>
   );
 }
 
@@ -64,19 +99,24 @@ function FullscreenSwitch() {
     >
       <span className="min-w-0 flex-1">
         <span className="block text-[13px] font-medium text-white">Hide while fullscreen</span>
-        <span className="block text-[12px] text-[rgb(235_235_245/0.55)]">
+        <span className="block text-[12px] text-[rgb(235_235_245/0.62)]">
           {hide ? "Hidden; hover the top edge to bring it back" : "The island stays on top of this app"}
         </span>
       </span>
       <span
         aria-hidden="true"
-        className={`relative h-[22px] w-9 shrink-0 rounded-full transition-colors duration-200 ${hide ? "bg-[#30d158]" : "bg-white/20"}`}
+        className="flex shrink-0 gap-0.5 rounded-[10px] bg-white/[0.08] p-[3px] text-[12.5px] leading-none"
       >
         <span
-          className={`absolute top-[2px] left-[2px] size-[18px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${
-            hide ? "translate-x-[14px]" : ""
-          }`}
-        />
+          className={`rounded-[8px] px-2.5 py-[5px] ${hide ? "bg-[#f5f5f7] font-semibold text-black" : "text-white/62"}`}
+        >
+          On
+        </span>
+        <span
+          className={`rounded-[8px] px-2.5 py-[5px] ${hide ? "text-white/62" : "bg-[#f5f5f7] font-semibold text-black"}`}
+        >
+          Off
+        </span>
       </span>
     </button>
   );
@@ -85,6 +125,8 @@ function FullscreenSwitch() {
 interface Headline {
   title: string;
   detail: string;
+  /** Nothing pressing: a tip may show. */
+  quiet?: boolean;
   join?: string | null;
 }
 
@@ -95,9 +137,9 @@ function headline(now: number, paused: boolean, calendar: CalendarToday | null, 
   const hour = new Date(now).getHours();
   const title = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const total = (time ?? []).reduce((sum, t) => sum + t.secs, 0);
-  if (total < 60) return { title, detail: "Nothing needs you right now." };
+  if (total < 60) return { title, detail: "Nothing needs you right now.", quiet: true };
   const top = topFocus(time ?? []);
-  return { title, detail: `${formatDuration(total)} at your PC today${top ? `, mostly ${top}` : ""}.` };
+  return { title, detail: `${formatDuration(total)} at your PC today${top ? `, mostly ${top}` : ""}.`, quiet: true };
 }
 
 /** Today's meetings come as local "HH:MM". */
@@ -178,7 +220,7 @@ function LaterList() {
           >
             <span className="min-w-0 flex-1 overflow-hidden">
               <span className="block truncate text-[13px] font-medium text-white">{l.title}</span>
-              <span className="block truncate text-[12px] text-[rgb(235_235_245/0.55)]">{l.detail}</span>
+              <span className="block truncate text-[12px] text-[rgb(235_235_245/0.62)]">{l.detail}</span>
             </span>
             <span className="shrink-0 text-[11px] text-white/40 tabular-nums">{ago(l.minutesAgo)}</span>
           </button>
@@ -188,7 +230,7 @@ function LaterList() {
         <button
           type="button"
           onClick={() => setAll(true)}
-          className="chip self-start text-[12px] text-white/50 hover:text-white"
+          className="chip self-start text-[12px] text-white/62 hover:text-white"
         >
           Show {items.length - LATER_SHOWN} more
         </button>
@@ -205,11 +247,13 @@ function ago(mins: number): string {
 
 function QuickActions({ paused }: { paused: boolean }) {
   const hotkey = useSidekick((s) => s.settings.paletteHotkey);
+  const name = useAssistantName();
   return (
     <>
-      <RoundButton label={`Ask Sidekick (${hotkey})`} onClick={() => void api.askOpen()}>
+      <RoundButton label={`Ask ${name} (${hotkey})`} onClick={() => void api.askOpen()}>
         <Icon name="ask" size={15} />
       </RoundButton>
+      <FocusButton />
       <RoundButton
         label={paused ? "Resume" : "Pause 15 minutes"}
         onClick={() => void (paused ? api.sensorsResume() : api.sensorsPause(15))}
@@ -221,6 +265,21 @@ function QuickActions({ paused }: { paused: boolean }) {
       </RoundButton>
       <UpdateButton />
     </>
+  );
+}
+
+/** Starts 25 minutes of focus, or ends it. */
+function FocusButton() {
+  const focusing = useSidekick((s) => s.focusUntil !== null && s.focusUntil > Date.now());
+  const keys = useSidekick((s) => s.settings.shortcuts.focus);
+  const hint = keys ? ` (${keys})` : "";
+  return (
+    <RoundButton
+      label={focusing ? `End focus${hint}` : `Focus 25 minutes${hint}`}
+      onClick={() => void (focusing ? api.focusStop() : api.focusStart(25))}
+    >
+      <Icon name="focus" size={15} />
+    </RoundButton>
   );
 }
 
@@ -248,14 +307,41 @@ function UpdateButton() {
 
 export function RoundButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className="chip grid size-8 place-items-center rounded-full bg-white/12 text-white/90 hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff]"
-    >
-      {children}
-    </button>
+    <Tip label={label}>
+      <button
+        type="button"
+        aria-label={label}
+        onClick={onClick}
+        className="chip grid size-8 place-items-center rounded-full bg-white/12 text-white/90 hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff]"
+      >
+        {children}
+      </button>
+    </Tip>
+  );
+}
+
+const ISSUES = "https://github.com/tmalik258/sidekick/issues/new";
+
+/** After a crash, for people who opted in: the report, and sending it is
+ * their choice (a GitHub issue they can read and edit first). */
+function CrashCard({ note, onDone }: { note: string; onDone: () => void }) {
+  const dismiss = () => void api.crashDismiss().then(onDone);
+  const report = () =>
+    void api.appInfo().then((info) => {
+      const body = `Sidekick ${info.version} closed unexpectedly.\n\n\`\`\`\n${note}\n\`\`\`\n\nWhat I was doing:\n`;
+      const url = `${ISSUES}?title=${encodeURIComponent("Crash report")}&body=${encodeURIComponent(body)}`;
+      void api.aiOpenLink(url).then(dismiss);
+    });
+  return (
+    <div className="flex flex-col">
+      <CardHead
+        title="Sidekick closed unexpectedly"
+        detail="The report has the version and the error, nothing else. You read it before it is sent."
+      />
+      <CardNote>
+        <span className="line-clamp-3">{note}</span>
+      </CardNote>
+      <CardChips options={[{ label: "Report it", run: report }]} quiet={{ label: "Ignore", run: dismiss }} />
+    </div>
   );
 }

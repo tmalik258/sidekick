@@ -25,7 +25,7 @@ export function WelcomeChoice({
     >
       <div className="min-w-0 flex-1">
         <p className="font-medium text-white">{title}</p>
-        <p className="text-[11.5px] text-[rgb(235_235_245/0.55)]">{hint}</p>
+        <p className="text-[11.5px] text-[rgb(235_235_245/0.62)]">{hint}</p>
       </div>
       <span
         className={`grid size-5 shrink-0 place-items-center rounded-full text-[11px] font-bold transition-colors duration-150 ${

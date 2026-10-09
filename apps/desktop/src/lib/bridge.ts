@@ -18,6 +18,7 @@ import type {
   CapabilityInfo,
   ChatMessage,
   ChatSummary,
+  CloudId,
   ComposioStatus,
   EditorList,
   ExtensionGuide,
@@ -25,7 +26,9 @@ import type {
   Found,
   HitRect,
   InboxStatus,
+  InstantResults,
   LaterItem,
+  Learned,
   LocalModels,
   MascotState,
   NotifyLevel,
@@ -39,6 +42,7 @@ import type {
   SkillInfo,
   StoredEvent,
   Suggestion,
+  SuggestionRate,
   Timing,
   Transition,
   Turn,
@@ -79,10 +83,14 @@ export const EVENTS = {
   netStatus: "net://status",
   updateAvailable: "update://available",
   timing: "timing://recorded",
+  islandDone: "island://done",
+  islandFocus: "island://focus",
 } as const;
 
 export interface EventPayloads {
   [EVENTS.mascotState]: Transition;
+  [EVENTS.islandDone]: { id: string; text: string };
+  [EVENTS.islandFocus]: { until: number | null; held: number | unknown[]; ended?: boolean };
   [EVENTS.suggestionNew]: Suggestion;
   [EVENTS.suggestionClear]: string;
   [EVENTS.islandHover]: boolean;
@@ -93,9 +101,16 @@ export interface EventPayloads {
   [EVENTS.updateAvailable]: UpdateInfo;
   [EVENTS.inboxChanged]: null;
   [EVENTS.aiDelta]: { id: string; text: string };
-  [EVENTS.aiDone]: { id: string; provider: string | null; error: string | null; handoff: string | null };
+  [EVENTS.aiDone]: {
+    id: string;
+    provider: string | null;
+    error: string | null;
+    handoff: string | null;
+    /** US dollars, only for Anthropic API answers. */
+    cost?: number | null;
+  };
   [EVENTS.aiTool]: { id: string; name: string; label?: string };
-  [EVENTS.aiProposal]: { chatId: string; id: string; label: string };
+  [EVENTS.aiProposal]: { chatId: string; id: string; label: string; step?: boolean };
   [EVENTS.askOpen]: AskOpen;
   [EVENTS.askClose]: { reason: "close" | "defer" };
   [EVENTS.actionResult]: ActionResult;
@@ -132,8 +147,29 @@ export async function listen<K extends keyof EventPayloads>(
   return listen<EventPayloads[K]>(event, (e) => handler(e.payload));
 }
 
+/** A model OpenRouter offers; prices in US dollars per million tokens. */
+export interface RouterModel {
+  id: string;
+  name: string;
+  free: boolean;
+  input: number;
+  output: number;
+  context: number;
+  tools: boolean;
+}
+
 export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
+  systemLook: () => invoke<{ transparency: boolean; batterySaver: boolean }>("system_look"),
+  diagnostics: () => invoke<string>("diagnostics"),
+  reportSave: () => invoke<string>("report_save"),
+  cloudKeys: () => invoke<Record<CloudId, boolean>>("cloud_keys"),
+  cloudKeySet: (id: CloudId, key: string) => invoke<Settings>("cloud_key_set", { id, key }),
+  cloudKeyClear: (id: CloudId) => invoke<Settings>("cloud_key_clear", { id }),
+  openrouterModels: () => invoke<RouterModel[]>("openrouter_models"),
+  copilotAsk: (text: string) => invoke<string>("copilot_ask", { text }),
+  crashPending: () => invoke<string | null>("crash_pending"),
+  crashDismiss: () => invoke<void>("crash_dismiss"),
   settingsGet: () => invoke<Settings>("settings_get"),
   settingsSet: (settings: Settings) => invoke<Settings>("settings_set", { settings }),
   sensorsPause: (minutes: number | null) => invoke<Settings>("sensors_pause", { minutes }),
@@ -147,19 +183,29 @@ export const api = {
   updateInstall: () => invoke<string>("update_install"),
   netCheck: (lost: boolean) => invoke<boolean>("net_check", { lost }),
   suggestionCurrent: () => invoke<Suggestion | null>("suggestion_current"),
-  suggestionChoose: (id: string, index: number) => invoke<void>("suggestion_choose", { id, index }),
+  suggestionChoose: (id: string, index: number, priv = false) =>
+    invoke<void>("suggestion_choose", { id, index, private: priv }),
   suggestionDismiss: (id: string, reason: "user" | "timeout") => invoke<void>("suggestion_dismiss", { id, reason }),
   eventsRecent: (limit = 50) => invoke<StoredEvent[]>("events_recent", { limit }),
   openSettings: () => invoke<void>("open_settings"),
   debugSetState: (state: MascotState) => invoke<void>("debug_set_state", { state }),
   debugEmitEvent: () => invoke<void>("debug_emit_event"),
-  debugDemoFlow: () => invoke<void>("debug_demo_flow"),
   skillsList: () => invoke<SkillInfo[]>("skills_list"),
   skillSet: (id: string, enabled: boolean, auto: boolean) => invoke<Settings>("skill_set", { id, enabled, auto }),
   capabilitiesGet: (rescan = false) => invoke<CapabilityInfo>("capabilities_get", { rescan }),
   choicesReset: () => invoke<number>("choices_reset"),
   routinesToday: () => invoke<RoutineItem[]>("routines_today"),
   routinesForget: () => invoke<number>("routines_forget"),
+  learnedList: () => invoke<Learned[]>("learned_list"),
+  suggestionRates: () => invoke<SuggestionRate[]>("suggestion_rates"),
+  diskGroups: () => invoke<DiskGroup[]>("disk_groups"),
+  diskClean: (group: string, paths: string[]) => invoke<string>("disk_clean", { group, paths }),
+  userGuessName: () => invoke<string>("user_guess_name"),
+  focusStart: (minutes?: number) => invoke<string>("focus_start", { minutes }),
+  focusStop: () => invoke<string>("focus_stop"),
+  focusStatus: () => invoke<{ until: number | null; held: number }>("focus_status"),
+  learnedForget: (kind: string, key: string, label: string) => invoke<void>("learned_forget", { kind, key, label }),
+  learnedForgetAll: () => invoke<void>("learned_forget_all"),
   routinesRemove: (kind: string, key: string) => invoke<number>("routines_remove", { kind, key }),
   actionsRecent: (limit = 30) => invoke<ActionRecord[]>("actions_recent", { limit }),
   revealPath: (path: string) => invoke<void>("reveal_path", { path }),
@@ -174,10 +220,14 @@ export const api = {
       skill?: boolean;
       screen?: boolean;
       speak?: boolean;
+      /** Asked by voice: answer in short spoken sentences. */
+      voice?: boolean;
       /** Provider picked in Ask mode; null lets Sidekick choose. */
       prefer?: string | null;
       /** Started early at a pause in speech: hidden until aiRelease. */
       hold?: boolean;
+      /** "Think harder": let the local model reason before answering. */
+      think?: boolean;
     },
     localOnly: boolean,
   ) => invoke<void>("ai_chat", { id, messages, attach, localOnly }),
@@ -199,6 +249,9 @@ export const api = {
   projectsList: () => invoke<{ name: string; path: string }[]>("projects_list"),
   projectLaunch: (path: string) => invoke<string>("project_launch", { path }),
   editorsList: () => invoke<EditorList>("editors_list"),
+  instantFind: (query: string) => invoke<InstantResults>("instant_find", { query }),
+  appLaunch: (id: string) => invoke<void>("app_launch", { id }),
+  fileOpen: (path: string) => invoke<void>("file_open", { path }),
   aiHandoff: (messages: ChatMessage[], reason: string | null) => invoke<string>("ai_handoff", { messages, reason }),
   aiRunProposal: (id: string) =>
     invoke<{ ok: boolean; message: string; undoId: number | null; path: string | null }>("ai_run_proposal", { id }),
@@ -209,6 +262,7 @@ export const api = {
   composioConnect: (slug: string) => invoke<void>("composio_connect", { slug }),
   composioUseKey: (key: string) => invoke<string>("composio_use_key", { key }),
   agentsStatus: () => invoke<Agents>("agents_status"),
+  agentUsual: (path: string) => invoke<string | null>("agent_usual", { path }),
   agentStart: (agent: string, path: string, prompt: string, mode: AgentMode) =>
     invoke<AgentStarted>("agent_start", { agent, path, prompt, mode }),
   agentHandoff: (messages: ChatMessage[], reason: string | null) =>
@@ -221,6 +275,16 @@ export const api = {
   agentUndo: (id: string, path: string | null, hunk: number | null) => invoke<void>("agent_undo", { id, path, hunk }),
   agentClose: (id: string) => invoke<void>("agent_close", { id }),
   agentTerminal: (id: string) => invoke<void>("agent_terminal", { id }),
+  agentResume: (id: string) => invoke<void>("agent_resume", { id }),
+  windowsSettingsOpen: (page: string) => invoke<void>("windows_settings_open", { page }),
+  pcSwitch: (name: string, on: boolean) => invoke<string>("pc_switch", { name, on }),
+  agentMemory: (id: string) => invoke<number | null>("agent_memory", { id }),
+  agentOpenEditor: (id: string) => invoke<void>("agent_open_editor", { id }),
+  agentRewindPreview: (id: string, index: number) => invoke<number>("agent_rewind_preview", { id, index }),
+  agentRewind: (id: string, index: number) => invoke<number>("agent_rewind", { id, index }),
+  agentFiles: (id: string, query: string) => invoke<string[]>("agent_files", { id, query }),
+  agentCommands: (id: string) =>
+    invoke<{ name: string; description: string; group: string }[]>("agent_commands", { id }),
   aiOpenLink: (target: string) => invoke<string>("ai_open_link", { target }),
   codexAddNotify: () => invoke<string | null>("codex_add_notify"),
   codexAddMcp: () => invoke<string | null>("codex_add_mcp"),
@@ -266,8 +330,20 @@ export const api = {
   voiceWelcome: () => invoke<WelcomeSpeech>("voice_welcome"),
   voiceWelcomeStep: (step: number) => invoke<void>("voice_welcome_step", { step }),
   voiceSay: (text: string) => invoke<void>("voice_say", { text }),
+  voiceRead: (text: string) => invoke<void>("voice_read", { text }),
   askOpen: (prompt: string | null = null, ask = false) => invoke<void>("ask_open", { prompt, ask }),
   askEnsureWelcome: () => invoke<void>("ask_ensure_welcome"),
   askDeferWelcome: () => invoke<void>("ask_defer_welcome"),
   askResumeWelcome: () => invoke<void>("ask_resume_welcome"),
 };
+
+/** One group in the Storage view. */
+export interface DiskGroup {
+  id: string;
+  label: string;
+  what: string;
+  bytes: number;
+  partial: boolean;
+  items: { path: string; bytes: number }[];
+  clearable: boolean;
+}

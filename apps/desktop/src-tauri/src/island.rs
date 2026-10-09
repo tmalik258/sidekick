@@ -199,6 +199,14 @@ fn spawn_top_keeper(window: WebviewWindow) {
     });
 }
 
+static LAST_HERE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A fullscreen app (a game, a video, a slideshow) is in front on the
+/// island's monitor.
+pub fn fullscreen() -> bool {
+    LAST_HERE.load(Ordering::Relaxed)
+}
+
 /// Optionally fades the island while a fullscreen app (a game, a video, a
 /// slideshow) is in front. Off by default: the island stays on
 /// top of everything.
@@ -223,7 +231,6 @@ pub fn follow_fullscreen(app: &AppHandle, payload: &serde_json::Value) {
                     && m["width"].as_i64() == Some(i64::from(size.width))
                     && m["height"].as_i64() == Some(i64::from(size.height))
             });
-    static LAST_HERE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     if LAST_HERE.swap(here, std::sync::atomic::Ordering::Relaxed) != here {
         let _ = app.emit_to(LABEL, FULLSCREEN_EVENT, here);
     }

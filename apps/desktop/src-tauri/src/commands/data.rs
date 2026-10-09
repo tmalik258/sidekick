@@ -3,25 +3,72 @@
 use super::*;
 
 #[tauri::command]
-pub fn events_recent(
-    state: State<'_, AppState>,
-    limit: Option<u32>,
-) -> CmdResult<Vec<StoredEvent>> {
-    lock(&state.storage)
-        .recent_events(limit.unwrap_or(50).min(500))
-        .map_err(|e| e.to_string())
+pub async fn events_recent(app: AppHandle, limit: Option<u32>) -> CmdResult<Vec<StoredEvent>> {
+    off_ui(move || {
+        lock(&app.state::<AppState>().storage)
+            .recent_events(limit.unwrap_or(50).min(500))
+            .map_err(|e| e.to_string())
+    })
+    .await?
 }
 
 /// Today's learned routine, for Settings.
 #[tauri::command]
-pub fn routines_today(app: AppHandle) -> Vec<crate::routines::Item> {
-    crate::routines::today(&app)
+pub async fn routines_today(app: AppHandle) -> Vec<crate::routines::Item> {
+    off_ui(move || crate::routines::today(&app))
+        .await
+        .unwrap_or_default()
 }
 
 /// Takes one app or site out of the morning setup.
 #[tauri::command]
 pub fn routines_remove(app: AppHandle, kind: String, key: String) -> CmdResult<usize> {
     crate::routines::remove(&app, &kind, &key)
+}
+
+/// Everything Sidekick has learned, for Settings > Memory.
+#[tauri::command]
+pub async fn learned_list(app: AppHandle) -> Vec<crate::learned::Learned> {
+    off_ui(move || crate::learned::list(&app))
+        .await
+        .unwrap_or_default()
+}
+
+/// How often each kind of suggestion is taken, for Settings > Memory.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestionRate {
+    skill: String,
+    taken: i64,
+    dismissed: i64,
+}
+
+#[tauri::command]
+pub async fn suggestion_rates(app: AppHandle) -> Vec<SuggestionRate> {
+    off_ui(move || {
+        lock(&app.state::<AppState>().storage)
+            .suggestion_rates()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(skill, taken, dismissed)| SuggestionRate {
+                skill,
+                taken,
+                dismissed,
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn learned_forget(app: AppHandle, kind: String, key: String, label: String) -> CmdResult<()> {
+    crate::learned::forget(&app, &kind, &key, &label)
+}
+
+#[tauri::command]
+pub fn learned_forget_all(app: AppHandle) -> CmdResult<()> {
+    crate::learned::forget_all(&app)
 }
 
 /// Forgets every learned routine.
@@ -31,22 +78,26 @@ pub fn routines_forget(app: AppHandle) -> CmdResult<usize> {
 }
 
 #[tauri::command]
-pub fn actions_recent(
-    state: State<'_, AppState>,
-    limit: Option<u32>,
-) -> CmdResult<Vec<ActionRecord>> {
-    lock(&state.storage)
-        .recent_actions(limit.unwrap_or(30).min(200))
-        .map_err(|e| e.to_string())
+pub async fn actions_recent(app: AppHandle, limit: Option<u32>) -> CmdResult<Vec<ActionRecord>> {
+    off_ui(move || {
+        lock(&app.state::<AppState>().storage)
+            .recent_actions(limit.unwrap_or(30).min(200))
+            .map_err(|e| e.to_string())
+    })
+    .await?
 }
 
 /// Today's time per app and project, largest first.
 #[tauri::command]
-pub fn time_today(state: State<'_, AppState>) -> CmdResult<Vec<sidekick_core::AppTime>> {
-    let day = chrono::Local::now().format("%Y-%m-%d").to_string();
-    lock(&state.storage)
-        .time_for_day(&day)
-        .map_err(|e| e.to_string())
+pub async fn time_today(app: AppHandle) -> CmdResult<Vec<sidekick_core::AppTime>> {
+    off_ui(move || {
+        let day = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let state = app.state::<AppState>();
+        lock(&state.storage)
+            .time_for_day(&day)
+            .map_err(|e| e.to_string())
+    })
+    .await?
 }
 
 #[tauri::command]
@@ -64,15 +115,20 @@ pub struct SearchStatus {
 }
 
 #[tauri::command]
-pub fn search_status(app: AppHandle) -> CmdResult<SearchStatus> {
-    let items = lock(&app.state::<AppState>().storage)
-        .search_count()
-        .map_err(|e| e.to_string())?;
-    Ok(SearchStatus {
-        items,
-        embedded: crate::search::embedded_count(&app),
-        embed_error: crate::search::embed_error(),
+pub async fn search_status(app: AppHandle) -> CmdResult<SearchStatus> {
+    // Counts rows in the search index: off the UI thread (57 ms in CI).
+    tauri::async_runtime::spawn_blocking(move || {
+        let items = lock(&app.state::<AppState>().storage)
+            .search_count()
+            .map_err(|e| e.to_string())?;
+        Ok(SearchStatus {
+            items,
+            embedded: crate::search::embedded_count(&app),
+            embed_error: crate::search::embed_error(),
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -87,7 +143,8 @@ pub async fn open_reference(app: AppHandle, source: String, reference: String) -
     let exec = executor(&app.state::<AppState>());
     let (action, args) = match source.as_str() {
         "file" | "download" | "screenshot" => {
-            ("reveal_path", serde_json::json!({ "path": reference }))
+            let path = crate::search::file_of(&reference);
+            ("reveal_path", serde_json::json!({ "path": path }))
         }
         "page" => ("open_url", serde_json::json!({ "url": reference })),
         _ => return Ok(()),
@@ -138,13 +195,17 @@ pub struct ClipItem {
 
 /// Recent clipboard text, newest first. Secrets are never in it.
 #[tauri::command]
-pub fn clipboard_history(app: AppHandle, limit: Option<u32>) -> Vec<ClipItem> {
-    lock(&app.state::<AppState>().storage)
-        .recent_items("clipboard", limit.unwrap_or(60).min(500))
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(_, _, text, ts)| ClipItem { text, ts })
-        .collect()
+pub async fn clipboard_history(app: AppHandle, limit: Option<u32>) -> Vec<ClipItem> {
+    off_ui(move || {
+        lock(&app.state::<AppState>().storage)
+            .recent_items("clipboard", limit.unwrap_or(60).min(500))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(_, _, text, ts)| ClipItem { text, ts })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 /// Puts a history item back on the clipboard.
@@ -298,5 +359,90 @@ pub fn backup_import(app: AppHandle, text: String) -> CmdResult<String> {
     Ok(format!(
         "Restored {}{installed} skills",
         if restored { "settings and " } else { "" }
+    ))
+}
+
+/// Starts Focus mode: Do Not Disturb, notifications held, suggestions waiting.
+#[tauri::command]
+pub fn focus_start(app: AppHandle, minutes: Option<u32>) -> String {
+    crate::focus::start(&app, minutes.unwrap_or(crate::focus::DEFAULT_MINUTES))
+}
+
+/// Ends Focus mode and shows what was held.
+#[tauri::command]
+pub fn focus_stop(app: AppHandle) -> String {
+    crate::focus::stop(&app)
+}
+
+#[tauri::command]
+pub fn focus_status() -> crate::focus::Status {
+    crate::focus::status()
+}
+
+/// A first name to offer during setup: the Windows account name, tidied
+/// ("ali.khan" reads as "Ali"). Empty when it looks like a machine name.
+#[tauri::command]
+pub fn user_guess_name() -> String {
+    guess_name(&std::env::var("USERNAME").unwrap_or_default())
+}
+
+fn guess_name(account: &str) -> String {
+    let first = account
+        .split(['.', '_', '-', ' '])
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches(|c: char| c.is_ascii_digit());
+    let generic = [
+        "user",
+        "admin",
+        "administrator",
+        "owner",
+        "pc",
+        "runneradmin",
+    ];
+    if first.len() < 2 || generic.contains(&first.to_lowercase().as_str()) {
+        return String::new();
+    }
+    let mut chars = first.chars();
+    chars
+        .next()
+        .map(|c| {
+            c.to_uppercase()
+                .chain(chars.flat_map(char::to_lowercase))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::guess_name;
+
+    #[test]
+    fn guesses_a_first_name_from_the_account() {
+        assert_eq!(guess_name("ali.khan"), "Ali");
+        assert_eq!(guess_name("TAIMOOR"), "Taimoor");
+        assert_eq!(guess_name("sara92"), "Sara");
+        assert_eq!(guess_name("Administrator"), "");
+        assert_eq!(guess_name(""), "");
+    }
+}
+
+/// What fills the disk, by group (installers, build folders, caches, games,
+/// WSL and Docker). Reads only.
+#[tauri::command]
+pub async fn disk_groups() -> CmdResult<Vec<crate::disk::Group>> {
+    off_ui(crate::disk::groups).await
+}
+
+/// Sends reviewed items of one group to the Recycle Bin. Returns how many
+/// went and the space freed, in plain words.
+#[tauri::command]
+pub async fn disk_clean(group: String, paths: Vec<String>) -> CmdResult<String> {
+    let (count, freed) = off_ui(move || crate::disk::clean(&group, &paths)).await??;
+    Ok(format!(
+        "Moved {count} {} to the Recycle Bin, {} freed",
+        if count == 1 { "item" } else { "items" },
+        crate::disk::human(freed)
     ))
 }

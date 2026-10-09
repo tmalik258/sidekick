@@ -5,6 +5,7 @@
 import { sendChat, setAsk, useSidekick } from "@/lib/store";
 import type { AskContext, CalendarToday } from "@/lib/types";
 import { Icon, type IconName } from "../Icon";
+import { Tip } from "../Tip";
 import { KeyHint } from "./parts";
 
 export interface Command {
@@ -21,7 +22,11 @@ export interface Command {
  * were in and what you copied. Click one to leave it out (or back in).
  * This PC only sits at the end. */
 export function ContextLine({ keys }: { keys: boolean }) {
+  // Clicking a chip leaves focus in the input; otherwise the next Enter
+  // would press the chip again and switch it back.
+  const keepFocus = (e: { preventDefault: () => void }) => e.preventDefault();
   const ask = useSidekick((s) => s.ask);
+  const offline = useSidekick((s) => !s.online);
   if (!ask) return null;
   const { context } = ask;
   const items: { id: string; label: string; on: boolean; title?: string | null; toggle: () => void }[] = [];
@@ -35,10 +40,10 @@ export function ContextLine({ keys }: { keys: boolean }) {
     });
   }
   if (!context.clipboardSecret && context.clipboardKind) {
-    const preview = (context.clipboardPreview ?? "").replace(/\s+/g, " ").trim();
+    // What it is ("stack trace", "link"); the text itself shows on hover.
     items.push({
       id: "clip",
-      label: `Copied: ${preview || context.clipboardKind}`,
+      label: `Copied: ${context.clipboardKind.replace(/_/g, " ")}`,
       on: ask.attachClip,
       title: context.clipboardPreview,
       toggle: () => setAsk({ attachClip: !ask.attachClip }),
@@ -46,34 +51,38 @@ export function ContextLine({ keys }: { keys: boolean }) {
   }
   return (
     <div className="ak-ctx">
-      {items.map((it, n) => (
-        <span key={it.id} className={`flex min-w-0 items-center gap-1.5 ${it.id === "clip" ? "shrink" : "shrink-0"}`}>
-          {n > 0 && <span className="ak-ctx-sep" aria-hidden="true" />}
-          <button
-            type="button"
-            aria-pressed={it.on}
-            title={`${it.on ? "Goes with your question. Click to leave it out" : "Left out. Click to add it"}${
-              it.title ? `: ${it.title}` : ""
-            }`}
-            onClick={it.toggle}
-            className={`ak-ctx-i chip ${it.id === "clip" ? "cpy" : ""}`}
-          >
-            {it.label}
-          </button>
+      {offline && <span className="ak-offl">Offline</span>}
+      {items.map((it) => (
+        <span key={it.id} className={`flex min-w-0 items-center ${it.id === "clip" ? "shrink" : "shrink-0"}`}>
+          <Tip label={`${it.on ? "Click to exclude" : "Click to include"}${it.title ? ` · ${it.title}` : ""}`}>
+            <button
+              type="button"
+              aria-pressed={it.on}
+              onMouseDown={keepFocus}
+              onClick={it.toggle}
+              className={`ak-ctx-i chip ${it.id === "clip" ? "cpy" : ""}`}
+            >
+              <Icon name={it.on ? "check" : "plus"} size={10} />
+              <span className="truncate">{it.label}</span>
+            </button>
+          </Tip>
         </span>
       ))}
       {context.clipboardSecret && <span className="ak-ctx-i cpy">Clipboard hidden (looks like a secret)</span>}
       <span className="relative ml-auto shrink-0">
-        <button
-          type="button"
-          aria-pressed={ask.localOnly}
-          title="Only use a model on this PC (Alt P)"
-          onClick={() => setAsk({ localOnly: !ask.localOnly })}
-          className="ak-pc chip"
-        >
-          <Icon name="lock" size={10} />
-          This PC only
-        </button>
+        <Tip label="This PC only (Alt P)">
+          <button
+            type="button"
+            aria-pressed={ask.localOnly}
+            aria-label="This PC only"
+            onMouseDown={keepFocus}
+            onClick={() => setAsk({ localOnly: !ask.localOnly })}
+            className="ak-pc chip"
+          >
+            <Icon name={ask.localOnly ? "check" : "lock"} size={10} />
+            {ask.localOnly && "This PC only"}
+          </button>
+        </Tip>
         <KeyHint show={keys} side="right">
           Alt P
         </KeyHint>
@@ -93,6 +102,85 @@ export function soonestMeeting(calendar: CalendarToday | null): { title: string;
     if (mins >= -5 && mins <= 60) return m;
   }
   return null;
+}
+
+const MAIL = /outlook|gmail|thunderbird|mail/i;
+const MEETING = /teams|zoom|meet|onenote|notion|obsidian|notes/i;
+const CODE = /code|cursor|visual studio|idea|pycharm|webstorm|terminal/i;
+
+/** Everyday work help from the app you are in and the time of day:
+ * inbox triage and replies in your tone, notes to tasks, standup and
+ * weekly status, handing work to a coding agent. */
+export function roleStarters(
+  context: AskContext | null,
+  clip: string | null | undefined,
+  focusInput: (prefix: string) => void,
+  now = new Date(),
+): Command[] {
+  const out: Command[] = [];
+  const where = `${context?.app ?? ""} ${context?.title ?? ""}`;
+  if (MAIL.test(where)) {
+    out.push(
+      {
+        id: "starter:reply",
+        label: "Draft a reply in my tone",
+        hint: "From this email",
+        icon: "ask",
+        run: () => sendChat("Draft a reply to this email in my usual tone. Short, friendly, no filler."),
+        stay: true,
+      },
+      {
+        id: "starter:triage",
+        label: "Triage my inbox",
+        hint: "What needs me today",
+        icon: "ask",
+        run: () => sendChat("Triage my inbox: what needs a reply today, what can wait, what to archive."),
+        stay: true,
+      },
+    );
+  }
+  if (clip && MEETING.test(where)) {
+    out.push({
+      id: "starter:tasks",
+      label: "Turn my notes into tasks",
+      hint: "Owner and due date each",
+      icon: "ask",
+      run: () =>
+        sendChat("Turn the notes I copied into a task list with an owner and due date each.", { clipboard: true }),
+      stay: true,
+    });
+  }
+  if (CODE.test(where)) {
+    out.push({
+      id: "starter:delegate",
+      label: "Hand this to a coding agent",
+      hint: "Say what to do",
+      icon: "ask",
+      run: () => focusInput("Ask the coding agent to "),
+      stay: true,
+    });
+  }
+  const hour = now.getHours();
+  if (now.getDay() === 5 && hour >= 13) {
+    out.push({
+      id: "starter:weekly",
+      label: "Draft my weekly status",
+      hint: "Done, next, blocked",
+      icon: "ask",
+      run: () => sendChat("Draft my weekly status from what I worked on this week: done, next, blocked."),
+      stay: true,
+    });
+  } else if (hour < 11 && now.getDay() >= 1 && now.getDay() <= 5) {
+    out.push({
+      id: "starter:standup",
+      label: "Draft my standup",
+      hint: "Yesterday, today, blockers",
+      icon: "ask",
+      run: () => sendChat("Draft my standup from what I worked on yesterday: yesterday, today, blockers. Three lines."),
+      stay: true,
+    });
+  }
+  return out;
 }
 
 /**
@@ -132,6 +220,18 @@ export function contextStarters({
       stay: true,
     });
   }
+  if (context?.app && !page) {
+    const app = context.app;
+    out.push({
+      id: "starter:howto",
+      label: `How do I use ${app}?`,
+      hint: "Three steps, shows where",
+      icon: "ask",
+      run: () =>
+        sendChat(`How do I use ${app} for what I am doing? Three short steps, and point at the first control.`),
+      stay: true,
+    });
+  }
   if (meeting) {
     out.push({
       id: "starter:meeting",
@@ -143,6 +243,7 @@ export function contextStarters({
       stay: true,
     });
   }
+  out.push(...roleStarters(context, clip, focusInput));
   out.push(
     {
       id: "starter:find",

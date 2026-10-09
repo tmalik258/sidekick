@@ -14,6 +14,7 @@ import {
   type ChatMessage,
   DEFAULT_SETTINGS,
   type ExtensionGuide,
+  type HitRect,
   type MascotState,
   type Proposal,
   type Settings,
@@ -35,10 +36,14 @@ interface SidekickState {
   online: boolean;
   /** When the connection dropped, while offline. */
   offlineSince: number | null;
+  /** A question to ask again once the internet is back. */
+  askWhenOnline: string | null;
   /** A short note that the connection dropped or came back. */
   netNotice: NetNotice | null;
   /** Cursor is over the island's interactive area (reported by Rust). */
   hovered: boolean;
+  /** Extra interactive area while a floating menu is open (unioned into the hit rect). */
+  overlayHit: HitRect | null;
   /** False while a fullscreen app is in front; the island fades away. */
   visible: boolean;
   /** A fullscreen app is in front on the island's screen. */
@@ -63,6 +68,10 @@ interface SidekickState {
   /** A spoken question asked with Ask closed: the island stays compact
    * ("Thinking...") until the answer starts, then opens to show it. */
   voiceQuestion: string | null;
+  /** A short "done" line in the compact island ("Hotspot is on"). */
+  donePill: string | null;
+  /** When Focus mode ends (ms since epoch), or null when not focusing. */
+  focusUntil: number | null;
   /** Where the conversation is saved, so it can be picked up later. */
   conversation: string;
   /** Sidekick's voice is playing; the mascot talks along. */
@@ -135,6 +144,8 @@ export interface AskState {
 }
 
 const MODEL_KEY = "sidekick.askModel";
+/** The Ask model choice that hands questions to the Copilot app. */
+export const COPILOT_APP = "copilot_app";
 
 function savedModel(): string | null {
   try {
@@ -162,9 +173,11 @@ export const useSidekick = create<SidekickState>(() => ({
   mood: null,
   update: null,
   online: true,
+  askWhenOnline: null,
   offlineSince: null,
   netNotice: null,
   hovered: false,
+  overlayHit: null,
   visible: true,
   fullscreen: false,
   ready: false,
@@ -177,6 +190,8 @@ export const useSidekick = create<SidekickState>(() => ({
   chatSkill: false,
   askModel: savedModel(),
   voiceQuestion: null,
+  donePill: null,
+  focusUntil: null,
   conversation: crypto.randomUUID(),
   hearing: null,
   speaking: false,
@@ -283,6 +298,16 @@ export function minimizeWaiting(minimized: boolean) {
 export function backgroundWaiting() {
   const waiting = useSidekick.getState().waiting;
   if (waiting) useSidekick.setState({ waiting: { ...waiting, minimized: true, background: true } });
+}
+
+/** How long a done pill stays before the island settles. */
+const DONE_PILL_MS = 2600;
+let doneTimer: ReturnType<typeof setTimeout> | undefined;
+/** Shows a compact done pill for a moment: nothing needs you. */
+export function showDone(text: string) {
+  clearTimeout(doneTimer);
+  useSidekick.setState({ donePill: text, voiceQuestion: null });
+  doneTimer = setTimeout(() => useSidekick.setState({ donePill: null }), DONE_PILL_MS);
 }
 
 /** How long the island keeps the Done card after a waited step. */
@@ -435,6 +460,27 @@ export async function runProposal(id: string) {
   }
 }
 
+/** Undoes what a tapped action did; marks it so Undo does not show again. */
+export async function undoProposal(id: string): Promise<string> {
+  const p = useSidekick
+    .getState()
+    .turns.flatMap((t) => t.proposals ?? [])
+    .find((x) => x.id === id);
+  if (!p?.ran?.undoId) return "Nothing to undo.";
+  const message = await api.actionUndo(p.ran.undoId);
+  useSidekick.setState({
+    turns: useSidekick.getState().turns.map((t) =>
+      t.proposals?.some((x) => x.id === id)
+        ? {
+            ...t,
+            proposals: t.proposals.map((x) => (x.id === id && x.ran ? { ...x, ran: { ...x.ran, undone: true } } : x)),
+          }
+        : t,
+    ),
+  });
+  return message;
+}
+
 export const setAsk = (patch: Partial<AskState>) => {
   const ask = useSidekick.getState().ask;
   if (ask) useSidekick.setState({ ask: { ...ask, ...patch } });
@@ -442,6 +488,22 @@ export const setAsk = (patch: Partial<AskState>) => {
 
 /** Sends a message in the Ask conversation; answers stream into the last turn. */
 /** Asks the last question again after an answer failed. */
+/** Asks the question of the last answer again when the internet is back. */
+export function askWhenOnline() {
+  const { turns } = useSidekick.getState();
+  const question = turns.findLast((t) => t.role === "user");
+  if (question) useSidekick.setState({ askWhenOnline: question.content });
+}
+
+// Back online with a question waiting: open Ask and ask it.
+useSidekick.subscribe((s, prev) => {
+  if (!prev.online && s.online && s.askWhenOnline) {
+    const q = s.askWhenOnline;
+    useSidekick.setState({ askWhenOnline: null });
+    void api.askOpen().then(() => setTimeout(() => sendChat(q), 400));
+  }
+});
+
 export function retryLast(): boolean {
   const { turns, chatId } = useSidekick.getState();
   const last = turns[turns.length - 1];
@@ -449,6 +511,20 @@ export function retryLast(): boolean {
   if (chatId || !last?.error || question?.role !== "user") return false;
   useSidekick.setState({ turns: turns.slice(0, -2) });
   return sendChat(question.content);
+}
+
+/** Asks the last question again; `think` lets the local model reason first. */
+export function askAgain(think = false): boolean {
+  const { turns, chatId } = useSidekick.getState();
+  const question = turns[turns.length - 2];
+  if (chatId || question?.role !== "user") return false;
+  useSidekick.setState({ turns: turns.slice(0, -2) });
+  return sendChat(question.content, { think });
+}
+
+/** Asks the last question again, letting the local model think first. */
+export function thinkHarder(): boolean {
+  return askAgain(true);
 }
 
 /** Sends a question; false when it could not start (empty, or one running). */
@@ -507,11 +583,11 @@ function helloOncePerDay() {
   if (firstToday()) setTimeout(() => setMood("hello", 2600, "hello"), 900);
 }
 
-type ChatAttach = { clipboard?: boolean; screen?: boolean; speak?: boolean };
+type ChatAttach = { clipboard?: boolean; screen?: boolean; speak?: boolean; voice?: boolean; think?: boolean };
 
 /** What `api.aiChat` needs for question `q` in the chat as it is now. */
 function chatRequest(q: string, attach?: ChatAttach) {
-  const { ask, turns, chatPage, chatSkill, askModel } = useSidekick.getState();
+  const { ask, turns, chatPage, chatSkill, askModel, settings } = useSidekick.getState();
   const history: ChatMessage[] = [
     ...turns.filter((t) => !t.error).map(({ role, content }) => ({ role, content })),
     { role: "user", content: q },
@@ -525,7 +601,10 @@ function chatRequest(q: string, attach?: ChatAttach) {
       page: chatPage,
       skill: chatSkill,
       screen: attach?.screen ?? false,
-      speak: attach?.speak ?? false,
+      // Every answer follows the speaker button, typed or spoken.
+      speak: attach?.speak ?? settings.voice.speakAnswers,
+      voice: attach?.voice ?? false,
+      think: attach?.think ?? false,
       prefer: askModel,
     },
     localOnly: ask?.localOnly ?? false,
@@ -541,7 +620,7 @@ interface EarlyChat {
   id: string;
   q: string;
   tools: { name: string; label?: string }[];
-  proposals: { id: string; label: string }[];
+  proposals: { id: string; label: string; step?: boolean }[];
 }
 let early: EarlyChat | null = null;
 
@@ -555,10 +634,26 @@ function startEarly(q: string, speak: boolean) {
   if (!q || useSidekick.getState().chatId || early?.q === q) return;
   dropEarly();
   const id = crypto.randomUUID();
-  const req = chatRequest(q, { speak });
+  const req = chatRequest(q, { speak, voice: true });
   early = { id, q, tools: [], proposals: [] };
   timings.sent(id);
   void api.aiChat(id, req.history, { ...req.attach, hold: true }, req.localOnly);
+}
+
+/** Puts the question (with the page or app it is about) on the clipboard
+ * and opens Copilot; the answer is read there. */
+function askCopilot(q: string) {
+  const { turns, ask, chatPage } = useSidekick.getState();
+  const app = ask?.context.app;
+  const about = chatPage ? `\n\nAbout this page: ${chatPage}` : app ? `\n\n(In ${app})` : "";
+  const reply = (content: string) =>
+    useSidekick.setState({
+      turns: [...useSidekick.getState().turns.slice(0, -1), { role: "assistant", content, provider: "copilot" }],
+    });
+  useSidekick.setState({
+    turns: [...turns, { role: "user", content: q, screen: false }, { role: "assistant", content: "", streaming: true }],
+  });
+  api.copilotAsk(`${q}${about}`).then(reply, (e: unknown) => reply(`Could not open Copilot: ${String(e)}`));
 }
 
 export function sendChat(prompt: string, attach?: ChatAttach): boolean {
@@ -569,6 +664,11 @@ export function sendChat(prompt: string, attach?: ChatAttach): boolean {
     return false;
   }
   if (isThanks(q)) thanked();
+  if (useSidekick.getState().askModel === COPILOT_APP) {
+    dropEarly();
+    askCopilot(q);
+    return true;
+  }
   const adopted = early?.q === q && (attach?.screen ?? false) === false ? early : null;
   if (!adopted) dropEarly();
   early = null;
@@ -585,6 +685,7 @@ export function sendChat(prompt: string, attach?: ChatAttach): boolean {
         content: "",
         streaming: true,
         startedAt: Date.now(),
+        offline: !useSidekick.getState().online,
         steps: adopted?.tools.map((t) => t.label || toolStatus(t.name).replace(/\.\.\.$/, "")),
         proposals: adopted?.proposals,
       },
@@ -733,6 +834,8 @@ function flushText() {
 
 /** Reopening Ask within this long keeps the last chat. */
 const RESUME_MS = 10 * 60_000;
+/** This PC only of the chat that was open, for when Ask comes back to it. */
+let keptLocalOnly = false;
 let askClosedAt = Date.now();
 
 function updateLastTurn(id: string, fn: (t: Turn) => Turn) {
@@ -743,6 +846,23 @@ function updateLastTurn(id: string, fn: (t: Turn) => Turn) {
 }
 
 export const setHovered = (hovered: boolean) => useSidekick.setState({ hovered });
+
+/** Grow the clickable area around a floating menu so it is not click-through. */
+export const setOverlayHit = (overlayHit: HitRect | null) => {
+  const prev = useSidekick.getState().overlayHit;
+  if (prev === overlayHit) return;
+  if (
+    prev &&
+    overlayHit &&
+    prev.x === overlayHit.x &&
+    prev.y === overlayHit.y &&
+    prev.width === overlayHit.width &&
+    prev.height === overlayHit.height
+  ) {
+    return;
+  }
+  useSidekick.setState({ overlayHit });
+};
 
 export function updateSettings(patch: Partial<Settings>): Promise<Settings> {
   const next = { ...useSidekick.getState().settings, ...patch };
@@ -765,6 +885,10 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
   let disposed = false;
   const unlisteners: Array<() => void> = [];
 
+  void api.focusStatus().then(
+    (f) => !disposed && useSidekick.setState({ focusUntil: f.until }),
+    () => {},
+  );
   void (async () => {
     const offs = await Promise.all([
       listen(EVENTS.mascotState, (t) => {
@@ -793,6 +917,10 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       }),
       listen(EVENTS.actionResult, (lastResult) => {
         useSidekick.setState({ lastResult, running: null });
+        // Done with nothing to undo or open: a compact pill, not a card.
+        if (lastResult.ok && !lastResult.undoId && !lastResult.path && !useSidekick.getState().ask) {
+          showDone(lastResult.message);
+        }
         reactToResult(lastResult, sounds);
       }),
       listen(EVENTS.suggestionClear, (id) => {
@@ -832,8 +960,12 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           newChat();
           useSidekick.setState({ chatPage: open.page });
         }
-        const settingsTab = resumeSettingsTab ?? undefined;
+        const settingsTab = open.settingsTab ?? resumeSettingsTab ?? undefined;
         resumeSettingsTab = null;
+        // This PC only belongs to the chat: it stays while the chat goes on.
+        const prev = useSidekick.getState();
+        const sameChat = prev.turns.length > 0;
+        const localOnly = sameChat ? (prev.ask?.localOnly ?? keptLocalOnly) : false;
         useSidekick.setState({
           ask: {
             view: open.view ?? "ask",
@@ -842,7 +974,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
             seq,
             attachWindow: false,
             attachClip: clip,
-            localOnly: false,
+            localOnly,
             tool: open.tool ?? null,
             settingsTab,
           },
@@ -851,6 +983,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       }),
       listen(EVENTS.askClose, (payload) => {
         askClosedAt = Date.now();
+        keptLocalOnly = useSidekick.getState().ask?.localOnly ?? false;
         if (useSidekick.getState().hearing !== null) stopListening();
         useSidekick.setState({ ask: null });
         // Hide parks welcome; do not fight the park with ensure_welcome.
@@ -893,7 +1026,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           } else {
             useSidekick.setState({ hearing: null });
           }
-          const started = sendChat(q, { speak: settings.voice.speakAnswers });
+          const started = sendChat(q, { speak: settings.voice.speakAnswers, voice: true });
           if (!started && !ask) useSidekick.setState({ voiceQuestion: null });
         } else {
           useSidekick.setState({ hearing: null });
@@ -921,14 +1054,19 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         const step = label || toolStatus(name).replace(/\.\.\.$/, "");
         updateLastTurn(id, (t) => ({ ...t, tool: step, steps: [...(t.steps ?? []), step] }));
       }),
-      listen(EVENTS.aiProposal, ({ chatId, id, label }) => {
+      listen(EVENTS.aiProposal, ({ chatId, id, label, step }) => {
         if (early?.id === chatId) {
-          early.proposals.push({ id, label });
+          early.proposals.push({ id, label, step });
           return;
         }
-        updateLastTurn(chatId, (t) => ({ ...t, proposals: [...(t.proposals ?? []), { id, label }] }));
+        updateLastTurn(chatId, (t) => ({ ...t, proposals: [...(t.proposals ?? []), { id, label, step }] }));
       }),
-      listen(EVENTS.aiDone, ({ id, provider, error, handoff }) => {
+      listen(EVENTS.islandFocus, ({ until }) => useSidekick.setState({ focusUntil: until })),
+      listen(EVENTS.islandDone, ({ id, text }) => {
+        updateLastTurn(id, (t) => ({ ...t, content: text }));
+        showDone(text);
+      }),
+      listen(EVENTS.aiDone, ({ id, provider, error, handoff, cost }) => {
         flushText();
         timings.done(id);
         if (useSidekick.getState().voiceQuestion !== null) useSidekick.setState({ voiceQuestion: null });
@@ -937,6 +1075,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           provider,
           error,
           handoff,
+          cost: cost ?? undefined,
           tool: null,
           streaming: false,
           tookMs: t.startedAt ? Date.now() - t.startedAt : undefined,
@@ -991,3 +1130,6 @@ export function uiVolume(): number {
   const { settings } = useSidekick.getState();
   return settings.muted ? 0 : settings.masterVolume * 0.7;
 }
+
+/** The assistant's name, "Sidekick" unless the user renamed it. */
+export const useAssistantName = () => useSidekick((s) => s.settings.assistantName || "Sidekick");

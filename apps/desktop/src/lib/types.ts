@@ -62,11 +62,21 @@ export interface Settings {
   routinesAuto: boolean;
   /** The mascot idles on its own: glances around, blinks, the odd smile. */
   alive: boolean;
+  /** After a crash, offer a report to send (never sent on its own). */
+  crashReports: boolean;
   /** Fade the island while a fullscreen app is in front. */
   hideInFullscreen: boolean;
+  tips: boolean;
   notifications: NotificationSettings;
   recipes: Recipe[];
   memory: string[];
+  userName: string;
+  people: string;
+  projects: string;
+  answerStyle: string;
+  codes: boolean | null;
+  assistantName: string;
+  learning: boolean;
   agent: AgentSettings;
 }
 
@@ -81,6 +91,8 @@ export interface VoiceSettings {
   enabled: boolean;
   wakeWord: boolean;
   speakAnswers: boolean;
+  /** While you talk: one slim line, or a waveform and larger words. */
+  listeningStyle: "compact" | "full";
   /** After a spoken answer, listen for a reply without the wake word. */
   conversation: boolean;
   /** Read suggestions aloud and take a spoken choice. */
@@ -89,6 +101,8 @@ export interface VoiceSettings {
   interrupt: boolean;
   voice: string;
   speed: number;
+  /** Words voice gets wrong: "horsepot = hotspot, sidekik = Sidekick". */
+  fixes?: string;
   /** Which voice model the voice was picked for (3 = Supertonic 3). */
   model?: number;
 }
@@ -134,7 +148,10 @@ export interface VoiceDownload {
   error: string | null;
 }
 
-export const AI_PROVIDERS = ["local", "claude_code", "codex", "anthropic"] as const;
+export const AI_PROVIDERS = ["local", "gemini", "groq", "claude_code", "codex", "anthropic", "openrouter"] as const;
+/** Cloud models reached with an API key kept in Credential Manager. */
+export type CloudId = "gemini" | "groq" | "openrouter";
+export const CLOUD_IDS: CloudId[] = ["gemini", "groq", "openrouter"];
 export type AiProviderId = (typeof AI_PROVIDERS)[number];
 
 export interface AiSettings {
@@ -145,6 +162,9 @@ export interface AiSettings {
   codingAgent: string;
   local: { enabled: boolean; baseUrl: string; model: string; visionModel: string };
   anthropic: { enabled: boolean; model: string };
+  gemini: { enabled: boolean; model: string };
+  groq: { enabled: boolean; model: string };
+  openrouter: { enabled: boolean; model: string };
   semif: {
     enabled: boolean;
     command: string[];
@@ -162,6 +182,9 @@ export const PROVIDER_LABELS: Record<string, string> = {
   codex: "Codex",
   anthropic: "Anthropic API",
   local: "Local model",
+  gemini: "Gemini",
+  groq: "Groq",
+  openrouter: "OpenRouter",
   semif: "SemIf",
 };
 
@@ -193,18 +216,30 @@ export interface Turn extends ChatMessage {
   steps?: string[];
   /** Actions offered as buttons; each runs on a tap. */
   proposals?: Proposal[];
+  /** What the answer cost in US dollars (Anthropic API only). */
+  cost?: number;
   /** When the question was sent (ms since 1970), and how long the answer took. */
   startedAt?: number;
   tookMs?: number;
   /** How long until the first word showed. */
   firstMs?: number;
+  /** Asked while offline: web answers wait for the connection. */
+  offline?: boolean;
 }
 
 export interface Proposal {
   id: string;
   label: string;
+  /** One step of a task: shown with the others as a plan, run in order. */
+  step?: boolean;
   /** Set once tapped: what happened, and Undo if it can be undone. */
   ran?: { ok: boolean; message: string; undoId: number | null; path: string | null; undone?: boolean };
+}
+
+export interface SuggestionRate {
+  skill: string;
+  taken: number;
+  dismissed: number;
 }
 
 export interface AskContext {
@@ -229,6 +264,8 @@ export interface AskOpen {
   tool?: "screen" | "clipboard" | null;
   /** When the open was asked for (ms since 1970), for the timings. */
   sentAt?: number;
+  /** Which Settings tab to show with view "settings". */
+  settingsTab?: string | null;
 }
 
 /** One measured moment, for the timings overlay. */
@@ -270,7 +307,7 @@ export interface EditorList {
   current: string | null;
 }
 
-export const ISLAND_COLORS = ["black_glass", "graphite", "midnight", "smoke", "warm_graphite", "solid_black"] as const;
+export const ISLAND_COLORS = ["solid_black", "black_glass", "graphite", "midnight", "smoke", "warm_graphite"] as const;
 export type IslandColor = (typeof ISLAND_COLORS)[number];
 
 export interface Suggestion {
@@ -281,6 +318,8 @@ export interface Suggestion {
   options: string[];
   /** Which options can become "Always do this". */
   always?: boolean[];
+  /** Why this showed, from how often you took this kind before. */
+  why?: string;
 }
 
 /** A newer Sidekick release than the one running. */
@@ -323,7 +362,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pause: { kind: "none" },
   theme: "pearl",
   codeEditor: "auto",
-  islandColor: "black_glass",
+  islandColor: "solid_black",
   soundKit: "sidekick",
   paletteHotkey: "Ctrl+Space",
   shortcuts: {
@@ -339,12 +378,15 @@ export const DEFAULT_SETTINGS: Settings = {
   indexFolders: [],
   endOfDayHour: 18,
   ai: {
-    order: ["local", "claude_code", "codex", "anthropic"],
+    order: ["local", "gemini", "groq", "claude_code", "codex", "anthropic", "openrouter"],
     claudeCode: { enabled: true, path: "", model: FAST_CLAUDE_MODEL },
     codex: { enabled: true, path: "", model: FAST_CODEX_MODEL },
     codingAgent: "auto",
-    local: { enabled: true, baseUrl: "http://localhost:11434/v1", model: "", visionModel: "" },
+    local: { enabled: true, baseUrl: "http://127.0.0.1:11434/v1", model: "", visionModel: "" },
     anthropic: { enabled: true, model: FAST_CLAUDE_MODEL },
+    gemini: { enabled: false, model: "" },
+    groq: { enabled: false, model: "" },
+    openrouter: { enabled: false, model: "" },
     semif: {
       enabled: true,
       command: ["semif-score"],
@@ -367,15 +409,25 @@ export const DEFAULT_SETTINGS: Settings = {
   routines: true,
   routinesAuto: false,
   hideInFullscreen: false,
+  tips: true,
   alive: true,
+  crashReports: false,
   notifications: { enabled: true, apps: {}, vip: [] },
   recipes: [],
   memory: [],
+  userName: "",
+  people: "",
+  projects: "",
+  answerStyle: "",
+  codes: null,
+  assistantName: "Sidekick",
+  learning: true,
   agent: { ask: "outward", places: {} },
   voice: {
     enabled: true,
     wakeWord: true,
     speakAnswers: true,
+    listeningStyle: "compact",
     conversation: true,
     speakSuggestions: true,
     interrupt: true,
@@ -587,6 +639,7 @@ export const SHORTCUT_ACTIONS: { id: string; label: string }[] = [
   { id: "dismiss", label: "Stop or Not now" },
   { id: "screen", label: "Ask about the screen" },
   { id: "clipboard", label: "Clipboard history" },
+  { id: "focus", label: "Focus on or off" },
   { id: "pause", label: "Pause or resume" },
   { id: "settings", label: "Settings" },
 ];
@@ -626,7 +679,9 @@ export interface FileChange {
 export interface Agents {
   claudeCode: boolean;
   codex: boolean;
-  /** "Claude Code" or "Codex", or null when neither is installed. */
+  copilot: boolean;
+  cursor: boolean;
+  /** The agent that gets handoffs by name, or null when none is installed. */
   handoff: string | null;
 }
 
@@ -693,4 +748,19 @@ export interface AgentSettings {
   ask: AgentAsk;
   /** Per app or site ("whatsapp", "mail.google.com"). */
   places: Record<string, PlaceRule>;
+}
+
+/** Ask's instant results: apps and files named like what is typed, no AI. */
+export interface InstantResults {
+  apps: { name: string; id: string; minutes: number }[];
+  files: { name: string; path: string; folder: boolean; place: string }[];
+}
+
+/** Something Sidekick learned, for Settings > Memory. */
+export interface Learned {
+  kind: "choice" | "quiet" | "routine";
+  key: string;
+  label: string;
+  text: string;
+  why: string;
 }

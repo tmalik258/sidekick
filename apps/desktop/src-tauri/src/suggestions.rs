@@ -154,6 +154,25 @@ const QUIET_BELOW: i32 = 40;
 /// During a meeting, only this urgent and above interrupts.
 const MEETING_FROM: i32 = 80;
 const MAX_LATER: usize = 20;
+/// At most this many suggestions interrupt per hour; the rest wait in the
+/// list. Urgent ones (MEETING_FROM and above) still show.
+const MAX_PER_HOUR: usize = 4;
+
+/// When suggestions last interrupted, for the hourly cap.
+static SHOWN: std::sync::Mutex<std::collections::VecDeque<Instant>> =
+    std::sync::Mutex::new(std::collections::VecDeque::new());
+
+/// Too many interrupted in the last hour already.
+fn over_cap(now: Instant) -> bool {
+    let mut shown = lock(&SHOWN);
+    while shown
+        .front()
+        .is_some_and(|t| now.duration_since(*t) > Duration::from_secs(3600))
+    {
+        shown.pop_front();
+    }
+    shown.len() >= MAX_PER_HOUR
+}
 const LATER_KEEP: chrono::Duration = chrono::Duration::hours(3);
 
 /// How long a missed suggestion is still worth showing. Ones tied to a
@@ -293,13 +312,39 @@ pub fn offer(app: &AppHandle, mut proposal: Proposal) {
         }
         return;
     }
+    // Focusing: everything waits, and the end-of-focus list names it.
+    if crate::focus::active()
+        && proposal.trust != Trust::Auto
+        && !shows_while_paused(&proposal.skill_id)
+    {
+        crate::focus::hold(&proposal.title, &proposal.detail);
+        keep_for_later(app, proposal, false);
+        return;
+    }
     if proposal.trust != Trust::Auto
-        && should_wait(&proposal.skill_id, proposal.priority, in_meeting(app))
+        && (should_wait(&proposal.skill_id, proposal.priority, in_meeting(app))
+            || (proposal.priority < MEETING_FROM
+                && !shows_while_paused(&proposal.skill_id)
+                && (crate::island::fullscreen()
+                    || over_cap(Instant::now())
+                    || crate::learn::quiet_here(app, &proposal.skill_id))))
     {
         keep_for_later(app, proposal, false);
         return;
     }
     show_or_queue(app, proposal);
+}
+
+/// One short line on why a suggestion showed, from its track record.
+fn why_line(taken: i64, dismissed: i64) -> String {
+    let total = taken + dismissed;
+    if total == 0 {
+        "New suggestion. Not now tells me to ask less.".into()
+    } else if taken >= dismissed {
+        format!("You took this {taken} of {total} times.")
+    } else {
+        format!("You skipped this {dismissed} of {total} times. It rests if you keep skipping.")
+    }
 }
 
 /// Markdown marks removed (`**7**` reads 7), for a card's one or two lines.
@@ -371,6 +416,9 @@ fn show(app: &AppHandle, proposal: Proposal) {
         schedule_next(&app, NEXT_AFTER_DISMISS);
         return;
     }
+    if proposal.trust != Trust::Auto && proposal.priority < MEETING_FROM {
+        lock(&SHOWN).push_back(Instant::now());
+    }
     let ui = Suggestion {
         id: ulid::Ulid::new().to_string(),
         skill_id: proposal.skill_id.clone(),
@@ -383,6 +431,14 @@ fn show(app: &AppHandle, proposal: Proposal) {
             .enumerate()
             .map(|(i, o)| can_always(&proposal, i, &o.action))
             .collect(),
+        why: if crate::learn::tracked(&proposal.skill_id) {
+            let h = lock(&app.state::<AppState>().storage)
+                .habit(&proposal.skill_id)
+                .unwrap_or_default();
+            why_line(h.accepted, h.dismissed)
+        } else {
+            String::new()
+        },
     };
     let priority = proposal.priority;
     let auto = proposal.trust == Trust::Auto
@@ -469,6 +525,19 @@ fn expire_when_ignored(app: &AppHandle, id: String) {
     });
 }
 
+/// Shift+click: open a link option in a private window, in any browser.
+pub fn make_private(app: &AppHandle, id: &str, index: usize) {
+    let state = app.state::<AppState>();
+    let mut current = lock(&state.active);
+    if let Some(active) = current.as_mut().filter(|a| a.ui.id == id)
+        && let Some(option) = active.proposal.options.get_mut(index)
+        && option.action == "open_url"
+        && let Some(args) = option.args.as_object_mut()
+    {
+        args.insert("private".into(), "true".into());
+    }
+}
+
 pub fn choose(app: &AppHandle, id: &str, index: usize) -> Result<(), String> {
     run_choice(app, id, index, false)
 }
@@ -481,8 +550,15 @@ fn run_choice(app: &AppHandle, id: &str, index: usize, auto: bool) -> Result<(),
         .get(index)
         .cloned()
         .ok_or("option out of range")?;
-    if !auto && let Some(key) = &active.proposal.remember {
+    if !auto
+        && crate::learned::on(app)
+        && let Some(key) = &active.proposal.remember
+    {
         let ts = Utc::now().to_rfc3339();
+        // A kind ("url:github.com") also counts toward all of them ("url").
+        if let Some((all, _)) = key.split_once(':') {
+            let _ = lock(&app.state::<AppState>().storage).record_choice(all, &option.label, &ts);
+        }
         if let Err(err) =
             lock(&app.state::<AppState>().storage).record_choice(key, &option.label, &ts)
         {
@@ -662,6 +738,20 @@ async fn execute(
             .await
             .map(|message| sidekick_actions::Outcome {
                 message,
+                path: None,
+            });
+        }
+        "open_memory" => {
+            crate::ask::open(
+                app,
+                crate::ask::Open {
+                    view: Some("settings"),
+                    settings_tab: Some("memory"),
+                    ..Default::default()
+                },
+            );
+            return Ok(sidekick_actions::Outcome {
+                message: "Opened Memory".into(),
                 path: None,
             });
         }
@@ -910,35 +1000,16 @@ fn schedule_next(app: &AppHandle, after: Duration) {
     });
 }
 
-/// A scripted suggestion for the debug panel and tray.
-pub fn demo(app: &AppHandle) {
-    let option = |label: &str, action: &str, message: &str| ProposedOption {
-        label: label.into(),
-        action: action.into(),
-        args: serde_json::json!({ "message": message }),
-        skill_id: "debug.demo".into(),
-    };
-    offer(
-        app,
-        Proposal {
-            skill_id: "debug.demo".into(),
-            skill_ids: vec!["debug.demo".into()],
-            title: "Demo suggestion".into(),
-            detail: "Pick an option to see the flow.".into(),
-            options: vec![
-                option("Succeed", "noop", "That worked"),
-                option("Fail", "fail", "Simulated failure"),
-            ],
-            trust: Trust::Suggest,
-            remember: None,
-            priority: 50,
-        },
-    );
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn why_line_reads_the_track_record() {
+        assert!(why_line(0, 0).starts_with("New"));
+        assert_eq!(why_line(4, 1), "You took this 4 of 5 times.");
+        assert!(why_line(1, 3).starts_with("You skipped this 3 of 4"));
+    }
 
     #[test]
     fn cards_show_plain_text() {

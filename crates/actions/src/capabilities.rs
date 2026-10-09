@@ -59,6 +59,26 @@ pub fn browser_for_prog_id(prog_id: &str) -> Option<&'static str> {
     .map(|(_, id)| *id)
 }
 
+/// Which browser a link handler's command line runs, from the program's
+/// file name (`"C:\\...\\zen.exe" -osint -url "%1"`).
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn browser_for_command(command: &str) -> Option<&'static str> {
+    let lower = command.to_ascii_lowercase();
+    let exe = lower.split(".exe").next()?;
+    let name = exe.rsplit(['\\', '/']).next()?.trim_matches(['"', ' ']);
+    [
+        ("chrome", "chrome"),
+        ("msedge", "edge"),
+        ("brave", "brave"),
+        ("firefox", "firefox"),
+        ("zen", "zen"),
+        ("samsung", "samsung"),
+    ]
+    .iter()
+    .find(|(key, _)| name.starts_with(key))
+    .map(|(_, id)| *id)
+}
+
 /// The default browser's id on Windows, read from the https link handler.
 pub fn default_browser() -> Option<&'static str> {
     #[cfg(windows)]
@@ -81,7 +101,19 @@ pub fn default_browser() -> Option<&'static str> {
             .split_whitespace()
             .last()?
             .to_owned();
-        browser_for_prog_id(&prog_id)
+        // The handler's program is the truth: Zen registers as
+        // "FirefoxURL-..." but runs zen.exe.
+        let cmd = std::process::Command::new("reg")
+            .args([
+                "query",
+                &format!(r"HKCR\{prog_id}\shell\open\command"),
+                "/ve",
+            ])
+            .creation_flags(0x0800_0000)
+            .output()
+            .ok();
+        cmd.and_then(|o| browser_for_command(&String::from_utf8_lossy(&o.stdout)))
+            .or_else(|| browser_for_prog_id(&prog_id))
     }
     #[cfg(not(windows))]
     {
@@ -414,5 +446,21 @@ mod tests {
             caps.browser("zen").unwrap().private_flag(),
             "--private-window"
         );
+    }
+}
+
+#[cfg(test)]
+mod command_tests {
+    use super::browser_for_command;
+
+    #[test]
+    fn reads_the_browser_from_the_handler_program() {
+        let zen =
+            r#"(Default)    REG_SZ    "C:\Program Files\Zen Browser\zen.exe" -osint -url "%1""#;
+        assert_eq!(browser_for_command(zen), Some("zen"));
+        let chrome =
+            r#""C:\Program Files\Google\Chrome\Application\chrome.exe" --single-argument %1"#;
+        assert_eq!(browser_for_command(chrome), Some("chrome"));
+        assert_eq!(browser_for_command("nothing here"), None);
     }
 }

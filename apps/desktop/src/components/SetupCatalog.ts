@@ -35,7 +35,7 @@ export const SETUP_CATALOG: Array<{
     id: "ollama_chat",
     group: "ai",
     title: "Local chat model",
-    why: "Private answers on this PC. About 2.5 GB.",
+    why: "Private answers on this PC, from a model that suits it.",
     recommended: false,
   },
   {
@@ -51,6 +51,13 @@ export const SETUP_CATALOG: Array<{
     title: "Vision model",
     why: "Reads pictures without text. About 1.7 GB.",
     recommended: false,
+  },
+  {
+    id: "ollama_light",
+    group: "ai",
+    title: "Lighter Ollama",
+    why: "8K context with about half the memory, so answers keep the whole question. Restarts Ollama.",
+    recommended: true,
   },
   {
     id: "anthropic",

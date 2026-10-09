@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
 import { backgroundWaiting, cancelWaiting, minimizeWaiting, type Waiting } from "@/lib/store";
+import { Tip } from "./Tip";
 
 interface GuideButton {
   label: string;
@@ -120,7 +121,10 @@ export function IslandGuide({ waiting, guide }: { waiting: Waiting; guide: Guide
           onClick={cancelWaiting}
           className="chip ml-auto rounded-full px-2.5 py-1.5 text-[12.5px] text-[rgb(235_235_245/0.6)] hover:text-white"
         >
-          Cancel <kbd className="ml-1 font-sans text-[11px] text-white/35">Alt 0</kbd>
+          Cancel{" "}
+          <kbd className="ml-1 font-sans text-[11px] text-white/45">
+            <i className="alt-pre">Alt </i>0
+          </kbd>
         </button>
       </div>
     </div>
@@ -134,21 +138,21 @@ function GuideChip({ button, hint, done }: { button: GuideButton; hint: string |
       : button.kind === "copy"
         ? "max-w-full truncate bg-white/[0.08] text-white/90 ring-1 ring-white/10 ring-inset hover:bg-white/[0.14]"
         : "bg-white/12 text-white/90 hover:bg-white/20";
-  return (
+  const chip = (
     <button
       type="button"
-      title={button.title}
       onClick={button.run}
       className={`chip rounded-full px-3 py-1.5 text-left text-[12.5px] font-medium ${style}`}
     >
       {done ? "Copied" : button.label}
       {hint && (
         <kbd
-          className={`ml-1.5 font-sans text-[11px] ${button.kind === "primary" ? "text-black/40" : "text-white/35"}`}
+          className={`ml-1.5 font-sans text-[11px] ${button.kind === "primary" ? "text-black/40" : "text-white/45"}`}
         >
           {hint}
         </kbd>
       )}
     </button>
   );
+  return button.title ? <Tip label={button.title}>{chip}</Tip> : chip;
 }

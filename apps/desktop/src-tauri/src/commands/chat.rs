@@ -20,8 +20,43 @@ pub fn ai_chat(
 
 /// Installed code editors and the one projects open in.
 #[tauri::command]
-pub fn editors_list(app: AppHandle) -> crate::editors::Editors {
-    crate::editors::list(&app)
+pub async fn editors_list(app: AppHandle) -> crate::editors::Editors {
+    // Reads the registry and looks for editors on disk: off the UI thread.
+    tauri::async_runtime::spawn_blocking(move || crate::editors::list(&app))
+        .await
+        .unwrap_or_default()
+}
+
+/// The installed agent used most in a project, from `agent:{project}`.
+fn usual_agent(
+    app: &AppHandle,
+    key: &str,
+    settings: &sidekick_core::Settings,
+) -> Option<crate::agents::Agent> {
+    let counts = lock(&app.state::<AppState>().storage)
+        .choice_counts(key)
+        .unwrap_or_default();
+    let mut used: Vec<(String, u32)> = counts.into_iter().collect();
+    used.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+    used.iter()
+        .filter_map(|(id, _)| crate::agents::Agent::from_id(id))
+        .find(|a| a.resolve(settings).is_some())
+}
+
+/// The agent you usually use in this project, for the agent picker.
+#[tauri::command]
+pub async fn agent_usual(app: AppHandle, path: String) -> Option<String> {
+    off_ui(move || {
+        let project = std::path::Path::new(&path)
+            .file_name()?
+            .to_string_lossy()
+            .into_owned();
+        let settings = lock(&app.state::<AppState>().settings).clone();
+        usual_agent(&app, &format!("agent:{project}"), &settings).map(|a| a.id().to_owned())
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 /// Starts Claude Code or Codex in a project, inside the island.
@@ -33,15 +68,26 @@ pub async fn agent_start(
     prompt: String,
     mode: crate::sessions::Mode,
 ) -> CmdResult<crate::sessions::Started> {
-    let agent = match agent.as_str() {
-        "codex" => crate::agents::Agent::Codex,
-        "claude_code" => crate::agents::Agent::ClaudeCode,
-        _ => {
-            let settings = lock(&app.state::<AppState>().settings).clone();
-            crate::agents::chosen(&settings)
-                .ok_or("Install Claude Code or Codex first (Settings > AI).")?
-        }
+    // The agent you use for this project is remembered and picked next
+    // time you do not name one.
+    let project = std::path::Path::new(&path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let key = format!("agent:{project}");
+    let settings = lock(&app.state::<AppState>().settings).clone();
+    let agent = match crate::agents::Agent::from_id(&agent) {
+        Some(a) => a,
+        None => usual_agent(&app, &key, &settings)
+            .or_else(|| crate::agents::chosen(&settings))
+            .ok_or(
+                "Install Claude Code, Codex, GitHub Copilot CLI or Cursor first (Settings > AI).",
+            )?,
     };
+    if !project.is_empty() && settings.learning {
+        let ts = chrono::Utc::now().to_rfc3339();
+        let _ = lock(&app.state::<AppState>().storage).record_choice(&key, agent.id(), &ts);
+    }
     crate::sessions::start(&app, agent, std::path::Path::new(&path), &prompt, mode).await
 }
 
@@ -68,8 +114,59 @@ pub async fn agent_handoff(
 
 /// A follow-up, or a steer while it works.
 #[tauri::command]
-pub fn agent_send(id: String, text: String) -> CmdResult<()> {
-    crate::sessions::send(&id, &text)
+pub async fn agent_send(id: String, text: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::send(&id, &text))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Carries on a session that ended or was cut off by a restart.
+#[tauri::command]
+pub async fn agent_resume(app: AppHandle, id: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::resume(&app, &id))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// How many files rewinding to before message `index` would put back.
+#[tauri::command]
+pub async fn agent_rewind_preview(id: String, index: usize) -> CmdResult<usize> {
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::rewind_preview(&id, index))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Puts the project back to before message `index`.
+#[tauri::command]
+pub async fn agent_rewind(id: String, index: usize) -> CmdResult<usize> {
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::rewind(&id, index))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Files in the session's project for @ in the composer.
+#[tauri::command]
+pub async fn agent_files(id: String, query: String) -> Vec<String> {
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::files(&id, &query))
+        .await
+        .unwrap_or_default()
+}
+
+/// Opens the session's project in the user's editor ("Open in Cursor").
+#[tauri::command]
+pub async fn agent_open_editor(app: AppHandle, id: String) -> CmdResult<()> {
+    let path = crate::sessions::project(&id).ok_or("That session is gone.")?;
+    crate::state::executor(&app.state::<AppState>())
+        .run("open_in_editor", &serde_json::json!({ "path": path }))
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Commands for / in the composer.
+#[tauri::command]
+pub fn agent_commands(id: String) -> Vec<crate::sessions::SlashCommand> {
+    crate::sessions::commands(&id)
 }
 
 #[tauri::command]
@@ -105,8 +202,10 @@ pub fn agent_close(id: String) {
 
 /// Carries on in the CLI itself, in a terminal.
 #[tauri::command]
-pub fn agent_terminal(app: AppHandle, id: String) -> CmdResult<()> {
-    crate::sessions::open_terminal(&app, &id)
+pub async fn agent_terminal(app: AppHandle, id: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::open_terminal(&app, &id))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -198,39 +297,76 @@ pub async fn ai_open_link(app: AppHandle, target: String) -> CmdResult<String> {
 
 /// Which coding agents are installed and which one gets handoffs.
 #[tauri::command]
-pub fn agents_status(state: State<'_, AppState>) -> crate::agents::Agents {
-    crate::agents::status(&lock(&state.settings))
+pub async fn agents_status(app: AppHandle) -> CmdResult<crate::agents::Agents> {
+    // Looks for the CLIs on PATH: off the UI thread.
+    tauri::async_runtime::spawn_blocking(move || {
+        let settings = lock(&app.state::<AppState>().settings).clone();
+        crate::agents::status(&settings)
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// Recent Ask conversations, newest first.
 #[tauri::command]
-pub fn chats_list(state: State<'_, AppState>) -> CmdResult<Vec<sidekick_core::ChatSummary>> {
-    lock(&state.storage)
-        .recent_chats(30)
-        .map_err(|e| e.to_string())
+pub async fn chats_list(app: AppHandle) -> CmdResult<Vec<sidekick_core::ChatSummary>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        lock(&app.state::<AppState>().storage)
+            .recent_chats(30)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// A saved conversation's turns, as the UI saved them.
 #[tauri::command]
-pub fn chat_get(state: State<'_, AppState>, id: String) -> CmdResult<serde_json::Value> {
-    let text = lock(&state.storage)
-        .chat_turns(&id)
-        .map_err(|e| e.to_string())?
-        .ok_or("That conversation is gone")?;
-    serde_json::from_str(&text).map_err(|e| e.to_string())
+pub async fn chat_get(app: AppHandle, id: String) -> CmdResult<serde_json::Value> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let text = lock(&app.state::<AppState>().storage)
+            .chat_turns(&id)
+            .map_err(|e| e.to_string())?
+            .ok_or("That conversation is gone")?;
+        serde_json::from_str(&text).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Masks secrets in every string of a saved chat, so history never keeps them.
+fn mask_strings(v: &mut serde_json::Value) {
+    match v {
+        serde_json::Value::String(s) => {
+            if let std::borrow::Cow::Owned(m) = sidekick_sensors::classify::mask(s) {
+                *s = m;
+            }
+        }
+        serde_json::Value::Array(a) => a.iter_mut().for_each(mask_strings),
+        serde_json::Value::Object(o) => o.values_mut().for_each(mask_strings),
+        _ => {}
+    }
 }
 
 #[tauri::command]
-pub fn chat_save(
-    state: State<'_, AppState>,
+pub async fn chat_save(
+    app: AppHandle,
     id: String,
     title: String,
-    turns: serde_json::Value,
+    mut turns: serde_json::Value,
 ) -> CmdResult<()> {
-    let title: String = title.trim().chars().take(80).collect();
-    lock(&state.storage)
-        .save_chat(&id, &title, &turns.to_string())
-        .map_err(|e| e.to_string())
+    // Masking and writing a long chat after every answer: off the UI thread.
+    tauri::async_runtime::spawn_blocking(move || {
+        let title: String = sidekick_sensors::classify::mask(title.trim())
+            .chars()
+            .take(80)
+            .collect();
+        mask_strings(&mut turns);
+        lock(&app.state::<AppState>().storage)
+            .save_chat(&id, &title, &turns.to_string())
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -310,4 +446,87 @@ mod tests {
         assert_eq!(models.embed, ["nomic-embed-text"]);
         assert!(!models.chat.iter().any(|m| m.contains("moondream")));
     }
+}
+
+/// Installed apps and files named like what is typed in Ask, no model.
+#[tauri::command]
+pub async fn instant_find(app: AppHandle, query: String) -> crate::instant::Results {
+    tauri::async_runtime::spawn_blocking(move || crate::instant::find(&app, &query))
+        .await
+        .unwrap_or_default()
+}
+
+/// Starts an app picked from Ask's instant results.
+#[tauri::command]
+pub async fn app_launch(id: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || sidekick_actions::pc::launch_app_id(&id))
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Opens a Windows Settings page picked from Ask's instant results; only the
+/// named pages in `SETTINGS_PAGES` can open.
+#[tauri::command]
+pub async fn windows_settings_open(page: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        sidekick_actions::pc::control("open_settings", None, Some(&page))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map(|_| ())
+    .map_err(|e| e.to_string())
+}
+
+/// Switches picked from Ask's instant results, without asking a model.
+const PC_SWITCHES: &[&str] = &[
+    "wifi",
+    "bluetooth",
+    "hotspot",
+    "airplane",
+    "night_light",
+    "dnd",
+    "dark_mode",
+];
+
+/// Turns a Windows switch on or off from Ask's instant results; returns
+/// what happened, in words.
+#[tauri::command]
+pub async fn pc_switch(name: String, on: bool) -> CmdResult<String> {
+    if !PC_SWITCHES.contains(&name.as_str()) {
+        return Err(format!("{name} is not a switch"));
+    }
+    let what = format!("{name}_{}", if on { "on" } else { "off" });
+    tauri::async_runtime::spawn_blocking(move || sidekick_actions::pc::control(&what, None, None))
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|o| o.message)
+        .map_err(|e| e.to_string())
+}
+
+/// Opens a file or folder picked from Ask's instant results. Programs and
+/// scripts are shown in their folder instead of run.
+#[tauri::command]
+pub async fn file_open(app: AppHandle, path: String) -> CmdResult<()> {
+    let action = if crate::ask_tools::runs_code(&path) {
+        "reveal_path"
+    } else {
+        "open_path"
+    };
+    crate::state::executor(&app.state::<AppState>())
+        .run(action, &serde_json::json!({ "path": path }))
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Memory an agent session uses, in bytes (None once it stopped).
+#[tauri::command]
+pub async fn agent_memory(id: String) -> Option<u64> {
+    // Walks every process on the PC: never on the UI thread.
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::memory(&id))
+        .await
+        .ok()
+        .flatten()
 }

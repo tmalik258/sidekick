@@ -9,6 +9,7 @@ mod anthropic;
 mod claude_code;
 mod codex;
 mod decide;
+pub mod fit;
 mod mcp;
 mod openai;
 mod pool;
@@ -19,13 +20,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 pub use anthropic::Anthropic;
 use async_trait::async_trait;
-pub use claude_code::{ClaudeCode, close_sessions as close_claude_sessions};
+pub use claude_code::{
+    ClaudeCode, close_sessions as close_claude_sessions, limited as claude_code_limited,
+};
 pub use codex::{Codex, close_sessions as close_codex_sessions};
 pub use decide::{Decider, Decision, DecisionOption, LocalDecider, Ranked, SemIf};
 pub use mcp::{McpClient, McpTool};
 pub use openai::{
-    MAX_TOOL_STEPS, OpenAiCompat, ToolChatEnd, first_chat_model, is_chat_model, is_embedding_model,
-    is_vision_model, strip_thinking,
+    CLOUD, MAX_TOOL_STEPS, OpenAiCompat, ToolChatEnd, first_chat_model, is_chat_model,
+    is_embedding_model, is_local_url, is_vision_model, loopback, strip_thinking,
 };
 pub use router::{Answer, Router};
 use serde::{Deserialize, Serialize};
@@ -60,6 +63,9 @@ pub struct ChatRequest {
     pub messages: Vec<Message>,
     /// A PNG the latest question is about (a screenshot), if any.
     pub image: Option<Vec<u8>>,
+    /// Let a model that can think before answering do so. Off, it answers
+    /// straight away (see `needs_thinking`).
+    pub think: bool,
 }
 
 impl ChatRequest {
@@ -92,6 +98,8 @@ impl From<reqwest::Error> for AiError {
 pub struct Sink {
     tx: UnboundedSender<String>,
     sent: AtomicBool,
+    /// What the answer cost in US dollars, for paid APIs that report usage.
+    cost: std::sync::Mutex<Option<f64>>,
 }
 
 impl Sink {
@@ -99,7 +107,18 @@ impl Sink {
         Self {
             tx,
             sent: AtomicBool::new(false),
+            cost: std::sync::Mutex::new(None),
         }
+    }
+
+    pub fn set_cost(&self, usd: f64) {
+        if let Ok(mut c) = self.cost.lock() {
+            *c = Some(usd);
+        }
+    }
+
+    pub fn cost(&self) -> Option<f64> {
+        self.cost.lock().ok().and_then(|c| *c)
     }
 
     pub fn send(&self, text: &str) {
@@ -217,6 +236,7 @@ mod tests {
                 Message::user("what is 2+2?"),
             ],
             image: None,
+            think: false,
         };
         let t = transcript(&req);
         assert!(t.starts_with("Be brief."));
@@ -230,6 +250,7 @@ mod tests {
             system: String::new(),
             messages: vec![Message::user("hello")],
             image: None,
+            think: false,
         };
         assert_eq!(transcript(&req), "hello");
     }

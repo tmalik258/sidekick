@@ -7,14 +7,15 @@
 
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "motion/react";
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
-import { useAgents } from "@/lib/agents";
+import { listenToAgents, useAgents } from "@/lib/agents";
 import { api } from "@/lib/bridge";
-import { useNow } from "@/lib/hooks";
+import { useNow, useSystemLook } from "@/lib/hooks";
 import { ISLAND_TOP, PANEL_PAD } from "@/lib/islandSize";
 import type { NetNotice } from "@/lib/net";
 import { playSound } from "@/lib/sound";
 import { connect, notePick, setHovered, uiVolume, useSidekick, watchWaiting } from "@/lib/store";
 import { isPaused, type MascotState, type Suggestion } from "@/lib/types";
+import { Announcer } from "./Announcer";
 import { ASK_MASCOT, ASK_ORB, ASK_PAD, AskPanel, VoiceBars } from "./AskPanel";
 import { Icon } from "./Icon";
 import { Glance, RoundButton } from "./IslandGlance";
@@ -23,6 +24,7 @@ import { IslandSettings } from "./IslandSettings";
 import { IslandWelcome } from "./IslandWelcome";
 import { Orb } from "./Orb";
 import { PreparingVoice } from "./PreparingVoice";
+import { Tip } from "./Tip";
 
 const TITLE: Record<MascotState, string> = {
   idle: "Sidekick",
@@ -67,6 +69,8 @@ const EXPANDED = { width: 388, minHeight: 78, radius: 30, pad: PANEL_PAD };
 /** Ask mode, as in the design: 420 wide, 580 for the Agents tab. */
 const ASK_WIDTH = 420;
 const AGENTS_WIDTH = 580;
+/** Voice, Full listening style. */
+const FULL_VOICE_WIDTH = 400;
 const ASK_RADIUS = 26;
 /** The welcome: a short read, so a narrower column than Ask. */
 const WELCOME_WIDTH = 440;
@@ -86,11 +90,15 @@ const morphClose = { type: "spring", bounce: 0.12, duration: 0.42 } as const;
 /** Growing or shrinking while already open (an answer streaming in, New):
  * no bounce, so the panel never overshoots and settles back. */
 const resize = { type: "spring", bounce: 0, duration: 0.34 } as const;
+/** Ctrl+Space is a keyboard action used many times a day: Ask opens in one
+ * quick, calm move, with no bounce and no blur. */
+const askOpen = { duration: 0.2, ease: [0.23, 1, 0.32, 1] } as const;
 
 export function Island() {
   const { mascot, settings, suggestion, hovered: rawHover, visible, ready } = useSidekick();
   const asking = useSidekick((s) => s.ask !== null);
   const askTab = useAgents((s) => s.tab);
+  useEffect(listenToAgents, []);
   const view = useSidekick((s) => s.ask?.view);
   // The Ask panel itself (not Settings or the welcome shown in its place).
   const askPanel = asking && view !== "settings" && view !== "welcome";
@@ -107,7 +115,7 @@ export function Island() {
     return last.tool ? `${last.tool}...` : "Working...";
   });
   // Agents keep working with Ask closed: a small pill says so, and says
-  // when one needs an answer. Hovering it opens Ask.
+  // when one needs an answer. Hovering it lists them.
   const agentWorking = useAgents((s) => {
     const waiting = s.sessions.find((x) => x.status === "waiting");
     if (waiting) return `${waiting.agent} needs you`;
@@ -116,12 +124,22 @@ export function Island() {
     return busy[0] ? `${busy[0].agent}: ${busy[0].project}` : null;
   });
   const working = useSidekick((s) => (s.ask ? null : (chatWorking ?? agentWorking)));
+  // An agent waiting on an answer: the mascot looks up curious and the pill
+  // shows an amber dot instead of the busy bars.
+  const agentAsks = useAgents((s) => s.sessions.some((x) => x.status === "waiting"));
+  const asksYou = working !== null && chatWorking === null && agentAsks;
   const guide = useGuide(waiting);
   // Voice with Ask closed: a compact pill while listening and thinking; the
   // island opens only when the answer starts.
   const hearing = useSidekick((s) => (s.ask ? null : s.hearing));
   const voiceQuestion = useSidekick((s) => (s.ask ? null : s.voiceQuestion));
+  // Something finished that needs nothing more: a short done pill.
+  const donePill = useSidekick((s) => (s.ask ? null : s.donePill));
+  // Focus mode: a compact pill with the focus face and the time left.
+  const focusUntil = useSidekick((s) => (s.ask ? null : s.focusUntil));
+  const focusLeft = useFocusLeft(focusUntil);
   const reduced = useReducedMotion() ?? false;
+  const look = useSystemLook();
   const now = useNow(15_000);
   const paused = isPaused(settings.pause, now);
   // Closing a panel (Hide, Esc, Done) goes straight to the small orb. The
@@ -159,21 +177,50 @@ export function Island() {
   // Voice / in-flight Ask with Ask closed: Listening / Thinking / Working pill.
   // Stay non-bare so the hit rect stays usable (Idle alone would shrink to a
   // pinprick and lock out).
-  const voiceBusy = hearing !== null || voiceQuestion !== null || mascot === "listening" || working !== null;
-  const voicePill: { text: string; thinking: boolean; working?: boolean } | null = asking
+  const voiceBusy =
+    hearing !== null ||
+    voiceQuestion !== null ||
+    donePill !== null ||
+    mascot === "listening" ||
+    working !== null ||
+    focusLeft !== null;
+  const voicePill: {
+    text: string;
+    thinking: boolean;
+    working?: boolean;
+    done?: boolean;
+    focus?: boolean;
+    asks?: boolean;
+  } | null = asking
     ? null
-    : voiceQuestion !== null
-      ? { text: voiceQuestion, thinking: true }
-      : hearing !== null || mascot === "listening"
-        ? { text: hearing ?? "", thinking: false }
-        : working !== null
-          ? { text: working, thinking: true, working: true }
-          : null;
+    : donePill !== null
+      ? { text: donePill, thinking: false, done: true }
+      : voiceQuestion !== null
+        ? { text: voiceQuestion, thinking: true }
+        : hearing !== null || mascot === "listening"
+          ? { text: hearing ?? "", thinking: false }
+          : working !== null
+            ? { text: working, thinking: !asksYou, working: true, asks: asksYou }
+            : focusLeft !== null
+              ? { text: `Focus · ${focusLeft}`, thinking: false, focus: true }
+              : null;
+  // Only agents at work: hover lists them (and answers in place) instead of
+  // opening Ask.
+  const agentsOnly = voiceQuestion === null && hearing === null && chatWorking === null && agentWorking !== null;
+  // Full listening style: the island opens while you talk, with a waveform,
+  // a timer and your words larger, instead of the slim pill.
+  const fullVoice =
+    voicePill !== null &&
+    !voicePill.working &&
+    !voicePill.focus &&
+    !voicePill.done &&
+    (settings.voice.listeningStyle ?? "compact") === "full";
   // Suggestions stay normal during thinking — do not gate them on !voicePill.
   const expanded =
     asking ||
+    fullVoice ||
     preparingVoice ||
-    (hovered && !voicePill) ||
+    (hovered && (!voicePill || agentsOnly)) ||
     guiding ||
     (OPEN_STATES.has(mascot) && !voicePill) ||
     !!suggestion ||
@@ -188,10 +235,9 @@ export function Island() {
   useEffect(() => {
     if (!intent || quiet || asking || !settings.onboarded) return;
     if (voiceQuestion === null && working === null) return;
-    // An agent's pill opens the Agents tab.
-    if (chatWorking === null && agentWorking !== null) useAgents.setState({ tab: "agents" });
+    if (agentsOnly) return;
     void api.askOpen();
-  }, [intent, quiet, asking, settings.onboarded, voiceQuestion, working, chatWorking, agentWorking]);
+  }, [intent, quiet, asking, settings.onboarded, voiceQuestion, working, agentsOnly]);
 
   const [contentHeight, setContentHeight] = useState(0);
   const bump = useMotionValue(1);
@@ -201,6 +247,8 @@ export function Island() {
   const speaking = useSidekick((s) => s.speaking);
   const face =
     mood?.id ??
+    (asksYou && !voiceQuestion && hearing === null ? "curious" : null) ??
+    (focusLeft !== null && !voiceQuestion && hearing === null && mascot !== "listening" ? "focus" : null) ??
     (speaking && mascot !== "listening"
       ? "speak"
       : !online && (mascot === "idle" || mascot === "sleeping")
@@ -264,11 +312,13 @@ export function Island() {
         ? AGENTS_WIDTH
         : ASK_WIDTH
     : expanded
-      ? showGuide
-        ? GUIDE_WIDTH
-        : EXPANDED.width
+      ? fullVoice
+        ? FULL_VOICE_WIDTH
+        : showGuide
+          ? GUIDE_WIDTH
+          : EXPANDED.width
       : voicePill
-        ? voiceShellWidth(voicePill.text, voicePill.thinking, voicePill.working)
+        ? voiceShellWidth(voicePill.text, voicePill.thinking, voicePill.working || voicePill.done)
         : waiting
           ? COMPACT.waitWidth
           : busy
@@ -292,13 +342,31 @@ export function Island() {
     const id = setTimeout(() => setSettled(true), 600);
     return () => clearTimeout(id);
   }, [expanded]);
-  const transition = reduced ? { duration: 0 } : expanded ? (settled ? resize : morphOpen) : morphClose;
+  const transition = reduced
+    ? { duration: 0 }
+    : expanded
+      ? settled
+        ? resize
+        : asking
+          ? askOpen
+          : morphOpen
+      : morphClose;
 
+  const overlayHit = useSidekick((s) => s.overlayHit);
   // Report the target shape as the interactive area; outside it the window
-  // stays click-through. Sent once per change, not per animation frame.
+  // stays click-through. A floating menu expands the rect so it stays usable.
   useEffect(() => {
-    void api.islandSetHitRect({ x: (window.innerWidth - width) / 2, y: TOP, width, height });
-  }, [width, height]);
+    const base = { x: (window.innerWidth - width) / 2, y: TOP, width, height };
+    const rect = overlayHit
+      ? {
+          x: Math.min(base.x, overlayHit.x),
+          y: Math.min(base.y, overlayHit.y),
+          width: Math.max(base.x + base.width, overlayHit.x + overlayHit.width) - Math.min(base.x, overlayHit.x),
+          height: Math.max(base.y + base.height, overlayHit.y + overlayHit.height) - Math.min(base.y, overlayHit.y),
+        }
+      : base;
+    void api.islandSetHitRect(rect);
+  }, [width, height, overlayHit]);
 
   // A small squish when something gets the mascot's attention while compact.
   useEffect(() => {
@@ -332,13 +400,21 @@ export function Island() {
         className="island-shell relative overflow-hidden text-white"
         data-bare={bare}
         data-color={settings.islandColor}
+        data-solid={look.solid || undefined}
+        data-simple={look.simple || undefined}
         initial={false}
         animate={{ width, height, borderRadius: radius }}
         transition={transition}
         style={{ scaleX: bump, originY: 0 }}
+        // Focusing the input while the shell is still small would scroll its
+        // content up; the shell never scrolls.
+        onScroll={(e) => {
+          e.currentTarget.scrollTop = 0;
+        }}
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}
       >
+        <Announcer />
         <motion.div
           className="absolute top-0 left-0"
           initial={false}
@@ -351,7 +427,9 @@ export function Island() {
             face={chatting && mascot === "idle" ? null : face}
             size={ORB}
             theme={settings.theme}
-            alive={settings.alive && visible}
+            alive={settings.alive && visible && !look.simple}
+            simple={look.simple}
+            active={shown && !bare}
           />
         </motion.div>
 
@@ -379,10 +457,10 @@ export function Island() {
                   ? { left: ASK_PAD.x, paddingTop: ASK_PAD.top, paddingRight: ASK_PAD.x }
                   : { left: EXPANDED.pad, paddingTop: EXPANDED.pad, paddingRight: EXPANDED.pad }
               }
-              initial={reduced ? { opacity: 0 } : { opacity: 0, filter: "blur(6px)", y: 4 }}
-              animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
-              exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
-              transition={{ duration: 0.28, delay: 0.06, ease: [0.23, 1, 0.32, 1] }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, transition: { duration: 0.08 } }}
+              transition={{ duration: reduced ? 0 : 0.14, ease: "easeOut" }}
             >
               {view === "settings" ? <IslandSettings /> : view === "welcome" ? <IslandWelcome /> : <AskPanel />}
             </motion.div>
@@ -419,7 +497,9 @@ export function Island() {
                 exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
                 transition={{ duration: 0.28, delay: 0.06, ease: [0.23, 1, 0.32, 1] }}
               >
-                {showGuide && waiting ? (
+                {fullVoice && voicePill ? (
+                  <FullVoice text={voicePill.text} thinking={voicePill.thinking} />
+                ) : showGuide && waiting ? (
                   <IslandGuide waiting={waiting} guide={guide} />
                 ) : (
                   <ExpandedContent mascot={mascot} paused={paused} suggestion={suggestion} />
@@ -444,6 +524,67 @@ function voiceLabel(text: string, thinking: boolean, working?: boolean): string 
   return text.trim() ? tail(text) : "Listening...";
 }
 
+/** Full listening style: a waveform, a timer and Stop on the first line,
+ * then your words a size larger (grey until final) and what happens next. */
+function FullVoice({ text, thinking }: { text: string; thinking: boolean }) {
+  const [start] = useState(() => Date.now());
+  const now = useNow(1000);
+  const secs = Math.max(0, Math.floor((now - start) / 1000));
+  const words = text.trim();
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex h-9 items-center gap-2.5">
+        {thinking ? (
+          <span className="flex-1">
+            <Activity />
+          </span>
+        ) : (
+          <span className="voice-wave min-w-0 flex-1" aria-hidden="true">
+            {Array.from({ length: 30 }, (_, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: fixed bars
+              <i key={i} style={{ animationDelay: `${-((i * 0.37) % 0.9).toFixed(2)}s` }} />
+            ))}
+          </span>
+        )}
+        <span className="min-w-[2.6em] text-right font-mono text-[11.5px] text-white/45 tabular-nums">
+          {Math.floor(secs / 60)}:{String(secs % 60).padStart(2, "0")}
+        </span>
+        <Tip label="Stop (Esc)">
+          <button
+            type="button"
+            aria-label="Stop listening"
+            onClick={() => void api.voiceStop()}
+            className="chip grid size-7 shrink-0 place-items-center rounded-full bg-white/[0.09] hover:bg-white/[0.15]"
+          >
+            <span className="size-[9px] rounded-[2.5px] bg-white" />
+          </button>
+        </Tip>
+      </div>
+      <p
+        className={`min-h-[1.45em] px-1 text-[16.5px] leading-[1.45] tracking-[-0.005em] ${
+          words ? "text-white" : "text-white/45"
+        }`}
+      >
+        {words || "Listening..."}
+      </p>
+      <p className="flex items-center gap-[7px] px-1 pb-0.5 text-[11.5px] text-white/45">
+        {thinking ? (
+          <span className="shimmer-text">Thinking</span>
+        ) : (
+          <>
+            <span className="voice-live size-1.5 rounded-full bg-white" aria-hidden="true" />
+            Listening · pause to send ·
+            <kbd className="rounded-[4px] bg-white/[0.09] px-[5px] py-px font-mono text-[10.5px] text-white/62">
+              Esc
+            </kbd>
+            cancel
+          </>
+        )}
+      </p>
+    </div>
+  );
+}
+
 /** Compact listening shell: tight when empty, grows with speech up to voiceWidth. */
 function voiceShellWidth(text: string, thinking: boolean, working?: boolean): number {
   const label = voiceLabel(text, thinking, working);
@@ -455,8 +596,22 @@ function voiceShellWidth(text: string, thinking: boolean, working?: boolean): nu
 
 /** Voice in the compact island: green bars and the words as they come
  * while listening, then "Thinking" with the question until the answer. */
-function VoicePill({ text, thinking, working }: { text: string; thinking: boolean; working?: boolean }) {
-  const label = voiceLabel(text, thinking, working);
+function VoicePill({
+  text,
+  thinking,
+  working,
+  done,
+  focus,
+  asks,
+}: {
+  text: string;
+  thinking: boolean;
+  working?: boolean;
+  done?: boolean;
+  focus?: boolean;
+  asks?: boolean;
+}) {
+  const label = voiceLabel(text, thinking, working || done || focus);
   return (
     <motion.div
       className="absolute top-0 right-0 flex h-9 items-center gap-2.5 pr-3.5"
@@ -468,12 +623,34 @@ function VoicePill({ text, thinking, working }: { text: string; thinking: boolea
     >
       <span
         className={`min-w-0 flex-1 truncate text-[12.5px] font-medium ${
-          text.trim() || thinking ? "text-white/90" : "text-white/50"
+          text.trim() || thinking ? "text-white/90" : "text-white/62"
         }`}
       >
         {label}
       </span>
-      {thinking ? <Activity /> : <VoiceBars />}
+      {done ? (
+        <span className="text-[#30d158]">
+          <Icon name="check" size={14} />
+        </span>
+      ) : focus ? (
+        <button
+          type="button"
+          aria-label="End focus"
+          onClick={() => void api.focusStop()}
+          className="rounded-full px-2 py-0.5 text-[11px] text-white/62 hover:bg-white/10 hover:text-white"
+        >
+          End
+        </button>
+      ) : asks ? (
+        <span className="relative flex size-2" role="img" aria-label="Waiting for you">
+          <span className="absolute inset-0 animate-ping rounded-full bg-[#ff9f0a]/60 motion-reduce:animate-none" />
+          <span className="relative size-2 rounded-full bg-[#ff9f0a]" />
+        </span>
+      ) : thinking ? (
+        <Activity />
+      ) : (
+        <VoiceBars />
+      )}
     </motion.div>
   );
 }
@@ -514,19 +691,22 @@ function CompactTrailing({
       {busy ? (
         <Activity />
       ) : offline ? (
-        <span role="img" aria-label="Offline" title="Offline" className="text-[#ff9f0a]">
-          <Icon name="wifiOff" size={14} />
-        </span>
+        <Tip label="Offline">
+          <span role="img" aria-label="Offline" className="text-[#ff9f0a]">
+            <Icon name="wifiOff" size={14} />
+          </span>
+        </Tip>
       ) : paused ? (
-        <span className="size-1.5 rounded-full bg-[#ffd60a]" style={{ boxShadow: "0 0 8px #ffd60a" }} title="Paused" />
+        <Tip label="Paused">
+          <span className="size-1.5 rounded-full bg-[#ffd60a]" style={{ boxShadow: "0 0 8px #ffd60a" }} />
+        </Tip>
       ) : (
         later > 0 && (
-          <span
-            className="grid h-4 min-w-4 place-items-center rounded-full bg-[#0a84ff] px-1 text-[10px] leading-none font-semibold text-white"
-            title={`${later} waiting for you`}
-          >
-            {later}
-          </span>
+          <Tip label={`${later} waiting for you`}>
+            <span className="grid h-4 min-w-4 place-items-center rounded-full bg-[#0a84ff] px-1 text-[10px] leading-none font-semibold text-white">
+              {later}
+            </span>
+          </Tip>
         )
       )}
     </motion.div>
@@ -563,7 +743,8 @@ function ExpandedContent({
   const netNotice = useSidekick((s) => s.netNotice);
   const reporting = (mascot === "success" || mascot === "error" || mascot === "working") && !suggestion;
   if (netNotice && !suggestion) return <NetNoticeCard notice={netNotice} />;
-  if (!suggestion && (mascot === "idle" || mascot === "sleeping")) {
+  // A suggestion that expired or was taken leaves nothing to show: fall back to the glance.
+  if (!suggestion && (mascot === "idle" || mascot === "sleeping" || mascot === "suggesting")) {
     return <Glance paused={paused} />;
   }
   // Working names what it is doing; done and error say what happened.
@@ -590,6 +771,9 @@ function ExpandedContent({
           >
             {detail}
           </p>
+          {suggestion?.why && (
+            <p className="mt-1 truncate text-[11.5px] leading-4 text-[rgb(235_235_245/0.42)]">{suggestion.why}</p>
+          )}
         </div>
         {!suggestion && reporting && (result?.path || result?.undoId) ? (
           <div className="flex shrink-0 gap-1.5">
@@ -657,7 +841,7 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
         <motion.button
           key={option}
           type="button"
-          onClick={() => choose(suggestion, i)}
+          onClick={(e) => choose(suggestion, i, e.shiftKey)}
           initial={{ opacity: 0, y: 6, filter: "blur(4px)" }}
           animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
           transition={{ duration: 0.26, delay: 0.12 + i * 0.04, ease: [0.23, 1, 0.32, 1] }}
@@ -668,7 +852,7 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
           <span className="max-w-60 leading-snug text-balance">{option}</span>
           <kbd
             className={`shrink-0 self-center font-sans text-[11px] leading-none ${
-              i === 0 ? "text-black/40" : "text-white/35"
+              i === 0 ? "text-black/40" : "text-white/45"
             }`}
           >
             Alt {i + 1}
@@ -676,17 +860,18 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
         </motion.button>
       ))}
       {alwaysAt >= 0 && (
-        <motion.button
-          type="button"
-          onClick={() => always(suggestion, alwaysAt)}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.2, delay: 0.12 + suggestion.options.length * 0.04 }}
-          title={`From now on, "${suggestion.options[alwaysAt]}" without asking. Undo in Settings > Skills.`}
-          className="chip rounded-full px-2.5 py-1.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
-        >
-          Always {suggestion.options[alwaysAt].toLowerCase()}
-        </motion.button>
+        <Tip label={`From now on, "${suggestion.options[alwaysAt]}" without asking. Undo in Settings > Skills.`}>
+          <motion.button
+            type="button"
+            onClick={() => always(suggestion, alwaysAt)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2, delay: 0.12 + suggestion.options.length * 0.04 }}
+            className="chip rounded-full px-2.5 py-1.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
+          >
+            Always {suggestion.options[alwaysAt].toLowerCase()}
+          </motion.button>
+        </Tip>
       )}
       <motion.button
         type="button"
@@ -694,20 +879,29 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.2, delay: 0.12 + suggestion.options.length * 0.04 }}
-        className="chip rounded-full px-2.5 py-1.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
+        className="ak-ignore chip rounded-full px-3 py-1.5 text-[13px] text-[rgb(235_235_245/0.7)] hover:text-white"
       >
-        Not now
-        <kbd className="ml-1.5 font-sans text-[11px] text-white/35">Alt 0</kbd>
+        {/* Empties as the island's own close timer runs; full again on hover. */}
+        <span
+          className="ak-ignore-fill"
+          aria-hidden="true"
+          style={{ animationDuration: `${useSidekick.getState().settings.collapseAfterSecs}s` }}
+        />
+        <span className="relative">Ignore</span>
+        <kbd className="relative ml-1.5 font-sans text-[11px] text-white/45">
+          <i className="alt-pre">Alt </i>0
+        </kbd>
       </motion.button>
     </div>
   );
 }
 
-function choose(suggestion: Suggestion, index: number) {
+/** Shift opens a link in a private window. */
+function choose(suggestion: Suggestion, index: number, priv = false) {
   playSound("select", uiVolume(), useSidekick.getState().settings.soundKit);
   useSidekick.setState({ running: suggestion.options[index] ?? null });
   notePick(suggestion.skillId, suggestion.options[index] ?? "");
-  void api.suggestionChoose(suggestion.id, index);
+  void api.suggestionChoose(suggestion.id, index, priv);
 }
 
 function always(suggestion: Suggestion, index: number) {
@@ -739,7 +933,7 @@ function useSuggestionKeys(suggestion: Suggestion | null) {
       if (e.altKey) return; // Alt+N is a global shortcut handled in Rust
       if (e.key === "Escape") dismiss(suggestion);
       const n = Number(e.key);
-      if (n >= 1 && n <= suggestion.options.length) choose(suggestion, n - 1);
+      if (n >= 1 && n <= suggestion.options.length) choose(suggestion, n - 1, e.shiftKey);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -758,4 +952,21 @@ function useBlockBrowserKeys() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
+}
+
+/** "24:10" left in Focus mode, ticking each second, or null. */
+function useFocusLeft(until: number | null): string | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (until === null) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [until]);
+  if (until === null || until <= now) return null;
+  const secs = Math.ceil((until - now) / 1000);
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  const two = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`;
 }

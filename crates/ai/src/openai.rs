@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 
 use crate::{AiError, AiProvider, CancellationToken, ChatRequest, Sink, ToolDef, ToolRunner, sse};
 
-pub const OLLAMA_URL: &str = "http://localhost:11434/v1";
+pub const OLLAMA_URL: &str = "http://127.0.0.1:11434/v1";
 
 /// T1b: a local model through any OpenAI-compatible server (Ollama, LM
 /// Studio, llama.cpp server, vLLM). Nothing leaves the machine when the URL
@@ -15,23 +15,148 @@ pub struct OpenAiCompat {
     /// Empty means "the first model the server lists".
     pub model: String,
     client: reqwest::Client,
+    /// The loaded model's context in tokens, once Ollama has said (by model).
+    context: std::sync::Mutex<Option<(String, usize)>>,
+    /// "local", or the cloud provider this is ("gemini", "groq", "openrouter").
+    id: &'static str,
+    /// A cloud provider's API key was given (sent as a bearer token).
+    keyed: bool,
 }
+
+/// Cloud providers with an OpenAI-compatible API: (id, base URL, default model).
+pub const CLOUD: [(&str, &str, &str); 3] = [
+    (
+        "gemini",
+        "https://generativelanguage.googleapis.com/v1beta/openai",
+        "gemini-2.5-flash",
+    ),
+    (
+        "groq",
+        "https://api.groq.com/openai/v1",
+        "llama-3.3-70b-versatile",
+    ),
+    (
+        "openrouter",
+        "https://openrouter.ai/api/v1",
+        "openrouter/auto",
+    ),
+];
+
+/// Cloud models take far longer prompts than a laptop's local model.
+const CLOUD_CONTEXT: usize = 32_000;
+
+/// Ollama's own default when it does not say; smaller than most prompts with tools.
+const DEFAULT_CONTEXT: usize = 4_096;
 
 impl OpenAiCompat {
     pub fn new(base_url: Option<String>, model: Option<String>) -> Self {
         let base_url = base_url
             .filter(|u| !u.trim().is_empty())
-            .unwrap_or_else(|| OLLAMA_URL.into())
-            .trim_end_matches('/')
-            .to_owned();
+            .unwrap_or_else(|| OLLAMA_URL.into());
+        let base_url = loopback(base_url.trim_end_matches('/'));
+        let mut client = reqwest::Client::builder().connect_timeout(Duration::from_secs(3));
+        // A system or VPN proxy cannot reach this PC's own 127.0.0.1, so
+        // Ollama only answered once it was exposed to the network.
+        if is_local_url(&base_url) {
+            client = client.no_proxy();
+        }
         Self {
             base_url,
             model: model.unwrap_or_default().trim().to_owned(),
-            client: reqwest::Client::builder()
-                .connect_timeout(Duration::from_secs(3))
-                .build()
-                .unwrap_or_default(),
+            client: client.build().unwrap_or_default(),
+            context: std::sync::Mutex::new(None),
+            id: "local",
+            keyed: false,
         }
+    }
+
+    /// A cloud provider from [`CLOUD`] with its API key; None for an unknown id.
+    pub fn cloud(id: &str, key: &str, model: Option<String>) -> Option<Self> {
+        let &(id, url, default) = CLOUD.iter().find(|(i, _, _)| *i == id)?;
+        let mut headers = reqwest::header::HeaderMap::new();
+        let mut auth =
+            reqwest::header::HeaderValue::from_str(&format!("Bearer {}", key.trim())).ok()?;
+        auth.set_sensitive(true);
+        headers.insert(reqwest::header::AUTHORIZATION, auth);
+        if id == "openrouter" {
+            // OpenRouter lists apps by these; harmless elsewhere.
+            headers.insert(
+                "X-Title",
+                reqwest::header::HeaderValue::from_static("Sidekick"),
+            );
+            headers.insert(
+                "HTTP-Referer",
+                reqwest::header::HeaderValue::from_static("https://github.com/tmalik258/sidekick"),
+            );
+        }
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(5))
+            .default_headers(headers)
+            .build()
+            .ok()?;
+        let model = model
+            .map(|m| m.trim().to_owned())
+            .filter(|m| !m.is_empty())
+            .unwrap_or_else(|| default.to_owned());
+        Some(Self {
+            base_url: url.to_owned(),
+            model,
+            client,
+            context: std::sync::Mutex::new(None),
+            id,
+            keyed: true,
+        })
+    }
+
+    /// How many tokens `model` can take, from Ollama's list of loaded models;
+    /// the default when the server is not Ollama or has not loaded it yet.
+    async fn context_tokens(&self, model: &str) -> usize {
+        if self.keyed {
+            return CLOUD_CONTEXT;
+        }
+        if let Ok(c) = self.context.lock()
+            && let Some((m, n)) = c.as_ref()
+            && m == model
+        {
+            return *n;
+        }
+        let root = self.base_url.trim_end_matches("/v1");
+        let found = async {
+            let v: Value = self
+                .client
+                .get(format!("{root}/api/ps"))
+                .timeout(Duration::from_millis(800))
+                .send()
+                .await
+                .ok()?
+                .json()
+                .await
+                .ok()?;
+            v["models"]
+                .as_array()?
+                .iter()
+                .find(|m| m["name"] == model || m["model"] == model)
+                .and_then(|m| m["context_length"].as_u64())
+        }
+        .await;
+        match found {
+            Some(n) => {
+                let n = usize::try_from(n).unwrap_or(DEFAULT_CONTEXT);
+                if let Ok(mut c) = self.context.lock() {
+                    *c = Some((model.to_owned(), n));
+                }
+                n
+            }
+            None => DEFAULT_CONTEXT,
+        }
+    }
+
+    /// Characters the messages may take, after the tools and the answer.
+    async fn budget(&self, model: &str, tools_chars: usize) -> usize {
+        let tokens = self.context_tokens(model).await;
+        (tokens.saturating_sub(crate::fit::ANSWER_TOKENS) * crate::fit::CHARS_PER_TOKEN)
+            .saturating_sub(tools_chars)
+            .max(2_000)
     }
 
     /// Models the server offers, or None when it is not reachable.
@@ -39,7 +164,7 @@ impl OpenAiCompat {
         let resp = self
             .client
             .get(format!("{}/models", self.base_url))
-            .timeout(Duration::from_millis(1500))
+            .timeout(Duration::from_millis(if self.keyed { 6000 } else { 1500 }))
             .send()
             .await
             .ok()?;
@@ -76,8 +201,16 @@ impl OpenAiCompat {
 
     fn body(model: &str, req: &ChatRequest, stream: bool) -> Value {
         let mut messages = Vec::with_capacity(req.messages.len() + 1);
-        if !req.system.is_empty() {
-            messages.push(json!({"role": "system", "content": req.system}));
+        // Qwen3 thinks before every answer by default, and Ollama sends none
+        // of it until it is done: 10 to 25 seconds before the first word on
+        // a laptop, for questions that do not need it.
+        let system = if thinks_by_default(model) && !req.think {
+            format!("{}\n/no_think", req.system).trim_start().to_owned()
+        } else {
+            req.system.clone()
+        };
+        if !system.is_empty() {
+            messages.push(json!({"role": "system", "content": system}));
         }
         messages.extend(req.messages.iter().map(|m| json!(m)));
         if let (Some(data), Some(last)) = (req.image_base64(), messages.last_mut()) {
@@ -111,10 +244,33 @@ impl OpenAiCompat {
     }
 }
 
+/// Qwen3 models that think unless told `/no_think` (the 2507 instruct
+/// builds never think; the thinking builds ignore it).
+fn thinks_by_default(model: &str) -> bool {
+    let m = model.to_ascii_lowercase();
+    m.starts_with("qwen3")
+        && !m.starts_with("qwen3-")
+        && !m.contains("2507")
+        && !m.contains("instruct")
+}
+
 /// Warming the same model again within this time does nothing.
 const WARM_AGAIN: Duration = Duration::from_secs(60);
 static LAST_WARM: std::sync::Mutex<Option<(String, std::time::Instant)>> =
     std::sync::Mutex::new(None);
+
+/// `localhost` as `127.0.0.1`. Windows tries `::1` first, and Ollama only
+/// listens on IPv4 unless "Expose Ollama to the network" is on, so a refused
+/// IPv6 connect (about 2 seconds on Windows) made a running Ollama look
+/// stopped.
+pub fn loopback(url: &str) -> String {
+    match url.split_once("://localhost") {
+        Some((scheme, rest)) if rest.is_empty() || rest.starts_with([':', '/']) => {
+            format!("{scheme}://127.0.0.1{rest}")
+        }
+        _ => url.to_owned(),
+    }
+}
 
 /// Ollama's own API root (without `/v1`), when the URL looks like Ollama.
 fn ollama_root(base_url: &str) -> Option<&str> {
@@ -171,6 +327,71 @@ impl OpenAiCompat {
     /// A chat where the model may call `tools` through `runner`. Each round
     /// is one non-streamed completion; the final answer goes to `sink` in
     /// one piece.
+    /// Keeps the model loaded for 30 more minutes. Every chat request resets
+    /// Ollama's unload timer to its 5 minute default, so this runs after each
+    /// local answer: the next question does not wait for a cold load.
+    pub async fn keep_loaded(&self) {
+        let Some(root) = ollama_root(&self.base_url) else {
+            return;
+        };
+        let Ok(model) = self.pick_model().await else {
+            return;
+        };
+        let sent = self
+            .client
+            .post(format!("{root}/api/generate"))
+            .json(&json!({ "model": model, "keep_alive": "30m" }))
+            .timeout(Duration::from_secs(120))
+            .send()
+            .await;
+        if let Err(err) = sent {
+            log::debug!("could not keep {model} loaded: {err}");
+        }
+    }
+
+    /// Asks Ollama to write `tool`'s arguments again with its JSON schema as
+    /// the required format. None when the server is not Ollama or the new
+    /// arguments still do not fit.
+    async fn repair_args(
+        &self,
+        model: &str,
+        messages: &[Value],
+        tool: &ToolDef,
+        problem: &str,
+    ) -> Option<Value> {
+        let root = ollama_root(&self.base_url)?;
+        let mut messages = messages.to_vec();
+        messages.push(json!({
+            "role": "user",
+            "content": format!(
+                "Write only the JSON arguments for the {} tool. The last ones were wrong: {problem}.",
+                tool.name
+            ),
+        }));
+        let v: Value = self
+            .client
+            .post(format!("{root}/api/chat"))
+            .json(&json!({
+                "model": model, "messages": messages, "stream": false,
+                "think": false, "format": tool.parameters,
+            }))
+            .timeout(Duration::from_secs(60))
+            .send()
+            .await
+            .ok()?
+            .json()
+            .await
+            .ok()?;
+        let args: Value = serde_json::from_str(v["message"]["content"].as_str()?).ok()?;
+        match schema_problem(&args, &tool.parameters) {
+            None => Some(args),
+            Some(still) => {
+                log::debug!("repaired {} arguments still wrong: {still}", tool.name);
+                None
+            }
+        }
+    }
+
     pub async fn chat_with_tools(
         &self,
         req: &ChatRequest,
@@ -192,10 +413,17 @@ impl OpenAiCompat {
                 }})
             })
             .collect();
+        let budget = self
+            .budget(
+                &model,
+                serde_json::to_string(&tool_json).map_or(0, |s| s.len()),
+            )
+            .await;
         let mut calls = Vec::new();
         let mut shown = String::new();
         for step in 0..=MAX_TOOL_STEPS {
             let last = step == MAX_TOOL_STEPS;
+            crate::fit::fit(&mut messages, budget);
             let mut body = json!({ "model": model, "stream": true, "messages": messages });
             // On the last round the model has to answer, not call more tools.
             if !last && !tool_json.is_empty() {
@@ -204,7 +432,8 @@ impl OpenAiCompat {
             // Words reach the user as they are written; a round that turns
             // out to call tools just carries on below what it said.
             let gap = if shown.is_empty() { "" } else { "\n\n" };
-            let round = self.stream_round(&body, sink, gap, cancel).await?;
+            let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+            let round = self.stream_round(&body, &names, sink, gap, cancel).await?;
             shown.push_str(&round.text);
             let msg = json!({ "content": round.raw, "tool_calls": round.calls });
             let msg = &msg;
@@ -230,6 +459,20 @@ impl OpenAiCompat {
                         )
                     })
                     .collect();
+                // Arguments that break the tool's schema are written again
+                // under Ollama's JSON schema mode, so they always fit.
+                let mut parsed = parsed;
+                for (_, name, args) in &mut parsed {
+                    let Some(tool) = tools.iter().find(|t| t.name == *name) else {
+                        continue;
+                    };
+                    if let Some(problem) = schema_problem(args, &tool.parameters)
+                        && let Some(fixed) =
+                            self.repair_args(&model, &messages, tool, &problem).await
+                    {
+                        *args = fixed;
+                    }
+                }
                 // Reads asked for together run together; anything that acts
                 // runs one after another, in order.
                 let together =
@@ -279,6 +522,64 @@ impl OpenAiCompat {
 
 /// Tool arguments arrive as a JSON string (OpenAI) or an object (some
 /// servers).
+/// What is wrong with `args` for a tool with this JSON schema: a missing
+/// required field, a value outside its enum, or the wrong type. None when
+/// they fit.
+pub fn schema_problem(args: &Value, schema: &Value) -> Option<String> {
+    let Some(obj) = args.as_object() else {
+        return Some("arguments must be a JSON object".into());
+    };
+    for key in schema["required"].as_array().into_iter().flatten() {
+        let key = key.as_str().unwrap_or_default();
+        if obj.get(key).is_none_or(Value::is_null) {
+            return Some(format!("{key} is required"));
+        }
+    }
+    let props = schema["properties"].as_object()?;
+    for (key, value) in obj {
+        let Some(prop) = props.get(key) else { continue };
+        if value.is_null() {
+            continue;
+        }
+        if let Some(allowed) = prop["enum"].as_array()
+            && !allowed.contains(value)
+        {
+            let names: Vec<String> = allowed.iter().map(Value::to_string).collect();
+            return Some(format!("{key} must be one of {}", names.join(", ")));
+        }
+        let fits = match prop["type"].as_str() {
+            Some("string") => value.is_string(),
+            Some("integer") => {
+                value.is_i64()
+                    || value.is_u64()
+                    || value
+                        .as_str()
+                        .is_some_and(|s| s.trim().parse::<i64>().is_ok())
+            }
+            Some("number") => {
+                value.is_number()
+                    || value
+                        .as_str()
+                        .is_some_and(|s| s.trim().parse::<f64>().is_ok())
+            }
+            Some("boolean") => value.is_boolean(),
+            Some("object") => value.is_object(),
+            Some("array") => value.is_array(),
+            _ => true,
+        };
+        if !fits {
+            let kind = prop["type"].as_str().unwrap_or("value");
+            let a = if kind.starts_with(['a', 'e', 'i', 'o', 'u']) {
+                "an"
+            } else {
+                "a"
+            };
+            return Some(format!("{key} must be {a} {kind}"));
+        }
+    }
+    None
+}
+
 fn parse_arguments(raw: &Value) -> Value {
     match raw {
         Value::String(s) => serde_json::from_str(s).unwrap_or_else(|_| json!({})),
@@ -294,9 +595,28 @@ fn may_be_call(t: &str) -> bool {
     t.starts_with('{') || prefix_of("```") || prefix_of("<tool_call>")
 }
 
+/// Whether text so far could still be a tool's name on a line of its own,
+/// which small models echo before answering ("pc_status\nWi-Fi is ...").
+fn may_be_name(t: &str, names: &[&str]) -> bool {
+    !t.contains(char::is_whitespace) && names.iter().any(|n| n.starts_with(t) || t.starts_with(n))
+}
+
+/// `text` without a leading tool name the model echoed.
+fn without_name<'a>(text: &'a str, names: &[&str]) -> &'a str {
+    let t = text.trim_start();
+    for n in names {
+        if let Some(rest) = t.strip_prefix(n)
+            && rest.starts_with(char::is_whitespace)
+        {
+            return rest.trim_start();
+        }
+    }
+    text
+}
+
 /// A tool call the model wrote as text (`{"name": ..., "arguments": ...}`,
 /// maybe fenced or tagged), when it names one of the `offered` tools.
-fn text_call(text: &str, offered: &[&str]) -> Option<Value> {
+fn text_call(text: &str, offered: &[&str], tools: &[Value]) -> Option<Value> {
     let mut t = text.trim();
     if let Some(inner) = t.strip_prefix("<tool_call>") {
         t = inner.trim_end().trim_end_matches("</tool_call>").trim();
@@ -311,7 +631,12 @@ fn text_call(text: &str, offered: &[&str]) -> Option<Value> {
     } else {
         &v
     };
-    let name = f["name"].as_str()?;
+    let Some(name) = f["name"].as_str() else {
+        // Only the arguments ({"what": "hotspot_on"}): the one tool they fit.
+        let name = fitting_tool(&v, tools)?;
+        return Some(json!({ "id": "call_text", "type": "function",
+                            "function": { "name": name, "arguments": v.to_string() } }));
+    };
     if !offered.contains(&name) {
         return None;
     }
@@ -322,6 +647,34 @@ fn text_call(text: &str, offered: &[&str]) -> Option<Value> {
         .unwrap_or_else(|| json!({}));
     Some(json!({ "id": "call_text", "type": "function",
                  "function": { "name": name, "arguments": args.to_string() } }))
+}
+
+/// The only offered tool whose parameters `args` fits: every key is one of
+/// its parameters, its required ones are there, and values from a fixed list
+/// are on it.
+fn fitting_tool<'a>(args: &Value, tools: &'a [Value]) -> Option<&'a str> {
+    let args = args.as_object().filter(|a| !a.is_empty())?;
+    let fits = |t: &&Value| {
+        let params = &t["function"]["parameters"];
+        let props = &params["properties"];
+        let required = params["required"].as_array().into_iter().flatten();
+        args.iter().all(|(k, v)| {
+            props.get(k).is_some_and(|p| {
+                p["enum"]
+                    .as_array()
+                    .is_none_or(|choices| choices.contains(v))
+            })
+        }) && required
+            .filter_map(Value::as_str)
+            .all(|r| args.contains_key(r))
+    };
+    let mut fitting = tools.iter().filter(fits);
+    let one = fitting.next()?;
+    fitting
+        .next()
+        .is_none()
+        .then(|| one["function"]["name"].as_str())
+        .flatten()
 }
 
 /// What one streamed round produced.
@@ -338,6 +691,7 @@ impl OpenAiCompat {
     async fn stream_round(
         &self,
         body: &Value,
+        names: &[&str],
         sink: &Sink,
         gap: &str,
         cancel: &CancellationToken,
@@ -382,11 +736,13 @@ impl OpenAiCompat {
                     if holding {
                         held.push_str(&visible);
                         let t = held.trim_start();
-                        if t.is_empty() || may_be_call(t) {
+                        if t.is_empty() || may_be_call(t) || may_be_name(t, names) {
                             return Ok(true);
                         }
                         holding = false;
-                        show(&std::mem::take(&mut held), &mut text);
+                        let shown = without_name(&held, names).to_owned();
+                        held.clear();
+                        show(&shown, &mut text);
                     } else {
                         show(&visible, &mut text);
                     }
@@ -426,12 +782,13 @@ impl OpenAiCompat {
                 .flatten()
                 .filter_map(|t| t["function"]["name"].as_str())
                 .collect();
-            match text_call(&held, &offered) {
+            let tools = body["tools"].as_array().map_or(&[][..], Vec::as_slice);
+            match text_call(&held, &offered, tools) {
                 Some(call) if calls.is_empty() => {
                     calls.push(call);
                     raw.clear();
                 }
-                _ => show(&held, &mut text),
+                _ => show(without_name(&held, names), &mut text),
             }
         }
         Ok(Round { raw, text, calls })
@@ -512,7 +869,7 @@ fn delta(data: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-pub(crate) fn is_local_url(url: &str) -> bool {
+pub fn is_local_url(url: &str) -> bool {
     let rest = url.split("://").nth(1).unwrap_or(url);
     if rest.starts_with("[::1]") {
         return true;
@@ -577,7 +934,7 @@ impl OpenAiCompat {
 #[async_trait]
 impl AiProvider for OpenAiCompat {
     fn id(&self) -> &'static str {
-        "local"
+        self.id
     }
 
     fn is_local(&self) -> bool {
@@ -585,11 +942,13 @@ impl AiProvider for OpenAiCompat {
     }
 
     async fn available(&self) -> bool {
-        self.models().await.is_some_and(|m| !m.is_empty())
+        // A cloud key is checked when it is saved; asking each time would
+        // add a round trip to every question.
+        self.keyed || self.models().await.is_some_and(|m| !m.is_empty())
     }
 
     /// Ollama unloads a model after a few idle minutes; this loads it (and
-    /// keeps it for half an hour) while the user types.
+    /// keeps it for 30 minutes) while the user types. Every Ask open renews it.
     async fn warm(&self) {
         let Some(root) = ollama_root(&self.base_url) else {
             return;
@@ -626,10 +985,15 @@ impl AiProvider for OpenAiCompat {
         cancel: &CancellationToken,
     ) -> Result<String, AiError> {
         let model = self.pick_model().await?;
+        let mut body = Self::body(&model, req, true);
+        let budget = self.budget(&model, 0).await;
+        if let Some(messages) = body["messages"].as_array_mut() {
+            crate::fit::fit(messages, budget);
+        }
         let send = self
             .client
             .post(format!("{}/chat/completions", self.base_url))
-            .json(&Self::body(&model, req, true))
+            .json(&body)
             .send();
         let resp = tokio::select! {
             _ = cancel.cancelled() => return Err(AiError::Cancelled),
@@ -651,6 +1015,42 @@ impl AiProvider for OpenAiCompat {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn schema_problems_are_named() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "action": { "type": "string", "enum": ["read", "act"] },
+                "ref": { "type": "integer" },
+                "text": { "type": "string" }
+            },
+            "required": ["action"]
+        });
+        assert_eq!(schema_problem(&json!({ "action": "read" }), &schema), None);
+        assert_eq!(
+            schema_problem(&json!({ "action": "act", "ref": "3" }), &schema),
+            None
+        );
+        assert_eq!(
+            schema_problem(&json!({ "text": "hi" }), &schema).as_deref(),
+            Some("action is required")
+        );
+        assert!(
+            schema_problem(&json!({ "action": "click" }), &schema)
+                .unwrap()
+                .contains("one of")
+        );
+        assert_eq!(
+            schema_problem(&json!({ "action": "act", "ref": "third" }), &schema).as_deref(),
+            Some("ref must be an integer")
+        );
+        assert!(schema_problem(&json!("read"), &schema).is_some());
+        assert_eq!(
+            schema_problem(&json!({}), &json!({ "type": "object", "properties": {} })),
+            None
+        );
+    }
     use super::*;
 
     #[test]
@@ -661,6 +1061,28 @@ mod tests {
         );
         assert_eq!(ollama_root("http://localhost:1234/v1"), None);
         assert_eq!(ollama_root("http://localhost:11434"), None);
+    }
+
+    #[test]
+    fn talks_to_ollama_over_ipv4() {
+        assert_eq!(
+            loopback("http://localhost:11434/v1"),
+            "http://127.0.0.1:11434/v1"
+        );
+        assert_eq!(loopback("http://localhost"), "http://127.0.0.1");
+        assert_eq!(
+            loopback("http://localhost.lan:1/v1"),
+            "http://localhost.lan:1/v1"
+        );
+        assert_eq!(
+            loopback("http://192.168.1.5:11434/v1"),
+            "http://192.168.1.5:11434/v1"
+        );
+        assert!(
+            OpenAiCompat::new(None, None)
+                .base_url
+                .starts_with("http://127.0.0.1:11434")
+        );
     }
     use crate::Message;
     use async_trait::async_trait;
@@ -704,6 +1126,7 @@ mod tests {
                 system: "Be brief.".into(),
                 messages: vec![Message::user("hi")],
                 image: None,
+                think: false,
             },
             true,
         );
@@ -752,11 +1175,45 @@ mod tests {
     }
 
     #[test]
+    fn qwen3_answers_without_thinking() {
+        assert!(thinks_by_default("qwen3:1.7b"));
+        assert!(!thinks_by_default("qwen3:4b-instruct-2507-q4_K_M"));
+        assert!(!thinks_by_default("qwen3-coder:30b"));
+        assert!(!thinks_by_default("llama3.2:3b"));
+        let req = ChatRequest {
+            system: "Be brief.".into(),
+            ..Default::default()
+        };
+        let body = OpenAiCompat::body("qwen3:1.7b", &req, true);
+        assert_eq!(body["messages"][0]["content"], "Be brief.\n/no_think");
+        let req = ChatRequest { think: true, ..req };
+        let body = OpenAiCompat::body("qwen3:1.7b", &req, true);
+        assert_eq!(body["messages"][0]["content"], "Be brief.");
+    }
+
+    #[test]
+    fn an_echoed_tool_name_is_hidden() {
+        let names = ["pc_status", "search"];
+        assert!(may_be_name("pc_st", &names));
+        assert!(!may_be_name("Wi-Fi is", &names));
+        assert_eq!(
+            without_name("pc_status\nWi-Fi is on", &names),
+            "Wi-Fi is on"
+        );
+        assert_eq!(without_name("search Find apps", &names), "Find apps");
+        assert_eq!(
+            without_name("searching the web", &names),
+            "searching the web"
+        );
+    }
+
+    #[test]
     fn reads_tool_calls_written_as_text() {
         let offered = ["continue_in_claude_code", "apps"];
         let c = text_call(
             r#"{"name": "continue_in_claude_code", "arguments": {"reason": "needs more"}}"#,
             &offered,
+            &[],
         )
         .unwrap();
         assert_eq!(c["function"]["name"], "continue_in_claude_code");
@@ -766,14 +1223,25 @@ mod tests {
         );
         let fenced = "```json\n{\"name\": \"apps\", \"parameters\": {\"action\": \"find\"}}\n```";
         assert_eq!(
-            parse_arguments(&text_call(fenced, &offered).unwrap()["function"]["arguments"])["action"],
+            parse_arguments(&text_call(fenced, &offered, &[]).unwrap()["function"]["arguments"])["action"],
             "find"
         );
         let tagged = r#"<tool_call>{"function": {"name": "apps", "arguments": "{}"}}</tool_call>"#;
-        assert!(text_call(tagged, &offered).is_some());
+        assert!(text_call(tagged, &offered, &[]).is_some());
         // Not an offered tool, or plain JSON the user asked for: shown as is.
-        assert!(text_call(r#"{"name": "rm_rf", "arguments": {}}"#, &offered).is_none());
-        assert!(text_call(r#"{"a": 1}"#, &offered).is_none());
+        assert!(text_call(r#"{"name": "rm_rf", "arguments": {}}"#, &offered, &[]).is_none());
+        assert!(text_call(r#"{"a": 1}"#, &offered, &[]).is_none());
+        // Only the arguments: the one tool whose parameters they fit.
+        let tools = [
+            json!({"function": {"name": "pc_control", "parameters": {
+                "properties": {"what": {"enum": ["hotspot_on", "wifi_off"]}}, "required": ["what"]}}}),
+            json!({"function": {"name": "read_page", "parameters": {
+                "properties": {"what": {"enum": ["tables", "text"]}}}}}),
+        ];
+        let c = text_call(r#"{"what": "hotspot_on"}"#, &offered, &tools).unwrap();
+        assert_eq!(c["function"]["name"], "pc_control");
+        assert!(text_call(r#"{"what": "nope"}"#, &offered, &tools).is_none());
+        assert!(text_call(r#"{"what": "text", "x": 1}"#, &offered, &tools).is_none());
         assert!(may_be_call("{\"na"));
         assert!(may_be_call("``"));
         assert!(may_be_call("<tool"));
@@ -826,6 +1294,13 @@ mod tests {
                         }
                     }
                     let t = String::from_utf8_lossy(&got).to_string();
+                    // Not Ollama: no list of loaded models.
+                    if t.starts_with("GET ") {
+                        let _ = sock
+                            .write_all(b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\n\r\n")
+                            .await;
+                        return;
+                    }
                     let body: Value =
                         serde_json::from_str(t.split_once("\r\n\r\n").map_or("", |x| x.1))
                             .unwrap_or(Value::Null);
@@ -903,6 +1378,7 @@ mod tests {
                     system: "s".into(),
                     messages: vec![Message::user("my issues?")],
                     image: None,
+                    think: false,
                 },
                 &list_tool(),
                 &runner,
@@ -959,6 +1435,7 @@ mod tests {
                     system: String::new(),
                     messages: vec![Message::user("two at once")],
                     image: None,
+                    think: false,
                 },
                 &list_tool(),
                 &Slow(parallel),
@@ -1003,6 +1480,7 @@ mod tests {
                     system: String::new(),
                     messages: vec![Message::user("loop")],
                     image: None,
+                    think: false,
                 },
                 &list_tool(),
                 &runner,

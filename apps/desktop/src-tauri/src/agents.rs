@@ -18,6 +18,10 @@ use crate::state::{AppState, lock};
 pub enum Agent {
     ClaudeCode,
     Codex,
+    /// GitHub Copilot CLI (`copilot`).
+    Copilot,
+    /// Cursor's agent CLI (`cursor-agent`).
+    Cursor,
 }
 
 impl Agent {
@@ -25,13 +29,38 @@ impl Agent {
         match self {
             Agent::ClaudeCode => "Claude Code",
             Agent::Codex => "Codex",
+            Agent::Copilot => "GitHub Copilot",
+            Agent::Cursor => "Cursor",
         }
+    }
+
+    /// The id used in settings and saved sessions.
+    pub fn id(self) -> &'static str {
+        match self {
+            Agent::ClaudeCode => "claude_code",
+            Agent::Codex => "codex",
+            Agent::Copilot => "copilot",
+            Agent::Cursor => "cursor",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Agent> {
+        [
+            Agent::ClaudeCode,
+            Agent::Codex,
+            Agent::Copilot,
+            Agent::Cursor,
+        ]
+        .into_iter()
+        .find(|a| a.id() == id)
     }
 
     fn command(self) -> &'static str {
         match self {
             Agent::ClaudeCode => "claude",
             Agent::Codex => "codex",
+            Agent::Copilot => "copilot",
+            Agent::Cursor => "cursor-agent",
         }
     }
 
@@ -39,6 +68,7 @@ impl Agent {
         match self {
             Agent::ClaudeCode => s.ai.claude_code.path.trim().to_owned(),
             Agent::Codex => s.ai.codex.path.trim().to_owned(),
+            Agent::Copilot | Agent::Cursor => String::new(),
         }
     }
 
@@ -78,12 +108,23 @@ pub fn pick(choice: &str, claude: bool, codex: bool, order: &[String]) -> Option
 }
 
 pub fn chosen(s: &Settings) -> Option<Agent> {
+    // Copilot and Cursor when picked by name; also when nothing else is there.
+    let other = |a: Agent| a.resolve(s).is_some().then_some(a);
+    if let Some(a) =
+        Agent::from_id(&s.ai.coding_agent).filter(|a| matches!(a, Agent::Copilot | Agent::Cursor))
+        && let Some(a) = other(a)
+    {
+        return Some(a);
+    }
+    let codex = Agent::Codex.resolve(s).is_some();
     pick(
         &s.ai.coding_agent,
-        Agent::ClaudeCode.resolve(s).is_some(),
-        Agent::Codex.resolve(s).is_some(),
+        usable(Agent::ClaudeCode.resolve(s).is_some(), codex),
+        codex,
         &s.ai.order,
     )
+    .or_else(|| other(Agent::Copilot))
+    .or_else(|| other(Agent::Cursor))
 }
 
 /// What the UI needs: which agents are installed and which gets handoffs.
@@ -92,6 +133,8 @@ pub fn chosen(s: &Settings) -> Option<Agent> {
 pub struct Agents {
     pub claude_code: bool,
     pub codex: bool,
+    pub copilot: bool,
+    pub cursor: bool,
     /// Display name of the agent that gets handoffs, if any.
     pub handoff: Option<String>,
 }
@@ -102,8 +145,15 @@ pub fn status(s: &Settings) -> Agents {
     Agents {
         claude_code: claude,
         codex,
-        handoff: pick(&s.ai.coding_agent, claude, codex, &s.ai.order).map(|a| a.name().to_owned()),
+        copilot: Agent::Copilot.resolve(s).is_some(),
+        cursor: Agent::Cursor.resolve(s).is_some(),
+        handoff: chosen(s).map(|a| a.name().to_owned()),
     }
+}
+
+/// Claude Code out of usage counts as missing while Codex can take over.
+fn usable(claude: bool, codex: bool) -> bool {
+    claude && !(codex && sidekick_ai::claude_code_limited())
 }
 
 pub const HANDOFF_PROMPT: &str =
@@ -176,7 +226,7 @@ pub async fn hand_off(
     let state = app.state::<AppState>();
     let settings = lock(&state.settings).clone();
     let agent = chosen(&settings)
-        .ok_or("Install Claude Code or Codex first (Settings > AI), then try again.")?;
+        .ok_or("Install Claude Code, Codex, GitHub Copilot CLI or Cursor first (Settings > AI), then try again.")?;
     let exe = agent
         .resolve(&settings)
         .ok_or_else(|| format!("{} is not installed", agent.name()))?;
@@ -217,6 +267,9 @@ pub async fn hand_off(
                 env.extend(e);
             }
         }
+        // Both start interactively with the first prompt already sent.
+        Agent::Copilot => args.push("-i".into()),
+        Agent::Cursor => {}
     }
     args.push(HANDOFF_PROMPT.into());
     launch(&dir, &exe, &args, &env)?;

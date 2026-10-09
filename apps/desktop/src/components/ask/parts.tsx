@@ -3,6 +3,7 @@
 // Small pieces shared across Ask mode: chips, rows, key hints.
 
 import type { ReactNode } from "react";
+import { Tip } from "../Tip";
 
 export const ease = [0.23, 1, 0.32, 1] as const;
 
@@ -17,11 +18,10 @@ export function Chip({
   title?: string | null;
   children: ReactNode;
 }) {
-  return (
+  const button = (
     <button
       type="button"
       aria-pressed={on}
-      title={title ?? undefined}
       onClick={onClick}
       className={`chip max-w-[200px] truncate rounded-full px-2.5 py-1 text-[11.5px] font-medium ${
         on ? "bg-white text-black" : "bg-white/[0.1] text-[rgb(235_235_245/0.7)] hover:bg-white/[0.16]"
@@ -30,6 +30,7 @@ export function Chip({
       {children}
     </button>
   );
+  return title ? <Tip label={title}>{button}</Tip> : button;
 }
 
 export function Pill({ onClick, children }: { onClick: () => void; children: ReactNode }) {
@@ -101,10 +102,22 @@ export function Snippet({ text }: { text: string }) {
   );
 }
 
+/** Rows already scrolled for the current highlight spell. Ref callbacks are
+ *  new every render; without this, each parent update re-pins the row and
+ *  fights the wheel. */
+const scrolledActive = new WeakMap<HTMLElement, true>();
+
 /** Keeps the highlighted row of a list in view as the arrows move it. */
 export function scrollIfActive(active: boolean) {
   return (el: HTMLElement | null) => {
-    if (active && el) el.scrollIntoView({ block: "nearest" });
+    if (!el) return;
+    if (!active) {
+      scrolledActive.delete(el);
+      return;
+    }
+    if (scrolledActive.has(el)) return;
+    scrolledActive.set(el, true);
+    el.scrollIntoView({ block: "nearest" });
   };
 }
 
@@ -117,6 +130,24 @@ export function ago(iso: string): string {
   if (mins < 24 * 60) return `${Math.round(mins / 60)} h ago`;
   if (mins < 48 * 60) return "yesterday";
   return new Date(iso).toLocaleDateString();
+}
+
+/** While Alt is held only the letter is needed, like Windows KeyTips: "Alt M" is "M". */
+export function keyLetter(keys: string): string {
+  return keys.replace(/^Alt[ +]/, "");
+}
+
+/** Keys inside a chip: "Alt 1" drops "Alt " while Alt is held. */
+export function ChipKeys({ keys }: { keys: string }) {
+  const letter = keyLetter(keys);
+  return letter === keys ? (
+    keys
+  ) : (
+    <>
+      <i className="alt-pre">Alt </i>
+      {letter}
+    </>
+  );
 }
 
 /** A key badge that shows on its control while Alt is held. */
@@ -137,7 +168,7 @@ export function KeyHint({
       }`}
       data-show={show}
     >
-      {children}
+      {typeof children === "string" ? keyLetter(children) : children}
     </span>
   );
 }

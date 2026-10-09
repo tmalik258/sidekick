@@ -36,6 +36,7 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("dismiss", "Ctrl+Alt+Backspace"),
     ("screen", "Ctrl+Alt+S"),
     ("clipboard", "Ctrl+Alt+V"),
+    ("focus", "Ctrl+Alt+F"),
     ("pause", "Ctrl+Alt+P"),
     ("settings", "Ctrl+Alt+Comma"),
 ];
@@ -108,8 +109,12 @@ pub struct Settings {
     /// Fade the island out while a fullscreen app is in front. Off: the
     /// island stays on top of everything, fullscreen apps included.
     pub hide_in_fullscreen: bool,
+    /// Now and then, when nothing needs you, a short tip on the island.
+    pub tips: bool,
     /// The mascot idles on its own: glances around, blinks, the odd smile.
     pub alive: bool,
+    /// After a crash, offer a report to send (never sent on its own).
+    pub crash_reports: bool,
     /// The notification inbox: Sidekick reads Windows notifications and only
     /// brings up what matters.
     pub notifications: NotificationSettings,
@@ -118,6 +123,22 @@ pub struct Settings {
     /// Things Sidekick knows about the user ("My manager is Sara"), given to
     /// every model. Edited in Settings or learned when the user says so.
     pub memory: Vec<String>,
+    /// What Sidekick calls the user ("Sam"); empty until they say.
+    pub user_name: String,
+    /// People the user works with ("Sara, my manager"), one per line.
+    pub people: String,
+    /// What the user is working on now, one per line.
+    pub projects: String,
+    /// How the user likes answers ("short, bullet points").
+    pub answer_style: String,
+    /// The user works with code: technical answers and setup. None: not asked.
+    pub codes: Option<bool>,
+    /// What the assistant is called and answers to ("Hey Orbi"). The app
+    /// itself stays Sidekick.
+    pub assistant_name: String,
+    /// Learn from choices (links, files, suggestions, routines). Off: nothing
+    /// new is learned; what is known stays until forgotten.
+    pub learning: bool,
     /// How much Sidekick asks before acting in apps and pages.
     pub agent: AgentSettings,
 }
@@ -298,6 +319,9 @@ pub struct VoiceSettings {
     pub speak_suggestions: bool,
     /// Talking over a spoken answer stops it and listens.
     pub interrupt: bool,
+    /// While you talk: "compact" (one slim line) or "full" (a waveform and
+    /// your words larger).
+    pub listening_style: String,
     /// Voice id, e.g. "f5" (Supertonic 3's Female 5).
     pub voice: String,
     /// 0.5 to 2.0.
@@ -307,6 +331,8 @@ pub struct VoiceSettings {
     /// as 1. A voice from an older model is moved to the default once.
     #[serde(default = "voice_model_v1")]
     pub model: u32,
+    /// Words voice gets wrong, comma separated: "horsepot = hotspot".
+    pub fixes: String,
 }
 
 /// Settings saved before the v1.0 voice model had no `model` field.
@@ -322,12 +348,14 @@ impl Default for VoiceSettings {
             enabled: true,
             wake_word: true,
             speak_answers: true,
+            listening_style: "compact".into(),
             conversation: true,
             speak_suggestions: true,
             interrupt: true,
             voice: "f5".into(),
             speed: 1.0,
             model: VOICE_MODEL,
+            fixes: String::new(),
         }
     }
 }
@@ -345,6 +373,11 @@ pub struct AiSettings {
     pub coding_agent: String,
     pub local: LocalModelPref,
     pub anthropic: AnthropicPref,
+    /// Free cloud models: Gemini first, Groq when Gemini is busy.
+    pub gemini: CloudPref,
+    pub groq: CloudPref,
+    /// One key for hundreds of models, some free.
+    pub openrouter: CloudPref,
     pub semif: SemIfPref,
     /// Let SemIf or the local model rank suggestion options.
     pub decisions: bool,
@@ -422,7 +455,24 @@ pub struct SemIfPref {
     pub gguf: String,
 }
 
-pub const AI_PROVIDERS: [&str; 4] = ["local", "claude_code", "codex", "anthropic"];
+pub const AI_PROVIDERS: [&str; 7] = [
+    "local",
+    "gemini",
+    "groq",
+    "claude_code",
+    "codex",
+    "anthropic",
+    "openrouter",
+];
+
+/// A cloud model reached with an API key kept in Credential Manager. On
+/// once a key is saved; `model` empty means the provider's default.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CloudPref {
+    pub enabled: bool,
+    pub model: String,
+}
 
 impl Default for AiSettings {
     fn default() -> Self {
@@ -433,6 +483,9 @@ impl Default for AiSettings {
             coding_agent: "auto".into(),
             local: LocalModelPref::default(),
             anthropic: AnthropicPref::default(),
+            gemini: CloudPref::default(),
+            groq: CloudPref::default(),
+            openrouter: CloudPref::default(),
             semif: SemIfPref::default(),
             decisions: true,
         }
@@ -453,7 +506,7 @@ impl Default for LocalModelPref {
     fn default() -> Self {
         Self {
             enabled: true,
-            base_url: "http://localhost:11434/v1".into(),
+            base_url: "http://127.0.0.1:11434/v1".into(),
             model: String::new(),
             vision_model: String::new(),
         }
@@ -522,7 +575,9 @@ impl AiSettings {
         if !CODING_AGENTS.contains(&self.coding_agent.as_str()) {
             self.coding_agent = "auto".into();
         }
-        if self.local.base_url.trim().is_empty() {
+        // The old default; Ollama listens on IPv4 only (see `loopback`).
+        let old = self.local.base_url.trim().trim_end_matches('/');
+        if old.is_empty() || old == "http://localhost:11434/v1" {
             self.local.base_url = LocalModelPref::default().base_url;
         }
         self.semif.command.retain(|a| !a.trim().is_empty());
@@ -553,14 +608,15 @@ pub const SENSORS_OFF_BY_DEFAULT: [&str; 0] = [];
 pub const THEMES: [&str; 7] = [
     "pearl", "aurora", "chrome", "peach", "mint", "lilac", "onyx",
 ];
-/// Island colours; the glass ones are a deep tint with a light rim.
+/// Island colours, the default first; the glass ones are a deep tint with
+/// a light rim.
 pub const ISLAND_COLORS: [&str; 6] = [
+    "solid_black",
     "black_glass",
     "graphite",
     "midnight",
     "smoke",
     "warm_graphite",
-    "solid_black",
 ];
 /// "sidekick" is synthesized in the app (soft tones with character);
 /// "01" is the SND kit.
@@ -599,10 +655,19 @@ impl Default for Settings {
             routines: true,
             routines_auto: false,
             hide_in_fullscreen: false,
+            tips: true,
             alive: true,
+            crash_reports: false,
             notifications: NotificationSettings::default(),
             recipes: Vec::new(),
             memory: Vec::new(),
+            user_name: String::new(),
+            people: String::new(),
+            projects: String::new(),
+            answer_style: String::new(),
+            codes: None,
+            assistant_name: "Sidekick".into(),
+            learning: true,
             agent: AgentSettings::default(),
         }
     }
@@ -657,6 +722,16 @@ impl Settings {
             *v = v.clamp(0.0, 1.0);
         }
         self.collapse_after_secs = self.collapse_after_secs.clamp(2, 120);
+        let name = self.assistant_name.trim();
+        self.assistant_name = if name.is_empty() {
+            "Sidekick".into()
+        } else {
+            name.chars().take(24).collect()
+        };
+        self.user_name = self.user_name.trim().chars().take(40).collect();
+        for about in [&mut self.people, &mut self.projects, &mut self.answer_style] {
+            *about = about.trim().chars().take(1000).collect();
+        }
         // The dark orbs of 0.1 became Onyx.
         if matches!(self.theme.as_str(), "graphite" | "midnight") {
             self.theme = "onyx".into();
@@ -745,7 +820,18 @@ mod tests {
         s.ai.semif.mode = "weird".into();
         s.palette_hotkey = " ".into();
         let s = s.sanitized();
-        assert_eq!(s.ai.order, ["local", "claude_code", "codex", "anthropic"]);
+        assert_eq!(
+            s.ai.order,
+            [
+                "local",
+                "gemini",
+                "groq",
+                "claude_code",
+                "codex",
+                "anthropic",
+                "openrouter"
+            ]
+        );
         assert_eq!(s.ai.coding_agent, "auto");
         assert_eq!(s.ai.semif.mode, "direct");
         assert_eq!(s.palette_hotkey, DEFAULT_PALETTE_HOTKEY);
@@ -777,7 +863,7 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"muted":true}"#).unwrap();
         assert!(s.muted);
         assert!(s.ai.claude_code.enabled);
-        assert_eq!(s.ai.local.base_url, "http://localhost:11434/v1");
+        assert_eq!(s.ai.local.base_url, "http://127.0.0.1:11434/v1");
         assert!(s.ai.semif.enabled);
     }
 
@@ -839,7 +925,7 @@ mod tests {
     }
 
     #[test]
-    fn old_dark_orbs_become_onyx_and_islands_default_to_glass() {
+    fn old_dark_orbs_become_onyx_and_islands_default_to_solid_black() {
         let s = Settings {
             theme: "midnight".into(),
             island_color: "neon".into(),
@@ -847,8 +933,8 @@ mod tests {
         }
         .sanitized();
         assert_eq!(s.theme, "onyx");
-        assert_eq!(s.island_color, "black_glass");
-        assert_eq!(Settings::default().island_color, "black_glass");
+        assert_eq!(s.island_color, "solid_black");
+        assert_eq!(Settings::default().island_color, "solid_black");
     }
 
     #[test]

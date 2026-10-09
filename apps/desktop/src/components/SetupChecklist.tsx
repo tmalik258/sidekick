@@ -267,9 +267,9 @@ export function SetupChecklist({
 
 function SectionTitle({ children, hint }: { children: string; hint?: string }) {
   return (
-    <h3 className="flex items-baseline gap-2 px-1 pt-2 text-[12px] font-semibold text-[rgb(235_235_245/0.55)]">
+    <h3 className="flex items-baseline gap-2 px-1 pt-2 text-[12px] font-semibold text-[rgb(235_235_245/0.62)]">
       {children}
-      {hint && <span className="font-normal text-[rgb(235_235_245/0.4)]">{hint}</span>}
+      {hint && <span className="font-normal text-[rgb(235_235_245/0.45)]">{hint}</span>}
     </h3>
   );
 }

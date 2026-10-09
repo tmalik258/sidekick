@@ -8,6 +8,7 @@ import { friendlyError } from "@/lib/friendly";
 import { startWaiting, stopWaiting, useSidekick } from "@/lib/store";
 import type { SetupItem } from "@/lib/types";
 import { ItemGuide } from "./SetupGuides";
+import { Tip } from "./Tip";
 
 const TAB_LABELS: Record<string, string> = {
   ai: "AI",
@@ -162,14 +163,14 @@ export const SetupRow = memo(function SetupRow({
             {!(inlineGuides && item.id === "browser") && (
               <span
                 className={`font-normal transition-opacity duration-300 ${checking ? "opacity-0" : "opacity-100"} ${
-                  item.done ? "text-[#30d158]" : "text-[rgb(235_235_245/0.5)]"
+                  item.done ? "text-[#30d158]" : "text-[rgb(235_235_245/0.62)]"
                 }`}
               >
                 {item.status}
               </span>
             )}
           </p>
-          <p className="text-[11.5px] leading-snug text-[rgb(235_235_245/0.55)]">{item.why}</p>
+          <p className="text-[11.5px] leading-snug text-[rgb(235_235_245/0.62)]">{item.why}</p>
         </div>
         {isWaiting && (
           <div className="flex shrink-0 items-center gap-1.5">
@@ -223,7 +224,7 @@ export const SetupRow = memo(function SetupRow({
       {actionError && <p className="text-[11px] text-[#ff453a]">{actionError}</p>}
       {!checking && !item.done && item.command && !oneClick && !item.opensTerminal && showCommand && (
         <div className="flex flex-col gap-1.5">
-          <p className="text-[11px] leading-snug text-[rgb(235_235_245/0.55)]">
+          <p className="text-[11px] leading-snug text-[rgb(235_235_245/0.62)]">
             Paste in PowerShell or Terminal. Swap in your key, press Enter, then come back here.
           </p>
           <div className="flex items-center gap-1.5">
@@ -242,12 +243,11 @@ export const SetupRow = memo(function SetupRow({
 
 function Code({ text }: { text: string }) {
   return (
-    <code
-      title={text}
-      className="block truncate rounded-lg bg-black/30 px-2.5 py-1.5 font-mono text-[11px] text-white/80 select-all"
-    >
-      {text}
-    </code>
+    <Tip label={text} className="block min-w-0 max-w-full">
+      <code className="block truncate rounded-lg bg-black/30 px-2.5 py-1.5 font-mono text-[11px] text-white/80 select-all">
+        {text}
+      </code>
+    </Tip>
   );
 }
 

@@ -6,7 +6,7 @@
 import { updateSettings, useSidekick } from "@/lib/store";
 import { ISLAND_COLORS, type IslandColor, THEMES } from "@/lib/types";
 import { Orb, THEME_STYLES } from "../Orb";
-import { Field, Section, Select, Toggle } from "./ui";
+import { Field, Section, Select, TextField, Toggle } from "./ui";
 
 const COLLAPSE_OPTIONS: [string, string][] = [
   ["4", "4 seconds"],
@@ -35,9 +35,12 @@ const ISLAND_SWATCH: Record<IslandColor, string> = {
   solid_black: "#000",
 };
 
+/** A tile in the plan's style: faint glass, a blue ring on the picked one. */
 const tile = (on: boolean) =>
-  `chip flex flex-col items-center gap-2 rounded-xl py-3 text-[12.5px] font-medium ${
-    on ? "ring-2 ring-inset ring-[#0a84ff]" : "ring-1 ring-inset ring-black/10 dark:ring-white/10"
+  `chip flex flex-col items-center gap-[7px] rounded-xl px-1 pt-2.5 pb-2 text-[12px] transition-[box-shadow,background-color,scale] duration-150 active:scale-[0.96] ${
+    on
+      ? "bg-white/[0.07] text-white shadow-[inset_0_0_0_1.5px_#0a84ff]"
+      : "bg-white/[0.04] text-[rgb(235_235_245/0.62)] shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)] hover:bg-white/[0.06]"
   }`;
 
 export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
@@ -55,14 +58,27 @@ export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
               type="button"
               aria-pressed={settings.theme === t}
               onClick={() => save({ theme: t })}
-              className={`${tile(settings.theme === t)} bg-black text-white/90`}
+              className={tile(settings.theme === t)}
             >
-              <Orb state="idle" size={34} theme={t} magnetic={false} />
+              <span className="orb-still">
+                <Orb state="idle" size={34} theme={t} magnetic={false} simple active={false} />
+              </span>
               {THEME_STYLES[t].label}
             </button>
           ))}
         </div>
       </Section>
+      <Section title="Name" keywords="name rename wake word hey call assistant orbi">
+        <Field label="Assistant name" hint={nameHint(settings.assistantName)}>
+          <TextField
+            label="Assistant name"
+            value={settings.assistantName}
+            placeholder="Sidekick"
+            onCommit={(assistantName) => save({ assistantName: assistantName || "Sidekick" })}
+          />
+        </Field>
+      </Section>
+
       <Section
         title="Island"
         hint="The capsule around the mascot when it opens. Menus always use Graphite."
@@ -88,7 +104,9 @@ export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
                       : "inset 0 0.5px 0 rgb(255 255 255 / 0.18), 0 0 0 0.5px rgb(255 255 255 / 0.14)",
                 }}
               >
-                <Orb state="idle" size={15} theme={settings.theme} magnetic={false} />
+                <span className="orb-still">
+                  <Orb state="idle" size={15} theme={settings.theme} magnetic={false} simple active={false} />
+                </span>
                 <span className="h-[4px] w-[26px] rounded-full bg-white/55" />
               </span>
               {ISLAND_COLOR_LABELS[c]}
@@ -117,7 +135,22 @@ export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
           checked={settings.hideInFullscreen}
           onChange={(hideInFullscreen) => save({ hideInFullscreen })}
         />
+        <Toggle
+          label="Tips"
+          hint="Now and then, when nothing needs you."
+          checked={settings.tips}
+          onChange={(tips) => save({ tips })}
+        />
       </Section>
     </>
   );
+}
+
+/** What saying the name does, and a warning for names that wake by mistake. */
+function nameHint(name: string): string {
+  const said = `Say "Hey ${name || "Sidekick"}" to talk. "Hey Sidekick" keeps working too.`;
+  const vowels = (name.toLowerCase().match(/[aeiouy]+/g) ?? []).length;
+  return name.length < 4 || vowels < 2
+    ? `${said} Short names wake by mistake more often; two syllables or more work best.`
+    : said;
 }

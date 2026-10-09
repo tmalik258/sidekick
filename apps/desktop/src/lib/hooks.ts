@@ -24,6 +24,10 @@ export function useAltHeld(): boolean {
       window.removeEventListener("blur", off);
     };
   }, []);
+  // Chips drop "Alt " from their keys while it is held (see .alt-pre).
+  useEffect(() => {
+    document.documentElement.toggleAttribute("data-alt", held);
+  }, [held]);
   return held;
 }
 
@@ -161,4 +165,27 @@ export function useScrollEdge(): (el: HTMLElement | null) => void {
       el.removeEventListener("scroll", update);
     };
   }, []);
+}
+
+/** Windows' look settings the island follows: transparency effects off
+ * makes it solid, Battery saver makes it simple. Checked every minute. */
+export function useSystemLook(): { solid: boolean; simple: boolean } {
+  const [look, setLook] = useState({ solid: false, simple: false });
+  useEffect(() => {
+    const check = () =>
+      void api
+        .systemLook()
+        .then((l) =>
+          setLook((p) =>
+            p.solid === !l.transparency && p.simple === l.batterySaver
+              ? p
+              : { solid: !l.transparency, simple: l.batterySaver },
+          ),
+        )
+        .catch(() => undefined);
+    check();
+    const id = setInterval(check, 60_000);
+    return () => clearInterval(id);
+  }, []);
+  return look;
 }

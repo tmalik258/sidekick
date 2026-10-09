@@ -132,6 +132,13 @@ pub fn on_away(app: &AppHandle) {
 }
 
 /// The user is at the computer with an app in front.
+/// The app in front now ("Code"), if any.
+pub fn current_app(app: &AppHandle) -> Option<String> {
+    lock(&app.state::<AppState>().tracker.current)
+        .as_ref()
+        .map(|s| s.app.clone())
+}
+
 pub fn is_active(app: &AppHandle) -> bool {
     lock(&app.state::<AppState>().tracker.current).is_some()
 }
@@ -163,9 +170,64 @@ pub fn by_name(rows: &[sidekick_core::AppTime]) -> Vec<(String, i64)> {
     by_name
 }
 
+/// What got done today besides time: commits per project and meetings.
+#[derive(Default)]
+pub struct Done {
+    /// (project folder name, commit subjects).
+    pub commits: Vec<(String, Vec<String>)>,
+    pub meetings: Vec<String>,
+}
+
+impl Done {
+    /// ". Fix tool calls, Add eval (3 commits)" for a project, or "".
+    fn about(&self, project: &str) -> String {
+        let Some((_, subjects)) = self
+            .commits
+            .iter()
+            .find(|(p, s)| p == project && !s.is_empty())
+        else {
+            return String::new();
+        };
+        let shown: Vec<&str> = subjects.iter().take(2).map(String::as_str).collect();
+        let n = subjects.len();
+        format!(
+            ". {} ({n} commit{})",
+            shown.join(", "),
+            if n == 1 { "" } else { "s" }
+        )
+    }
+
+    /// Gathers today's commits from the code folders and meetings from the
+    /// calendar. Slow (runs git); call off the UI thread.
+    pub fn gather(app: &AppHandle) -> Self {
+        let (roots, meetings) = {
+            let state = app.state::<AppState>();
+            let roots = crate::repo_roots(&lock(&state.settings));
+            let meetings = sidekick_sensors::calendar::on_day(
+                &lock(&state.calendar).meetings,
+                Local::now().date_naive(),
+            )
+            .into_iter()
+            .map(|m| m.title)
+            .collect();
+            (roots, meetings)
+        };
+        let commits = roots
+            .iter()
+            .flat_map(|r| sidekick_sensors::repos::find_repos(r))
+            .filter_map(|repo| {
+                let subjects = sidekick_actions::gitflow::today_commits(&repo);
+                let name = repo.file_name()?.to_string_lossy().into_owned();
+                (!subjects.is_empty()).then_some((name, subjects))
+            })
+            .collect();
+        Self { commits, meetings }
+    }
+}
+
 /// The day's summary event: time per project (or app), with a
 /// plain-text version ready to paste into a standup or timesheet.
-pub fn day_summary(rows: &[sidekick_core::AppTime]) -> Option<Event> {
+pub fn day_summary(rows: &[sidekick_core::AppTime], done: &Done) -> Option<Event> {
     let total: i64 = rows.iter().map(|r| r.secs).sum();
     if total < MIN_SUMMARY_SECS {
         return None;
@@ -179,14 +241,89 @@ pub fn day_summary(rows: &[sidekick_core::AppTime]) -> Option<Event> {
     let lines: Vec<String> = by_name
         .iter()
         .filter(|(_, s)| *s >= 5 * 60)
-        .map(|(n, s)| format!("- {n}: {}", human(*s)))
+        .map(|(n, s)| format!("- {n}: {}{}", human(*s), done.about(n)))
         .collect();
-    let text = format!("Today ({} total)\n{}", human(total), lines.join("\n"));
+    let mut text = format!("Today ({} total)\n{}", human(total), lines.join("\n"));
+    // Work in projects you did not have open long enough to make the list.
+    for (project, _) in &done.commits {
+        if !by_name.iter().any(|(n, s)| n == project && *s >= 5 * 60) {
+            text.push_str(&format!(
+                "\n- {project}: {}",
+                done.about(project).trim_start_matches(". ")
+            ));
+        }
+    }
+    if !done.meetings.is_empty() {
+        text.push_str(&format!("\nMeetings: {}", done.meetings.join(", ")));
+    }
     Some(Event::new(
         DAY_SUMMARY,
         "time",
         serde_json::json!({ "total_human": human(total), "top": top.join(", "), "text": text }),
     ))
+}
+
+/// The hour you were last at the PC, per day ("2026-10-08" -> 19), kept
+/// for two weeks to learn when your day really ends.
+const LAST_HOURS: &str = "day-ends.json";
+const DEFAULT_DAY_END: u32 = 18;
+
+fn last_hours(app: &AppHandle) -> std::collections::BTreeMap<String, u32> {
+    std::fs::read_to_string(app.state::<AppState>().data_dir.join(LAST_HOURS))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn note_active_hour(app: &AppHandle, day: &str, hour: u32) {
+    let mut hours = last_hours(app);
+    if hours.get(day) == Some(&hour) {
+        return;
+    }
+    hours.insert(day.to_owned(), hour);
+    while hours.len() > 14 {
+        let first = hours.keys().next().cloned().unwrap_or_default();
+        hours.remove(&first);
+    }
+    if let Ok(json) = serde_json::to_string(&hours) {
+        let _ = std::fs::write(app.state::<AppState>().data_dir.join(LAST_HOURS), json);
+    }
+}
+
+/// When your day usually ends: the middle of your last hours at the PC,
+/// once there are five days to go on (today left out, it is not over).
+pub fn learned_day_end(
+    hours: &std::collections::BTreeMap<String, u32>,
+    today: &str,
+) -> Option<u32> {
+    let mut past: Vec<u32> = hours
+        .iter()
+        .filter(|(d, _)| d.as_str() != today)
+        .map(|(_, h)| *h)
+        .collect();
+    if past.len() < 5 {
+        return None;
+    }
+    past.sort_unstable();
+    Some(past[past.len() / 2])
+}
+
+/// The learned day end, when there is one (for Memory).
+pub fn learned_end(app: &AppHandle) -> Option<u32> {
+    learned_day_end(&last_hours(app), &today())
+}
+
+pub fn forget_day_ends(app: &AppHandle) {
+    let _ = std::fs::remove_file(app.state::<AppState>().data_dir.join(LAST_HOURS));
+}
+
+/// The day-end hour: yours if set, else the one learned from your days.
+pub fn day_end(app: &AppHandle) -> u32 {
+    let set = lock(&app.state::<AppState>().settings).end_of_day_hour;
+    if set != DEFAULT_DAY_END || !crate::learned::on(app) {
+        return set;
+    }
+    learned_day_end(&last_hours(app), &today()).unwrap_or(set)
 }
 
 pub fn start(app: &AppHandle) {
@@ -209,6 +346,7 @@ pub fn start(app: &AppHandle) {
                 let mut current = lock(&state.tracker.current);
                 if let Some(span) = current.as_mut() {
                     write(&app, span, now);
+                    note_active_hour(&app, &today(), chrono::Timelike::hour(&Local::now()));
                     if span.editor
                         && !span.focus_offered
                         && span
@@ -222,13 +360,17 @@ pub fn start(app: &AppHandle) {
             }
             // Once a day, after the end-of-day hour, offer the summary.
             let local = Local::now();
-            let eod = lock(&state.settings).end_of_day_hour;
+            let eod = day_end(&app);
             if chrono::Timelike::hour(&local) >= eod && summarized != Some(local.date_naive()) {
                 summarized = Some(local.date_naive());
                 let rows = lock(&state.storage)
                     .time_for_day(&today())
                     .unwrap_or_default();
-                if let Some(e) = day_summary(&rows) {
+                let app2 = app.clone();
+                let done = tokio::task::spawn_blocking(move || Done::gather(&app2))
+                    .await
+                    .unwrap_or_default();
+                if let Some(e) = day_summary(&rows, &done) {
                     state.bus.publish(e);
                 }
             }
@@ -255,6 +397,23 @@ pub fn start(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn learns_when_the_day_ends() {
+        let mut hours = std::collections::BTreeMap::new();
+        for (d, h) in [("01", 17), ("02", 19), ("03", 19), ("04", 20)] {
+            hours.insert(format!("2026-10-{d}"), h);
+        }
+        assert_eq!(
+            learned_day_end(&hours, "2026-10-08"),
+            None,
+            "four days is too few"
+        );
+        hours.insert("2026-10-05".into(), 19);
+        hours.insert("2026-10-08".into(), 9);
+        assert_eq!(learned_day_end(&hours, "2026-10-08"), Some(19));
+    }
+
     use super::*;
 
     #[test]
@@ -270,16 +429,28 @@ mod tests {
             row("Chrome", "", 2400),
             row("Slack", "", 120),
         ];
-        let e = day_summary(&rows).unwrap();
+        let done = Done {
+            commits: vec![
+                (
+                    "sidekick".into(),
+                    vec!["Fix tool calls".into(), "Add eval".into(), "Docs".into()],
+                ),
+                ("site".into(), vec!["New hero".into()]),
+            ],
+            meetings: vec!["Standup".into()],
+        };
+        let e = day_summary(&rows, &done).unwrap();
         assert_eq!(e.payload["total_human"], "3 h 12 min");
         assert_eq!(
             e.payload["top"],
             "sidekick 2 h 30 min, Chrome 40 min, Slack 2 min"
         );
         let text = e.payload["text"].as_str().unwrap();
-        assert!(text.contains("- sidekick: 2 h 30 min"));
+        assert!(text.contains("- sidekick: 2 h 30 min. Fix tool calls, Add eval (3 commits)"));
+        assert!(text.contains("- site: New hero (1 commit)"));
+        assert!(text.contains("Meetings: Standup"));
         assert!(!text.contains("Slack"), "under five minutes is left out");
-        assert!(day_summary(&[row("Code", "x", 600)]).is_none());
+        assert!(day_summary(&[row("Code", "x", 600)], &Done::default()).is_none());
     }
 
     #[test]

@@ -140,6 +140,130 @@ impl Sensor for SystemSensor {
     }
 }
 
+/// Battery saver is on: the island keeps its look simple to save power.
+pub fn battery_saver() -> bool {
+    battery().is_some_and(|(_, _, saver)| saver)
+}
+
+/// Windows' "Transparency effects" (Settings > Personalization > Colors).
+/// When off, the island is a solid colour instead of glass.
+#[cfg(windows)]
+pub fn transparency_effects() -> bool {
+    use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
+    let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let key = wide(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+    let name = wide("EnableTransparency");
+    let mut value: u32 = 1;
+    let mut size = std::mem::size_of::<u32>() as u32;
+    // SAFETY: valid NUL-terminated strings and an out buffer of `size` bytes.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            (&mut value as *mut u32).cast(),
+            &mut size,
+        )
+    };
+    // Missing value: Windows' default, on.
+    status != 0 || value != 0
+}
+
+#[cfg(not(windows))]
+pub fn transparency_effects() -> bool {
+    true
+}
+
+/// Memory on the biggest graphics card, in bytes, from the display
+/// adapters' driver keys. None without one (or off Windows).
+#[cfg(windows)]
+pub fn graphics_memory() -> Option<u64> {
+    use windows_sys::Win32::System::Registry::{HKEY_LOCAL_MACHINE, RRF_RT_ANY, RegGetValueW};
+    let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let class = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}";
+    let read = |key: &[u16], name: &str| {
+        let name = wide(name);
+        let mut value: u64 = 0;
+        let mut size = std::mem::size_of::<u64>() as u32;
+        // SAFETY: valid NUL-terminated strings and an out buffer of `size` bytes.
+        let status = unsafe {
+            RegGetValueW(
+                HKEY_LOCAL_MACHINE,
+                key.as_ptr(),
+                name.as_ptr(),
+                RRF_RT_ANY,
+                std::ptr::null_mut(),
+                (&mut value as *mut u64).cast(),
+                &mut size,
+            )
+        };
+        // A DWORD fills only the low 4 bytes of the zeroed value.
+        (status == 0 && (size == 4 || size == 8)).then_some(value)
+    };
+    (0..16)
+        .filter_map(|i| {
+            let key = wide(&format!("{class}\\{i:04}"));
+            read(&key, "HardwareInformation.qwMemorySize")
+                .or_else(|| read(&key, "HardwareInformation.MemorySize"))
+        })
+        .filter(|&bytes| bytes > 0)
+        .max()
+}
+
+#[cfg(not(windows))]
+pub fn graphics_memory() -> Option<u64> {
+    None
+}
+
+/// A user environment variable as saved in the registry (`setx`), which a
+/// running process does not see until it restarts.
+#[cfg(windows)]
+pub fn user_env(name: &str) -> Option<String> {
+    use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_SZ, RegGetValueW};
+    let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let key = wide("Environment");
+    let name = wide(name);
+    let mut buf = [0u16; 512];
+    let mut size = (buf.len() * 2) as u32;
+    // SAFETY: valid NUL-terminated strings and an out buffer of `size` bytes.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr().cast(),
+            &mut size,
+        )
+    };
+    if status != 0 {
+        return None;
+    }
+    let len = (size as usize / 2).saturating_sub(1);
+    Some(String::from_utf16_lossy(&buf[..len.min(buf.len())]))
+}
+
+#[cfg(not(windows))]
+pub fn user_env(name: &str) -> Option<String> {
+    std::env::var(name).ok()
+}
+
+/// Installed memory, in bytes.
+pub fn total_memory() -> u64 {
+    System::new_with_specifics(
+        RefreshKind::nothing().with_memory(MemoryRefreshKind::nothing().with_ram()),
+    )
+    .total_memory()
+}
+
+/// Plugged in, or a desktop without a battery: heavy background work may run.
+pub fn on_mains() -> bool {
+    battery().is_none_or(|(_, mains, _)| mains)
+}
+
 /// Below this, on battery, power saving is offered.
 const BATTERY_LOW_PCT: u8 = 20;
 

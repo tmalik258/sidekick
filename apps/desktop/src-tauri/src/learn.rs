@@ -12,6 +12,52 @@ use tauri::{AppHandle, Manager};
 use crate::state::{AppState, lock};
 
 const DISMISSALS_TO_MUTE: i64 = 3;
+/// Skipped this many times in one context, never taken there: it waits in
+/// the list there instead of interrupting.
+const SKIPS_TO_QUIET_HERE: u32 = 3;
+
+/// Part of the day, for patterns: "morning", "afternoon" or "evening".
+fn part_of_day(hour: u32) -> &'static str {
+    match hour {
+        0..12 => "morning",
+        12..17 => "afternoon",
+        _ => "evening",
+    }
+}
+
+/// Where a suggestion lands: the skill, the part of the day and the app in
+/// front ("ctx:dev.port:morning:Code").
+fn context_key(app: &AppHandle, skill_id: &str) -> String {
+    use chrono::Timelike;
+    let front = crate::timetrack::current_app(app).unwrap_or_default();
+    format!(
+        "ctx:{skill_id}:{}:{front}",
+        part_of_day(chrono::Local::now().hour())
+    )
+}
+
+fn note_context(app: &AppHandle, skill_id: &str, label: &str) {
+    let key = context_key(app, skill_id);
+    let ts = Utc::now().to_rfc3339();
+    let _ = lock(&app.state::<AppState>().storage).record_choice(&key, label, &ts);
+}
+
+/// You keep skipping this suggestion at this time of day in this app.
+pub fn quiet_here(app: &AppHandle, skill_id: &str) -> bool {
+    if !tracked(skill_id) || !crate::learned::on(app) {
+        return false;
+    }
+    let key = context_key(app, skill_id);
+    let counts = lock(&app.state::<AppState>().storage)
+        .choice_counts(&key)
+        .unwrap_or_default();
+    quiet_from(&counts)
+}
+
+fn quiet_from(counts: &std::collections::HashMap<String, u32>) -> bool {
+    counts.get("skipped").copied().unwrap_or(0) >= SKIPS_TO_QUIET_HERE
+        && counts.get("taken").copied().unwrap_or(0) == 0
+}
 const MUTE_FOR: Duration = Duration::hours(24);
 const ACCEPTS_TO_OFFER: i64 = 5;
 pub const OFFER_SKILL: &str = "learn.offer-auto";
@@ -54,13 +100,18 @@ pub fn is_muted(app: &AppHandle, skill_id: &str) -> bool {
 
 /// The user said "Not now" (a timeout is not a judgement).
 pub fn on_dismiss(app: &AppHandle, skill_id: &str, reason: &str) {
+    if !crate::learned::on(app) {
+        return;
+    }
     if reason != "user" || !tracked(skill_id) {
         return;
     }
+    note_context(app, skill_id, "skipped");
     let Some(mut h) = load(app, skill_id) else {
         return;
     };
     h.dismiss_streak += 1;
+    h.dismissed += 1;
     h.accept_streak = 0;
     if h.dismiss_streak >= DISMISSALS_TO_MUTE {
         h.dismiss_streak = 0;
@@ -82,8 +133,10 @@ pub fn on_accept(
     if auto || !tracked(&proposal.skill_id) {
         return None;
     }
+    note_context(app, &proposal.skill_id, "taken");
     let mut h = load(app, &proposal.skill_id)?;
     h.dismiss_streak = 0;
+    h.accepted += 1;
     if h.last_label == option.label {
         h.accept_streak += 1;
     } else {
@@ -167,5 +220,22 @@ mod tests {
         assert_eq!(p.options[0].action, "skill_auto");
         assert_eq!(p.options[0].args["skill"], "files.download");
         assert!(p.title.contains("Open"));
+    }
+}
+
+#[cfg(test)]
+mod context_tests {
+    use super::*;
+
+    #[test]
+    fn quiet_where_you_keep_skipping() {
+        assert_eq!(part_of_day(9), "morning");
+        assert_eq!(part_of_day(13), "afternoon");
+        assert_eq!(part_of_day(20), "evening");
+        let mut counts = std::collections::HashMap::new();
+        counts.insert("skipped".to_string(), 3);
+        assert!(quiet_from(&counts));
+        counts.insert("taken".to_string(), 1);
+        assert!(!quiet_from(&counts), "taken once here: keep asking");
     }
 }

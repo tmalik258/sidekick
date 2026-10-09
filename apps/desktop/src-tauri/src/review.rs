@@ -2,14 +2,19 @@
 //! project's state is snapshotted (`git stash create`, which touches
 //! nothing); afterwards every change since then is listed by file and by
 //! hunk, and each hunk, file or the whole lot can be put back.
+//!
+//! A project that is not a git repository gets a private one instead, kept
+//! in Sidekick's data folder (`--git-dir` with the project as work tree), so
+//! the same review, undo and rewind work and the project itself is never
+//! touched.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// The project as it was when the agent started.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Baseline {
     pub root: PathBuf,
     /// A commit holding the working tree at the start (or HEAD when it was
@@ -17,6 +22,9 @@ pub struct Baseline {
     pub commit: String,
     /// Files git did not track at the start; new ones since are the agent's.
     pub untracked: Vec<String>,
+    /// The private repository for a project without git, if it is one.
+    #[serde(default)]
+    pub git_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -40,7 +48,15 @@ pub struct Hunk {
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<String, String> {
+    git_in(root, None, args)
+}
+
+/// Runs git in `root`, against a private repository when `git_dir` is set.
+fn git_in(root: &Path, git_dir: Option<&Path>, args: &[&str]) -> Result<String, String> {
     let mut cmd = Command::new("git");
+    if let Some(dir) = git_dir {
+        cmd.arg("--git-dir").arg(dir).arg("--work-tree").arg(root);
+    }
     cmd.args(args).current_dir(root);
     hide_console(&mut cmd);
     let out = cmd
@@ -52,10 +68,21 @@ fn git(root: &Path, args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-/// Like `git`, for output that may not be text (a file's stored bytes).
-fn git_bytes(root: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
+/// git for a snapshot: in its project, against its private repository if any.
+fn run(b: &Baseline, args: &[&str]) -> Result<String, String> {
+    git_in(&b.root, b.git_dir.as_deref(), args)
+}
+
+/// Like `run`, for output that may not be text (a file's stored bytes).
+fn run_bytes(b: &Baseline, args: &[&str]) -> Result<Vec<u8>, String> {
     let mut cmd = Command::new("git");
-    cmd.args(args).current_dir(root);
+    if let Some(dir) = &b.git_dir {
+        cmd.arg("--git-dir")
+            .arg(dir)
+            .arg("--work-tree")
+            .arg(&b.root);
+    }
+    cmd.args(args).current_dir(&b.root);
     hide_console(&mut cmd);
     let out = cmd
         .output()
@@ -76,8 +103,42 @@ fn hide_console(cmd: &mut Command) {
 #[cfg(not(windows))]
 fn hide_console(_cmd: &mut Command) {}
 
-/// Snapshots `dir` when it is in a git repository; None otherwise.
-pub fn snapshot(dir: &Path) -> Option<Baseline> {
+/// A fingerprint of a file's bytes (FNV-1a), stable across runs, to tell
+/// whether it changed since; None when the file is gone.
+pub fn fingerprint(root: &Path, path: &str) -> Option<u64> {
+    let bytes = std::fs::read(root.join(path)).ok()?;
+    Some(bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3)
+    }))
+}
+
+/// Folders a private snapshot leaves out: rebuilt by tools, often huge.
+const SHADOW_SKIP: &[&str] = &[
+    "node_modules/",
+    "target/",
+    ".venv/",
+    "venv/",
+    "__pycache__/",
+    "dist/",
+    "build/",
+    ".next/",
+    "out/",
+    "bin/",
+    "obj/",
+    ".gradle/",
+    ".idea/",
+    ".vs/",
+];
+/// More files than this and a project without git is not snapshotted.
+const SHADOW_MAX_FILES: usize = 20_000;
+
+/// Snapshots `dir`: with its own git when it is a repository, otherwise with
+/// a private repository under `shadow_root`. None when neither works (no
+/// git installed, or a project too big to copy).
+pub fn snapshot(dir: &Path, shadow_root: Option<&Path>) -> Option<Baseline> {
+    if git(dir, &["rev-parse", "--show-toplevel"]).is_err() {
+        return shadow(dir, shadow_root?);
+    }
     let root = PathBuf::from(git(dir, &["rev-parse", "--show-toplevel"]).ok()?.trim());
     // A commit with the uncommitted work, or nothing when the tree is clean.
     let stash = git(&root, &["stash", "create"]).ok()?.trim().to_owned();
@@ -90,19 +151,81 @@ pub fn snapshot(dir: &Path) -> Option<Baseline> {
         untracked: untracked(&root),
         root,
         commit,
+        git_dir: None,
     })
 }
 
+/// A private repository for a project without git: one per folder, each
+/// snapshot a commit in it.
+fn shadow(dir: &Path, shadow_root: &Path) -> Option<Baseline> {
+    let root = dir.canonicalize().ok()?;
+    let key = root
+        .to_string_lossy()
+        .bytes()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+        });
+    let git_dir = shadow_root.join(format!("{key:016x}.git"));
+    let b = Baseline {
+        root,
+        commit: String::new(),
+        untracked: Vec::new(),
+        git_dir: Some(git_dir.clone()),
+    };
+    if !git_dir.join("HEAD").exists() {
+        std::fs::create_dir_all(&git_dir).ok()?;
+        run(&b, &["init", "-q"]).ok()?;
+        // Files are stored as they are; Windows' autocrlf never applies here.
+        run(&b, &["config", "core.autocrlf", "false"]).ok()?;
+        let exclude = git_dir.join("info").join("exclude");
+        std::fs::create_dir_all(exclude.parent()?).ok()?;
+        std::fs::write(&exclude, SHADOW_SKIP.join("\n")).ok()?;
+    }
+    let pending = run(&b, &["ls-files", "--others", "--exclude-standard"]).ok()?;
+    if pending.lines().count() > SHADOW_MAX_FILES {
+        return None;
+    }
+    run(&b, &["add", "-A"]).ok()?;
+    run(
+        &b,
+        &[
+            "-c",
+            "user.name=Sidekick",
+            "-c",
+            "user.email=sidekick@localhost",
+            "-c",
+            "core.autocrlf=false",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "--no-verify",
+            "-m",
+            "snapshot",
+        ],
+    )
+    .ok()?;
+    let commit = run(&b, &["rev-parse", "HEAD"]).ok()?.trim().to_owned();
+    Some(Baseline { commit, ..b })
+}
+
 fn untracked(root: &Path) -> Vec<String> {
-    git(root, &["ls-files", "--others", "--exclude-standard"])
-        .map(|s| s.lines().map(str::to_owned).collect())
-        .unwrap_or_default()
+    untracked_in(root, None)
+}
+
+fn untracked_in(root: &Path, git_dir: Option<&Path>) -> Vec<String> {
+    git_in(
+        root,
+        git_dir,
+        &["ls-files", "--others", "--exclude-standard"],
+    )
+    .map(|s| s.lines().map(str::to_owned).collect())
+    .unwrap_or_default()
 }
 
 /// Everything changed since the snapshot, by file.
 pub fn changes(b: &Baseline) -> Result<Vec<FileChange>, String> {
-    let diff = git(
-        &b.root,
+    let diff = run(
+        b,
         &[
             "diff",
             "--no-color",
@@ -113,7 +236,7 @@ pub fn changes(b: &Baseline) -> Result<Vec<FileChange>, String> {
         ],
     )?;
     let mut files = parse(&diff);
-    for path in untracked(&b.root) {
+    for path in untracked_in(&b.root, b.git_dir.as_deref()) {
         if b.untracked.contains(&path) {
             continue;
         }
@@ -251,18 +374,14 @@ pub fn undo_file(b: &Baseline, path: &str) -> Result<(), String> {
         return Err("That path is outside the project.".into());
     }
     let full = b.root.join(path);
-    let existed = git(
-        &b.root,
-        &["cat-file", "-e", &format!("{}:{path}", b.commit)],
-    )
-    .is_ok();
+    let existed = run(b, &["cat-file", "-e", &format!("{}:{path}", b.commit)]).is_ok();
     if existed {
         if !full.exists() {
-            git(&b.root, &["checkout", &b.commit, "--", path])?;
+            run(b, &["checkout", &b.commit, "--", path])?;
             return Ok(());
         }
         // The stored copy has LF endings; a CRLF file gets its CRLF back.
-        let mut old = git_bytes(&b.root, &["show", &format!("{}:{path}", b.commit)])?;
+        let mut old = run_bytes(b, &["show", &format!("{}:{path}", b.commit)])?;
         let crlf = std::fs::read(&full).is_ok_and(|now| now.windows(2).any(|w| w == b"\r\n"));
         if crlf && !old.windows(2).any(|w| w == b"\r\n") {
             old = String::from_utf8(old)
@@ -349,7 +468,7 @@ new file mode 100644
         let mut text = std::fs::read_to_string(dir.join("a.txt")).unwrap();
         text = text.replace("line 30\n", "line 30 (mine)\n");
         std::fs::write(dir.join("a.txt"), &text).unwrap();
-        let b = snapshot(&dir).expect("a repo");
+        let b = snapshot(&dir, None).expect("a repo");
 
         // The agent edits near the top and the middle, and adds a file.
         let edited = text
@@ -403,7 +522,41 @@ new file mode 100644
             root: PathBuf::from("."),
             commit: "HEAD".into(),
             untracked: Vec::new(),
+            git_dir: None,
         };
         assert!(undo_file(&b, "../secret").is_err());
+    }
+
+    #[test]
+    fn tracks_a_project_without_git_privately() {
+        if std::process::Command::new("git")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let base = std::env::temp_dir().join(format!("sidekick-nogit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let dir = base.join("project");
+        let shadows = base.join("snapshots");
+        std::fs::create_dir_all(dir.join("node_modules")).unwrap();
+        std::fs::write(dir.join("notes.txt"), "one\ntwo\n").unwrap();
+        std::fs::write(dir.join("node_modules").join("big.js"), "x").unwrap();
+        let b = snapshot(&dir, Some(&shadows)).expect("a private snapshot");
+        assert!(b.git_dir.is_some());
+        assert!(!dir.join(".git").exists(), "the project is never touched");
+        std::fs::write(dir.join("notes.txt"), "one\nTWO\n").unwrap();
+        std::fs::write(dir.join("new.txt"), "hi\n").unwrap();
+        let files = changes(&b).unwrap();
+        let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(paths, ["new.txt", "notes.txt"], "node_modules is left out");
+        assert_eq!(undo_all(&b).unwrap(), 2);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("notes.txt")).unwrap(),
+            "one\ntwo\n"
+        );
+        assert!(!dir.join("new.txt").exists());
+        let _ = std::fs::remove_dir_all(base);
     }
 }

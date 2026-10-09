@@ -434,6 +434,9 @@ pub struct Runner {
     app: AppHandle,
     chat_id: String,
     handoff: Arc<Mutex<Option<String>>>,
+    /// This PC only: tools that reach the internet are refused even when the
+    /// model names one it was not given.
+    offline: bool,
 }
 
 #[async_trait]
@@ -458,6 +461,11 @@ impl ToolRunner for Runner {
             *lock(&self.handoff) = Some(reason.chars().take(160).collect());
             return "Noted. Tell the user in one sentence that Claude Code can finish this, \
                     with the button below the answer."
+                .into();
+        }
+        if self.offline && crate::ask_tools::is_web(name) {
+            return "Error: this question is set to This PC only, so nothing goes online. \
+                    Answer from this PC, or say it needs the internet."
                 .into();
         }
         if plumbing(name) {
@@ -556,7 +564,7 @@ pub struct LocalWithTools {
 #[async_trait]
 impl AiProvider for LocalWithTools {
     fn id(&self) -> &'static str {
-        "local"
+        self.inner.id()
     }
 
     fn is_local(&self) -> bool {
@@ -619,7 +627,11 @@ impl AiProvider for LocalWithTools {
                 .local
                 .clone();
             let vision_name = ai.vision_model.trim();
-            if !vision_name.is_empty() && !vision_name.eq_ignore_ascii_case("off") {
+            // The local vision model only stands in for the local text model.
+            if self.inner.id() == "local"
+                && !vision_name.is_empty()
+                && !vision_name.eq_ignore_ascii_case("off")
+            {
                 let vision = OpenAiCompat::new(Some(ai.base_url), Some(ai.vision_model));
                 return vision.chat(req, sink, cancel).await;
             }
@@ -645,6 +657,7 @@ impl AiProvider for LocalWithTools {
             app: self.app.clone(),
             chat_id: self.chat_id.clone(),
             handoff: self.handoff.clone(),
+            offline: self.offline,
         };
         let end = match self
             .inner

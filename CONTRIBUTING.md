@@ -29,6 +29,22 @@ pnpm --filter desktop build
 
 Voice tests that need the speech models run when `SIDEKICK_VOICE_MODELS` points at a folder holding them.
 
+### End-to-end tests (Windows)
+
+`pnpm --filter desktop e2e` drives the real app (Playwright attached to its WebView2): it opens Ask, checks instant results, the tabs, every Settings tab and This PC only, and fails on a page error, a step over its time budget, or anything that held the UI thread over 250 ms. CI runs it on every pull request (job `e2e-windows`, screenshots in the `e2e-windows` artifact). To run it locally:
+
+```powershell
+cd apps/desktop
+pnpm tauri build --debug --no-bundle --config src-tauri/tauri.e2e.conf.json
+pnpm e2e
+```
+
+For the run it starts Sidekick onboarded with voice off; your own `settings.json` is backed up and put back afterwards. Quit Sidekick first.
+
+### Freezes
+
+Anything that holds the UI thread over 50 ms is written to the log ("UI thread held 120 ms by agents_status") and to Settings > Home > Copy diagnostics. Tauri runs commands that are not `async` on the UI thread: make a command `async` and move slow work into `spawn_blocking`.
+
 ## Writing a skill
 
 Most new behavior is a skill: one YAML file that reacts to an event and offers buttons. The format, events and actions are in `skills/README.md`. Add the file under `skills/<area>/`, register it in `crates/skills/src/lib.rs`, and add a test if it uses new conditions.

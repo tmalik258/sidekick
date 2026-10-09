@@ -31,7 +31,10 @@ pub use gate::{GateState, SensorGate, SensorGateHandle};
 pub use idle::IdleSensor;
 pub use ports::PortsSensor;
 pub use repos::ReposSensor;
-pub use system::SystemSensor;
+pub use system::{
+    SystemSensor, battery_saver, graphics_memory, on_mains, total_memory, transparency_effects,
+    user_env,
+};
 pub use window::WindowSensor;
 
 use sidekick_core::EventBus;

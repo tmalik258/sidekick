@@ -10,9 +10,13 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
+import { setOverlayHit } from "@/lib/store";
+import { Tip } from "../Tip";
 
 /** The settings search text; empty shows everything. */
 export const SettingsQuery = createContext("");
@@ -107,16 +111,17 @@ export function Button({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`chip shrink-0 rounded-full font-medium transition-colors disabled:opacity-40 ${
-        primary ? "bg-white text-black hover:bg-white/90" : "bg-white/[0.1] text-white/90 hover:bg-white/[0.16]"
-      } ${small ? "px-2.5 py-1 text-[12px]" : "px-3.5 py-1.5 text-[13px]"} ${active ? "ring-1 ring-white/40" : ""}`}
+      className={`chip shrink-0 rounded-full font-medium transition-[background-color,transform] duration-150 active:scale-[0.96] disabled:opacity-40 disabled:active:scale-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff] ${
+        primary ? "bg-[#f5f5f7] text-black hover:bg-white" : "bg-white/[0.09] text-white hover:bg-white/[0.15]"
+      } ${small ? "px-2.5 py-[5px] text-[12px]" : "px-3 py-[7px] text-[13px]"} ${active ? "shadow-[inset_0_0_0_1.5px_#0a84ff]" : ""}`}
     >
       {children}
     </button>
   );
 }
 
-/** A few choices side by side, one picked (Off, Ask, Auto). */
+/** A few choices side by side, one picked (Off, Ask, Auto): the plan's
+ * segmented control, a white pill on the picked one. */
 export function Segmented<T extends string>({
   value,
   options,
@@ -131,7 +136,7 @@ export function Segmented<T extends string>({
   disabled?: boolean;
 }) {
   return (
-    <fieldset aria-label={label} className="flex shrink-0 rounded-full bg-white/[0.08] p-0.5">
+    <fieldset aria-label={label} className="flex shrink-0 gap-0.5 rounded-[10px] bg-white/[0.08] p-[3px]">
       {options.map(([v, text]) => (
         <button
           key={v}
@@ -139,8 +144,8 @@ export function Segmented<T extends string>({
           aria-pressed={value === v}
           disabled={disabled}
           onClick={() => onChange(v)}
-          className={`chip rounded-full px-2.5 py-0.5 text-[12px] font-medium transition-colors disabled:opacity-40 ${
-            value === v ? "bg-white text-black" : "text-white/70 hover:text-white"
+          className={`chip rounded-[8px] px-2.5 py-[5px] text-[12.5px] leading-none transition-colors duration-150 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#0a84ff] ${
+            value === v ? "bg-[#f5f5f7] font-semibold text-black" : "text-[rgb(235_235_245/0.62)] hover:text-white"
           }`}
         >
           {text}
@@ -172,6 +177,7 @@ export function Toggle({
   );
 }
 
+/** On or off, as the plan's two-part switch. */
 export function Switch({
   checked,
   onChange,
@@ -182,21 +188,17 @@ export function Switch({
   label: string;
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={`relative h-[26px] w-[44px] shrink-0 rounded-full transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff] ${
-        checked ? "bg-[#30d158]" : "bg-black/15 dark:bg-white/20"
-      }`}
-    >
-      <span
-        className="absolute top-[2px] left-[2px] size-[22px] rounded-full bg-white shadow-[0_2px_6px_rgb(0_0_0/0.2)] transition-transform duration-[260ms] ease-(--ease-out-strong)"
-        style={{ transform: checked ? "translateX(18px)" : "translateX(0)" }}
-      />
-    </button>
+    <Segmented
+      label={label}
+      value={checked ? "on" : "off"}
+      options={[
+        ["on", "On"],
+        ["off", "Off"],
+      ]}
+      onChange={(v) => {
+        if ((v === "on") !== checked) onChange(v === "on");
+      }}
+    />
   );
 }
 
@@ -257,7 +259,7 @@ export function TextField({
   );
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-4 text-[13px]">
       <span className="min-w-0">
@@ -269,58 +271,206 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   );
 }
 
-/** A dropdown. `options` are [value, label]; the current value is kept even if not listed. */
+/** One choice in a dropdown: a value and its label, or a richer row with a
+ * line under it, a letter icon and a separator before it. */
+export type SelectOption =
+  | [string, string]
+  | { value: string; label: string; sub?: string; icon?: string; color?: string; sepBefore?: boolean };
+
+interface Row {
+  value: string;
+  label: string;
+  sub?: string;
+  icon?: string;
+  color?: string;
+  sepBefore?: boolean;
+}
+
+const toRow = (o: SelectOption): Row => (Array.isArray(o) ? { value: o[0], label: o[1] } : o);
+
+/** A dropdown in the plan's style: a quiet chip that opens a graphite menu
+ * with a tick on the current choice. The current value is kept even if not
+ * listed. */
 export function Select({
   value,
   options,
   onChange,
   label,
   className = "",
+  group,
+  current: currentLabel,
+  variant = "chip",
+  overlay = true,
+  searchable,
 }: {
   value: string;
-  options: [string, string][];
+  options: SelectOption[];
   onChange: (v: string) => void;
   label: string;
   className?: string;
+  /** A small heading over the choices ("Open with"). */
+  group?: string;
+  /** What the closed chip says, when not the option's label. */
+  current?: string;
+  /** "plain": text with a chevron, for a line of details (Agents). */
+  variant?: "chip" | "plain";
+  /** Float the menu over the UI (portal to body) so a size-to-content
+   * panel does not grow. */
+  overlay?: boolean;
+  /** A filter field at the top of the menu (long lists). */
+  searchable?: boolean;
 }) {
+  const rows = options.map(toRow);
   // Keep an unknown current value visible, but never invent a second row that
   // matches an existing option (empty/"Default" aliases, same label).
-  const list = (() => {
-    if (options.some(([v]) => v === value)) return options;
+  const list: Row[] = (() => {
+    if (rows.some((r) => r.value === value)) return rows;
     const labelFor = value || "Default";
-    if (options.some(([v, l]) => v === "" || l.toLowerCase() === labelFor.toLowerCase())) return options;
-    return [[value, labelFor] as [string, string], ...options];
+    if (rows.some((r) => r.value === "" || r.label.toLowerCase() === labelFor.toLowerCase())) return rows;
+    return [{ value, label: labelFor }, ...rows];
   })();
-  const current = list.find(([v]) => v === value)?.[1] ?? (value || "Default");
+  const current = currentLabel ?? list.find((r) => r.value === value)?.label ?? (value || "Default");
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const shown = q ? list.filter((r) => `${r.label} ${r.sub ?? ""} ${r.value}`.toLowerCase().includes(q)) : list;
   const [active, setActive] = useState(() =>
     Math.max(
       0,
-      list.findIndex(([v]) => v === value),
+      list.findIndex((r) => r.value === value),
     ),
   );
   const root = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const listId = useId();
+  const rich = list.some((r) => r.sub || r.icon);
+  // Opens upward when the panel has no room below the chip.
+  const [up, setUp] = useState(false);
+  const [float, setFloat] = useState<{ left: number; top: number; width: number; above: boolean } | null>(null);
+
+  const menuChrome = (group ? 30 : 0) + (searchable ? 44 : 0) + 16;
+  const placeOverlay = () => {
+    const el = root.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const want = Math.min(288, Math.max(shown.length, 1) * (rich ? 44 : 32) + menuChrome);
+    const above = window.innerHeight - r.bottom < want && r.top - want > 0;
+    const width = Math.min(296, Math.max(rich ? 220 : r.width, r.width));
+    const left = Math.min(Math.max(8, r.left), window.innerWidth - width - 8);
+    const top = above ? r.top - 4 : r.bottom + 4;
+    setUp(above);
+    setFloat((prev) =>
+      prev && prev.left === left && prev.top === top && prev.width === width && prev.above === above
+        ? prev
+        : { left, top, width, above },
+    );
+    // Expand the island's clickable area so the menu is not click-through.
+    setOverlayHit({
+      x: left,
+      y: above ? top - want : top,
+      width,
+      height: want,
+    });
+  };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: list is rebuilt every render; reseat from value when opened
   useEffect(() => {
-    if (!open) return;
-    setActive(
-      Math.max(
-        0,
-        list.findIndex(([v]) => v === value),
-      ),
-    );
+    if (!open) {
+      setFloat(null);
+      setQuery("");
+      if (overlay) setOverlayHit(null);
+      return;
+    }
+    const idx = shown.findIndex((r) => r.value === value);
+    setActive(Math.max(0, idx));
+    const el = root.current;
+    if (el && overlay) {
+      placeOverlay();
+    } else if (el) {
+      let box: Element | null = el.parentElement;
+      while (box && box !== document.body && getComputedStyle(box).overflowY === "visible") box = box.parentElement;
+      const limit = box && box !== document.body ? box.getBoundingClientRect().bottom : window.innerHeight;
+      const want = Math.min(288, Math.max(shown.length, 1) * (rich ? 44 : 32) + menuChrome);
+      const r = el.getBoundingClientRect();
+      setUp(limit - r.bottom < want && r.top - want > 0);
+    }
     const onDoc = (e: MouseEvent) => {
-      if (root.current && !root.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (!root.current?.contains(t) && !menu.current?.contains(t)) setOpen(false);
+    };
+    const onScroll = (e: Event) => {
+      // Scrolling the menu itself must not re-place it (jitters at the edges).
+      if (e.target instanceof Node && menu.current?.contains(e.target)) return;
+      if (overlay) placeOverlay();
+      else setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open, value]); // list identity changes every render; reseat from value when opened
+    if (overlay) {
+      window.addEventListener("resize", placeOverlay);
+      window.addEventListener("scroll", onScroll, true);
+    }
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("resize", placeOverlay);
+      window.removeEventListener("scroll", onScroll, true);
+      if (overlay) setOverlayHit(null);
+    };
+  }, [open, value, overlay]);
+
+  useEffect(() => {
+    if (!open || !searchable) return;
+    requestAnimationFrame(() => searchRef.current?.focus({ preventScroll: true }));
+  }, [open, searchable]);
+
+  // Keep the highlight on a visible row while filtering.
+  useEffect(() => {
+    if (!open) return;
+    setActive((i) => (shown.length === 0 ? 0 : Math.min(i, shown.length - 1)));
+  }, [open, shown.length]);
+
+  // Prefer the painted menu box once it exists (estimated height can be high).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: shown.length and query resize the menu, so they re-measure it
+  useLayoutEffect(() => {
+    if (!open || !overlay || !float) return;
+    const m = menu.current;
+    if (!m) return;
+    const r = m.getBoundingClientRect();
+    setOverlayHit({ x: r.left, y: r.top, width: r.width, height: r.height });
+  }, [open, overlay, float, shown.length, query]);
 
   const pick = (v: string) => {
     onChange(v);
     setOpen(false);
+  };
+
+  const move = (dir: 1 | -1) => {
+    if (shown.length === 0) return;
+    setActive((i) => (i + dir + shown.length) % shown.length);
+  };
+
+  const onMenuKey = (e: ReactKeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      if (query) setQuery("");
+      else setOpen(false);
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      move(1);
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      move(-1);
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const next = shown[active];
+      if (next) pick(next.value);
+    }
   };
 
   const onKey = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -335,8 +485,7 @@ export function Select({
         setOpen(true);
         return;
       }
-      const dir = e.key === "ArrowDown" ? 1 : -1;
-      setActive((i) => (i + dir + list.length) % list.length);
+      move(e.key === "ArrowDown" ? 1 : -1);
       return;
     }
     if (e.key === "Enter" || e.key === " ") {
@@ -345,13 +494,115 @@ export function Select({
         setOpen(true);
         return;
       }
-      const next = list[active];
-      if (next) pick(next[0]);
+      const next = shown[active];
+      if (next) pick(next.value);
     }
   };
 
+  const optionsList = (
+    <>
+      {shown.map((r, i) => {
+        const selected = r.value === value;
+        return (
+          <div key={r.value || "__default"}>
+            {r.sepBefore && !q && <div className="mx-[9px] my-[5px] h-px scale-y-50 bg-white/12" />}
+            <div
+              role="option"
+              tabIndex={-1}
+              aria-selected={selected}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => pick(r.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") pick(r.value);
+              }}
+              className={`grid w-full cursor-default items-center gap-2.5 rounded-[9px] px-[9px] py-1.5 text-left text-[13px] transition-colors duration-100 ${
+                r.icon ? "grid-cols-[24px_1fr_auto]" : "grid-cols-[1fr_auto]"
+              } ${i === active ? "bg-white/[0.09] text-white" : "text-white/85"}`}
+            >
+              {r.icon && (
+                <span
+                  className="grid size-6 place-items-center rounded-[7px] text-[10.5px] font-bold text-white shadow-[inset_0_0_0_0.5px_rgb(255_255_255/0.12)]"
+                  style={{ background: r.color ?? "#2b2b30" }}
+                  aria-hidden="true"
+                >
+                  {r.icon}
+                </span>
+              )}
+              <span className="grid min-w-0">
+                <span className={`truncate ${r.sub ? "font-medium" : ""}`}>{r.label}</span>
+                {r.sub && <span className="truncate text-[11.5px] text-white/62">{r.sub}</span>}
+              </span>
+              <svg
+                viewBox="0 0 16 16"
+                aria-hidden="true"
+                className={`size-3.5 transition-opacity duration-100 ${selected ? "opacity-100" : "opacity-0"}`}
+              >
+                <path
+                  d="M3.5 8.5 6.5 11.5 12.5 4.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+          </div>
+        );
+      })}
+      {shown.length === 0 && <div className="px-[9px] py-2.5 text-[12.5px] text-white/45">No matches</div>}
+    </>
+  );
+
+  const menuList = (
+    <div
+      id={listId}
+      role="listbox"
+      aria-label={label}
+      ref={menu}
+      onKeyDown={onMenuKey}
+      className={`menu z-30 flex max-h-72 flex-col rounded-[15px] p-1.5 ${
+        overlay
+          ? `[--menu-origin:${up ? "bottom_left" : "top_left"}]`
+          : `absolute ${variant === "plain" ? "left-0" : "right-0"} ${
+              up ? "bottom-[calc(100%+4px)] [--menu-origin:bottom_right]" : "top-[calc(100%+4px)]"
+            } ${rich ? "w-[296px]" : "w-max min-w-full max-w-64"}`
+      }`}
+      style={
+        overlay && float
+          ? {
+              position: "fixed",
+              left: float.left,
+              top: float.above ? undefined : float.top,
+              bottom: float.above ? window.innerHeight - float.top : undefined,
+              width: float.width,
+              zIndex: 100,
+            }
+          : undefined
+      }
+    >
+      {searchable && (
+        <input
+          ref={searchRef}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={`Search ${label.toLowerCase()}…`}
+          spellCheck={false}
+          aria-label={`Search ${label}`}
+          className="mb-1 w-full shrink-0 rounded-[9px] bg-white/[0.08] px-2.5 py-1.5 text-[12.5px] text-white outline-none placeholder:text-white/40 focus:bg-white/[0.11]"
+        />
+      )}
+      {group && (
+        <div className="shrink-0 px-[9px] pt-1 pb-[3px] text-[10.5px] tracking-[0.06em] text-white/45 uppercase">
+          {group}
+        </div>
+      )}
+      <div className="island-scroll min-h-0 flex-1 overflow-y-auto">{optionsList}</div>
+    </div>
+  );
+
   return (
-    <div ref={root} className={`relative max-w-52 ${className}`}>
+    <div ref={root} className={`relative max-w-56 ${className}`}>
       <button
         type="button"
         aria-label={label}
@@ -360,52 +611,30 @@ export function Select({
         aria-controls={listId}
         onClick={() => setOpen((o) => !o)}
         onKeyDown={onKey}
-        className={`chip flex w-full items-center gap-2 rounded-xl bg-(--surface) px-3 py-1.5 text-left text-[13px] outline-none ring-1 ring-inset transition-colors ${
-          open ? "ring-(--accent)" : "ring-(--border) hover:bg-(--hover)"
-        } focus-visible:ring-(--accent)`}
+        className={`chip flex w-full items-center gap-1.5 text-left whitespace-nowrap transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#0a84ff] ${
+          variant === "plain"
+            ? `rounded-md px-1 py-0.5 text-[inherit] ${open ? "bg-white/[0.1]" : "hover:bg-white/[0.06]"}`
+            : `rounded-[10px] px-2.5 py-1.5 text-[13px] ${open ? "bg-white/[0.14]" : "bg-white/[0.08] hover:bg-white/[0.11]"}`
+        }`}
       >
         <span className="min-w-0 flex-1 truncate">{current}</span>
         <svg
           aria-hidden="true"
-          viewBox="0 0 12 12"
-          className={`size-3 shrink-0 text-(--muted) transition-transform ${open ? "rotate-180" : ""}`}
+          viewBox="0 0 10 10"
+          className={`size-[9px] shrink-0 transition-[transform,opacity] duration-150 ${open ? "rotate-180 opacity-90" : "opacity-55"}`}
         >
           <path
-            fill="currentColor"
-            d="M2.2 4.2a.75.75 0 0 1 1.06 0L6 6.94l2.74-2.74a.75.75 0 1 1 1.06 1.06l-3.27 3.27a.75.75 0 0 1-1.06 0L2.2 5.26a.75.75 0 0 1 0-1.06Z"
+            d="M2 3.5 5 6.5 8 3.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           />
         </svg>
       </button>
-      {open && (
-        <div
-          id={listId}
-          role="listbox"
-          aria-label={label}
-          className="menu island-scroll absolute top-[calc(100%+4px)] right-0 z-30 max-h-56 w-max min-w-full max-w-64 overflow-y-auto rounded-[14px] p-1"
-        >
-          {list.map(([v, l], i) => {
-            const selected = v === value;
-            return (
-              <div
-                key={v || "__default"}
-                role="option"
-                tabIndex={-1}
-                aria-selected={selected}
-                onMouseEnter={() => setActive(i)}
-                onClick={() => pick(v)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") pick(v);
-                }}
-                className={`flex w-full cursor-default items-center rounded-[9px] px-2.5 py-1.5 text-left text-[13px] ${
-                  i === active || selected ? "bg-white/[0.09] text-white" : "text-white/80"
-                } ${selected ? "font-medium" : ""}`}
-              >
-                <span className="truncate">{l}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {open && !overlay && menuList}
+      {open && overlay && float && createPortal(menuList, document.body)}
     </div>
   );
 }
@@ -413,18 +642,19 @@ export function Select({
 export function StatusDot({ state }: { state: "ok" | "off" | "checking" }) {
   const label = state === "ok" ? "Ready" : state === "off" ? "Not reachable" : "Checking";
   return (
-    <span
-      role="img"
-      aria-label={label}
-      title={label}
-      className={`size-2 shrink-0 rounded-full ${
-        state === "ok"
-          ? "bg-[#30d158]"
-          : state === "off"
-            ? "bg-black/20 dark:bg-white/25"
-            : "animate-pulse bg-amber-400"
-      }`}
-    />
+    <Tip label={label}>
+      <span
+        role="img"
+        aria-label={label}
+        className={`size-2 shrink-0 rounded-full ${
+          state === "ok"
+            ? "bg-[#30d158]"
+            : state === "off"
+              ? "bg-black/20 dark:bg-white/25"
+              : "animate-pulse bg-amber-400"
+        }`}
+      />
+    </Tip>
   );
 }
 
@@ -478,21 +708,19 @@ export function ChipList({
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap gap-1.5">
         {items.map((i) => (
-          <span
-            key={i}
-            title={i}
-            className="flex items-center gap-1 rounded-full bg-black/5 py-0.5 pr-1 pl-2.5 text-[12px] dark:bg-white/10"
-          >
-            {format(i)}
-            <button
-              type="button"
-              aria-label={`Remove ${format(i)}`}
-              onClick={() => onChange(items.filter((x) => x !== i))}
-              className="grid size-4 place-items-center rounded-full text-(--muted) hover:bg-black/10 hover:text-(--text) dark:hover:bg-white/15"
-            >
-              ×
-            </button>
-          </span>
+          <Tip key={i} label={i}>
+            <span className="flex items-center gap-1 rounded-full bg-black/5 py-0.5 pr-1 pl-2.5 text-[12px] dark:bg-white/10">
+              {format(i)}
+              <button
+                type="button"
+                aria-label={`Remove ${format(i)}`}
+                onClick={() => onChange(items.filter((x) => x !== i))}
+                className="grid size-4 place-items-center rounded-full text-(--muted) hover:bg-black/10 hover:text-(--text) dark:hover:bg-white/15"
+              >
+                ×
+              </button>
+            </span>
+          </Tip>
         ))}
         {items.length === 0 && <span className="text-[12px] text-(--muted)">None</span>}
       </div>
@@ -638,8 +866,31 @@ export function ShortcutRecorder({
           Off
         </Button>
       )}
+      {reservedBy(value) && !recording && (
+        <span className="text-[11px] text-[#ff9f0a]">Also used by {reservedBy(value)}</span>
+      )}
     </div>
   );
+}
+
+/** Keys other apps commonly take, with who takes them. */
+const RESERVED: Record<string, string> = {
+  "Alt+R": "the NVIDIA overlay",
+  "Alt+Z": "the NVIDIA overlay",
+  "Alt+F9": "the NVIDIA overlay",
+  "Alt+F10": "the NVIDIA overlay",
+  "Alt+Shift+F10": "the NVIDIA overlay",
+  "Alt+Tab": "Windows",
+  "Alt+F4": "Windows",
+  "Ctrl+Shift+Escape": "Windows",
+  "Super+G": "the Xbox Game Bar",
+  "Super+Alt+R": "the Xbox Game Bar",
+  "Alt+Space": "Windows (PowerToys Run)",
+};
+
+/** Who else uses `keys`, or null. */
+export function reservedBy(keys: string): string | null {
+  return RESERVED[keys] ?? null;
 }
 
 const KEY_NAMES: Record<string, string> = {

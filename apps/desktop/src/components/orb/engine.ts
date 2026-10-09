@@ -70,6 +70,8 @@ export class OrbEngine {
   private aliveTimer: ReturnType<typeof setTimeout> | undefined;
   private lastCursor = 0;
   private destroyed = false;
+  /** Off while the island is at rest or hidden: nothing animates then. */
+  private active = true;
 
   constructor(
     private n: OrbNodes,
@@ -91,6 +93,13 @@ export class OrbEngine {
     clearTimeout(this.reaction);
     clearTimeout(this.aliveTimer);
     clearInterval(this.fxTimer);
+  }
+
+  /** At rest or hidden, the halo stops turning; it picks up again when shown. */
+  setActive(on: boolean) {
+    if (on === this.active) return;
+    this.active = on;
+    this.paint();
   }
 
   setMaterial(m: Material) {
@@ -195,7 +204,7 @@ export class OrbEngine {
     st.setProperty("--o2", look.tint ? `color-mix(in oklab, ${m.body[1]} 72%, ${look.tint})` : m.body[1]);
     this.n.root.dataset.dim = look.dim ? "true" : "false";
     for (const c of this.n.cheeks) c.style.opacity = look.blush ? "0.5" : "0";
-    if (this.reduced || look.spin === 0) this.spin.pause();
+    if (this.reduced || !this.active || look.spin === 0) this.spin.pause();
     else {
       this.spin.updatePlaybackRate(look.spin ?? 1);
       this.spin.play();

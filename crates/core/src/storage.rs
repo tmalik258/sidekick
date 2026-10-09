@@ -90,6 +90,9 @@ const MIGRATIONS: &[&str] = &[
         seq INTEGER NOT NULL,
         PRIMARY KEY (day, kind, key)
     );",
+    // How often each kind of suggestion was taken or waved away.
+    "ALTER TABLE skill_habits ADD COLUMN accepted INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE skill_habits ADD COLUMN dismissed INTEGER NOT NULL DEFAULT 0;",
 ];
 
 /// A saved Ask conversation, without its turns.
@@ -169,6 +172,9 @@ pub struct Habit {
     pub accept_streak: i64,
     /// The "do this automatically?" offer was already made.
     pub offered: bool,
+    /// Times a suggestion of this kind was taken, and waved away.
+    pub accepted: i64,
+    pub dismissed: i64,
 }
 
 /// One search hit, with where it came from so it can be opened.
@@ -455,7 +461,7 @@ impl Storage {
 
     pub fn habit(&self, skill_id: &str) -> Result<Habit, StorageError> {
         let mut stmt = self.conn.prepare(
-            "SELECT dismiss_streak, muted_until, last_label, accept_streak, offered
+            "SELECT dismiss_streak, muted_until, last_label, accept_streak, offered, accepted, dismissed
              FROM skill_habits WHERE skill_id = ?1",
         )?;
         let mut rows = stmt.query_map([skill_id], |r| {
@@ -466,6 +472,8 @@ impl Storage {
                 last_label: r.get(2)?,
                 accept_streak: r.get(3)?,
                 offered: r.get(4)?,
+                accepted: r.get(5)?,
+                dismissed: r.get(6)?,
             })
         })?;
         Ok(rows.next().transpose()?.unwrap_or_else(|| Habit {
@@ -476,14 +484,35 @@ impl Storage {
 
     pub fn save_habit(&self, h: &Habit) -> Result<(), StorageError> {
         self.conn.execute(
-            "INSERT INTO skill_habits (skill_id, dismiss_streak, muted_until, last_label, accept_streak, offered)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO skill_habits (skill_id, dismiss_streak, muted_until, last_label, accept_streak, offered, accepted, dismissed)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT (skill_id) DO UPDATE SET dismiss_streak = excluded.dismiss_streak,
                muted_until = excluded.muted_until, last_label = excluded.last_label,
-               accept_streak = excluded.accept_streak, offered = excluded.offered",
-            params![h.skill_id, h.dismiss_streak, h.muted_until, h.last_label, h.accept_streak, h.offered],
+               accept_streak = excluded.accept_streak, offered = excluded.offered,
+               accepted = excluded.accepted, dismissed = excluded.dismissed",
+            params![
+                h.skill_id,
+                h.dismiss_streak,
+                h.muted_until,
+                h.last_label,
+                h.accept_streak,
+                h.offered,
+                h.accepted,
+                h.dismissed
+            ],
         )?;
         Ok(())
+    }
+
+    /// Every kind of suggestion that was ever taken or waved away, most
+    /// seen first: (skill, taken, waved away).
+    pub fn suggestion_rates(&self) -> Result<Vec<(String, i64, i64)>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT skill_id, accepted, dismissed FROM skill_habits
+             WHERE accepted + dismissed > 0 ORDER BY accepted + dismissed DESC",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// Adds or replaces one searchable item (same source and ref replace).
@@ -716,11 +745,59 @@ impl Storage {
         &self,
         key: &str,
     ) -> Result<std::collections::HashMap<String, u32>, StorageError> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT label, count FROM choices WHERE key = ?1")?;
-        let rows = stmt.query_map([key], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?)))?;
+        // Habits fade: a pick not made in a month counts half.
+        let month_ago = (chrono::Utc::now() - chrono::Duration::days(30)).to_rfc3339();
+        let mut stmt = self.conn.prepare(
+            "SELECT label, CASE WHEN last_ts < ?2 THEN MAX(count / 2, 1) ELSE count END
+             FROM choices WHERE key = ?1",
+        )?;
+        let rows = stmt.query_map(params![key, month_ago], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?))
+        })?;
         Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Forgets picks not made for `days` days. Returns how many.
+    pub fn forget_old_choices(&self, days: i64) -> Result<usize, StorageError> {
+        let cutoff = (chrono::Utc::now() - chrono::Duration::days(days)).to_rfc3339();
+        Ok(self
+            .conn
+            .execute("DELETE FROM choices WHERE last_ts < ?1", [cutoff])?)
+    }
+
+    /// Every remembered pick: (key, label, count, last time), most used first.
+    pub fn all_choices(&self) -> Result<Vec<(String, String, u32, String)>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT key, label, count, last_ts FROM choices ORDER BY count DESC, last_ts DESC",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn forget_choice(&self, key: &str, label: &str) -> Result<usize, StorageError> {
+        Ok(self.conn.execute(
+            "DELETE FROM choices WHERE key = ?1 AND label = ?2",
+            params![key, label],
+        )?)
+    }
+
+    /// Skills resting after being dismissed, with until when.
+    pub fn muted_habits(&self, now: &str) -> Result<Vec<(String, String)>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT skill_id, muted_until FROM skill_habits WHERE muted_until IS NOT NULL AND muted_until > ?1",
+        )?;
+        let rows = stmt.query_map([now], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn clear_habit(&self, skill_id: &str) -> Result<usize, StorageError> {
+        Ok(self
+            .conn
+            .execute("DELETE FROM skill_habits WHERE skill_id = ?1", [skill_id])?)
+    }
+
+    pub fn clear_habits(&self) -> Result<usize, StorageError> {
+        Ok(self.conn.execute("DELETE FROM skill_habits", [])?)
     }
 
     pub fn clear_choices(&self) -> Result<usize, StorageError> {
@@ -1029,6 +1106,17 @@ mod tests {
         assert_eq!(counts["Chrome"], 1);
         assert!(s.choice_counts("dev:8000").unwrap().is_empty());
         assert_eq!(s.clear_choices().unwrap(), 2);
+
+        // Old habits count half, and very old ones are forgotten.
+        for _ in 0..4 {
+            s.record_choice("url", "Edge", "2020-01-01T00:00:00+00:00")
+                .unwrap();
+        }
+        s.record_choice("url", "Zen", &chrono::Utc::now().to_rfc3339())
+            .unwrap();
+        assert_eq!(s.choice_counts("url").unwrap()["Edge"], 2);
+        assert_eq!(s.forget_old_choices(180).unwrap(), 1);
+        assert!(!s.choice_counts("url").unwrap().contains_key("Edge"));
     }
 
     #[test]

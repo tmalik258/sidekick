@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::Serialize;
 
@@ -10,6 +11,12 @@ pub struct Answer {
     pub provider: String,
     pub text: String,
 }
+
+/// A model that has not said a word by now is stuck (a CLI waiting on a
+/// prompt, a local model swapping to disk): stop it and ask the next one.
+pub const FIRST_WORD: Duration = Duration::from_secs(90);
+/// No answer runs longer than this, even one that is still streaming.
+pub const MAX_ANSWER: Duration = Duration::from_secs(300);
 
 /// Tries providers in order. A provider that is not reachable, or
 /// fails before sending any text, hands over to the next one. Once text has
@@ -52,7 +59,7 @@ impl Router {
             if !p.available().await {
                 continue;
             }
-            match p.chat(req, sink, cancel).await {
+            match watched(p.as_ref(), req, sink, cancel).await {
                 Ok(text) => {
                     return Ok(Answer {
                         provider: p.id().to_owned(),
@@ -71,6 +78,40 @@ impl Router {
     }
 }
 
+/// Runs one provider under the [`FIRST_WORD`] and [`MAX_ANSWER`] limits.
+async fn watched(
+    p: &dyn AiProvider,
+    req: &ChatRequest,
+    sink: &Sink,
+    cancel: &CancellationToken,
+) -> Result<String, AiError> {
+    let own = cancel.child_token();
+    let run = p.chat(req, sink, &own);
+    let first = tokio::time::sleep(FIRST_WORD);
+    let total = tokio::time::sleep(MAX_ANSWER);
+    tokio::pin!(run, first, total);
+    let stuck = |why: String| {
+        own.cancel();
+        log::warn!("AI provider {} stopped: {why}", p.id());
+        Err(AiError::Failed(why))
+    };
+    tokio::select! {
+        r = &mut run => r,
+        _ = &mut first, if !sink.has_sent() => {
+            // It may have started in the meantime; wait for it then.
+            if sink.has_sent() {
+                tokio::select! {
+                    r = &mut run => r,
+                    _ = &mut total => stuck(format!("{} took over {} minutes", p.id(), MAX_ANSWER.as_secs() / 60)),
+                }
+            } else {
+                stuck(format!("{} did not answer in {} seconds", p.id(), FIRST_WORD.as_secs()))
+            }
+        }
+        _ = &mut total => stuck(format!("{} took over {} minutes", p.id(), MAX_ANSWER.as_secs() / 60)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,6 +124,7 @@ mod tests {
         up: bool,
         reply: Result<&'static str, &'static str>,
         partial: bool,
+        hang: bool,
     }
 
     #[async_trait]
@@ -102,6 +144,9 @@ mod tests {
             sink: &Sink,
             _cancel: &CancellationToken,
         ) -> Result<String, AiError> {
+            if self.hang {
+                std::future::pending::<()>().await;
+            }
             if self.partial {
                 sink.send("half");
             }
@@ -126,6 +171,7 @@ mod tests {
             up,
             reply,
             partial: false,
+            hang: false,
         })
     }
 
@@ -168,10 +214,28 @@ mod tests {
                 up: true,
                 reply: Err("cut off"),
                 partial: true,
+                hang: false,
             }),
             fake("local", true, Ok("hi")),
         ]);
         let err = ask(&router, false).await.unwrap_err();
         assert_eq!(err.to_string(), "cut off");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_stuck_model_hands_over() {
+        let router = Router::new(vec![
+            Arc::new(Fake {
+                id: "claude_code",
+                local: false,
+                up: true,
+                reply: Ok("never"),
+                partial: false,
+                hang: true,
+            }),
+            fake("codex", true, Ok("hi")),
+        ]);
+        let a = ask(&router, false).await.unwrap();
+        assert_eq!(a.provider, "codex");
     }
 }

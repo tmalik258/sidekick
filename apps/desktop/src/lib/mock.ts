@@ -1,7 +1,8 @@
 // Browser-only stand-in for the Rust core, used when the UI runs outside
-// Tauri. It mimics the demo flow loosely; the real rules live in Rust.
+// Tauri. It mimics the app loosely; the real rules live in Rust.
 
 import {
+  type CloudId,
   CUES,
   type Cue,
   DEFAULT_SETTINGS,
@@ -15,9 +16,17 @@ type Handler = (payload: unknown) => void;
 
 const handlers = new Map<string, Set<Handler>>();
 let settings: Settings = structuredClone(DEFAULT_SETTINGS);
-// `?onboarded` in the preview URL skips the welcome.
-if (typeof location !== "undefined" && new URLSearchParams(location.search).has("onboarded")) {
-  settings.onboarded = true;
+/** Preview switches: `?nomodel` has no AI set up, `?offline` no internet. */
+const previewFlag = (name: string) => typeof location !== "undefined" && new URLSearchParams(location.search).has(name);
+
+// `?onboarded` in the preview URL skips the welcome; `?color=smoke` and
+// `?theme=onyx` pick the island and mascot colours (for visual checks).
+if (typeof location !== "undefined") {
+  const q = new URLSearchParams(location.search);
+  if (q.has("onboarded")) settings.onboarded = true;
+  settings.islandColor = (q.get("color") as Settings["islandColor"] | null) ?? settings.islandColor;
+  settings.theme = (q.get("theme") as Settings["theme"] | null) ?? settings.theme;
+  if (q.get("voice") === "full") settings.voice.listeningStyle = "full";
 }
 let mascot: MascotState = "idle";
 let suggestion: Suggestion | null = null;
@@ -54,6 +63,8 @@ function later(ms: number, fn: () => void) {
   }, ms);
 }
 
+const cloudKeys: Record<CloudId, boolean> = { gemini: previewFlag("gemini"), groq: false, openrouter: false };
+
 function saveSettings(next: Settings): Settings {
   settings = next;
   emit("settings://changed", settings);
@@ -63,6 +74,80 @@ function saveSettings(next: Settings): Settings {
 
 const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   app_info: () => ({ version: "0.1.0 (browser mock)", dbPath: "-", settingsPath: "-", eventCount: 0 }),
+  system_look: () => ({ transparency: !previewFlag("solid"), batterySaver: previewFlag("saver") }),
+  cloud_keys: () => ({ ...cloudKeys }),
+  cloud_key_set: (a) => {
+    const id = a.id as CloudId;
+    if (!String(a.key).trim()) throw new Error("Paste the key first.");
+    cloudKeys[id] = true;
+    return saveSettings({ ...settings, ai: { ...settings.ai, [id]: { ...settings.ai[id], enabled: true } } });
+  },
+  cloud_key_clear: (a) => {
+    const id = a.id as CloudId;
+    cloudKeys[id] = false;
+    return saveSettings({ ...settings, ai: { ...settings.ai, [id]: { ...settings.ai[id], enabled: false } } });
+  },
+  openrouter_models: () => [
+    {
+      id: "openrouter/auto",
+      name: "Auto (best for each question)",
+      free: false,
+      input: 0,
+      output: 0,
+      context: 2000000,
+      tools: true,
+    },
+    {
+      id: "meta-llama/llama-3.3-70b-instruct:free",
+      name: "Meta: Llama 3.3 70B Instruct (free)",
+      free: true,
+      input: 0,
+      output: 0,
+      context: 131072,
+      tools: true,
+    },
+    {
+      id: "qwen/qwen3-coder:free",
+      name: "Qwen: Qwen3 Coder (free)",
+      free: true,
+      input: 0,
+      output: 0,
+      context: 262144,
+      tools: true,
+    },
+    {
+      id: "anthropic/claude-sonnet-4.5",
+      name: "Anthropic: Claude Sonnet 4.5",
+      free: false,
+      input: 3,
+      output: 15,
+      context: 1000000,
+      tools: true,
+    },
+    {
+      id: "openai/gpt-5-mini",
+      name: "OpenAI: GPT-5 Mini",
+      free: false,
+      input: 0.25,
+      output: 2,
+      context: 400000,
+      tools: true,
+    },
+    {
+      id: "deepseek/deepseek-chat-v3.1",
+      name: "DeepSeek: V3.1",
+      free: false,
+      input: 0.2,
+      output: 0.8,
+      context: 163840,
+      tools: true,
+    },
+  ],
+  copilot_ask: () => "Copilot is open with your question copied. Paste it there (Ctrl V).",
+  report_save: () => "C:\\Users\\you\\Downloads\\Sidekick report 2026-10-08 0930.txt",
+  diagnostics: () => "Sidekick 0.1.0 (browser mock)\nWindows 11 Pro 24H2\nModels in order: local, claude_code",
+  crash_pending: () => (previewFlag("crash") ? "2026-10-07T09:12:00Z panicked at src/voice.rs:120:9" : null),
+  crash_dismiss: () => undefined,
   settings_get: () => settings,
   settings_set: (a) => saveSettings(a.settings as Settings),
   sensors_pause: (a) => {
@@ -83,7 +168,7 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   mascot_get: () => mascot,
   island_set_hit_rect: () => undefined,
   island_ready: () => undefined,
-  net_status: () => true,
+  net_status: () => !previewFlag("offline"),
   update_status: () => null,
   // The preview pretends a release is out, so the update UI can be seen.
   update_check: () => {
@@ -92,7 +177,7 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
     return update;
   },
   update_install: () => "Installing Sidekick_0.2.0_x64-setup.exe",
-  net_check: () => typeof navigator === "undefined" || navigator.onLine,
+  net_check: () => !previewFlag("offline") && (typeof navigator === "undefined" || navigator.onLine),
   suggestion_current: () => suggestion,
   suggestion_choose: (a) => {
     const index = a.index as number;
@@ -158,7 +243,7 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   routines_forget: () => 12,
   routines_remove: () => 1,
   ai_open_link: (a) => `Opened ${String(a.target)}`,
-  agents_status: () => ({ claudeCode: true, codex: true, handoff: "Claude Code" }),
+  agents_status: () => ({ claudeCode: true, codex: true, copilot: true, cursor: false, handoff: "Claude Code" }),
   codex_add_notify: () => "C:\\Users\\you\\.codex\\config.toml.sidekick-backup-20261002",
   codex_add_mcp: () => null,
   guide_keys: () => null,
@@ -257,20 +342,6 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
     go("noticing");
     later(1200, () => go("idle"));
   },
-  debug_demo_flow: () => {
-    go("noticing");
-    later(900, () => {
-      suggestion = {
-        id: crypto.randomUUID(),
-        skillId: "debug.demo",
-        title: "Dev server on localhost:3000",
-        detail: "Demo suggestion (browser mock).",
-        options: ["Open in Chrome", "Open in Zen", "Simulate failure"],
-      };
-      emit("suggestion://new", suggestion);
-      go("suggesting");
-    });
-  },
 };
 
 // A fake streamed answer, so Ask mode can be developed in a browser.
@@ -306,6 +377,18 @@ function mockChat(a: Record<string, unknown>) {
       });
     }
   };
+  if (/meetings/i.test(last)) {
+    // A local model that is not running, for the failure card.
+    later(900, () =>
+      emit("ai://done", {
+        id,
+        provider: null,
+        error: "error sending request for url (http://127.0.0.1:11434/v1/chat/completions)",
+        handoff: null,
+      }),
+    );
+    return;
+  }
   emit("ai://tool", { id, name: "search", label: `Searching your PC for \u201c${last.slice(0, 30)}\u201d` });
   // A task with several steps shows them one by one.
   if (/ and /i.test(last)) {
@@ -314,7 +397,19 @@ function mockChat(a: Record<string, unknown>) {
       later(250 * (n + 1), () => emit("ai://tool", { id, name }));
     }
   }
-  later(1200, () => emit("ai://proposal", { chatId: id, id: `p-${id}`, label: "Move invoice-sept.pdf to Invoices" }));
+  if (/\bzip\b/i.test(last)) {
+    // A task with several actions comes back as a plan.
+    const plan = [
+      "Create Downloads\\Invoices October",
+      "Move 7 invoice PDFs into it",
+      "Zip it as Invoices-October.zip",
+    ];
+    for (const [n, label] of plan.entries()) {
+      later(1000 + n * 60, () => emit("ai://proposal", { chatId: id, id: `p-${id}-${n}`, label, step: true }));
+    }
+  } else {
+    later(1200, () => emit("ai://proposal", { chatId: id, id: `p-${id}`, label: "Move invoice-sept.pdf to Invoices" }));
+  }
   setTimeout(tick, 900);
 }
 
@@ -327,7 +422,11 @@ commands.ai_run_proposal = () => ({
 });
 commands.ai_cancel = () => undefined;
 commands.ai_release = () => undefined;
-commands.timing_record = () => undefined;
+// Kept for the speed check (scripts/speed.mjs).
+commands.timing_record = (a) => {
+  const w = window as unknown as { __timings?: { name: string; ms: number }[] };
+  w.__timings = [...(w.__timings ?? []), { name: a.name as string, ms: a.ms as number }];
+};
 commands.timings_recent = () => [];
 
 // Agent sessions: a short simulated run with a plan, steps, one question
@@ -402,7 +501,11 @@ commands.agent_start = (a) => {
     ev("answered", { question: `q${id}` });
     ev("step", { id: "t3", tool: "Bash", label: "Run a command", detail: "pnpm test src/api", state: "running" });
     at(900, () => {
-      ev("step", { id: "t3", state: "done" });
+      ev("step", {
+        id: "t3",
+        state: "done",
+        output: "> vitest run src/api\n\n ✓ client.test.ts (1)\n\n Test Files  1 passed (1)\n      Tests  1 passed (1)",
+      });
       ev("usage", { used: 46000, window: 200000 });
       ev("text", { text: "\n\nDone. Requests retry up to three times, and a new test covers it." });
       ev("turn", { error: null });
@@ -430,6 +533,23 @@ commands.agent_send = () => undefined;
 commands.agent_stop = () => undefined;
 commands.agent_close = () => undefined;
 commands.agent_terminal = () => undefined;
+commands.agent_resume = () => undefined;
+commands.agent_memory = () => 312 * 1024 * 1024;
+commands.agent_open_editor = () => undefined;
+commands.agent_rewind_preview = () => 1;
+commands.agent_rewind = () => 1;
+commands.agent_files = (a) =>
+  [
+    "apps/desktop/src-tauri/src/island.rs",
+    "apps/desktop/src-tauri/src/island_tests.rs",
+    "apps/desktop/src/components/Island.tsx",
+  ].filter((f) => f.toLowerCase().includes(String(a.query ?? "").toLowerCase()));
+commands.agent_commands = () => [
+  { name: "/compact", description: "Summarize the chat to free context", group: "Session" },
+  { name: "/clear", description: "Start fresh in the same project", group: "Session" },
+  { name: "/rewind", description: "Go back to an earlier message, code included", group: "Session" },
+  { name: "/release", description: "Cut a release (.claude/commands/release.md)", group: "This project" },
+];
 commands.agent_changes = () => structuredClone(mockChanges);
 commands.agent_undo = (a) => {
   mockChanges = a.path ? mockChanges.filter((f) => f.path !== a.path) : [];
@@ -445,6 +565,7 @@ commands.ask_close = () => {
 commands.ask_open = (a) => {
   welcomeDeferred = false;
   emit("ask://open", {
+    sentAt: Date.now(),
     context: {
       app: "Visual Studio Code",
       title: "Island.tsx - sidekick",
@@ -730,7 +851,7 @@ commands.extension_install = (a) => {
   };
 };
 commands.local_models = () => ({
-  reachable: true,
+  reachable: !previewFlag("nomodel"),
   chat: ["qwen3:1.7b", "llama3.2:3b"],
   vision: ["moondream:latest"],
   embed: ["nomic-embed-text"],
@@ -795,6 +916,23 @@ commands.editors_list = () => ({
   ],
   current: "Cursor",
 });
+commands.instant_find = (a) => {
+  const q = String(a.query ?? "").toLowerCase();
+  const apps = [
+    { name: "Cursor", id: "cursor", minutes: 840 },
+    { name: "Slack", id: "slack", minutes: 120 },
+    { name: "Spotify", id: "spotify", minutes: 0 },
+  ].filter((x) => x.name.toLowerCase().includes(q.split(" ")[0] ?? ""));
+  const files = [
+    { name: "cursor-rules.md", path: "C:/Users/you/Documents/cursor-rules.md", folder: false, place: "Documents" },
+    { name: "invoice-oct.pdf", path: "C:/Users/you/Downloads/invoice-oct.pdf", folder: false, place: "Downloads" },
+  ].filter((x) => x.name.includes(q.split(" ")[0] ?? ""));
+  return { apps, files };
+};
+commands.app_launch = () => undefined;
+commands.windows_settings_open = () => undefined;
+commands.pc_switch = (a) => `${String(a?.name)} ${a?.on ? "on" : "off"}`;
+commands.file_open = () => undefined;
 commands.project_launch = () => "Opened sidekick in VS Code and a terminal";
 commands.search_status = () => ({ items: 1240, embedded: 1240, embedError: null });
 commands.calendar_today = () => ({
@@ -878,6 +1016,7 @@ function speakWelcome(step = 0) {
 commands.voice_welcome = () => welcome;
 commands.voice_welcome_step = (a) => speakWelcome(Number(a.step) || 0);
 commands.voice_say = () => undefined;
+commands.voice_read = () => undefined;
 commands.voice_test = () => undefined;
 commands.search = (a) => [
   {
@@ -906,13 +1045,89 @@ commands.time_today = () => [
 ];
 commands.browser_info = () => ({ token: "browser-preview-pairing-code", port: 47822 });
 commands.action_undo = () => "Moved photo.webp to the Recycle Bin";
-commands.ai_status = () => [
-  { id: "claude_code", available: true, local: false },
-  { id: "codex", available: true, local: false },
-  { id: "anthropic", available: false, local: false },
-  { id: "local", available: true, local: true },
-  { id: "semif", available: false, local: true },
+const GB = 1024 ** 3;
+commands.disk_groups = () =>
+  [
+    {
+      id: "build",
+      label: "Build folders",
+      what: "node_modules, target and .next in your projects. The next install or build makes them again.",
+      bytes: 18.4 * GB,
+      partial: false,
+      items: [
+        { path: "C:\\Users\\you\\code\\sidekick\\target", bytes: 11.2 * GB },
+        { path: "C:\\Users\\you\\code\\shop\\node_modules", bytes: 4.1 * GB },
+        { path: "C:\\Users\\you\\code\\blog\\node_modules", bytes: 3.1 * GB },
+      ],
+      clearable: true,
+    },
+    {
+      id: "games",
+      label: "Games",
+      what: "Steam and Epic libraries. Uninstall a game from its launcher.",
+      bytes: 96 * GB,
+      partial: false,
+      items: [{ path: "D:\\SteamLibrary\\steamapps\\common\\Cyberpunk 2077", bytes: 70 * GB }],
+      clearable: false,
+    },
+    {
+      id: "installers",
+      label: "Old installers",
+      what: "Setup files in Downloads, already installed or not needed.",
+      bytes: 2.3 * GB,
+      partial: false,
+      items: [{ path: "C:\\Users\\you\\Downloads\\Docker Desktop Installer.exe", bytes: 0.6 * GB }],
+      clearable: true,
+    },
+  ].sort((a, b) => b.bytes - a.bytes);
+commands.disk_clean = () => "Moved 2 items to the Recycle Bin, 7.2 GB freed";
+commands.user_guess_name = () => "Taimoor";
+let mockFocusUntil: number | null = null;
+commands.focus_start = (args) => {
+  const minutes = Number((args as { minutes?: number } | undefined)?.minutes ?? 25);
+  mockFocusUntil = Date.now() + minutes * 60_000;
+  emit("island://focus", { until: mockFocusUntil, held: 0 });
+  return `Focusing for ${minutes} minutes`;
+};
+commands.focus_stop = () => {
+  mockFocusUntil = null;
+  emit("island://focus", { until: null, held: [], ended: true });
+  return "Focus done. Nothing came in.";
+};
+commands.focus_status = () => ({ until: mockFocusUntil, held: 0 });
+commands.suggestion_rates = () => [
+  { skill: "files.screenshot", taken: 12, dismissed: 3 },
+  { skill: "dev.port-in-use", taken: 2, dismissed: 7 },
 ];
+commands.agent_usual = () => null;
+commands.learned_list = () => [
+  {
+    kind: "choice",
+    key: "url:localhost",
+    label: "Chrome, private",
+    text: "For links from localhost, you pick Chrome, private",
+    why: "9 times",
+  },
+  {
+    kind: "routine",
+    key: "slack",
+    label: "app",
+    text: "You open Slack as part of your day",
+    why: "On 5 of the last days",
+  },
+];
+commands.learned_forget = () => undefined;
+commands.learned_forget_all = () => undefined;
+commands.ai_status = () =>
+  previewFlag("nomodel")
+    ? []
+    : [
+        { id: "claude_code", available: true, local: false },
+        { id: "codex", available: true, local: false },
+        { id: "anthropic", available: false, local: false },
+        { id: "local", available: true, local: true },
+        { id: "semif", available: false, local: true },
+      ];
 
 export const mock = {
   async invoke<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {

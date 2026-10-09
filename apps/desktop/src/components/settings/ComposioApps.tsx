@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
 import { startWaiting, useSidekick } from "@/lib/store";
 import type { ComposioStatus } from "@/lib/types";
+import { Tip } from "../Tip";
 import { Button } from "./ui";
 
 export function ComposioApps({
@@ -49,18 +50,19 @@ export function ComposioApps({
     <>
       {connected.length > 0 && (
         <ul className="flex flex-wrap gap-1.5">
-          {connected.map((a) => (
-            <li
-              key={a.slug}
-              title={a.why || undefined}
-              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12.5px] transition-colors duration-300 ${
-                justDone === `app:${a.slug}` ? "bg-[#30d158]/25" : "bg-black/5 dark:bg-white/10"
-              }`}
-            >
-              <span className="size-1.5 rounded-full bg-[#30d158]" />
-              {a.name}
-            </li>
-          ))}
+          {connected.map((a) => {
+            const chip = (
+              <span
+                className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12.5px] transition-colors duration-300 ${
+                  justDone === `app:${a.slug}` ? "bg-[#30d158]/25" : "bg-black/5 dark:bg-white/10"
+                }`}
+              >
+                <span className="size-1.5 rounded-full bg-[#30d158]" />
+                {a.name}
+              </span>
+            );
+            return <li key={a.slug}>{a.why ? <Tip label={a.why}>{chip}</Tip> : chip}</li>;
+          })}
         </ul>
       )}
       {missing.length > 0 && (

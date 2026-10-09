@@ -413,6 +413,25 @@ body {
   --isl-sheen: none;
 }
 
+/* Windows transparency effects off: a solid colour, no sheen. */
+.island-shell[data-solid] {
+  background-color: rgb(from var(--isl-bg) r g b / 1);
+}
+.island-shell[data-solid]::before {
+  opacity: 0;
+}
+/* Battery saver: the halo is not blurred, no sheen or colour fades. */
+.island-shell[data-simple] {
+  transition: none;
+}
+.island-shell[data-simple]::before {
+  opacity: 0;
+}
+.island-shell[data-simple] .orb-halo {
+  filter: none;
+  opacity: calc(var(--halo) * 0.5);
+}
+
 /* Idle and sleeping: just the sphere, no capsule behind it. */
 .island-shell[data-bare="true"] {
   background-color: transparent;
@@ -507,7 +526,7 @@ body {
   --bg: #000;
   --surface: rgb(255 255 255 / 0.06);
   --text: #fff;
-  --muted: rgb(235 235 245 / 0.55);
+  --muted: rgb(235 235 245 / 0.62);
   --border: rgb(255 255 255 / 0.1);
   --hover: rgb(255 255 255 / 0.1);
   --accent: #0a84ff;
@@ -737,6 +756,17 @@ body {
   }
 }
 
+/* Previews in Settings: fourteen live mascots made scrolling stutter, so
+   these stand still and paint once. */
+.orb-still {
+  display: inline-flex;
+  contain: layout paint;
+}
+.orb-still * {
+  animation: none !important;
+  transition: none !important;
+}
+
 /* ---------- Ask: key badges, menus, voice ---------- */
 
 /* Shown on each control while Alt is held. */
@@ -752,9 +782,26 @@ body {
   scale: 1;
 }
 
+/* While Alt is held, keys in chips show only their letter, lit like the badges. */
+.alt-pre {
+  font-style: normal;
+}
+:root[data-alt] .alt-pre {
+  display: none;
+}
+:root[data-alt] kbd:has(> .alt-pre) {
+  border-radius: 5px;
+  background: #fff;
+  padding-inline: 4px;
+  color: #000;
+}
+
 /* Menus: Graphite, frosted, anchored to their button. */
 .menu {
   background: rgb(30 30 36 / 0.94);
+  /* Menus sit over the app's own content, which they can blur. */
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
   box-shadow:
     inset 0 0.5px 0 rgb(255 255 255 / 0.1),
     0 0 0 0.5px rgb(255 255 255 / 0.12),
@@ -785,6 +832,13 @@ body {
   background: rgb(255 255 255 / 0.09);
   outline: none;
 }
+/* Battery saver and transparency effects off: menus are solid. */
+.island-shell[data-simple] .menu,
+.island-shell[data-solid] .menu {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: rgb(30 30 36);
+}
 .menu-item small {
   grid-column: 1;
   font-size: 11.5px;
@@ -792,6 +846,43 @@ body {
 }
 
 /* The voice: rainbow bars that follow the level. */
+/* Full listening style: a wide, quiet waveform in the island's ink. */
+.voice-wave {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2.5px;
+  height: 30px;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent);
+}
+.voice-wave i {
+  flex: none;
+  width: 2.5px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 0.9);
+  animation: voice-bar 0.9s ease-in-out infinite;
+}
+.voice-live {
+  animation: voice-live 1.6s ease-out infinite;
+}
+@keyframes voice-live {
+  0% {
+    box-shadow: 0 0 0 0 rgb(255 255 255 / 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 6px rgb(255 255 255 / 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-wave i,
+  .voice-live {
+    animation: none;
+    height: 40%;
+  }
+}
+
 .voice-bars {
   display: flex;
   align-items: center;
@@ -865,7 +956,7 @@ body {
 .ak {
   --ink: #f5f5f7;
   --i2: rgb(235 235 245 / 0.6);
-  --i3: rgb(235 235 245 / 0.36);
+  --i3: rgb(235 235 245 / 0.45);
   --chipbg: rgb(255 255 255 / 0.09);
   display: grid;
   gap: 8px;
@@ -941,9 +1032,6 @@ body {
   color: var(--i3);
   text-overflow: ellipsis;
 }
-.ak-q[data-asked="true"]::placeholder {
-  color: var(--i2);
-}
 .ak-right {
   display: flex;
   align-items: center;
@@ -1013,24 +1101,64 @@ body {
   margin-top: -6px;
   min-width: 0;
 }
+/* In-webview tip (replaces native title, which sits under the island). */
+.ak-tip {
+  position: fixed;
+  z-index: 100;
+  width: max-content;
+  max-width: min(240px, calc(100vw - 16px));
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: rgb(28 28 32 / 0.96);
+  color: rgb(235 235 245 / 0.92);
+  font-size: 11.5px;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  box-shadow:
+    0 0 0 0.5px rgb(255 255 255 / 0.12),
+    0 8px 24px -4px rgb(0 0 0 / 0.55);
+  transform: translateX(-50%);
+  pointer-events: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.ak-tip[data-above] {
+  transform: translate(-50%, -100%);
+}
+/* Context toggles: filled with a tick when it goes with the question,
+   an outline with + when left out. */
 .ak-ctx-i {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
   min-width: 0;
   flex-shrink: 0;
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--i3);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
 }
 .ak-ctx-i.cpy {
   flex-shrink: 1;
 }
+.ak-ctx-i svg,
+.ak-pc svg {
+  flex: none;
+}
 .ak-ctx-i[aria-pressed="true"] {
-  color: var(--i2);
+  background: rgb(255 255 255 / 0.1);
+  color: var(--ink);
+  box-shadow: none;
 }
 .ak-ctx-i:hover {
-  color: var(--i2);
-}
-.ak-ctx-sep::before {
-  content: "·";
+  background: rgb(255 255 255 / 0.14);
+  color: var(--ink);
 }
 .ak-pc {
   margin-left: auto;
@@ -1038,11 +1166,15 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 8px;
+  padding: 3px 9px 3px 7px;
   border-radius: 999px;
   font-size: 11.5px;
   color: var(--i3);
-  box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.14);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16);
+}
+.ak-pc:hover {
+  background: rgb(255 255 255 / 0.14);
+  color: var(--ink);
 }
 .ak-pc[aria-pressed="true"] {
   background: rgb(255 255 255 / 0.1);
@@ -1056,6 +1188,11 @@ body {
 .ak-list {
   display: grid;
   gap: 0;
+}
+/* Grid children may not grow past the island for long titles. */
+.ak > *,
+.ak-list > li {
+  min-width: 0;
 }
 .ak-row {
   display: flex;
@@ -1087,6 +1224,12 @@ body {
   font-size: 12px;
   color: var(--i3);
   white-space: nowrap;
+  /* A long project path gives way before the title does. */
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ak-key {
   margin-left: auto;
@@ -1137,7 +1280,13 @@ body {
   color: var(--i3);
   padding: 0 4px;
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+/* Each part stays on one line ("first word 41.9 s", "Think harder Alt H"). */
+.ak-tag > * {
+  white-space: nowrap;
 }
 .ak-tag b {
   font-weight: 500;
@@ -1173,7 +1322,7 @@ body {
   opacity: 0.45;
 }
 .ak-um {
-  justify-self: end;
+  align-self: flex-end;
   max-width: 82%;
   background: rgb(255 255 255 / 0.09);
   padding: 7px 11px;
@@ -1224,6 +1373,7 @@ body {
   color: #ffb4ae;
 }
 .ak-scroll {
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
@@ -1414,7 +1564,7 @@ body {
 select.ak-mi {
   padding-right: 18px;
   background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='rgb(235 235 245 / 0.5)' stroke-width='2.4' stroke-linecap='round' d='m7 10 5 5 5-5'/%3E%3C/svg%3E")
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='rgb(235 235 245 / 0.62)' stroke-width='2.4' stroke-linecap='round' d='m7 10 5 5 5-5'/%3E%3C/svg%3E")
     no-repeat right 4px center / 10px;
 }
 select.ak-mi:hover,
@@ -1429,10 +1579,14 @@ select.ak-mi option {
   margin-left: auto;
 }
 .ak-tl {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
-  align-content: start;
-  grid-auto-rows: max-content;
+}
+/* Every entry keeps its own height, so a long answer never sits under the next card. */
+.ak-tl > * {
+  flex: none;
+  min-width: 0;
 }
 .ak-todo {
   display: grid;
@@ -1524,9 +1678,10 @@ select.ak-mi option {
   padding: 4px 8px;
   font-size: 11.5px;
   color: rgb(255 255 255 / 0.8);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-height: 96px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 .ak-composer {
   display: flex;
@@ -1697,4 +1852,416 @@ select.ak-mi option {
 }
 .del-n {
   color: #ff6961;
+}
+/* Plan first: a task's steps, run in order with one Run */
+.ak-plan {
+  border-radius: 16px;
+  background: rgb(255 255 255 / 0.05);
+  padding: 10px 12px;
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+}
+.ak-plan .head {
+  font-weight: 600;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.ak-plan .head .ak-timer {
+  font-weight: 400;
+}
+.ak-st {
+  display: flex;
+  gap: 10px;
+  color: var(--i2);
+  align-items: baseline;
+}
+.ak-st .n {
+  font-size: 11px;
+  color: var(--i3);
+  width: 16px;
+  flex: none;
+}
+.ak-st[data-s="running"] {
+  color: var(--ink);
+}
+.ak-st[data-s="done"] .n {
+  color: #30d158;
+}
+.ak-st[data-s="failed"] {
+  color: #ffb4ae;
+}
+.ak-st[data-s="undone"] {
+  color: var(--i3);
+  text-decoration: line-through;
+}
+/* Agents: / and @ menus, folded output, rewind */
+.ak-pop {
+  max-height: 200px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  border-radius: 14px;
+  background: #17171c;
+  box-shadow:
+    0 12px 30px -8px rgb(0 0 0 / 0.8),
+    inset 0 0 0 0.5px rgb(255 255 255 / 0.1);
+  padding: 5px;
+  display: grid;
+  gap: 1px;
+  box-sizing: border-box;
+}
+/* Floated above the composer: keep enter animation off transform so it
+   does not fight fixed bottom positioning. */
+.ak-pop-float.ak-in {
+  animation-name: ak-pop-in;
+}
+@keyframes ak-pop-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+}
+.ak-pop .g {
+  font-size: 10.5px;
+  color: var(--i3);
+  padding: 6px 8px 2px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.ak-pop .it {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 6px 8px;
+  border-radius: 9px;
+  font-size: 13px;
+  text-align: left;
+  width: 100%;
+  box-sizing: border-box;
+  color: var(--ink);
+}
+.ak-pop .it[data-sel="true"] {
+  background: rgb(255 255 255 / 0.08);
+}
+.ak-pop .it .c {
+  font-size: 12.5px;
+  min-width: 96px;
+  flex: none;
+}
+.ak-pop .it .d {
+  color: var(--i3);
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ak-term {
+  border-radius: 12px;
+  background: #0e0e12;
+  box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.08);
+  overflow: hidden;
+  margin-left: 50px;
+}
+.ak-term pre {
+  margin: 0;
+  padding: 7px 10px 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--i3);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ak-term button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0 10px 7px;
+  font-size: 11px;
+  color: var(--i2);
+}
+.ak-um-wrap {
+  align-self: flex-end;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 90%;
+}
+.ak-rwb {
+  font-size: 11.5px;
+  background: #f5f5f7;
+  color: #000;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.ak-um-wrap:hover .ak-rwb,
+.ak-rwb:focus-visible {
+  opacity: 1;
+}
+.ak-note {
+  font-size: 12px;
+  color: var(--i3);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 0 4px;
+}
+/* First run: how Sidekick answers */
+.ak-opt {
+  display: grid;
+  grid-template-columns: 30px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.04);
+}
+.ak-opt.rec {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.22);
+}
+.ak-opt .oi {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--chipbg);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--i2);
+}
+.ak-opt .ot {
+  display: block;
+  font-weight: 600;
+  font-size: 13.5px;
+}
+.ak-opt .od {
+  display: block;
+  font-size: 12px;
+  color: var(--i3);
+}
+.ak-opt .ob {
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--chipbg);
+  white-space: nowrap;
+  color: var(--ink);
+}
+.ak-opt.rec .ob {
+  background: #f5f5f7;
+  color: #000;
+  font-weight: 600;
+}
+.ak-opt .ob:disabled {
+  opacity: 0.6;
+}
+.ak-offl {
+  color: #ff9f0a;
+  flex: none;
+}
+/* Agents and away lists on the island */
+.ak-bglist {
+  display: grid;
+  gap: 2px;
+}
+.ak-bgr {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 12px;
+  width: 100%;
+  color: var(--ink);
+}
+.ak-bgr:hover {
+  background: rgb(255 255 255 / 0.05);
+}
+.ak-bgr.first {
+  background: rgb(255 159 10 / 0.07);
+}
+
+/* Windows High contrast: system colours, real borders instead of tints,
+   and no glow or blur. */
+@media (forced-colors: active) {
+  .island-shell {
+    border: 1px solid CanvasText;
+    background-color: Canvas;
+    box-shadow: none;
+  }
+  .island-shell::before,
+  .orb-halo {
+    display: none;
+  }
+  .chip,
+  .ak-chip,
+  .ak-model,
+  .menu,
+  kbd {
+    border: 1px solid ButtonText;
+    forced-color-adjust: auto;
+  }
+  [aria-pressed="true"],
+  [aria-selected="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .menu {
+    backdrop-filter: none;
+    background: Canvas;
+  }
+  .voice-wave i,
+  .voice-bars i,
+  .voice-live {
+    background: CanvasText;
+  }
+}
+
+/* The island turns selection off so dragging never highlights the chrome.
+   Questions, answers and agent output stay selectable and copyable. */
+.ak-um,
+.ak-ans,
+.ak-err,
+.ak-note,
+.ak-term,
+.ak-rv-hunk,
+.ak-tl .ak-ans,
+.ak-done {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+/* Copy, Retry and Think harder under an answer. */
+/* Wraps instead of widening the answer past the panel. */
+.ak-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px;
+}
+.ak-act {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.09);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color 150ms ease,
+    transform 150ms ease;
+}
+.ak-act:hover {
+  background: rgb(255 255 255 / 0.15);
+}
+.ak-act:active {
+  transform: scale(0.96);
+}
+.ak-act svg {
+  opacity: 0.8;
+  flex: none;
+}
+.ak-act kbd {
+  font-family: inherit;
+  font-size: 10.5px;
+  color: rgb(235 235 245 / 0.45);
+}
+.ak-acts-hover {
+  display: none;
+  font-size: 12px;
+  color: rgb(235 235 245 / 0.6);
+}
+.group:hover .ak-acts-hover,
+.group:focus-within .ak-acts-hover {
+  display: inline;
+}
+.ak-info {
+  position: relative;
+  margin-left: auto;
+}
+.ak-info button[aria-pressed="true"] {
+  background: rgb(255 255 255 / 0.16);
+  color: #fff;
+}
+.ak-info-tip {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: rgb(235 235 245 / 0.6);
+  background: rgb(28 28 32 / 0.96);
+  padding: 4px 8px;
+  border-radius: 7px;
+  opacity: 0;
+  transform: translateY(2px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+  pointer-events: none;
+}
+.ak-info:hover .ak-info-tip {
+  opacity: 1;
+  transform: none;
+}
+.ak-info-line {
+  padding: 0 4px;
+  font-size: 11.5px;
+  color: rgb(235 235 245 / 0.45);
+}
+
+/* Option keys appear while Alt is held; the answer actions keep theirs. */
+.ak-chip kbd {
+  display: none;
+}
+:root[data-alt] .ak-chip kbd {
+  display: inline;
+}
+.ak-pc[aria-pressed="false"] {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+/* "Ignore" on a suggestion: the fill shows when the island closes by itself. */
+.ak-ignore {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  background: rgb(255 255 255 / 0.04);
+}
+.ak-ignore-fill {
+  position: absolute;
+  inset: 0;
+  background: rgb(255 255 255 / 0.1);
+  transform-origin: left;
+  animation: ak-ignore linear forwards;
+}
+.island-shell:hover .ak-ignore-fill {
+  animation: none;
+}
+@keyframes ak-ignore {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ak-ignore-fill {
+    display: none;
+  }
 }

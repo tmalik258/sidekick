@@ -9,8 +9,10 @@ pub mod cleanup;
 mod convert;
 pub mod dev;
 pub mod dnd;
+pub mod doctor;
 mod editors;
 mod files;
+pub mod gitflow;
 pub mod office;
 pub mod pc;
 mod script;
@@ -134,6 +136,12 @@ impl Executor {
                 let path = existing_path(args)?;
                 system::reveal(&path)?;
                 Ok(Outcome::msg("Shown in folder"))
+            }
+            "ask_copilot" => {
+                let text = arg(args, "text")?.to_owned();
+                tokio::task::spawn_blocking(move || system::ask_copilot(&text))
+                    .await
+                    .map_err(fail)?
             }
             "copy_text" => {
                 let text = arg(args, "text")?;
@@ -289,9 +297,41 @@ impl Executor {
                     .await
                     .map_err(fail)?
             }
+            "set_compat" => {
+                let exe = arg(args, "exe")?.to_owned();
+                let mode = arg(args, "mode")?.to_owned();
+                tokio::task::spawn_blocking(move || doctor::set_compat(&exe, &mode))
+                    .await
+                    .map_err(fail)?
+            }
+            "clear_compat" => {
+                let exe = arg(args, "exe")?.to_owned();
+                tokio::task::spawn_blocking(move || doctor::clear_compat(&exe))
+                    .await
+                    .map_err(fail)?
+            }
             "empty_recycle_bin" => tokio::task::spawn_blocking(pc::empty_recycle_bin)
                 .await
                 .map_err(fail)?,
+            "git_commit" => {
+                let path = existing_path(args)?;
+                let message = arg(args, "message")?.to_owned();
+                tokio::task::spawn_blocking(move || gitflow::commit(&path, &message))
+                    .await
+                    .map_err(fail)?
+            }
+            "git_delete_branches" => {
+                let path = existing_path(args)?;
+                let branches: Vec<String> = args["branches"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|b| b.as_str().map(str::to_owned))
+                    .collect();
+                tokio::task::spawn_blocking(move || gitflow::delete_branches(&path, &branches))
+                    .await
+                    .map_err(fail)?
+            }
             "git_pull" => {
                 let path = existing_path(args)?;
                 tokio::task::spawn_blocking(move || dev::pull(&path))

@@ -21,9 +21,17 @@ import {
   startSkill,
   stopListening,
   updateSettings,
+  useAssistantName,
   useSidekick,
 } from "@/lib/store";
-import { type CalendarToday, type ChatSummary, isPaused, type ProviderStatus, type SearchHit } from "@/lib/types";
+import {
+  type CalendarToday,
+  type ChatSummary,
+  type InstantResults,
+  isPaused,
+  type ProviderStatus,
+  type SearchHit,
+} from "@/lib/types";
 import { AgentsTab } from "./agents/AgentsTab";
 import { Chat, useAgentName } from "./ask/Chat";
 import { Clips, Results } from "./ask/Lists";
@@ -31,10 +39,13 @@ import { ModelPicker } from "./ask/ModelPicker";
 import { ago, KeyHint, scrollIfActive } from "./ask/parts";
 import type { Command } from "./ask/Starters";
 import { ContextLine, contextStarters, soonestMeeting } from "./ask/Starters";
+import { FirstRun } from "./ask/States";
 import { Timings } from "./ask/Timings";
 import { Icon } from "./Icon";
+import { markSeen } from "./IslandAgents";
 import { SETTINGS_TABS } from "./SettingsPanel";
 import { SetupSpinner } from "./SetupChecklistRow";
+import { Tip } from "./Tip";
 
 /** Space the island's orb takes at the top-left in Settings and the welcome. */
 export const ASK_ORB = 30;
@@ -42,6 +53,17 @@ export const ASK_ORB = 30;
 export const ASK_MASCOT = { size: 36, x: 10, y: 40 } as const;
 /** Ask's padding inside the island: top, sides, bottom. */
 export const ASK_PAD = { top: 8, x: 10, bottom: 10 } as const;
+
+/** The "Hold Alt" hint shows in the first five sessions only. */
+const EARLY_SESSIONS = (() => {
+  try {
+    const n = Number(localStorage.getItem("sk-sessions") ?? "0") + 1;
+    localStorage.setItem("sk-sessions", String(n));
+    return n <= 5;
+  } catch {
+    return true;
+  }
+})();
 
 /** Input + chips + footer + gaps; scroll area keeps the rest under the Ask cap. */
 const ASK_CHROME = 118;
@@ -54,7 +76,54 @@ function askScrollMax(): number {
   return Math.min(ASK_SCROLL_CAP, Math.max(ASK_SCROLL_FLOOR, available));
 }
 
+/** Windows Settings pages Ask can open by name, with the words people type. */
+const WINDOWS_PAGES: { page: string; label: string; words: string[]; switch?: string }[] = [
+  { page: "display", label: "Display", words: ["display", "screen", "resolution", "brightness", "scale"] },
+  {
+    page: "nightlight",
+    label: "Night light",
+    words: ["night", "nightlight", "night light", "blue light"],
+    switch: "night_light",
+  },
+  { page: "sound", label: "Sound", words: ["sound", "audio", "speaker", "microphone", "volume"] },
+  { page: "notifications", label: "Notifications", words: ["notifications"] },
+  { page: "focus", label: "Do Not Disturb", words: ["focus", "do not disturb", "dnd"], switch: "dnd" },
+  { page: "bluetooth", label: "Bluetooth", words: ["bluetooth", "devices", "headphones"], switch: "bluetooth" },
+  { page: "wifi", label: "Wi-Fi", words: ["wifi", "wi-fi", "wireless"], switch: "wifi" },
+  {
+    page: "hotspot",
+    label: "Mobile hotspot",
+    words: ["hotspot", "mobile hotspot", "tethering", "share internet"],
+    switch: "hotspot",
+  },
+  { page: "airplane", label: "Airplane mode", words: ["airplane", "aeroplane", "flight mode"], switch: "airplane" },
+  { page: "network", label: "Network & internet", words: ["network", "internet", "ethernet", "vpn", "proxy"] },
+  { page: "battery", label: "Battery saver", words: ["battery", "saver"] },
+  { page: "power", label: "Power & sleep", words: ["power", "sleep"] },
+  { page: "storage", label: "Storage", words: ["storage", "disk", "space"] },
+  { page: "apps", label: "Installed apps", words: ["apps", "uninstall", "programs"] },
+  { page: "default_apps", label: "Default apps", words: ["default"] },
+  { page: "startup_apps", label: "Startup apps", words: ["startup"] },
+  {
+    page: "colors",
+    label: "Dark mode",
+    words: ["dark mode", "dark", "light mode", "colors", "colours", "theme"],
+    switch: "dark_mode",
+  },
+  { page: "background", label: "Background", words: ["background", "wallpaper"] },
+  { page: "mouse", label: "Mouse & touchpad", words: ["mouse", "touchpad", "trackpad"] },
+  { page: "keyboard", label: "Keyboard", words: ["keyboard"] },
+  { page: "printers", label: "Printers & scanners", words: ["printer", "scanner"] },
+  { page: "updates", label: "Windows Update", words: ["update", "updates"] },
+  { page: "privacy", label: "Privacy & security", words: ["privacy", "security", "permissions"] },
+  { page: "accounts", label: "Your account", words: ["account", "profile"] },
+  { page: "time", label: "Date & time", words: ["date", "time", "clock", "timezone"] },
+  { page: "language", label: "Language & region", words: ["language", "region"] },
+  { page: "about", label: "About this PC", words: ["about", "specs", "system info"] },
+];
+
 export function AskPanel() {
+  const assistant = useAssistantName();
   const ask = useSidekick((s) => s.ask);
   const turns = useSidekick((s) => s.turns);
   const chatId = useSidekick((s) => s.chatId);
@@ -73,13 +142,13 @@ export function AskPanel() {
   }, []);
   // Alt shortcuts work wherever focus is in Ask. What they act on changes
   // every render, so they read it from here.
-  const altKeys = useRef<Record<string, () => void>>({});
+  const altKeys = useRef<Record<string, (back?: boolean) => void>>({});
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
-      // Ctrl Tab moves between Ask, Agents and History.
+      // Ctrl Tab / Ctrl Shift Tab move between Ask, Agents and History.
       if (e.ctrlKey && e.key === "Tab") {
         e.preventDefault();
-        altKeys.current.tab?.();
+        altKeys.current.tab?.(e.shiftKey);
         return;
       }
       if (!e.altKey || e.ctrlKey || e.metaKey || e.repeat) return;
@@ -116,6 +185,26 @@ export function AskPanel() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   const [projects, setProjects] = useState<{ name: string; path: string }[]>([]);
+  // Apps and files named like what is typed: no model, answers in a blink.
+  const [instant, setInstant] = useState<InstantResults>({ apps: [], files: [] });
+  useEffect(() => {
+    const q = text.trim();
+    if (q.length < 2 || q.startsWith("/") || useSidekick.getState().turns.length > 0) {
+      setInstant({ apps: [], files: [] });
+      return;
+    }
+    let live = true;
+    const id = setTimeout(() => {
+      void api
+        .instantFind(q)
+        .then((r) => live && setInstant(r))
+        .catch(() => undefined);
+    }, 60);
+    return () => {
+      live = false;
+      clearTimeout(id);
+    };
+  }, [text]);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -134,6 +223,7 @@ export function AskPanel() {
   useEffect(() => {
     if (seq === undefined) return;
     setText(useSidekick.getState().ask?.prompt ?? "");
+    markSeen();
     setSelected(0);
     setClips(null);
     setHandoffError(null);
@@ -150,7 +240,7 @@ export function AskPanel() {
     if (tool === "screen") {
       sendChat("What's on my screen? Explain it briefly and point out anything I should act on.", { screen: true });
     }
-    const id = requestAnimationFrame(() => inputRef.current?.focus());
+    const id = requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
     return () => cancelAnimationFrame(id);
   }, [seq, refreshProviders]);
 
@@ -199,7 +289,7 @@ export function AskPanel() {
         focusInput: (prefix) =>
           requestAnimationFrame(() => {
             setText(prefix);
-            inputRef.current?.focus();
+            inputRef.current?.focus({ preventScroll: true });
           }),
       }),
     [ask?.context, chatPage, calendar],
@@ -213,7 +303,7 @@ export function AskPanel() {
     setHits(null);
     setPick(0);
     nearBottom.current = true;
-    requestAnimationFrame(() => inputRef.current?.focus());
+    requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
   }, []);
 
   const commands = useMemo<Command[]>(() => {
@@ -295,7 +385,7 @@ export function AskPanel() {
         icon: <span className="text-[12px]">✦</span>,
         label: (
           <>
-            Ask Sidekick: <span className="text-[rgb(235_235_245/0.6)]">“{text.trim()}”</span>
+            Ask {assistant}: <span className="text-[rgb(235_235_245/0.6)]">“{text.trim()}”</span>
           </>
         ),
         run: () => {
@@ -309,6 +399,16 @@ export function AskPanel() {
         const named = (group: string, list: Command[]) => {
           for (const [n, c] of list.entries()) items.push({ ...commandItem(c), group: n === 0 ? group : undefined });
         };
+        for (const [n, a] of instant.apps.entries()) {
+          items.push({
+            id: `app:${a.id}`,
+            group: n === 0 ? "Apps" : undefined,
+            icon: <span className="text-[11px] font-bold text-white">{a.name.slice(0, 1).toUpperCase()}</span>,
+            label: a.name,
+            hint: a.minutes >= 60 ? `${Math.round(a.minutes / 60)} h this week` : undefined,
+            run: () => void api.appLaunch(a.id),
+          });
+        }
         named(
           "Commands",
           commands.filter((c) => c.label.toLowerCase().includes(q)),
@@ -325,6 +425,60 @@ export function AskPanel() {
               icon: "folder" as const,
               run: () => void api.projectLaunch(p.path),
             })),
+        );
+        for (const [n, f] of instant.files.entries()) {
+          items.push({
+            id: `file:${f.path}`,
+            group: n === 0 ? "Files" : undefined,
+            icon: <Icon name={f.folder ? "folder" : "file"} size={12} />,
+            label: f.name,
+            hint: f.place,
+            run: () => void api.fileOpen(f.path),
+          });
+        }
+        // "turn on hotspot", "hotspot off", "open bluetooth settings".
+        const want = /\b(on|enable|start)\b/.test(q) ? true : /\b(off|disable|stop)\b/.test(q) ? false : null;
+        const wq = q
+          .replace(/^(open\s+)?(windows\s+)?settings?\s*/, "")
+          .replace(/\b(turn|switch|set|please|the|my|on|off|enable|disable|start|stop)\b/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        const pages = (
+          wq.length >= 3 ? WINDOWS_PAGES.filter((p) => p.words.some((w) => w.startsWith(wq) || wq.startsWith(w))) : []
+        ).slice(0, 2);
+        named(
+          "Windows settings",
+          pages.flatMap((p) => {
+            const open: Command = {
+              id: `winset:${p.page}`,
+              label: `${p.label} settings`,
+              hint: "Windows Settings",
+              icon: "settings" as const,
+              run: () => void api.windowsSettingsOpen(p.page),
+            };
+            const name = p.switch;
+            if (!name) return [open];
+            const flip = (on: boolean): Command => ({
+              id: `switch:${name}:${on}`,
+              label: `Turn ${p.label.replace(/^Do Not/, "do not")} ${on ? "on" : "off"}`,
+              hint: "This PC",
+              icon: "settings" as const,
+              stay: true,
+              run: () => {
+                const asked = `Turn ${p.label} ${on ? "on" : "off"}`;
+                const say = (content: string, error?: string) =>
+                  useSidekick.setState((st) => ({
+                    turns: [...st.turns, { role: "user", content: asked }, { role: "assistant", content, error }],
+                  }));
+                void api.pcSwitch(name, on).then(
+                  (done) => say(`${done}.`),
+                  (e: unknown) => say("", String(e)),
+                );
+              },
+            });
+            const flips = want === null ? [flip(true), flip(false)] : [flip(want)];
+            return [...flips, open];
+          }),
         );
         named(
           "Settings",
@@ -397,7 +551,7 @@ export function AskPanel() {
         run: () => {
           setText("/");
           setSelected(0);
-          inputRef.current?.focus();
+          inputRef.current?.focus({ preventScroll: true });
         },
         stay: true,
         keepText: true,
@@ -406,7 +560,9 @@ export function AskPanel() {
   }
   const rows = items.length;
   // A short name ("slack", "settings") picks its match; a question picks Ask.
-  const intentRow = asking && rows > 3 && looksLikeName(text) ? 1 : 0;
+  // "turn on hotspot" picks the switch itself.
+  const switchRow = /\b(on|off|enable|disable)\b/i.test(text) ? items.findIndex((i) => i.id.startsWith("switch:")) : -1;
+  const intentRow = asking && switchRow > 0 ? switchRow : asking && rows > 3 && looksLikeName(text) ? 1 : 0;
   const active = Math.min(selected === INTENT_PENDING ? intentRow : selected, Math.max(rows - 1, 0));
   // Models that can answer now; the picked one (if still there) goes first.
   const choices = providers.filter((p) => p.available && (!ask.localOnly || p.local) && p.id !== "semif");
@@ -425,7 +581,10 @@ export function AskPanel() {
         .then(setChats)
         .catch(() => setChats([]));
     }
-    requestAnimationFrame(() => inputRef.current?.focus());
+    // Agents focuses its own composer; Ask/History use this input.
+    if (next !== "agents") {
+      requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
+    }
   };
 
   altKeys.current = {
@@ -433,9 +592,11 @@ export function AskPanel() {
     v: () => (hearing !== null ? stopListening() : voiceReady && !streaming && startListening()),
     p: () => setAsk({ localOnly: !ask.localOnly }),
     h: () => !streaming && goTab(tab === "history" ? "ask" : "history"),
-    tab: () => {
+    tab: (back) => {
       const order: AskTab[] = ["ask", "agents", "history"];
-      goTab(order[(order.indexOf(tab) + 1) % order.length]);
+      const i = order.indexOf(tab);
+      const next = back ? order[(i - 1 + order.length) % order.length] : order[(i + 1) % order.length];
+      goTab(next);
     },
     m: () => {
       if (choices.length < 2) return;
@@ -486,7 +647,7 @@ export function AskPanel() {
     // Listening: Esc only stops the mic and leaves the box ready to type in.
     if (current.hearing !== null || current.mascot === "listening") {
       stopListening();
-      requestAnimationFrame(() => inputRef.current?.focus());
+      requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
       return;
     }
     if (current.turns.length > 0 || current.chatId !== null) {
@@ -557,7 +718,6 @@ export function AskPanel() {
           {typeof extra === "string" && <KeyHint show={alt}>{extra}</KeyHint>}
         </span>
       ))}
-      <span className="ak-tabkey mono">Ctrl Tab</span>
     </div>
   );
 
@@ -570,47 +730,50 @@ export function AskPanel() {
     );
   }
 
-  const lastQuestion = turns.findLast((t) => t.role === "user")?.content ?? "";
-  const askedInBar = inChat && !text && !inHistory;
-  const footer = !best ? (
-    <div className="ak-foot items-center">
-      {providersData === null ? (
-        <SetupSpinner className="text-white/50" />
-      ) : (
-        <span className="size-1.5 self-center rounded-full bg-[#ffd60a]" aria-hidden="true" />
-      )}
-      <span className="truncate" aria-live="polite">
-        {providersData === null
-          ? "Checking AI…"
-          : ask.localOnly
-            ? "No local model running"
-            : "No AI set up yet. See Settings > AI"}
-      </span>
-    </div>
-  ) : alt ? (
-    <div className="ak-foot">
-      <span>
-        <kbd>Enter</kbd> {asking ? "ask" : showClips ? "copy" : showHits || inHistory ? "open" : "run"}
-      </span>
-      {agent && (asking || inChat) && (
-        <span>
-          <kbd>Ctrl Enter</kbd> continue in {agent}
+  // No model yet: the first-run card says how to add one, so the footer
+  // keeps its usual line.
+  const firstRun = !best && providersData !== null && !inChat && !asking && !slash && !inHistory && !showClips;
+  const footer =
+    !best && !firstRun ? (
+      <div className="ak-foot items-center">
+        {providersData === null ? (
+          <SetupSpinner className="text-white/62" />
+        ) : (
+          <span className="size-1.5 self-center rounded-full bg-[#ffd60a]" aria-hidden="true" />
+        )}
+        <span className="truncate" aria-live="polite">
+          {providersData === null
+            ? "Checking AI…"
+            : ask.localOnly
+              ? "No local model running"
+              : "No AI set up yet. See Settings > AI"}
         </span>
-      )}
-      <span>
-        <kbd>Ctrl Tab</kbd> switch tab
-      </span>
-      <span>
-        <kbd>Esc</kbd> {hearing !== null ? "stop mic" : inChat || streaming ? "new chat" : "close"}
-      </span>
-    </div>
-  ) : (
-    <div className="ak-foot">
-      <span>
-        Hold <kbd>Alt</kbd> for shortcuts · <kbd>/</kbd> for all commands
-      </span>
-    </div>
-  );
+      </div>
+    ) : alt ? (
+      <div className="ak-foot">
+        <span>
+          <kbd>Enter</kbd> {asking ? "ask" : showClips ? "copy" : showHits || inHistory ? "open" : "run"}
+        </span>
+        {agent && (asking || inChat) && (
+          <span>
+            <kbd>Ctrl Enter</kbd> continue in {agent}
+          </span>
+        )}
+        <span>
+          <kbd>Ctrl Tab</kbd> switch tab
+        </span>
+        <span>
+          <kbd>Esc</kbd> {hearing !== null ? "stop mic" : inChat || streaming ? "new chat" : "close"}
+        </span>
+      </div>
+    ) : !inChat && !asking && !inHistory && EARLY_SESSIONS ? (
+      // Only where you are about to type, for your first few sessions.
+      <div className="ak-foot">
+        <span>
+          Hold <kbd>Alt</kbd> for shortcuts · <kbd>/</kbd> for all commands
+        </span>
+      </div>
+    ) : null;
 
   return (
     <div className="ak">
@@ -628,8 +791,7 @@ export function AskPanel() {
               setPick(0);
             }}
             onKeyDown={onKey}
-            data-asked={askedInBar}
-            placeholder={inHistory ? "Search history" : askedInBar ? lastQuestion : "Ask anything"}
+            placeholder={inHistory ? "Search history" : inChat ? "Ask a follow-up" : "Ask anything"}
             spellCheck={false}
             className="ak-q"
           />
@@ -665,7 +827,12 @@ export function AskPanel() {
                 <Icon name={speak ? "speaker" : "speakerOff"} size={14} />
               </IconButton>
               {voiceReady && !streaming && (
-                <IconButton label="Talk, or say Hey Sidekick (Alt V)" keys={alt} hint="Alt V" onClick={startListening}>
+                <IconButton
+                  label={`Talk, or say Hey ${assistant} (Alt V)`}
+                  keys={alt}
+                  hint="Alt V"
+                  onClick={startListening}
+                >
                   <Icon name="mic" size={14} />
                 </IconButton>
               )}
@@ -714,8 +881,10 @@ export function AskPanel() {
         </div>
       ) : showChat && !(asking && rows > 0 && !inChat) ? (
         <div key="chat" ref={chatRef} onScroll={onScroll} className="ak-scroll" style={{ maxHeight: scrollMax }}>
-          <Chat turns={turns} askedInBar={askedInBar} />
+          <Chat turns={turns} />
         </div>
+      ) : firstRun ? (
+        <FirstRun />
       ) : (
         rows > 0 && (
           <ul
@@ -833,7 +1002,11 @@ function historyRows(chats: ChatSummary[], sessions: Session[], kind: HistoryKin
         group: day(s.startedAt),
         agent: true,
         title: s.title,
-        meta: [s.agent, s.project, s.changes ? `${s.changes} ${s.changes === 1 ? "change" : "changes"}` : ""]
+        meta: [
+          s.agent,
+          s.project.split(/[\\/]/).filter(Boolean).pop(),
+          s.changes ? `${s.changes} ${s.changes === 1 ? "change" : "changes"}` : "",
+        ]
           .filter(Boolean)
           .join(" · "),
         at: s.startedAt,
@@ -891,16 +1064,11 @@ function IconButton({
 }) {
   return (
     <span className="relative shrink-0">
-      <button
-        type="button"
-        aria-label={label}
-        title={label}
-        aria-pressed={pressed}
-        onClick={onClick}
-        className="ak-ibtn chip"
-      >
-        {children}
-      </button>
+      <Tip label={label}>
+        <button type="button" aria-label={label} aria-pressed={pressed} onClick={onClick} className="ak-ibtn chip">
+          {children}
+        </button>
+      </Tip>
       <KeyHint show={keys}>{hint}</KeyHint>
     </span>
   );

@@ -91,7 +91,7 @@ claude   # sign in once
 
 # Local model through Ollama (stays on this PC; also ranks suggestions)
 winget install Ollama.Ollama
-ollama pull qwen3:4b
+ollama pull qwen3:4b   # Sidekick picks qwen3:8b, 4b or 1.7b to suit your PC
 
 # Or the Anthropic API
 setx ANTHROPIC_API_KEY "your-key"

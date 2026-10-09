@@ -3,6 +3,8 @@
 //! things. They answer in short plain text a small model can use.
 
 use serde::Serialize;
+use std::path::Path;
+
 use serde_json::{Value, json};
 use sidekick_ai::ToolDef;
 use sidekick_core::ActionRecord;
@@ -22,6 +24,10 @@ const PROPOSE: &str = "propose";
 const FIND: &str = "find_files";
 const REVEAL: &str = "show_in_folder";
 const PC_STATUS: &str = "pc_status";
+const STORAGE: &str = "storage";
+const DOCTOR: &str = "app_doctor";
+const GIT: &str = "git";
+const GITHUB: &str = "github";
 const PC: &str = "pc_control";
 const WINDOWS: &str = "windows";
 const WEB_SEARCH: &str = "web_search";
@@ -75,6 +81,12 @@ const ASK_ACTIONS: &[&str] = &[
     "close_app",
     "sleep_pc",
     "empty_recycle_bin",
+    "trash_download",
+    "install_app",
+    "set_compat",
+    "clear_compat",
+    "git_commit",
+    "git_delete_branches",
 ];
 
 /// An action waiting for a tap, from one chat.
@@ -94,6 +106,8 @@ struct ProposalNote<'a> {
     chat_id: &'a str,
     id: &'a str,
     label: &'a str,
+    /// One step of a task, shown with the others as a plan to run in order.
+    step: bool,
 }
 
 /// What a tapped action did, for the answer it belongs to.
@@ -177,15 +191,20 @@ pub fn defs() -> Vec<ToolDef> {
                 {path, to}, zip {paths, name}, convert {path, to: png|jpg|webp|pdf|mp3|mp4}, \
                 extract_archive {path}, extract_text {path}, open_path {path}, reveal_path {path}, \
                 open_url {url}, launch_project {path}, git_pull {path}, install_deps {path}, \
-                close_app {name}, sleep_pc {}, empty_recycle_bin {}. \
-                Use full paths from search. Nothing happens until they tap it."
+                close_app {name}, sleep_pc {}, empty_recycle_bin {}, \
+                trash_download {path} (a file in Downloads, to the Recycle Bin), \
+                open_system_page {page}. \
+                Use full paths from search. Nothing happens until they tap it. For a task \
+                that takes several actions in order (move files, then zip them), offer each \
+                one with step: true, in order; they show as a plan with one Run."
                 .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "action": { "type": "string", "enum": ASK_ACTIONS },
                     "args": { "type": "object" },
-                    "label": { "type": "string", "description": "Button text, e.g. Move invoice.pdf to Invoices" }
+                    "label": { "type": "string", "description": "Button text, e.g. Move invoice.pdf to Invoices" },
+                    "step": { "type": "boolean", "description": "One step of a task, run in order with the other steps" }
                 },
                 "required": ["action", "args", "label"],
             }),
@@ -259,7 +278,9 @@ pub fn defs() -> Vec<ToolDef> {
                 type_here {text} puts text into the field the user is in (to rewrite a \
                 selection, read it, then type_here the new text); click_text {text} finds those \
                 words on the screen and clicks them, for apps whose read shows no controls. \
-                Read before acting and after."
+                Read before acting and after. For \"how do I use this\" or \"where is\", read, \
+                answer in at most three short steps, then act do:point on the first step's \
+                control to outline it on screen without pressing it."
                 .into(),
             parameters: json!({
                 "type": "object",
@@ -267,7 +288,7 @@ pub fn defs() -> Vec<ToolDef> {
                     "action": { "type": "string", "enum": ["read", "act", "keys", "selection", "type_here", "click_text"] },
                     "app": { "type": "string", "description": "App or window name; the app the user was in when left out" },
                     "ref": { "type": "string" },
-                    "do": { "type": "string", "enum": ["click", "type", "select", "focus"] },
+                    "do": { "type": "string", "enum": ["click", "type", "select", "focus", "point"] },
                     "text": { "type": "string" }
                 },
                 "required": ["action"],
@@ -377,16 +398,79 @@ pub fn defs() -> Vec<ToolDef> {
             parameters: json!({ "type": "object", "properties": {} }),
         },
         ToolDef {
+            name: STORAGE.into(),
+            description: "What is taking space on this PC and what can be cleared: free space \
+                on each drive, the biggest folders and files, old files and installers in \
+                Downloads. Use for low disk space, a full drive, or what to delete."
+                .into(),
+            parameters: json!({ "type": "object", "properties": {} }),
+        },
+        ToolDef {
+            name: DOCTOR.into(),
+            description: "Why an app crashes, freezes or will not start: reads the last 14 days \
+                of crash records, names the likely cause and the fix Sidekick can run. Offer \
+                fixes with propose, never run them yourself. When no cause is clear, web_search \
+                the exact error code and module with Reddit, PCGamingWiki, Steam forums and the \
+                app's own forums, and say what people found worked. Never suggest crack, repack \
+                or pirated files. A file the user downloads themselves needs their go-ahead and \
+                a Defender scan first."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": { "app": { "type": "string", "description": "App or game name; empty for all recent crashes" } }
+            }),
+        },
+        ToolDef {
+            name: GIT.into(),
+            description: "A git project on this PC (path; the most recent project when left \
+                out): changes shows what a commit would hold, so write a short commit message \
+                (imperative subject, why in the body) and offer it with propose git_commit \
+                {path, message}; branch shows this branch against main, for a PR description; \
+                clean lists merged branches, offered with propose git_delete_branches {path, \
+                branches}; conflicts lists files with merge conflicts, then offer to hand them \
+                to a coding agent."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["changes", "branch", "clean", "conflicts"] },
+                    "path": { "type": "string", "description": "Project folder" }
+                },
+                "required": ["action"],
+            }),
+        },
+        ToolDef {
+            name: GITHUB.into(),
+            description: "GitHub through the user's gh CLI: waiting lists reviews asked of \
+                them, their open PRs and assigned issues; ci shows the latest runs of a project \
+                and the failing log, so explain the cause and the fix; review {number} reads a \
+                pull request to review it (bugs first, then risks, then nits)."
+                .into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["waiting", "ci", "review"] },
+                    "path": { "type": "string", "description": "Project folder; the most recent project when left out" },
+                    "number": { "type": "integer", "description": "Pull request number" }
+                },
+                "required": ["action"],
+            }),
+        },
+        ToolDef {
             name: PC.into(),
             description: "Change an everyday Windows setting right away: volume_up, volume_down, \
                 mute, set_volume {level}, brightness {level}, dark_mode_on, dark_mode_off, \
-                bluetooth_on, bluetooth_off, wifi_on, wifi_off, dnd_on, dnd_off (Do Not Disturb), lock, \
+                bluetooth_on, bluetooth_off, wifi_on, wifi_off, dnd_on, dnd_off (Do Not Disturb), \
+                hotspot_on, hotspot_off (this PC's own Mobile hotspot, sharing its internet; \
+                \"hotspot\" always means this PC's, never a phone's), airplane_on, airplane_off, \
+                night_light_on, night_light_off, lock, \
                 audio_outputs (lists speakers and headphones), audio_output {page: device name} \
                 plays sound there, display {page: internal|clone|extend|external} sets screens, \
                 open_settings {page} (no page opens Windows Settings itself). Pages: home, display, nightlight, sound, notifications, focus \
                 (Do Not Disturb), bluetooth, wifi, network, battery, power, storage, apps, \
                 default_apps, startup_apps, colors, background, mouse, keyboard, printers, updates, \
-                privacy, accounts, time, language, about. Night light has no switch: open its page."
+                privacy, accounts, time, language, about, hotspot, airplane. Switch a setting \
+                instead of opening its page when the user asks to turn it on or off."
                 .into(),
             parameters: json!({
                 "type": "object",
@@ -394,7 +478,9 @@ pub fn defs() -> Vec<ToolDef> {
                     "what": { "type": "string", "enum": [
                         "volume_up", "volume_down", "mute", "set_volume", "brightness",
                         "dark_mode_on", "dark_mode_off", "bluetooth_on", "bluetooth_off",
-                        "wifi_on", "wifi_off", "dnd_on", "dnd_off", "lock", "open_settings",
+                        "wifi_on", "wifi_off", "dnd_on", "dnd_off", "hotspot_on", "hotspot_off",
+                        "airplane_on", "airplane_off", "night_light_on", "night_light_off",
+                        "lock", "open_settings",
                         "audio_outputs", "audio_output", "display"
                     ] },
                     "level": { "type": "integer", "minimum": 0, "maximum": 100 },
@@ -433,7 +519,6 @@ pub fn defs() -> Vec<ToolDef> {
     ]
 }
 
-/// Tools that reach the internet or other apps, left out for "This PC only".
 /// What a tool call is doing, in a few words for the steps list: "Searching
 /// the web for flight prices", "Reading WhatsApp", "Clicking Send".
 pub fn step_label(name: &str, args: &Value) -> String {
@@ -468,12 +553,18 @@ pub fn step_label(name: &str, args: &Value) -> String {
         SCREEN => "Reading your screen".into(),
         NOTIFS => "Checking your notifications".into(),
         PC_STATUS => "Checking your PC".into(),
+        STORAGE => "Measuring what takes space".into(),
+        DOCTOR => "Reading crash records".into(),
+        GIT => "Reading the project's git".into(),
+        GITHUB => "Checking GitHub".into(),
         PC => {
             let what = arg("what").unwrap_or_default();
             let thing = |k: &str| match k {
                 "dnd" => "Do Not Disturb".to_owned(),
                 "wifi" => "Wi-Fi".to_owned(),
                 "bluetooth" => "Bluetooth".to_owned(),
+                "hotspot" => "Mobile hotspot".to_owned(),
+                "airplane" => "airplane mode".to_owned(),
                 other => other.replace('_', " "),
             };
             if let Some(k) = what.strip_suffix("_on") {
@@ -540,7 +631,19 @@ pub fn step_label(name: &str, args: &Value) -> String {
 pub fn reads_only(name: &str) -> bool {
     matches!(
         name,
-        SEARCH | FIND | TODAY | RECENT | SCREEN | PC_STATUS | WEB_SEARCH | READ_PAGE | NOTIFS
+        SEARCH
+            | FIND
+            | TODAY
+            | RECENT
+            | SCREEN
+            | PC_STATUS
+            | STORAGE
+            | DOCTOR
+            | GIT
+            | GITHUB
+            | WEB_SEARCH
+            | READ_PAGE
+            | NOTIFS
     )
 }
 
@@ -557,6 +660,10 @@ pub fn is_own(name: &str) -> bool {
             | FIND
             | REVEAL
             | PC_STATUS
+            | STORAGE
+            | DOCTOR
+            | GIT
+            | GITHUB
             | PC
             | WINDOWS
             | WEB_SEARCH
@@ -587,7 +694,7 @@ static TOOL_VECTORS: tokio::sync::Mutex<Option<(String, ToolVectors)>> =
 /// embedding model every tool is offered.
 pub async fn pick(app: &AppHandle, question: &str, defs: Vec<ToolDef>) -> Vec<ToolDef> {
     let Some((client, model)) = crate::search::embedder(app) else {
-        return defs;
+        return by_words(question, defs);
     };
     let embed = async {
         let mut cached = TOOL_VECTORS.lock().await;
@@ -619,9 +726,40 @@ pub async fn pick(app: &AppHandle, question: &str, defs: Vec<ToolDef>) -> Vec<To
         Some((q, cached.as_ref()?.1.clone()))
     };
     let Ok(Some((q, tools))) = tokio::time::timeout(PICK_TIMEOUT, embed).await else {
-        return defs;
+        return by_words(question, defs);
     };
     let names = closest(&q, &tools, PICKED);
+    defs.into_iter()
+        .filter(|d| CORE.contains(&d.name.as_str()) || names.contains(&d.name))
+        .collect()
+}
+
+/// Without an embedding model: the tools whose name or description share
+/// the most words with the question, plus the core ones. Every tool when
+/// nothing matches, so a question is never left without the right one.
+fn by_words(question: &str, defs: Vec<ToolDef>) -> Vec<ToolDef> {
+    let words: Vec<String> = question
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.len() >= 4)
+        .map(str::to_lowercase)
+        .collect();
+    let mut scored: Vec<(usize, String)> = defs
+        .iter()
+        .filter(|d| !CORE.contains(&d.name.as_str()))
+        .map(|d| {
+            let text = format!("{} {}", d.name.replace('_', " "), d.description).to_lowercase();
+            (
+                words.iter().filter(|w| text.contains(w.as_str())).count(),
+                d.name.clone(),
+            )
+        })
+        .filter(|(n, _)| *n > 0)
+        .collect();
+    if scored.is_empty() {
+        return defs;
+    }
+    scored.sort_by_key(|a| std::cmp::Reverse(a.0));
+    let names: Vec<String> = scored.into_iter().take(PICKED).map(|(_, n)| n).collect();
     defs.into_iter()
         .filter(|d| CORE.contains(&d.name.as_str()) || names.contains(&d.name))
         .collect()
@@ -641,8 +779,12 @@ fn closest(q: &[f32], tools: &[(String, Vec<f32>)], n: usize) -> Vec<String> {
     scored.into_iter().take(n).map(|(_, n)| n.clone()).collect()
 }
 
+/// Tools that reach the internet or other apps, left out for "This PC only".
 pub fn is_web(name: &str) -> bool {
-    matches!(name, WEB_SEARCH | READ_PAGE | BROWSER | APP_ACTION | APPS)
+    matches!(
+        name,
+        WEB_SEARCH | READ_PAGE | BROWSER | APP_ACTION | APPS | GITHUB
+    )
 }
 
 /// Runs a local tool, or `None` when `name` is not one of them.
@@ -689,6 +831,24 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
             .await
             .unwrap_or_else(|e| format!("Error: {e}")),
         PC_STATUS => blocking(|| Ok(pc::describe(&pc::read_state()))).await,
+        STORAGE => tokio::task::spawn_blocking(crate::disk::report)
+            .await
+            .unwrap_or_else(|e| format!("Error: {e}")),
+        GIT | GITHUB => {
+            let path = args["path"]
+                .as_str()
+                .map(str::trim)
+                .filter(|p| !p.is_empty())
+                .map(std::path::PathBuf::from)
+                .or_else(|| crate::projects::list(app).into_iter().next());
+            let action = args["action"].as_str().unwrap_or_default().to_owned();
+            let number = args["number"].as_u64();
+            blocking(move || git_tool(&action, path.as_deref(), number)).await
+        }
+        DOCTOR => {
+            let app = args["app"].as_str().unwrap_or_default().trim().to_owned();
+            blocking(move || doctor_report((!app.is_empty()).then_some(app.as_str()))).await
+        }
         PC => {
             let what = args["what"].as_str().unwrap_or_default().to_owned();
             let level = args["level"].as_u64().and_then(|v| u8::try_from(v).ok());
@@ -744,6 +904,79 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
 }
 
 /// Runs PC work off the async runtime; errors read as text for the model.
+/// The git and github tools' reads, as text for the model.
+fn git_tool(
+    action: &str,
+    path: Option<&std::path::Path>,
+    number: Option<u64>,
+) -> Result<String, sidekick_actions::ActionError> {
+    use sidekick_actions::{ActionError, gitflow};
+    let need =
+        || path.ok_or_else(|| ActionError::Invalid("no project found; ask which folder".into()));
+    match action {
+        "changes" => gitflow::changes(need()?),
+        "branch" => gitflow::branch(need()?),
+        "clean" => {
+            let p = need()?;
+            let b = gitflow::merged(p)?;
+            Ok(if b.is_empty() {
+                "No merged branches to clean.".into()
+            } else {
+                format!(
+                    "Merged into main, safe to delete in {}:\n{}",
+                    p.display(),
+                    b.join("\n")
+                )
+            })
+        }
+        "conflicts" => {
+            let c = gitflow::conflicts(need()?)?;
+            Ok(if c.is_empty() {
+                "No merge conflicts.".into()
+            } else {
+                format!("Files with conflicts:\n{}", c.join("\n"))
+            })
+        }
+        "waiting" => gitflow::waiting(),
+        "ci" => gitflow::ci(need()?),
+        "review" => match number {
+            Some(n) => gitflow::pr(need()?, n),
+            None => Err(ActionError::Invalid(
+                "say which pull request (number)".into(),
+            )),
+        },
+        other => Err(ActionError::Invalid(format!("unknown git action {other}"))),
+    }
+}
+
+/// Crash records with their likely causes and fixes, as text for the model.
+fn doctor_report(app: Option<&str>) -> Result<String, sidekick_actions::ActionError> {
+    use sidekick_actions::doctor;
+    let crashes = doctor::crashes(app)?;
+    if crashes.is_empty() {
+        return Ok(match app {
+            Some(a) => format!(
+                "No crash records for {a} in 14 days. Ask what happens when it fails, then web_search that."
+            ),
+            None => "No crash records in 14 days.".into(),
+        });
+    }
+    let mut out = String::new();
+    for c in crashes.iter().take(8) {
+        out.push_str(&format!(
+            "{} {} {} (module {}, code {}) {}\n",
+            c.when, c.kind, c.app, c.module, c.code, c.detail
+        ));
+        for cause in doctor::causes(c) {
+            out.push_str(&format!("  cause: {}\n", cause.what));
+            if let Some((action, args, label)) = cause.fix {
+                out.push_str(&format!("  fix: {label} (action {action}, args {args})\n"));
+            }
+        }
+    }
+    Ok(out)
+}
+
 async fn blocking(
     f: impl FnOnce() -> Result<String, sidekick_actions::ActionError> + Send + 'static,
 ) -> String {
@@ -784,7 +1017,19 @@ fn propose(app: &AppHandle, chat_id: &str, args: &Value) -> String {
     if !ASK_ACTIONS.contains(&action) {
         return format!("Error: {action} is not something you can offer.");
     }
-    let action_args = args["args"].clone();
+    let mut action_args = args["args"].clone();
+    for key in ["path", "to"] {
+        if let Some(p) = action_args[key].as_str() {
+            action_args[key] = json!(normalize_target(p));
+        }
+    }
+    if let Some(paths) = action_args["paths"].as_array_mut() {
+        for p in paths.iter_mut() {
+            if let Some(s) = p.as_str() {
+                *p = json!(normalize_target(s));
+            }
+        }
+    }
     // Models sometimes pass the action's own name ("close_app") as the text.
     let label: String = args["label"]
         .as_str()
@@ -797,8 +1042,17 @@ fn propose(app: &AppHandle, chat_id: &str, args: &Value) -> String {
     if action == "open_path" && action_args["path"].as_str().is_some_and(runs_code) {
         return "Refused: that file runs a program. Tell the user to open it themselves.".into();
     }
-    offer(app, chat_id, action, action_args, &label);
-    format!("Shown to the user as a button \"{label}\". Say in one short sentence what it will do.")
+    let step = args["step"].as_bool().unwrap_or(false);
+    offer_as(app, chat_id, action, action_args, &label, step);
+    if step {
+        format!(
+            "Added to the plan as \"{label}\". Offer the other steps, then say in one sentence what the plan does."
+        )
+    } else {
+        format!(
+            "Shown to the user as a button \"{label}\". Say in one short sentence what it will do."
+        )
+    }
 }
 
 /// Readable button text for an action offered without one.
@@ -827,6 +1081,7 @@ fn button_text(action: &str, args: &Value) -> String {
         "install_deps" => "Install packages",
         "sleep_pc" => "Put the PC to sleep",
         "empty_recycle_bin" => "Empty the Recycle Bin",
+        "trash_download" => "Remove",
         other => return other.replace('_', " "),
     };
     if what.is_empty() {
@@ -866,6 +1121,18 @@ fn save_proposals(app: &AppHandle, all: &mut HashMap<String, Proposed>) {
 }
 
 pub fn offer(app: &AppHandle, chat_id: &str, action: &str, action_args: Value, label: &str) {
+    offer_as(app, chat_id, action, action_args, label, false);
+}
+
+/// Like `offer`; a step shows with the other steps as a plan, run in order.
+fn offer_as(
+    app: &AppHandle,
+    chat_id: &str,
+    action: &str,
+    action_args: Value,
+    label: &str,
+    step: bool,
+) {
     let label: String = label.chars().take(60).collect();
     let id = ulid::Ulid::new().to_string();
     {
@@ -895,6 +1162,7 @@ pub fn offer(app: &AppHandle, chat_id: &str, action: &str, action_args: Value, l
             chat_id,
             id: &id,
             label: &label,
+            step,
         },
     );
 }
@@ -1130,7 +1398,24 @@ async fn find(app: &AppHandle, args: &Value) -> String {
     let roots = crate::find::roots(&home, &code);
     let query = name.clone();
     let found = tokio::task::spawn_blocking(move || {
-        crate::find::find(&roots, &query, folders, crate::find::BUDGET)
+        // Every drive, from the name index; the live walk until it exists
+        // or when it has nothing (a file made since the last build).
+        let indexed: Vec<crate::find::Found> = crate::names::search(&query, 40)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|h| folders.is_none_or(|f| f == h.folder))
+            .take(crate::find::MAX_RESULTS)
+            .map(|h| crate::find::Found {
+                modified: h.path.metadata().and_then(|m| m.modified()).ok(),
+                path: h.path,
+                folder: h.folder,
+            })
+            .collect();
+        if indexed.is_empty() {
+            crate::find::find(&roots, &query, folders, crate::find::BUDGET)
+        } else {
+            indexed
+        }
     })
     .await
     .unwrap_or_default();
@@ -1138,15 +1423,27 @@ async fn find(app: &AppHandle, args: &Value) -> String {
 }
 
 async fn reveal(app: &AppHandle, path: &str) -> String {
-    let path = path.trim();
+    let path = normalize_target(path);
+    let path = path.as_str();
     if path.is_empty() {
         return "Error: no path.".into();
+    }
+    if !Path::new(path).exists() {
+        return missing(path);
     }
     let exec = executor(&app.state::<AppState>());
     match exec.run("reveal_path", &json!({ "path": path })).await {
         Ok(o) => o.message,
         Err(e) => format!("Error: {e}"),
     }
+}
+
+/// A path the model made up or guessed: tell it to look, not the user.
+fn missing(path: &str) -> String {
+    format!(
+        "Error: {path} does not exist. Get real paths from find_files (or storage) and try \
+         again; do not mention this error to the user."
+    )
 }
 
 /// Opens a file, folder or link the user clicked in an answer.
@@ -1176,7 +1473,83 @@ pub fn normalize_target(target: &str) -> String {
     } else {
         t
     };
-    t.replace("%20", " ")
+    expand_home(&expand_vars(&t.replace("%20", " ")))
+}
+
+/// What models write for the user's folders, made real: ~, %VAR%, $VAR,
+/// $(VAR) and ${VAR} (USERPROFILE, HOME, USERNAME, APPDATA...).
+pub fn expand_vars(t: &str) -> String {
+    let var = |name: &str| -> Option<String> {
+        let n = name.trim();
+        std::env::var(n).ok().or_else(|| {
+            (n.eq_ignore_ascii_case("home") || n.eq_ignore_ascii_case("userprofile"))
+                .then(|| dirs::home_dir().map(|h| h.display().to_string()))
+                .flatten()
+        })
+    };
+    let mut out = String::with_capacity(t.len());
+    let mut rest = t;
+    if let Some(r) = rest.strip_prefix('~')
+        && (r.is_empty() || r.starts_with(['/', '\\']))
+        && let Some(home) = dirs::home_dir()
+    {
+        out.push_str(&home.display().to_string());
+        rest = r;
+    }
+    while let Some(i) = rest.find(['%', '$']) {
+        out.push_str(&rest[..i]);
+        let tail = &rest[i..];
+        let (name, used) = if let Some(t) = tail.strip_prefix('%') {
+            t.find('%').map_or((None, 1), |j| (Some(&t[..j]), j + 2))
+        } else if let Some(t) = tail.strip_prefix("$(").or_else(|| tail.strip_prefix("${")) {
+            t.find([')', '}'])
+                .map_or((None, 2), |j| (Some(&t[..j]), j + 3))
+        } else {
+            let t = &tail[1..];
+            let j = t
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .unwrap_or(t.len());
+            ((j > 0).then(|| &t[..j]), j + 1)
+        };
+        match name.and_then(var) {
+            Some(v) => out.push_str(&v),
+            None => out.push_str(&tail[..used.min(tail.len())]),
+        }
+        rest = &tail[used.min(tail.len())..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// A made-up user folder (C:\\Users\\John, C:\\Users\\<username>) becomes the
+/// real one when the made-up one does not exist.
+pub fn expand_home(t: &str) -> String {
+    let b = t.as_bytes();
+    if b.len() < 10 || !b[0].is_ascii_alphabetic() || b[1] != b':' {
+        return t.to_owned();
+    }
+    let rest = &t[3..];
+    let Some(after) = rest
+        .strip_prefix("Users")
+        .or_else(|| rest.strip_prefix("users"))
+    else {
+        return t.to_owned();
+    };
+    let after = after.trim_start_matches(['/', '\\']);
+    let (user, tail) = after.split_once(['/', '\\']).unwrap_or((after, ""));
+    let Some(home) = dirs::home_dir() else {
+        return t.to_owned();
+    };
+    let shared = ["public", "default", "all users"].contains(&user.to_ascii_lowercase().as_str());
+    let users = Path::new(&t[..3]).join("Users");
+    if user.is_empty() || shared || !users.is_dir() || users.join(user).exists() {
+        return t.to_owned();
+    }
+    if tail.is_empty() {
+        home.display().to_string()
+    } else {
+        home.join(tail).display().to_string()
+    }
 }
 
 async fn open(app: &AppHandle, target: &str) -> String {
@@ -1188,7 +1561,11 @@ async fn open(app: &AppHandle, target: &str) -> String {
     if runs_code(target) {
         return "Refused: that file runs a program. Tell the user to open it themselves.".into();
     }
-    let (action, args) = if target.starts_with("http://") || target.starts_with("https://") {
+    let web = target.starts_with("http://") || target.starts_with("https://");
+    if !web && !Path::new(target).exists() {
+        return missing(target);
+    }
+    let (action, args) = if web {
         ("open_url", json!({ "url": target }))
     } else {
         ("open_path", json!({ "path": target }))
@@ -1202,7 +1579,7 @@ async fn open(app: &AppHandle, target: &str) -> String {
 
 /// Files that run something when opened. The model only opens documents,
 /// folders and pages; a program starts only when the user starts it.
-fn runs_code(target: &str) -> bool {
+pub fn runs_code(target: &str) -> bool {
     const RUNS: &[&str] = &[
         "exe", "msi", "bat", "cmd", "com", "ps1", "vbs", "vbe", "js", "jse", "wsf", "wsh", "scr",
         "lnk", "url", "hta", "cpl", "msc", "jar", "reg", "appx", "msix",
@@ -1218,7 +1595,57 @@ fn runs_code(target: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn picks_tools_by_words_without_embeddings() {
+        let all = defs();
+        let picked = by_words("turn on the bluetooth hotspot", all.clone());
+        assert!(picked.len() < all.len());
+        assert!(picked.len() <= CORE.len() + PICKED);
+        assert_eq!(
+            by_words("hi", all.clone()).len(),
+            all.len(),
+            "nothing matches: every tool"
+        );
+    }
+
     use super::*;
+
+    #[test]
+    fn made_up_user_folders_become_the_real_one() {
+        let home = dirs::home_dir().unwrap();
+        let t = expand_home("C:/Users/NoSuchUserX9/Documents");
+        if std::path::Path::new("C:/Users").is_dir() {
+            assert_eq!(t, home.join("Documents").display().to_string());
+        }
+        assert_eq!(
+            expand_home("C:/Users/Public/Documents"),
+            "C:/Users/Public/Documents"
+        );
+        assert_eq!(expand_home("D:/work/x"), "D:/work/x");
+    }
+
+    /// This PC only keeps exactly these: each reads or acts on this PC. A new
+    /// tool that goes online must be added to `is_web`, or this fails.
+    #[test]
+    fn this_pc_only_keeps_tools_that_stay_on_the_pc() {
+        let offline: Vec<String> = defs()
+            .into_iter()
+            .map(|d| d.name)
+            .filter(|n| !is_web(n))
+            .collect();
+        let mut expected = vec![
+            SEARCH, TODAY, RECENT, OPEN, SCREEN, PROPOSE, FIND, REVEAL, PC_STATUS, STORAGE, DOCTOR,
+            GIT, PC, WINDOWS, NOTIFS, DESKTOP, OFFICE, RECIPES, REMEMBER,
+        ];
+        let mut got: Vec<&str> = offline.iter().map(String::as_str).collect();
+        expected.sort_unstable();
+        got.sort_unstable();
+        assert_eq!(got, expected);
+        for web in [WEB_SEARCH, READ_PAGE, BROWSER, APP_ACTION, APPS, GITHUB] {
+            assert!(is_web(web), "{web} goes online");
+        }
+    }
 
     #[test]
     fn every_tool_is_known_and_reads_are_marked() {
@@ -1294,13 +1721,17 @@ mod tests {
 
     #[test]
     fn reads_paths_the_way_models_write_them() {
-        assert_eq!(
-            normalize_target("/C:/Users/talha/AppData"),
-            "C:/Users/talha/AppData"
-        );
+        assert_eq!(normalize_target("/C:/Projects/app"), "C:/Projects/app");
         assert_eq!(normalize_target("file:///C:/a%20b/x.pdf"), "C:/a b/x.pdf");
         assert_eq!(normalize_target("<https://x.dev>"), "https://x.dev");
         assert_eq!(normalize_target("C:\\x"), "C:\\x");
+        // Folders the model writes as variables become the real ones.
+        let home = dirs::home_dir().unwrap().display().to_string();
+        assert_eq!(expand_vars("~/Videos"), format!("{home}/Videos"));
+        assert_eq!(expand_vars("$(USERPROFILE)/Music"), format!("{home}/Music"));
+        assert_eq!(expand_vars("${HOME}/a"), format!("{home}/a"));
+        assert_eq!(expand_vars("100% done $5"), "100% done $5");
+        assert_eq!(expand_vars("%NO_SUCH_VAR_X%/a"), "%NO_SUCH_VAR_X%/a");
     }
 
     #[test]
@@ -1320,7 +1751,7 @@ mod tests {
             [
                 SEARCH, FIND, REVEAL, TODAY, RECENT, SCREEN, PROPOSE, WEB_SEARCH, READ_PAGE,
                 BROWSER, APP_ACTION, DESKTOP, APPS, OFFICE, RECIPES, REMEMBER, NOTIFS, PC_STATUS,
-                PC, WINDOWS, OPEN
+                STORAGE, DOCTOR, GIT, GITHUB, PC, WINDOWS, OPEN
             ]
         );
     }

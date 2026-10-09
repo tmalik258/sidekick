@@ -10,9 +10,10 @@ import { useNow } from "@/lib/hooks";
 import { Markdown } from "@/lib/markdown";
 import { splitOptions } from "@/lib/options";
 import { useReveal } from "@/lib/reveal";
-import { retryLast, useSidekick } from "@/lib/store";
+import { askAgain, askWhenOnline, retryLast, thinkHarder, useSidekick } from "@/lib/store";
 import { type Agents, type AiSettings, PROVIDER_LABELS, type Turn } from "@/lib/types";
 import { AnswerOptions, Proposals, pendingCount } from "./Proposals";
+import { FailureCard } from "./States";
 
 /** The YAML block of an answer, if it has one. */
 export function yamlBlock(text: string): string | null {
@@ -39,24 +40,21 @@ export function AddSkill({ yaml }: { yaml: string }) {
   );
 }
 
-export function Chat({ turns, askedInBar }: { turns: Turn[]; askedInBar: boolean }) {
+export function Chat({ turns }: { turns: Turn[] }) {
   const skillMode = useSidekick((s) => s.chatSkill);
   const ai = useSidekick((s) => s.settings.ai);
   const last = turns.at(-1);
   const options = last?.role === "assistant" && !last.streaming ? splitOptions(last.content).options : [];
-  // The newest question reads in the input line; only earlier ones show here.
-  const lastAsk = turns.findLastIndex((t) => t.role === "user");
   return (
     <div className="ak-body py-0.5">
       {turns.map((t, i) => {
         if (t.role === "user") {
-          if (askedInBar && i === lastAsk) return null;
           return (
             // biome-ignore lint/suspicious/noArrayIndexKey: turns only ever append
             <div key={i} className="ak-um ak-in">
               {t.content}
               {t.screen && (
-                <span className="mt-0.5 block text-[11px] text-[rgb(235_235_245/0.5)]">with screenshot</span>
+                <span className="mt-0.5 block text-[11px] text-[rgb(235_235_245/0.62)]">with screenshot</span>
               )}
             </div>
           );
@@ -65,7 +63,7 @@ export function Chat({ turns, askedInBar }: { turns: Turn[]; askedInBar: boolean
         const steps = t.steps ?? [];
         return (
           // biome-ignore lint/suspicious/noArrayIndexKey: turns only ever append
-          <div key={i} className="group grid gap-2">
+          <div key={i} className="group grid grid-cols-[minmax(0,1fr)] gap-2">
             {steps.length > 0 && !t.streaming && <Steps steps={steps} running={false} tookMs={t.tookMs} />}
             {t.streaming && steps.length > 1 && <Steps steps={steps} running tookMs={t.tookMs} />}
             {t.content ? (
@@ -80,25 +78,34 @@ export function Chat({ turns, askedInBar }: { turns: Turn[]; askedInBar: boolean
                 <span className="shimmer-text text-[rgb(235_235_245/0.6)]">{t.tool}...</span>
               </p>
             )}
-            {t.error && <p className="ak-err">{t.error}</p>}
-            {!t.streaming && t.provider && (
-              <p className="ak-tag mono">
-                <b>
-                  {TAG_NAMES[t.provider] ?? PROVIDER_LABELS[t.provider] ?? t.provider}
-                  {modelOf(ai, t.provider) && ` · ${modelOf(ai, t.provider)}`}
-                </b>
-                {t.firstMs !== undefined && <span>first word {seconds(t.firstMs)}</span>}
-                <span className="ml-auto opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
-                  {isLast && i > 0 && !skillMode && <SaveRecipe prompt={turns[i - 1]?.content ?? ""} />}
-                </span>
-              </p>
+            {t.error && isLast && !t.streaming ? (
+              <FailureCard turn={t} turns={turns} />
+            ) : (
+              t.error && <p className="ak-err">{t.error}</p>
             )}
-            {t.error && !t.streaming && isLast && <Retry />}
+            {!t.streaming && t.provider && !t.error && (
+              <AnswerActions
+                text={splitOptions(t.content).body}
+                keys={isLast}
+                again={isLast && i > 0}
+                think={isLast && i > 0 && t.provider === "local" && !skillMode}
+                recipe={isLast && i > 0 && !skillMode ? (turns[i - 1]?.content ?? "") : ""}
+                detail={[
+                  `${TAG_NAMES[t.provider] ?? PROVIDER_LABELS[t.provider] ?? t.provider}${modelOf(ai, t.provider) ? ` · ${modelOf(ai, t.provider)}` : ""}`,
+                  t.firstMs !== undefined ? `first word ${seconds(t.firstMs)}` : "",
+                  t.cost !== undefined ? (t.cost < 0.01 ? "under 1¢" : `$${t.cost.toFixed(2)}`) : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              />
+            )}
+
+            {isLast && !t.streaming && !t.error && t.offline && <OfflineChips />}
             {skillMode && !t.streaming && yamlBlock(t.content) && <AddSkill yaml={yamlBlock(t.content) ?? ""} />}
             {t.proposals && t.proposals.length > 0 && <Proposals items={t.proposals} keys={isLast} />}
             {isLast && options.length > 0 && <AnswerOptions options={options} start={pendingCount(t.proposals)} />}
             {/* Offered when the local model gives up; Ctrl Enter works when an agent is installed. */}
-            {!t.streaming && isLast && (t.handoff || t.error) && <Handoff turns={turns} reason={t.handoff ?? null} />}
+            {!t.streaming && isLast && t.handoff && !t.error && <Handoff turns={turns} reason={t.handoff} />}
           </div>
         );
       })}
@@ -112,6 +119,10 @@ const TAG_NAMES: Record<string, string> = {
   claude_code: "Claude Code",
   codex: "Codex",
   anthropic: "Claude API",
+  gemini: "Gemini",
+  groq: "Groq",
+  openrouter: "OpenRouter",
+  instant: "Done without AI",
 };
 
 /** The model name under an answer, short: "qwen3:4b", "sonnet". */
@@ -125,7 +136,9 @@ function modelOf(ai: AiSettings, provider: string): string {
           ? ai.codex.model
           : provider === "anthropic"
             ? ai.anthropic.model
-            : "";
+            : provider === "gemini" || provider === "groq" || provider === "openrouter"
+              ? ai[provider].model
+              : "";
   return m.replace(/^claude-/, "").replace(/-\d{8}$/, "");
 }
 
@@ -133,7 +146,7 @@ function modelOf(ai: AiSettings, provider: string): string {
 export function SaveRecipe({ prompt }: { prompt: string }) {
   const [saved, setSaved] = useState<string | null>(null);
   if (!prompt.trim()) return null;
-  if (saved) return <span>{saved}</span>;
+  if (saved) return <span className="max-w-40 truncate whitespace-nowrap">{saved}</span>;
   return (
     <button
       type="button"
@@ -143,9 +156,11 @@ export function SaveRecipe({ prompt }: { prompt: string }) {
           .then(setSaved)
           .catch((e) => setSaved(String(e)))
       }
-      className="chip hover:text-white"
+      aria-label="Save as recipe"
+      title="Save as recipe"
+      className="ak-act chip"
     >
-      Save as recipe
+      <ActIcon d="M7 4h10v16l-5-3.5L7 20z" />
     </button>
   );
 }
@@ -156,7 +171,12 @@ export function Steps({ steps, running, tookMs }: { steps: string[]; running: bo
   const [open, setOpen] = useState(false);
   if (!running && !open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="ak-steps chip text-left hover:text-white">
+      <button
+        type="button"
+        aria-expanded="false"
+        onClick={() => setOpen(true)}
+        className="ak-steps chip text-left hover:text-white"
+      >
         <span className="ok">✓</span>
         {steps.length} {steps.length === 1 ? "step" : "steps"}
         {tookMs !== undefined && ` · ${seconds(tookMs)}`}
@@ -166,20 +186,35 @@ export function Steps({ steps, running, tookMs }: { steps: string[]; running: bo
   // Steps only grow, in order, so their position is a stable id.
   const keyed = steps.map((s, n) => ({ s, id: `${n}:${s}` }));
   return (
-    <ol className="grid gap-0.5 px-1 text-[12px]">
-      {keyed.map(({ s, id }, i) => {
-        const live = running && i === steps.length - 1;
-        return (
-          <li
-            key={id}
-            className={`flex items-center gap-1.5 ${live ? "text-white/80" : "text-[rgb(235_235_245/0.36)]"}`}
-          >
-            <span className={live ? "ak-dot animate-pulse bg-white" : "text-[#30d158]"}>{live ? "" : "✓"}</span>
-            {s}
-          </li>
-        );
-      })}
-    </ol>
+    <div className="grid gap-1">
+      {!running && (
+        <button
+          type="button"
+          aria-expanded="true"
+          onClick={() => setOpen(false)}
+          className="ak-steps chip text-left hover:text-white"
+        >
+          <span className="ok">✓</span>
+          {steps.length} {steps.length === 1 ? "step" : "steps"}
+          {tookMs !== undefined && ` · ${seconds(tookMs)}`}
+          <span className="ml-1 opacity-60">Hide</span>
+        </button>
+      )}
+      <ol className="grid gap-0.5 px-1 text-[12px]">
+        {keyed.map(({ s, id }, i) => {
+          const live = running && i === steps.length - 1;
+          return (
+            <li
+              key={id}
+              className={`flex items-center gap-1.5 ${live ? "text-white/80" : "text-[rgb(235_235_245/0.45)]"}`}
+            >
+              <span className={live ? "ak-dot animate-pulse bg-white" : "text-[#30d158]"}>{live ? "" : "✓"}</span>
+              {s}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }
 
@@ -189,11 +224,131 @@ export function useAgentName(): string | null {
   return data?.handoff ?? null;
 }
 
-/** "Try again" (Alt R) under a failed answer. */
+/** Copy, Retry and Think harder under an answer. Who answered and how fast
+ * sit behind the info button: hover to peek, click to keep them shown, click
+ * again to hide. Keys work on the last answer only. */
+function AnswerActions({
+  text,
+  keys,
+  again,
+  think,
+  recipe,
+  detail,
+}: {
+  text: string;
+  keys: boolean;
+  again: boolean;
+  think: boolean;
+  recipe: string;
+  detail: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const speaking = useSidekick((s) => s.speaking);
+  const read = () => void (speaking ? api.voiceStop() : api.voiceRead(text));
+  const copy = () => {
+    void navigator.clipboard.writeText(text).then(() => setCopied(true));
+  };
+  useEffect(() => {
+    if (!keys) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.shiftKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "c") copy();
+      else if (k === "t" && again) askAgain();
+      else if (k === "k" && think) thinkHarder();
+      else if (k === "l") read();
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+  const key = (k: string) =>
+    keys && (
+      <kbd>
+        <i className="alt-pre">Alt </i>
+        {k}
+      </kbd>
+    );
+  return (
+    <div className="grid gap-1">
+      <div className="ak-acts">
+        <button type="button" onClick={copy} onMouseLeave={() => setCopied(false)} className="ak-act chip">
+          <ActIcon d="M8 8h12v12H8zM16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+          {copied ? "Copied" : "Copy"} {key("C")}
+        </button>
+        <button
+          type="button"
+          onClick={read}
+          aria-label={speaking ? "Stop reading" : "Read aloud"}
+          title={speaking ? "Stop reading" : "Read aloud"}
+          className="ak-act chip"
+        >
+          <ActIcon
+            d={
+              speaking
+                ? "M11 5 6 9H3v6h3l5 4zM16 9l5 6M21 9l-5 6"
+                : "M11 5 6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"
+            }
+          />
+          {key("L")}
+        </button>
+        {again && (
+          <button type="button" onClick={() => askAgain()} className="ak-act chip">
+            <ActIcon d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4.5h-4.5" />
+            Retry {key("T")}
+          </button>
+        )}
+        {think && (
+          <button type="button" onClick={() => thinkHarder()} className="ak-act chip">
+            <ActIcon d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
+            Think harder {key("K")}
+          </button>
+        )}
+        {recipe && (
+          <span className="ak-acts-hover">
+            <SaveRecipe prompt={recipe} />
+          </span>
+        )}
+        {detail && (
+          <span className="ak-info">
+            <button
+              type="button"
+              aria-label="Details"
+              aria-pressed={pinned}
+              onClick={() => setPinned(!pinned)}
+              className="ak-ibtn chip"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true">
+                <g fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6">
+                  <circle cx="12" cy="12" r="8.5" />
+                  <path d="M12 11v5.5M12 7.8v.1" />
+                </g>
+              </svg>
+            </button>
+            {!pinned && <span className="ak-info-tip">{detail}</span>}
+          </span>
+        )}
+      </div>
+      {pinned && <p className="ak-info-line">{detail}</p>}
+    </div>
+  );
+}
+
+function ActIcon({ d }: { d: string }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
+      <path d={d} fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+    </svg>
+  );
+}
+
+/** "Try again" (Alt T) under a failed answer. */
 export function Retry() {
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.altKey && !e.ctrlKey && e.key.toLowerCase() === "r") {
+      if (e.altKey && !e.ctrlKey && e.key.toLowerCase() === "t") {
         e.preventDefault();
         retryLast();
       }
@@ -204,7 +359,9 @@ export function Retry() {
   return (
     <button type="button" onClick={() => retryLast()} className="ak-chip chip justify-self-start">
       Try again
-      <kbd>Alt R</kbd>
+      <kbd>
+        <i className="alt-pre">Alt </i>T
+      </kbd>
     </button>
   );
 }
@@ -221,7 +378,7 @@ export function Handoff({ turns, reason }: { turns: Turn[]; reason: string | nul
       .catch((e) => setState(String(e)));
   };
   if (state === "opened") {
-    return <p className="mt-1.5 text-[12px] text-[rgb(235_235_245/0.55)]">{agent} carries on in the Agents tab.</p>;
+    return <p className="mt-1.5 text-[12px] text-[rgb(235_235_245/0.62)]">{agent} carries on in the Agents tab.</p>;
   }
   return (
     <div className="mt-1.5 flex flex-col gap-1">
@@ -262,7 +419,9 @@ export function LiveStep({ step, since }: { step: string | null; since?: number 
   const elapsed = since ? Math.max(0, now - since) : null;
   return (
     <p className="ak-status" role="status" aria-live="polite">
-      <span className="shimmer-text text-[rgb(235_235_245/0.6)]">{step ? `${step}...` : "Thinking..."}</span>
+      <span className="shimmer-text text-[rgb(235_235_245/0.6)]">
+        {step ? `${step}...` : elapsed !== null && elapsed > 4000 ? "Waking up the AI..." : "Thinking..."}
+      </span>
       {elapsed !== null && (
         <span className="ak-timer mono" aria-hidden="true">
           {(elapsed / 1000).toFixed(1)} s
@@ -279,5 +438,34 @@ export function Thinking() {
       <span className="thinking-dot" />
       <span className="thinking-dot" />
     </span>
+  );
+}
+
+/** Answered offline: ask again once the internet is back. */
+function OfflineChips() {
+  const online = useSidekick((s) => s.online);
+  const waiting = useSidekick((s) => s.askWhenOnline !== null);
+  useEffect(() => {
+    if (online || waiting) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.altKey && !e.ctrlKey && e.key.toLowerCase() === "o") {
+        e.preventDefault();
+        askWhenOnline();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [online, waiting]);
+  if (online) return null;
+  if (waiting) return <p className="ak-done">Sidekick asks again as soon as the internet is back.</p>;
+  return (
+    <div className="ak-chips">
+      <button type="button" onClick={askWhenOnline} className="ak-chip primary chip">
+        Ask when I'm back online{" "}
+        <kbd>
+          <i className="alt-pre">Alt </i>O
+        </kbd>
+      </button>
+    </div>
   );
 }

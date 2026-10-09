@@ -104,6 +104,13 @@ fn run(app: &AppHandle, action: &str) {
                 ..Default::default()
             },
         ),
+        "focus" => {
+            if crate::focus::active() {
+                crate::focus::stop(app);
+            } else {
+                crate::focus::start(app, crate::focus::DEFAULT_MINUTES);
+            }
+        }
         "pause" => {
             let paused = lock(&app.state::<AppState>().settings)
                 .pause

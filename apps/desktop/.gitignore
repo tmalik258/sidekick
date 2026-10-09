@@ -4,3 +4,6 @@ next-env.d.ts
 *.tsbuildinfo
 src-tauri/gen/
 public/sounds/
+visual/
+e2e/
+msedgedriver.exe

@@ -15,28 +15,38 @@ mod decide;
 #[cfg(test)]
 mod decisions_test;
 mod detect;
+mod disk;
 #[cfg(test)]
 mod drift_test;
 mod editors;
+#[cfg(test)]
+mod eval_test;
 mod extension;
 mod fathom;
 mod files;
 mod find;
+mod focus;
+mod freeze;
 mod health;
 mod inbox;
+mod instant;
 mod island;
 mod layout;
 mod learn;
+mod learned;
 mod mascot;
 mod mcp;
 mod mcp_oauth;
 mod meetings;
 mod moments;
+mod names;
 mod net;
 mod office;
 mod pipeline;
 mod privacy;
 mod projects;
+mod promises;
+mod quick;
 mod recipes;
 mod review;
 mod routines;
@@ -107,8 +117,19 @@ pub fn run() {
             setup(app.handle())?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(freeze::timed(tauri::generate_handler![
+            commands::freeze_report,
             commands::app_info,
+            commands::system_look,
+            commands::diagnostics,
+            commands::report_save,
+            commands::cloud_keys,
+            commands::cloud_key_set,
+            commands::cloud_key_clear,
+            commands::openrouter_models,
+            commands::copilot_ask,
+            commands::crash_pending,
+            commands::crash_dismiss,
             commands::settings_get,
             commands::settings_set,
             commands::sensors_pause,
@@ -183,15 +204,25 @@ pub fn run() {
             commands::voice_welcome,
             commands::voice_welcome_step,
             commands::voice_say,
+            commands::voice_read,
             commands::debug_set_state,
             commands::debug_emit_event,
-            commands::debug_demo_flow,
             commands::skills_list,
             commands::skill_set,
             commands::capabilities_get,
             commands::choices_reset,
             commands::routines_today,
             commands::routines_forget,
+            commands::user_guess_name,
+            commands::disk_groups,
+            commands::disk_clean,
+            commands::focus_start,
+            commands::focus_stop,
+            commands::focus_status,
+            commands::learned_list,
+            commands::suggestion_rates,
+            commands::learned_forget,
+            commands::learned_forget_all,
             commands::routines_remove,
             commands::actions_recent,
             commands::reveal_path,
@@ -202,7 +233,13 @@ pub fn run() {
             commands::timing_record,
             commands::timings_recent,
             commands::editors_list,
+            commands::instant_find,
+            commands::app_launch,
+            commands::windows_settings_open,
+            commands::pc_switch,
+            commands::file_open,
             commands::agent_start,
+            commands::agent_usual,
             commands::agent_handoff,
             commands::agent_send,
             commands::agent_stop,
@@ -211,6 +248,13 @@ pub fn run() {
             commands::agent_undo,
             commands::agent_close,
             commands::agent_terminal,
+            commands::agent_resume,
+            commands::agent_memory,
+            commands::agent_rewind_preview,
+            commands::agent_rewind,
+            commands::agent_files,
+            commands::agent_commands,
+            commands::agent_open_editor,
             commands::ask_open,
             commands::ask_ensure_welcome,
             commands::ask_defer_welcome,
@@ -224,7 +268,7 @@ pub fn run() {
             commands::search_reindex,
             commands::open_reference,
             commands::action_undo,
-        ])
+        ]))
         .run(tauri::generate_context!())
         .expect("error while running Sidekick");
 }
@@ -290,7 +334,10 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         hovered: Default::default(),
         last_window: Mutex::default(),
         chats: Mutex::default(),
-        ask_proposals: Mutex::new(ask_tools::load_proposals(&data_dir)),
+        ask_proposals: Mutex::new({
+            sessions::restore(&data_dir);
+            ask_tools::load_proposals(&data_dir)
+        }),
         ai_workdir: data_dir.join("claude-workspace"),
         voice: voice::Voice::new(data_dir.join("voice-models")),
         calendar: calendar.clone(),
@@ -357,6 +404,9 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         mascot::dispatch(app, MascotEvent::Rest);
     }
     log::info!("Sidekick started");
+    // App and file lists for instant results, ready before Ask first opens.
+    instant::refresh(app);
+    freeze::watch(app);
     Ok(())
 }
 
@@ -364,7 +414,7 @@ fn settings_onboarded(app: &tauri::AppHandle) -> bool {
     state::lock(&app.state::<AppState>().settings).onboarded
 }
 
-fn repo_roots(settings: &Settings) -> Vec<std::path::PathBuf> {
+pub(crate) fn repo_roots(settings: &Settings) -> Vec<std::path::PathBuf> {
     if settings.code_folders.is_empty() {
         ReposSensor::default_roots()
     } else {
@@ -392,8 +442,13 @@ pub fn start_features(app: &AppHandle) {
     brief::start(app, state.data_dir.join("last-brief"), roots);
     search::reindex_folders(app);
     search::start_embedder(app);
+    names::start(app);
     updates::start(app);
     files::start_weekly_check(app);
+    promises::start(app);
+    // Picks not made in half a year are forgotten.
+    let _ = state::lock(&state.storage).forget_old_choices(180);
+    learned::start_weekly(app, state.data_dir.join("last-learned-week"));
     layout::start(app);
     mcp::start(app, state.mcp_token.clone());
     meetings::start(app);

@@ -119,6 +119,7 @@ pub async fn follow_up(app: &AppHandle, start: &str, title: &str) -> Result<Stri
             page.push_str(&format!("- {item}\n"));
         }
     }
+    crate::promises::from_meeting(app, &notes.action_items);
     if let Some(url) = &notes.share_url {
         page.push_str(&format!("\nRecording: {url}\n"));
     }

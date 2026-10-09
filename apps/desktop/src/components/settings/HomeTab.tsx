@@ -21,11 +21,11 @@ import {
   type InboxStatus,
   MASCOT_STATES,
   type NotifyLevel,
-  SHORTCUT_ACTIONS,
   type StoredEvent,
 } from "@/lib/types";
 import { SetupChecklist, usePendingByTab } from "../SetupChecklist";
-import { Button, ChipList, Field, FolderPicker, Section, Select, ShortcutRecorder, Slider, Toggle } from "./ui";
+import { Tip } from "../Tip";
+import { Button, ChipList, Field, FolderPicker, Section, Select, Slider, Toggle } from "./ui";
 
 const SOUND_KITS: [string, string][] = [
   [SYNTH_KIT, "Sidekick"],
@@ -62,30 +62,6 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
       </Section>
       <Section title="Today" keywords="time tracking hours apps">
         <TimeToday />
-      </Section>
-      <Section
-        collapsible
-        summary={`Ask with ${settings.paletteHotkey}`}
-        title="Shortcuts"
-        hint="Click one, then press the keys."
-        keywords="hotkey keyboard keys talk accept dismiss screen clipboard pause"
-      >
-        <Field label="Ask">
-          <ShortcutRecorder
-            label="Ask"
-            value={settings.paletteHotkey}
-            onChange={(paletteHotkey) => save({ paletteHotkey })}
-          />
-        </Field>
-        {SHORTCUT_ACTIONS.map((a) => (
-          <Field key={a.id} label={a.label}>
-            <ShortcutRecorder
-              label={a.label}
-              value={settings.shortcuts[a.id] ?? ""}
-              onChange={(keys) => save({ shortcuts: { ...settings.shortcuts, [a.id]: keys } })}
-            />
-          </Field>
-        ))}
       </Section>
       <Section
         collapsible
@@ -183,6 +159,13 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
             <dt className="text-(--muted)">Stored events</dt>
             <dd>{info.eventCount}</dd>
           </dl>
+          <CopyDiagnostics onError={onError} />
+          <Toggle
+            label="Offer to report crashes"
+            hint="After a crash, Sidekick shows the report and lets you send it. It holds the version, Windows version and the error, never your files or chats."
+            checked={settings.crashReports}
+            onChange={(crashReports) => save({ crashReports })}
+          />
           <details className="text-[13px]">
             <summary className="cursor-pointer text-(--muted)">Debug tools</summary>
             <div className="mt-2 flex flex-col gap-2">
@@ -196,9 +179,6 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
               <div className="flex flex-wrap gap-2">
                 <Button small onClick={() => void api.debugEmitEvent()}>
                   Emit test event
-                </Button>
-                <Button small onClick={() => void api.debugDemoFlow()}>
-                  Run demo suggestion
                 </Button>
               </div>
               <RecentEvents />
@@ -221,15 +201,15 @@ function LeftElsewhere({ onOpenTab }: { onOpenTab: (tab: string) => void }) {
     <div className="flex flex-wrap items-center gap-1.5 text-[12.5px]">
       <span className="text-(--muted)">Also to set up:</span>
       {tabs.map((t) => (
-        <button
-          key={t}
-          type="button"
-          onClick={() => onOpenTab(t)}
-          title={pending[t].map((i) => i.title).join(", ")}
-          className="chip rounded-full bg-white/[0.08] px-2.5 py-1 font-medium text-white/90 hover:bg-white/[0.14]"
-        >
-          {TAB_NAMES[t]} ({pending[t].length})
-        </button>
+        <Tip key={t} label={pending[t].map((i) => i.title).join(", ")}>
+          <button
+            type="button"
+            onClick={() => onOpenTab(t)}
+            className="chip rounded-full bg-white/[0.08] px-2.5 py-1 font-medium text-white/90 hover:bg-white/[0.14]"
+          >
+            {TAB_NAMES[t]} ({pending[t].length})
+          </button>
+        </Tip>
       ))}
     </div>
   );
@@ -573,6 +553,49 @@ function UpdateRow({ version, onError }: { version: string; onError: (e: string)
           {state === "checking" ? "Checking..." : "Check now"}
         </Button>
       )}
+    </div>
+  );
+}
+
+/** Version, models, timings and the end of the log, with secrets and your
+ * name taken out, copied for a bug report. */
+const ISSUES = "https://github.com/tmalik258/sidekick/issues/new";
+
+function CopyDiagnostics({ onError }: { onError: (e: string) => void }) {
+  const [copied, setCopied] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
+  // Saves the log to Downloads and opens a new issue; nothing is sent until
+  // you attach the file there yourself.
+  const send = () =>
+    void api
+      .reportSave()
+      .then(async (path) => {
+        setSaved("Saved to Downloads. Read it, then drag it into the issue.");
+        await api.revealPath(path);
+        const body = "What happened:\n\nWhat I expected:\n\n(Drag the Sidekick report file from Downloads here.)\n";
+        await api.aiOpenLink(`${ISSUES}?title=${encodeURIComponent("Bug report")}&body=${encodeURIComponent(body)}`);
+      })
+      .catch((e: unknown) => onError(String(e)));
+  const copy = () =>
+    void api
+      .diagnostics()
+      .then((text) => navigator.clipboard.writeText(text))
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch((e: unknown) => onError(String(e)));
+  return (
+    <div className="flex items-center gap-3">
+      <Button small onClick={copy}>
+        {copied ? "Copied" : "Copy diagnostics"}
+      </Button>
+      <Button small onClick={send}>
+        Send report
+      </Button>
+      <span className="text-[13px] text-(--muted)">
+        {saved ?? "For a bug report. Keys, tokens and your name are taken out."}
+      </span>
     </div>
   );
 }
