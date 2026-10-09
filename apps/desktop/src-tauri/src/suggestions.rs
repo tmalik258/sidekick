@@ -339,7 +339,7 @@ pub fn offer(app: &AppHandle, mut proposal: Proposal) {
 fn why_line(taken: i64, dismissed: i64) -> String {
     let total = taken + dismissed;
     if total == 0 {
-        "New suggestion. Not now tells me to ask less.".into()
+        String::new()
     } else if taken >= dismissed {
         format!("You took this {taken} of {total} times.")
     } else {
@@ -1050,7 +1050,7 @@ mod tests {
 
     #[test]
     fn why_line_reads_the_track_record() {
-        assert!(why_line(0, 0).starts_with("New"));
+        assert_eq!(why_line(0, 0), "");
         assert_eq!(why_line(4, 1), "You took this 4 of 5 times.");
         assert!(why_line(1, 3).starts_with("You skipped this 3 of 4"));
     }

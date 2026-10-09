@@ -63,14 +63,8 @@ pub fn compose(
     let mut lines = Vec::new();
 
     if !routine.is_empty() {
-        parts.push(format!(
-            "Your usual: {}",
-            routine
-                .iter()
-                .map(|(_, label)| label.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
+        // The buttons name the apps, so the line only asks.
+        parts.push("Open your usual apps?".into());
         lines.push("Usual start:".into());
         for (kind, label) in routine {
             lines.push(format!("- {label} ({kind})"));
@@ -579,12 +573,12 @@ mod tests {
             ("site".to_owned(), "github.com".to_owned()),
         ];
         let only = compose(&[], &[], &[], &[], &[], &Waiting::default(), &routine).unwrap();
-        assert_eq!(only.payload["headline"], "Your usual: Code, github.com");
+        assert_eq!(only.payload["headline"], "Open your usual apps?");
         let meetings = [("10:00".to_owned(), "Standup".to_owned())];
         let both = compose(&[], &meetings, &[], &[], &[], &Waiting::default(), &routine).unwrap();
         assert_eq!(
             both.payload["headline"],
-            "1 meeting · Your usual: Code, github.com"
+            "1 meeting · Open your usual apps?"
         );
     }
 

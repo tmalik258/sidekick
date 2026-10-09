@@ -217,11 +217,16 @@ pub fn today(app: &AppHandle) -> Vec<Item> {
         .into_iter()
         .filter(|r| r.day < now)
         .collect();
-    learn(
+    let mut items = learn(
         &rows,
         Local::now().weekday().num_days_from_monday(),
         &memory(app).skips,
-    )
+    );
+    // An app and a site can share a name (Zen the browser, zen.com): one
+    // button each is enough.
+    let mut seen = std::collections::HashSet::new();
+    items.retain(|i| seen.insert(i.label.to_lowercase()));
+    items
 }
 
 /// Fields for the morning card: `routine_count`, `routine_text`,
