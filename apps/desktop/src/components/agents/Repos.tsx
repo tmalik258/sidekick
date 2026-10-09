@@ -48,7 +48,41 @@ function Tags({ r }: { r: RepoRow }) {
   );
 }
 
-export function Repos() {
+// Placeholder rows shaped like the real ones, so the list does not jump
+// when the repos arrive.
+const SKELETON = [
+  [46, 30, 2],
+  [62, 22, 1],
+  [38, 26, 0],
+] as const;
+
+function ReposLoading() {
+  return (
+    <section className="ak-repos" aria-label="Repos" aria-busy="true">
+      <div className="ak-rh">
+        <span className="shimmer-text">Finding your repos and checking GitHub</span>
+      </div>
+      {SKELETON.map(([name, branch, tags], i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: fixed placeholder rows
+        <div key={i} className="ak-rrow ak-rskel" aria-hidden="true" style={{ animationDelay: `${i * 120}ms` }}>
+          <i className="ak-rdot" />
+          <span className="min-w-0">
+            <i className="ak-rbar" style={{ width: `${name}%` }} />
+            <i className="ak-rbar ak-rbar-s" style={{ width: `${branch}%` }} />
+          </span>
+          <span className="ak-rtags">
+            {Array.from({ length: tags }, (_, t) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: fixed placeholder tags
+              <i key={t} className="ak-rbar ak-rbar-t" />
+            ))}
+          </span>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+export function Repos({ maxHeight }: { maxHeight?: number }) {
   const { data, refresh } = useCached<ReposOverview>("repos", () => api.reposOverview(false));
   const [checked, setChecked] = useState(() => Date.now());
   const now = useNow(10_000);
@@ -56,7 +90,7 @@ export function Repos() {
   const [note, setNote] = useState<Record<string, string>>({});
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new answer means a fresh check
   useEffect(() => setChecked(Date.now()), [data]);
-  if (!data) return <p className="ak-rempty">Looking for your repos...</p>;
+  if (!data) return <ReposLoading />;
   if (data.repos.length === 0) {
     return <p className="ak-rempty">No repos yet. Clone one or open a folder with git, and it shows here.</p>;
   }
@@ -90,108 +124,110 @@ export function Repos() {
         </button>
       </div>
       {data.via === "none" && <p className="ak-rnote">Sign in with gh auth login to see PRs and checks.</p>}
-      {data.repos.map((r) => {
-        const expanded = open === r.path;
-        const failing = r.prs.find((p) => p.failing && p.mine) ?? r.prs.find((p) => p.failing);
-        const review = r.prs.find((p) => p.reviewRequested);
-        return (
-          <div key={r.path} className="ak-repo" data-open={expanded}>
-            <button
-              type="button"
-              className="ak-rrow"
-              aria-expanded={expanded}
-              onClick={() => setOpen(expanded ? null : r.path)}
-            >
-              <span
-                className="ak-rdot"
-                style={{ background: CI_COLOR[r.ci] }}
-                role="img"
-                aria-label={CI_LABEL[r.ci]}
-                title={CI_LABEL[r.ci]}
-              />
-              <span className="min-w-0">
-                <span className="ak-rn">{r.name}</span>
-                <span className="ak-rb">⎇ {r.branch}</span>
-              </span>
-              <Tags r={r} />
-            </button>
-            {expanded && (
-              <div className="ak-rx ak-in">
-                {failing?.failing && (
-                  <div className="ak-rci">
-                    <span>
-                      <b>CI failed</b> on PR #{failing.number} · {failing.failing[0]}
-                    </span>
-                    <div className="ak-rbtns">
+      <div className="ak-scroll ak-rlist" style={{ maxHeight: maxHeight ? maxHeight - 48 : undefined }}>
+        {data.repos.map((r) => {
+          const expanded = open === r.path;
+          const failing = r.prs.find((p) => p.failing && p.mine) ?? r.prs.find((p) => p.failing);
+          const review = r.prs.find((p) => p.reviewRequested);
+          return (
+            <div key={r.path} className="ak-repo" data-open={expanded}>
+              <button
+                type="button"
+                className="ak-rrow"
+                aria-expanded={expanded}
+                onClick={() => setOpen(expanded ? null : r.path)}
+              >
+                <span
+                  className="ak-rdot"
+                  style={{ background: CI_COLOR[r.ci] }}
+                  role="img"
+                  aria-label={CI_LABEL[r.ci]}
+                  title={CI_LABEL[r.ci]}
+                />
+                <span className="min-w-0">
+                  <span className="ak-rn">{r.name}</span>
+                  <span className="ak-rb">⎇ {r.branch}</span>
+                </span>
+                <Tags r={r} />
+              </button>
+              {expanded && (
+                <div className="ak-rx ak-in">
+                  {failing?.failing && (
+                    <div className="ak-rci">
+                      <span>
+                        <b>CI failed</b> on PR #{failing.number} · {failing.failing[0]}
+                      </span>
+                      <div className="ak-rbtns">
+                        <button
+                          type="button"
+                          className="ak-chip chip"
+                          onClick={() => void api.aiOpenLink(failing.failing?.[1] ?? failing.url)}
+                        >
+                          Open logs
+                        </button>
+                        <button
+                          type="button"
+                          className="ak-chip primary chip"
+                          onClick={() =>
+                            void startSession(
+                              "claude_code",
+                              r.path,
+                              `The "${failing.failing?.[0]}" check failed on PR #${failing.number} (${failing.branch}). Find out why from ${failing.failing?.[1] ?? failing.url} and fix it.`,
+                              "edit",
+                            ).then(() => setTab("agents"))
+                          }
+                        >
+                          Ask Claude Code to fix
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {review && (
+                    <button type="button" className="ak-rline" onClick={() => void api.aiOpenLink(review.url)}>
+                      Review requested on #{review.number} · {review.title}
+                    </button>
+                  )}
+                  {r.prs
+                    .filter((p) => p !== failing && p !== review)
+                    .map((p) => (
+                      <button
+                        key={p.number}
+                        type="button"
+                        className="ak-rline"
+                        onClick={() => void api.aiOpenLink(p.url)}
+                      >
+                        #{p.number} {p.title}
+                      </button>
+                    ))}
+                  <div className="ak-rbtns">
+                    {r.behind > 0 && (
+                      <button type="button" className="ak-chip chip" onClick={() => pull(r, r.changed > 0)}>
+                        {r.changed > 0 ? "Stash, pull, put back" : "Pull"}
+                      </button>
+                    )}
+                    <button type="button" className="ak-chip chip" onClick={() => void api.repoOpen(r.path)}>
+                      Open in editor
+                    </button>
+                    {r.slug && (
                       <button
                         type="button"
                         className="ak-chip chip"
-                        onClick={() => void api.aiOpenLink(failing.failing?.[1] ?? failing.url)}
+                        onClick={() => void api.aiOpenLink(`https://github.com/${r.slug}`)}
                       >
-                        Open logs
+                        Open on GitHub
                       </button>
-                      <button
-                        type="button"
-                        className="ak-chip primary chip"
-                        onClick={() =>
-                          void startSession(
-                            "claude_code",
-                            r.path,
-                            `The "${failing.failing?.[0]}" check failed on PR #${failing.number} (${failing.branch}). Find out why from ${failing.failing?.[1] ?? failing.url} and fix it.`,
-                            "edit",
-                          ).then(() => setTab("agents"))
-                        }
-                      >
-                        Ask Claude Code to fix
-                      </button>
-                    </div>
+                    )}
+                    <button type="button" className="ak-chip chip" onClick={() => startHere(r.path)}>
+                      Start an agent here
+                    </button>
                   </div>
-                )}
-                {review && (
-                  <button type="button" className="ak-rline" onClick={() => void api.aiOpenLink(review.url)}>
-                    Review requested on #{review.number} · {review.title}
-                  </button>
-                )}
-                {r.prs
-                  .filter((p) => p !== failing && p !== review)
-                  .map((p) => (
-                    <button
-                      key={p.number}
-                      type="button"
-                      className="ak-rline"
-                      onClick={() => void api.aiOpenLink(p.url)}
-                    >
-                      #{p.number} {p.title}
-                    </button>
-                  ))}
-                <div className="ak-rbtns">
-                  {r.behind > 0 && (
-                    <button type="button" className="ak-chip chip" onClick={() => pull(r, r.changed > 0)}>
-                      {r.changed > 0 ? "Stash, pull, put back" : "Pull"}
-                    </button>
-                  )}
-                  <button type="button" className="ak-chip chip" onClick={() => void api.repoOpen(r.path)}>
-                    Open in editor
-                  </button>
-                  {r.slug && (
-                    <button
-                      type="button"
-                      className="ak-chip chip"
-                      onClick={() => void api.aiOpenLink(`https://github.com/${r.slug}`)}
-                    >
-                      Open on GitHub
-                    </button>
-                  )}
-                  <button type="button" className="ak-chip chip" onClick={() => startHere(r.path)}>
-                    Start an agent here
-                  </button>
+                  {note[r.path] && <p className="ak-rnote">{note[r.path]}</p>}
                 </div>
-                {note[r.path] && <p className="ak-rnote">{note[r.path]}</p>}
-              </div>
-            )}
-          </div>
-        );
-      })}
+              )}
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }

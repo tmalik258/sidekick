@@ -298,20 +298,16 @@ export function ChatControls({
                   </span>
                 </div>
                 <fieldset className="ak-tseg" aria-label="How hard it thinks">
+                  <button type="button" aria-pressed={!level} onClick={() => onEffort(null)}>
+                    Default
+                  </button>
                   {LEVELS.map(([v, l]) => (
                     <button key={v} type="button" aria-pressed={effort === v} onClick={() => onEffort(v)}>
                       {l}
                     </button>
                   ))}
                 </fieldset>
-                <p className="ak-pop-m">
-                  {level ? level[2] : "The agent's own default."}
-                  {level && (
-                    <button type="button" className="ak-pop-link" onClick={() => onEffort(null)}>
-                      Use default
-                    </button>
-                  )}
-                </p>
+                <p className="ak-pop-m">{level ? level[2] : "The agent's own default."}</p>
               </>
             )
           }

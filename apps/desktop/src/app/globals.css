@@ -3295,3 +3295,50 @@ button.ak-cchip:hover,
 .ak-stat.hot b {
   color: #ff9f0a;
 }
+
+/* Repos loading: rows shaped like real ones, gently pulsing. */
+.ak-rskel {
+  animation: ak-rskel 1.4s ease-in-out infinite both;
+}
+.ak-rskel .ak-rdot,
+.ak-rbar {
+  background: rgb(255 255 255 / 0.1);
+}
+.ak-rbar {
+  display: block;
+  height: 10px;
+  border-radius: 5px;
+}
+.ak-rbar + .ak-rbar {
+  margin-top: 6px;
+}
+.ak-rbar.ak-rbar-s {
+  height: 8px;
+  background: rgb(255 255 255 / 0.06);
+}
+.ak-rbar.ak-rbar-t {
+  width: 44px;
+  height: 18px;
+  border-radius: 6px;
+}
+@keyframes ak-rskel {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ak-rskel {
+    animation: none;
+  }
+}
+.ak-rlist {
+  display: grid;
+  gap: 2px;
+  -webkit-mask: linear-gradient(#000 calc(100% - 22px), transparent);
+  mask: linear-gradient(#000 calc(100% - 22px), transparent);
+  padding-bottom: 16px;
+}

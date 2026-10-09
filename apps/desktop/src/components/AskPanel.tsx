@@ -786,7 +786,7 @@ export function AskPanel() {
     return (
       <div className="ak">
         {tabs}
-        <Repos />
+        <Repos maxHeight={scrollMax} />
       </div>
     );
   }
