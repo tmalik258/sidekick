@@ -841,7 +841,7 @@ export interface AgentSettings {
 
 /** Ask's instant results: apps and files named like what is typed, no AI. */
 export interface InstantResults {
-  apps: { name: string; id: string; minutes: number }[];
+  apps: { name: string; id: string; minutes: number; browser?: string | null }[];
   files: { name: string; path: string; folder: boolean; place: string }[];
   /** "18% of 2450" worked out, when the text is math. */
   calc?: string | null;

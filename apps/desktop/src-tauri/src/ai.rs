@@ -2,7 +2,7 @@
 //! for ranking suggestions.
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use sidekick_ai::{
@@ -544,6 +544,55 @@ struct Done {
     cost: Option<f64>,
 }
 
+/// Short chat id for terminal lines.
+fn ask_tag(id: &str) -> &str {
+    id.get(..8).unwrap_or(id)
+}
+
+/// What the user sent (all Ask models go through `chat`).
+fn log_ask_user(id: &str, question: &str, attach: &Attach, local_only: bool) {
+    let mut flags = Vec::new();
+    if local_only {
+        flags.push("local_only");
+    }
+    if attach.screen {
+        flags.push("screen");
+    }
+    if attach.voice {
+        flags.push("voice");
+    }
+    if attach.clipboard {
+        flags.push("clipboard");
+    }
+    if attach.window {
+        flags.push("window");
+    }
+    if attach.think {
+        flags.push("think");
+    }
+    if attach.hold {
+        flags.push("hold");
+    }
+    if let Some(p) = attach.prefer.as_deref() {
+        flags.push(p);
+    }
+    let flags = if flags.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", flags.join(" "))
+    };
+    log::info!("ask {} → user{flags}: {question}", ask_tag(id));
+}
+
+/// What came back (provider name, or ERROR).
+fn log_ask_reply(id: &str, provider: &str, started: Instant, text: &str, error: Option<&str>) {
+    let ms = started.elapsed().as_millis();
+    match error {
+        Some(err) => log::info!("ask {} ← {provider} ERROR ({ms} ms): {err}", ask_tag(id)),
+        None => log::info!("ask {} ← {provider} ({ms} ms): {text}", ask_tag(id)),
+    }
+}
+
 /// Starts a streamed chat. Text arrives as `ai://delta`, the end as `ai://done`.
 pub fn chat(
     app: &AppHandle,
@@ -575,22 +624,28 @@ pub fn chat(
     crate::ask_tools::set_current_chat(&id);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        let started = Instant::now();
         let question = messages
             .iter()
             .rev()
             .find(|m| m.role == sidekick_ai::Role::User)
             .map(|m| m.content.clone());
+        if let Some(q) = question.as_deref() {
+            log_ask_user(&id, q, &attach, local_only);
+        }
         let image = if attach.screen {
             match screenshot(&app).await {
                 Ok(png) => Some(png),
                 Err(err) => {
                     lock(&app.state::<AppState>().chats).remove(&id);
+                    let msg = format!("Could not capture the screen: {err}");
+                    log_ask_reply(&id, "screen", started, "", Some(&msg));
                     let _ = app.emit(
                         DONE_EVENT,
                         Done {
                             id,
                             provider: None,
-                            error: Some(format!("Could not capture the screen: {err}")),
+                            error: Some(msg),
                             handoff: None,
                             cost: None,
                         },
@@ -610,7 +665,9 @@ pub fn chat(
         {
             lock(&app.state::<AppState>().chats).remove(&id);
             let speak = attach.speak && crate::voice::begin_answer(&app, &id);
-            send_text(&app, &id, sidekick_calc::format(answer), speak);
+            let text = sidekick_calc::format(answer);
+            log_ask_reply(&id, "instant", started, &text, None);
+            send_text(&app, &id, text, speak);
             if speak {
                 crate::voice::answer_done(&app, &id, None);
             }
@@ -650,6 +707,7 @@ pub fn chat(
                 Ok(message) => (message, None),
                 Err(e) => (String::new(), Some(e.to_string())),
             };
+            log_ask_reply(&id, "instant", started, &text, error.as_deref());
             // Ask closed (said by voice): a compact done pill, not the panel.
             if !text.is_empty() && crate::ask::is_open(&app) {
                 send_text(&app, &id, text, speak);
@@ -767,23 +825,31 @@ pub fn chat(
         }
         let handoff = lock(&handoff).take();
         let done = match result {
-            Ok(answer) => Done {
-                id,
-                handoff: handoff.filter(|_| is_compat(&answer.provider)),
-                cost: cost.filter(|_| answer.provider == "anthropic"),
-                provider: Some(answer.provider),
-                error: None,
-            },
-            Err(err) => Done {
-                id,
-                provider: None,
-                cost: None,
-                handoff,
-                error: Some(match err {
+            Ok(answer) => {
+                log_ask_reply(&id, &answer.provider, started, &answer.text, None);
+                Done {
+                    id,
+                    handoff: handoff.filter(|_| is_compat(&answer.provider)),
+                    cost: cost.filter(|_| answer.provider == "anthropic"),
+                    provider: Some(answer.provider),
+                    error: None,
+                }
+            }
+            Err(err) => {
+                let error = match err {
                     sidekick_ai::AiError::NoProvider => no_provider_hint(local_only),
                     other => other.to_string(),
-                }),
-            },
+                };
+                let who = attach.prefer.as_deref().unwrap_or(if local_only { "local" } else { "router" });
+                log_ask_reply(&id, who, started, "", Some(&error));
+                Done {
+                    id,
+                    provider: None,
+                    cost: None,
+                    handoff,
+                    error: Some(error),
+                }
+            }
         };
         if speak {
             crate::voice::answer_done(&app, &done.id, done.error.as_deref());

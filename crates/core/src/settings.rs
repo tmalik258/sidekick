@@ -242,7 +242,7 @@ impl Default for NotificationSettings {
     }
 }
 
-/// Password managers are ignored from the start.
+/// Password managers and screenshot tools are ignored from the start.
 pub const DEFAULT_DENY_APPS: &[&str] = &[
     "1password.exe",
     "bitwarden.exe",
@@ -252,6 +252,9 @@ pub const DEFAULT_DENY_APPS: &[&str] = &[
     "dashlane.exe",
     "enpass.exe",
     "proton pass.exe",
+    "screensketch.exe",
+    "snippingtool.exe",
+    "screenclippinghost.exe",
 ];
 
 /// Search by meaning with an embedding model on this PC.

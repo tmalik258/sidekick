@@ -38,7 +38,7 @@ import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { useNow } from "@/lib/hooks";
 import { Markdown } from "@/lib/markdown";
-import { setOverlayHit } from "@/lib/store";
+import { setAsk, setOverlayHit } from "@/lib/store";
 import type { AgentInfo, AgentMode, Agents, CursorChat, EditorList } from "@/lib/types";
 import { KeyHint, scrollIfActive } from "../ask/parts";
 import { Icon } from "../Icon";
@@ -63,6 +63,18 @@ export const AGENT_MARKS: Record<string, [string, string]> = {
   cursor: ["R", "#9aa0a6"],
   local: ["L", "#5e9cff"],
 };
+
+const MARK_BY_NAME: Record<string, string> = {
+  "Claude Code": "claude_code",
+  Codex: "codex",
+  "GitHub Copilot": "copilot",
+  Cursor: "cursor",
+  Local: "local",
+};
+
+/** Letter and colour from a session's agent display name. */
+export const markFor = (agent: string): [string, string] =>
+  AGENT_MARKS[MARK_BY_NAME[agent] ?? ""] ?? ["L", "#8e8e93"];
 
 /** Chats started in Cursor, refreshed while Agents is open. */
 function useCursorChats(): CursorChat[] {
@@ -139,7 +151,7 @@ function CursorView({ chat, sessions, cursor }: { chat: CursorChat; sessions: Se
   );
 }
 
-/** Every session as a chip, then Cursor's own chats, then + New. */
+/** Every session as a chip, then Cursor's own chats; + New only when viewing one (to leave it). */
 function SessionChips({
   sessions,
   current,
@@ -152,49 +164,58 @@ function SessionChips({
   if (sessions.length === 0 && cursor.length === 0) return null;
   return (
     <div className="ak-sess">
-      {sessions.map((s) => (
+      {sessions.map((s) => {
+        const color = markFor(s.agent)[1];
+        return (
+          <button
+            key={s.id}
+            type="button"
+            aria-pressed={s.id === current}
+            onClick={() => useAgents.setState({ current: s.id })}
+            className="ak-sp chip max-w-56"
+            style={{ "--sp": color } as CSSProperties}
+          >
+            <span className="ak-sd" data-s={s.status} role="img" aria-label={s.status} />
+            <span className="truncate">{s.title}</span>
+            <em>
+              {s.project}
+              {s.agent === "Codex" ? " · Codex" : ""}
+            </em>
+          </button>
+        );
+      })}
+      {cursor.map((c) => {
+        const color = markFor("Cursor")[1];
+        return (
+          <button
+            key={c.id}
+            type="button"
+            aria-pressed={CURSOR + c.id === current}
+            onClick={() => useAgents.setState({ current: CURSOR + c.id })}
+            className="ak-sp chip max-w-56"
+            style={{ "--sp": color } as CSSProperties}
+          >
+            <span className="ak-sd" data-s={c.status} role="img" aria-label={c.status} />
+            <span className="truncate">{c.title}</span>
+            <em>{c.project ? `${c.project} · Cursor` : "Cursor"}</em>
+          </button>
+        );
+      })}
+      {current !== null && (
         <button
-          key={s.id}
           type="button"
-          aria-pressed={s.id === current}
-          onClick={() => useAgents.setState({ current: s.id })}
-          className="ak-sp chip max-w-56"
+          onClick={() => useAgents.setState({ current: null })}
+          className="ak-sp chip text-[rgb(235_235_245/0.45)]"
         >
-          <span className="ak-sd" data-s={s.status} role="img" aria-label={s.status} />
-          <span className="truncate">{s.title}</span>
-          <em>
-            {s.project}
-            {s.agent === "Codex" ? " · Codex" : ""}
-          </em>
+          + New
         </button>
-      ))}
-      {cursor.map((c) => (
-        <button
-          key={c.id}
-          type="button"
-          aria-pressed={CURSOR + c.id === current}
-          onClick={() => useAgents.setState({ current: CURSOR + c.id })}
-          className="ak-sp chip max-w-56"
-        >
-          <span className="ak-sd" data-s={c.status} role="img" aria-label={c.status} />
-          <span className="truncate">{c.title}</span>
-          <em>{c.project ? `${c.project} · Cursor` : "Cursor"}</em>
-        </button>
-      ))}
-      <button
-        type="button"
-        aria-pressed={false}
-        onClick={() => useAgents.setState({ current: null })}
-        className="ak-sp chip text-[rgb(235_235_245/0.45)]"
-      >
-        + New
-      </button>
+      )}
     </div>
   );
 }
 
 function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorChat[] }) {
-  const { data: agents } = useCached<Agents>("agents", api.agentsStatus);
+  const { data: agents, refreshing, refresh } = useCached<Agents>("agents", api.agentsStatus);
   const { data: projects } = useCached<{ name: string; path: string }[]>("projects", api.projectsList);
   const [agent, setAgent] = useState<string>("");
   const draftPath = useAgents((s) => s.draftPath);
@@ -207,6 +228,10 @@ function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorC
   const [model, setModel] = useState<string | null>(null);
   const [effort, setEffort] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Cache can be stale after install/login; always recheck when starting a session.
+  useEffect(() => {
+    void refresh().catch(() => undefined);
+  }, [refresh]);
   // Ready agents first; the rest stay listed with what they need.
   const all = agents?.list ?? [];
   const choices = [...all.filter(ready), ...all.filter((a) => !ready(a) && a.installed)];
@@ -246,13 +271,10 @@ function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorC
         <span className="ak-title">New session</span>
       </div>
       <SessionChips sessions={sessions} current={null} cursor={cursor} />
-      {agents && choices.length === 0 ? (
-        <div className="ak-group py-1 text-[13px]">
-          <p>Install one coding agent to run it here:</p>
-          {missing.map((a) => (
-            <FixLine key={a.id} agent={a} />
-          ))}
-        </div>
+      {!agents || (refreshing && choices.length === 0) ? (
+        <NewSessionLoading />
+      ) : choices.length === 0 ? (
+        <NoAgentsReady sessions={sessions.length} cursor={cursor.length} missing={missing} />
       ) : (
         <>
           <div className="ak-meta">
@@ -335,6 +357,66 @@ function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorC
         </>
       )}
     </>
+  );
+}
+
+/** No CLI is ready: past sessions can still be opened; setup goes through Settings. */
+function NoAgentsReady({
+  sessions,
+  cursor,
+  missing,
+}: {
+  sessions: number;
+  cursor: number;
+  missing: AgentInfo[];
+}) {
+  const hasPast = sessions > 0 || cursor > 0;
+  return (
+    <div className="ak-group flex flex-col gap-2 py-1 text-[13px]">
+      {hasPast ? (
+        <p>
+          No coding agent is ready on this PC right now. Open a session above to review it, or set one up in Settings.
+        </p>
+      ) : (
+        <p>Add Claude Code, Codex, Copilot, or Cursor to start a session here.</p>
+      )}
+      {missing.slice(0, 3).map((a) => (
+        <FixLine key={a.id} agent={a} />
+      ))}
+      <button
+        type="button"
+        className="ak-chip chip self-start"
+        onClick={() => setAsk({ view: "settings", settingsTab: "ai" })}
+      >
+        Open Settings → AI
+      </button>
+    </div>
+  );
+}
+
+/** Skeleton of the new-session form while agents are detected (same idea as ReposLoading). */
+function NewSessionLoading() {
+  return (
+    <div className="ak-nload" aria-busy="true" aria-label="Finding coding agents">
+      <div className="ak-meta ak-rskel" aria-hidden="true">
+        <i className="ak-npill" style={{ width: 92 }} />
+        <i className="ak-npill" style={{ width: 108 }} />
+        <i className="ak-npill" style={{ width: 74 }} />
+      </div>
+      <div className="ak-composer ak-two ak-rskel" aria-hidden="true">
+        <div className="ak-row">
+          <i className="ak-nbar" />
+        </div>
+        <div className="ak-nctrls">
+          <i className="ak-npill" style={{ width: 58 }} />
+          <i className="ak-npill" style={{ width: 48 }} />
+          <i className="ak-npill" style={{ width: 44 }} />
+        </div>
+      </div>
+      <p className="ak-nload-msg">
+        <span className="shimmer-text">Finding coding agents</span>
+      </p>
+    </div>
   );
 }
 
@@ -699,9 +781,9 @@ function SessionView({
             )}
             {done && (
               <div className="ak-chips">
-                {s.reviewable && (
+                {s.reviewable && s.changes > 0 && (
                   <button type="button" onClick={() => setReviewing(true)} className="ak-chip primary chip">
-                    {s.changes > 0 ? `Review ${s.changes} ${s.changes === 1 ? "change" : "changes"}` : "Review changes"}
+                    Review {s.changes} {s.changes === 1 ? "change" : "changes"}
                     <kbd>
                       <i className="alt-pre">Alt </i>1
                     </kbd>

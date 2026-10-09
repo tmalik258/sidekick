@@ -46,6 +46,9 @@ pub struct AppHit {
     pub id: String,
     /// Minutes in this app over the last week, for ranking and the hint.
     pub minutes: i64,
+    /// Known browser id (`chrome`, `edge`, …): Ask lists a private window row.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub browser: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -164,6 +167,7 @@ pub fn rank_apps(list: &[(String, String)], query: &str, usage: &[(String, i64)]
         .into_iter()
         .take(8)
         .map(|(name, id)| AppHit {
+            browser: sidekick_actions::browser_for_app(name, id).map(str::to_owned),
             name: name.clone(),
             id: id.clone(),
             minutes: minutes(name),

@@ -20,6 +20,7 @@ const CHECK_EVERY: Duration = Duration::from_millis(500);
 const PASSING: &[&str] = &[
     "screenclippinghost.exe",
     "snippingtool.exe",
+    "screensketch.exe",
     "shellexperiencehost.exe",
 ];
 
@@ -199,6 +200,7 @@ mod tests {
     fn screenshot_overlay_is_not_an_app() {
         assert!(passing("ScreenClippingHost.exe"));
         assert!(passing("SnippingTool.exe"));
+        assert!(passing("ScreenSketch.exe"));
         assert!(!passing("notepad.exe"));
     }
 }

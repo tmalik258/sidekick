@@ -170,7 +170,6 @@ export const api = {
   cloudKeySet: (id: CloudId, key: string) => invoke<Settings>("cloud_key_set", { id, key }),
   cloudKeyClear: (id: CloudId) => invoke<Settings>("cloud_key_clear", { id }),
   openrouterModels: () => invoke<RouterModel[]>("openrouter_models"),
-  copilotAsk: (text: string) => invoke<string>("copilot_ask", { text }),
   crashPending: () => invoke<string | null>("crash_pending"),
   crashDismiss: () => invoke<void>("crash_dismiss"),
   settingsGet: () => invoke<Settings>("settings_get"),
@@ -253,8 +252,14 @@ export const api = {
   projectLaunch: (path: string) => invoke<string>("project_launch", { path }),
   editorsList: () => invoke<EditorList>("editors_list"),
   instantFind: (query: string) => invoke<InstantResults>("instant_find", { query }),
-  appLaunch: (id: string) => invoke<void>("app_launch", { id }),
-  fileOpen: (path: string) => invoke<void>("file_open", { path }),
+  appLaunch: (id: string, opts?: { private?: boolean; browser?: string }) =>
+    invoke<void>("app_launch", {
+      id,
+      private: opts?.private ?? null,
+      browser: opts?.browser ?? null,
+    }),
+  fileOpen: (path: string, how?: "editor" | "reveal" | "default") =>
+    invoke<{ opened: boolean }>("file_open", { path, how: how ?? null }),
   aiHandoff: (messages: ChatMessage[], reason: string | null) => invoke<string>("ai_handoff", { messages, reason }),
   aiRunProposal: (id: string) =>
     invoke<{ ok: boolean; message: string; undoId: number | null; path: string | null }>("ai_run_proposal", { id }),

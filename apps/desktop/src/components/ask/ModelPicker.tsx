@@ -5,7 +5,7 @@
 
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { COPILOT_APP, setAskModel, setOverlayHit, useSidekick } from "@/lib/store";
+import { setAskModel, setOverlayHit } from "@/lib/store";
 import { PROVIDER_LABELS, type ProviderStatus } from "@/lib/types";
 import { Icon } from "../Icon";
 import { Tip } from "../Tip";
@@ -55,10 +55,7 @@ export function ModelPicker({
       title: PROVIDER_LABELS[p.id] ?? p.id,
       note: PROVIDER_NOTES[p.id] ?? (p.local ? "On this PC" : ""),
     })),
-    // Copilot for personal accounts has no API: Sidekick hands the question over.
-    { id: COPILOT_APP, title: "Copilot app", note: "Opens Copilot with your question copied" },
   ];
-  const copilot = useSidekick((s) => s.askModel) === COPILOT_APP;
   useEffect(() => {
     if (!open) {
       setAt(null);
@@ -113,7 +110,7 @@ export function ModelPicker({
           className="ak-model chip"
         >
           <span className="ak-dot" aria-hidden="true" />
-          {copilot ? "Copilot" : picked ? (SHORT[shown.id] ?? shown.id) : "Auto"}
+          {picked ? (SHORT[shown.id] ?? shown.id) : "Auto"}
           <Icon name="chevron" size={10} />
         </button>
       </Tip>
@@ -145,7 +142,7 @@ export function ModelPicker({
                 Answers come from
               </p>
               {items.map((it) => {
-                const on = copilot ? it.id === COPILOT_APP : (picked?.id ?? null) === it.id;
+                const on = (picked?.id ?? null) === it.id;
                 return (
                   <button
                     key={it.id ?? "auto"}

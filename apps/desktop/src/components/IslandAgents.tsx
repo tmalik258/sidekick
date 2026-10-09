@@ -175,7 +175,7 @@ export function useAway(): {
         onClick: () => openSession(s.id),
       });
     } else if (endedAt && endedAt > seen && (s.status === "idle" || s.status === "ended")) {
-      if (s.reviewable) reviewId ??= s.id;
+      if (s.reviewable && s.changes > 0) reviewId ??= s.id;
       rows.push({
         key: s.id,
         dot: "done",

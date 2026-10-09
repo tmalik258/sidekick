@@ -148,8 +148,6 @@ export interface AskState {
 }
 
 const MODEL_KEY = "sidekick.askModel";
-/** The Ask model choice that hands questions to the Copilot app. */
-export const COPILOT_APP = "copilot_app";
 
 function savedModel(): string | null {
   try {
@@ -657,22 +655,6 @@ function startEarly(q: string, speak: boolean) {
   void api.aiChat(id, req.history, { ...req.attach, hold: true }, req.localOnly);
 }
 
-/** Puts the question (with the page or app it is about) on the clipboard
- * and opens Copilot; the answer is read there. */
-function askCopilot(q: string) {
-  const { turns, ask, chatPage } = useSidekick.getState();
-  const app = ask?.context.app;
-  const about = chatPage ? `\n\nAbout this page: ${chatPage}` : app ? `\n\n(In ${app})` : "";
-  const reply = (content: string) =>
-    useSidekick.setState({
-      turns: [...useSidekick.getState().turns.slice(0, -1), { role: "assistant", content, provider: "copilot" }],
-    });
-  useSidekick.setState({
-    turns: [...turns, { role: "user", content: q, screen: false }, { role: "assistant", content: "", streaming: true }],
-  });
-  api.copilotAsk(`${q}${about}`).then(reply, (e: unknown) => reply(`Could not open Copilot: ${String(e)}`));
-}
-
 export function sendChat(prompt: string, attach?: ChatAttach): boolean {
   const { turns, chatId } = useSidekick.getState();
   const q = prompt.trim();
@@ -681,11 +663,6 @@ export function sendChat(prompt: string, attach?: ChatAttach): boolean {
     return false;
   }
   if (isThanks(q)) thanked();
-  if (useSidekick.getState().askModel === COPILOT_APP) {
-    dropEarly();
-    askCopilot(q);
-    return true;
-  }
   const adopted = early?.q === q && (attach?.screen ?? false) === false ? early : null;
   if (!adopted) dropEarly();
   early = null;

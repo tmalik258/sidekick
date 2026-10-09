@@ -173,7 +173,17 @@ useAgents.subscribe((st) => {
   }, 400);
 });
 
-export const setTab = (tab: AskTab) => useAgents.setState({ tab });
+/** Opens a tab. Agents defaults to New unless a session is still working or waiting. */
+export function setTab(tab: AskTab) {
+  if (tab !== "agents") {
+    useAgents.setState({ tab });
+    return;
+  }
+  const st = useAgents.getState();
+  const cur = st.sessions.find((s) => s.id === st.current);
+  const live = cur !== undefined && (cur.status === "working" || cur.status === "waiting");
+  useAgents.setState({ tab, current: live ? st.current : null });
+}
 
 /** Opens New in Agents for one project ("Start an agent here"). */
 export const startHere = (path: string, prompt?: string | null) =>

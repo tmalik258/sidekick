@@ -104,6 +104,7 @@ export function Island() {
   const asking = useSidekick((s) => s.ask !== null);
   const askTab = useAgents((s) => s.tab);
   const agentsLayout = useAgents((s) => s.layout);
+  const agentCurrent = useAgents((s) => s.current);
   useEffect(listenToAgents, []);
   const view = useSidekick((s) => s.ask?.view);
   // The Ask panel itself (not Settings or the welcome shown in its place).
@@ -372,7 +373,10 @@ export function Island() {
           ? wideScreen()
             ? BOARD_WIDE_WIDTH
             : BOARD_WIDTH
-          : AGENTS_WIDTH
+          : // New session is sparse: keep Ask's width until a session is open.
+            agentCurrent === null
+            ? ASK_WIDTH
+            : AGENTS_WIDTH
         : ASK_WIDTH
     : expanded
       ? fullVoice

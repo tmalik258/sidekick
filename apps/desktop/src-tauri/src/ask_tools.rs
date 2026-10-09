@@ -1643,6 +1643,91 @@ pub fn runs_code(target: &str) -> bool {
         .is_some_and(|e| RUNS.contains(&e.to_ascii_lowercase().as_str()))
 }
 
+/// Whether Windows (or this OS) has a default app that can open `path`.
+/// No extension, or no ProgId / open command → Ask should ask where to open it.
+pub fn has_file_association(path: &str) -> bool {
+    let p = std::path::Path::new(path);
+    if p.is_dir() {
+        return true;
+    }
+    let Some(ext) = p.extension().and_then(|e| e.to_str()) else {
+        return false;
+    };
+    #[cfg(windows)]
+    {
+        association_prog_id(ext).is_some_and(|id| has_shell_open(&id))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = ext;
+        true
+    }
+}
+
+#[cfg(windows)]
+fn association_prog_id(ext: &str) -> Option<String> {
+    let dot = format!(".{}", ext.to_ascii_lowercase());
+    reg_value(
+        &format!(r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\{dot}\UserChoice"),
+        "ProgId",
+    )
+    .filter(|id| !id.is_empty())
+    .or_else(|| reg_default(&format!(r"HKCR\{dot}")).filter(|id| !id.is_empty()))
+}
+
+#[cfg(windows)]
+fn has_shell_open(prog_id: &str) -> bool {
+    reg_default(&format!(r"HKCR\{prog_id}\shell\open\command"))
+        .is_some_and(|cmd| !cmd.is_empty())
+}
+
+#[cfg(windows)]
+fn reg_value(key: &str, name: &str) -> Option<String> {
+    use std::os::windows::process::CommandExt;
+    let out = std::process::Command::new("reg")
+        .args(["query", key, "/v", name])
+        .creation_flags(0x0800_0000)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let needle = name.to_ascii_lowercase();
+    text.lines()
+        .find(|l| l.to_ascii_lowercase().contains(&needle))
+        .and_then(|l| l.split_whitespace().last())
+        .map(str::to_owned)
+}
+
+#[cfg(windows)]
+fn reg_default(key: &str) -> Option<String> {
+    use std::os::windows::process::CommandExt;
+    let out = std::process::Command::new("reg")
+        .args(["query", key, "/ve"])
+        .creation_flags(0x0800_0000)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    text.lines()
+        .find(|l| l.contains("REG_"))
+        .and_then(|l| {
+            // "    (Default)    REG_SZ    value" — value may be missing.
+            let mut parts = l.split_whitespace();
+            let _ = parts.next()?; // (Default)
+            let _ = parts.next()?; // REG_SZ
+            let rest: Vec<_> = parts.collect();
+            if rest.is_empty() {
+                None
+            } else {
+                Some(rest.join(" "))
+            }
+        })
+}
+
 #[cfg(test)]
 mod no_tools_tests {
     #[test]
@@ -1808,6 +1893,11 @@ mod tests {
         assert!(!runs_code("C:/Users/me/Downloads/invoice.pdf"));
         assert!(!runs_code("C:/Users/me/Projects"));
         assert!(!runs_code("https://example.com/setup.exe"));
+    }
+
+    #[test]
+    fn files_without_an_extension_need_a_choice() {
+        assert!(!super::has_file_association("C:/Users/me/NOTES"));
     }
 
     #[test]

@@ -143,7 +143,6 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
       tools: true,
     },
   ],
-  copilot_ask: () => "Copilot is open with your question copied. Paste it there (Ctrl V).",
   report_save: () => "C:\\Users\\you\\Downloads\\Sidekick report 2026-10-08 0930.txt",
   diagnostics: () => "Sidekick 0.1.0 (browser mock)\nWindows 11 Pro 24H2\nModels in order: local, claude_code",
   crash_pending: () => (previewFlag("crash") ? "2026-10-07T09:12:00Z panicked at src/voice.rs:120:9" : null),
@@ -1039,6 +1038,7 @@ commands.instant_find = (a) => {
   const q = String(a.query ?? "").toLowerCase();
   const apps = [
     { name: "Cursor", id: "cursor", minutes: 840 },
+    { name: "Google Chrome", id: "chrome", minutes: 400, browser: "chrome" },
     { name: "Slack", id: "slack", minutes: 120 },
     { name: "Spotify", id: "spotify", minutes: 0 },
   ].filter((x) => x.name.toLowerCase().includes(q.split(" ")[0] ?? ""));
@@ -1051,7 +1051,14 @@ commands.instant_find = (a) => {
 commands.app_launch = () => undefined;
 commands.windows_settings_open = () => undefined;
 commands.pc_switch = (a) => `${String(a?.name)} ${a?.on ? "on" : "off"}`;
-commands.file_open = () => undefined;
+commands.file_open = (a) => {
+  const how = a.how as string | null | undefined;
+  const path = String(a.path ?? "");
+  if (how === "editor" || how === "reveal" || how === "default") return { opened: true };
+  // No default for source-like names in the browser mock.
+  if (/\.(tsx?|jsx?|rs)$/i.test(path)) return { opened: false };
+  return { opened: true };
+};
 commands.project_launch = () => "Opened sidekick in VS Code and a terminal";
 commands.search_status = () => ({ items: 1240, embedded: 1240, embedError: null });
 commands.calendar_today = () => ({

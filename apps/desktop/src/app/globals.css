@@ -1232,6 +1232,15 @@ body {
   background: var(--chipbg);
   color: var(--i2);
 }
+.ak-keys {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+.ak-keys .ak-key {
+  margin-left: 0;
+}
 .ak-group {
   font-size: 11px;
   color: var(--i3);
@@ -1485,16 +1494,18 @@ body {
   gap: 7px;
   padding: 5px 10px;
   border-radius: 10px;
-  box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.12);
+  /* Agent tint: soft fill + thin border (--sp set per chip). */
+  background: color-mix(in srgb, var(--sp, rgb(255 255 255)) 10%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--sp, rgb(255 255 255)) 42%, transparent);
   font-size: 12.5px;
   white-space: nowrap;
   color: var(--i2);
   flex: none;
 }
 .ak-sp[aria-pressed="true"] {
-  background: var(--chipbg);
+  background: color-mix(in srgb, var(--sp, rgb(255 255 255)) 18%, transparent);
   color: var(--ink);
-  box-shadow: none;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sp, rgb(255 255 255)) 55%, transparent);
 }
 .ak-sp em {
   font-style: normal;
@@ -1716,6 +1727,21 @@ select.ak-mi option {
   color: #30d158;
 }
 /* Review: keep or undo each change, each file, or all */
+.ak-rv-load {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ak-rv-skel-lines {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px 12px;
+}
+.ak-rv-skel-lines .ak-rbar {
+  height: 10px;
+  border-radius: 5px;
+  background: rgb(255 255 255 / 0.07);
+}
 .ak-rv-head {
   display: flex;
   align-items: baseline;
@@ -2270,6 +2296,44 @@ select.ak-mi option {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+/* New session: form-shaped skeleton while agents are found. */
+.ak-nload {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 2px;
+}
+.ak-nload .ak-meta {
+  gap: 6px;
+}
+.ak-npill {
+  display: block;
+  height: 26px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.08);
+  flex: none;
+}
+.ak-nbar {
+  display: block;
+  height: 14px;
+  width: 55%;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.08);
+}
+.ak-nctrls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.ak-nctrls .ak-npill {
+  height: 22px;
+  background: rgb(255 255 255 / 0.06);
+}
+.ak-nload-msg {
+  margin: 0;
+  font-size: 12.5px;
+  letter-spacing: 0.01em;
 }
 .ak-ctl {
   display: flex;

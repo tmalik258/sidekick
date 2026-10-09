@@ -36,6 +36,7 @@ import {
 import {
   type CalendarToday,
   type ChatSummary,
+  type EditorList,
   type InstantResults,
   isPaused,
   type ProviderStatus,
@@ -182,12 +183,16 @@ export function AskPanel() {
   const [chatName, setChatName] = useState<string | null>(null);
   const [hits, setHits] = useState<{ query: string; items: SearchHit[] } | null>(null);
   const [clips, setClips] = useState<{ text: string; ts: string }[] | null>(null);
+  /** File with no default app: Ask shows where to open it. */
+  const [openWhere, setOpenWhere] = useState<{ name: string; path: string } | null>(null);
   const [historyKind, setHistoryKind] = useState<HistoryKind>("all");
   const agentSessions = useAgents((s) => s.sessions);
+  const { data: editors } = useCached<EditorList>("editors", api.editorsList);
+  const editorName = editors?.current ?? editors?.editors[0]?.name ?? null;
   // The highlighted clip, search result, or history row, moved with the arrow keys.
   const [pick, setPick] = useState(0);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new list starts at its top
-  useEffect(() => setPick(0), [clips, hits, tab, historyKind]);
+  useEffect(() => setPick(0), [clips, hits, tab, historyKind, openWhere]);
   // Esc works wherever focus is in Ask (after clicking a button or chip);
   // the input handles it itself.
   const escRef = useRef<() => void>(() => undefined);
@@ -242,6 +247,7 @@ export function AskPanel() {
     markSeen();
     setSelected(0);
     setClips(null);
+    setOpenWhere(null);
     setHandoffError(null);
     void refreshProviders().catch(() => undefined);
     void api.projectsList().then(setProjects);
@@ -319,6 +325,7 @@ export function AskPanel() {
     setSelected(0);
     setClips(null);
     setHits(null);
+    setOpenWhere(null);
     setPick(0);
     nearBottom.current = true;
     requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
@@ -393,10 +400,71 @@ export function AskPanel() {
   const showHits = hits !== null && !asking && !showClips && !inHistory && !slash;
   const showChat = inChat && !showHits && !showClips && !inHistory && !slash && !(asking && !inChat);
 
+  const openFile = (path: string, how?: "editor" | "reveal" | "default") => {
+    void api.fileOpen(path, how).then(
+      (r) => {
+        if (r.opened) {
+          setOpenWhere(null);
+          setText("");
+          void api.askClose();
+          return;
+        }
+        setHandoffError(null);
+        setOpenWhere({ name: path.split(/[\\/]/).pop() ?? path, path });
+        setSelected(0);
+      },
+      (e: unknown) => setHandoffError(String(e)),
+    );
+  };
+
   // The rows under the input: starters, then everything that matches by
   // name (instant, no AI), then Search and Teach at the end.
   const items: Item[] = [];
-  if (!inHistory && !showClips && !showHits && hearing === null) {
+  if (openWhere) {
+    const { name, path } = openWhere;
+    const group = `Open ${name}`;
+    if (editorName) {
+      items.push({
+        id: "open-editor",
+        group,
+        icon: <Icon name="file" size={12} />,
+        label: `Open in ${editorName}`,
+        hint: "No default app",
+        run: () => openFile(path, "editor"),
+        stay: true,
+        keepText: true,
+      });
+    }
+    items.push(
+      {
+        id: "open-reveal",
+        group: editorName ? undefined : group,
+        icon: <Icon name="folder" size={12} />,
+        label: "Show in folder",
+        hint: editorName ? undefined : "No default app",
+        run: () => openFile(path, "reveal"),
+        stay: true,
+        keepText: true,
+      },
+      {
+        id: "open-default",
+        icon: <Icon name="file" size={12} />,
+        label: "Open with…",
+        hint: "Windows",
+        run: () => openFile(path, "default"),
+        stay: true,
+        keepText: true,
+      },
+      {
+        id: "open-back",
+        icon: <span className="text-[11px]">←</span>,
+        label: "Back",
+        run: () => setOpenWhere(null),
+        stay: true,
+        keepText: true,
+      },
+    );
+  } else if (!inHistory && !showClips && !showHits && hearing === null) {
     // Math answers itself: Enter copies the result.
     if (asking && !inChat && instant.calc) {
       const result = instant.calc;
@@ -429,15 +497,39 @@ export function AskPanel() {
         const named = (group: string, list: Command[]) => {
           for (const [n, c] of list.entries()) items.push({ ...commandItem(c), group: n === 0 ? group : undefined });
         };
-        for (const [n, a] of instant.apps.entries()) {
+        // Browsers get a separate private/incognito row (like Zen's Start-menu
+        // "Private Browsing"), not a Ctrl Enter shortcut on the main app.
+        const privateBrowsers = new Set(
+          instant.apps.filter((a) => a.browser && isPrivateAppName(a.name)).map((a) => a.browser as string),
+        );
+        let appsGrouped = false;
+        for (const a of instant.apps) {
+          const browser = a.browser ?? null;
+          const privateNamed = !!(browser && isPrivateAppName(a.name));
           items.push({
             id: `app:${a.id}`,
-            group: n === 0 ? "Apps" : undefined,
+            group: !appsGrouped ? "Apps" : undefined,
             icon: <span className="text-[11px] font-bold text-white">{a.name.slice(0, 1).toUpperCase()}</span>,
             label: a.name,
             hint: a.minutes >= 60 ? `${Math.round(a.minutes / 60)} h this week` : undefined,
-            run: () => void api.appLaunch(a.id),
+            run: () =>
+              void api.appLaunch(
+                a.id,
+                privateNamed && browser ? { private: true, browser } : undefined,
+              ),
           });
+          appsGrouped = true;
+          if (browser && !privateNamed && !privateBrowsers.has(browser)) {
+            privateBrowsers.add(browser);
+            const label = privateBrowserLabel(browser);
+            items.push({
+              id: `app-private:${browser}`,
+              icon: <span className="text-[11px] font-bold text-white">{label.slice(0, 1).toUpperCase()}</span>,
+              label,
+              hint: "Private window",
+              run: () => void api.appLaunch(a.id, { private: true, browser }),
+            });
+          }
         }
         named(
           "Commands",
@@ -463,7 +555,12 @@ export function AskPanel() {
             icon: <Icon name={f.folder ? "folder" : "file"} size={12} />,
             label: f.name,
             hint: f.place,
-            run: () => void api.fileOpen(f.path),
+            // Enter opens the file; Ctrl Enter shows its folder.
+            run: () => openFile(f.path),
+            ctrlRun: () => openFile(f.path, "reveal"),
+            ctrlHint: "folder",
+            stay: true,
+            keepText: true,
           });
         }
         // "turn on hotspot", "hotspot off", "open bluetooth settings".
@@ -592,7 +689,13 @@ export function AskPanel() {
   // A short name ("slack", "settings") picks its match; a question picks Ask.
   // "turn on hotspot" picks the switch itself.
   const switchRow = /\b(on|off|enable|disable)\b/i.test(text) ? items.findIndex((i) => i.id.startsWith("switch:")) : -1;
-  const intentRow = asking && switchRow > 0 ? switchRow : asking && rows > 3 && looksLikeName(text) ? 1 : 0;
+  const intentRow = openWhere
+    ? 0
+    : asking && switchRow > 0
+      ? switchRow
+      : asking && rows > 3 && looksLikeName(text)
+        ? 1
+        : 0;
   const active = Math.min(selected === INTENT_PENDING ? intentRow : selected, Math.max(rows - 1, 0));
   // Models that can answer now; the picked one (if still there) goes first.
   const choices = providers.filter((p) => p.available && (!ask.localOnly || p.local) && p.id !== "semif");
@@ -603,6 +706,7 @@ export function AskPanel() {
     setTab(next);
     setText("");
     setPick(0);
+    setOpenWhere(null);
     if (next === "history") {
       setClips(null);
       setHits(null);
@@ -667,6 +771,10 @@ export function AskPanel() {
       else void api.askClose();
       return;
     }
+    if (openWhere) {
+      setOpenWhere(null);
+      return;
+    }
     if (inHistory || slash) {
       if (inHistory) setTab("ask");
       setText("");
@@ -701,8 +809,13 @@ export function AskPanel() {
       e.preventDefault();
       setSelected((active - 1 + rows) % rows);
     } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-      // Ctrl Enter: this conversation (and what is typed) goes to the coding agent.
       e.preventDefault();
+      const item = rows ? items[active] : undefined;
+      if (item?.ctrlRun) {
+        item.ctrlRun();
+        return;
+      }
+      // Otherwise: this conversation (and what is typed) goes to the coding agent.
       if (!agent) return;
       const messages = turns
         .filter((t) => !t.error && t.content.trim())
@@ -826,12 +939,28 @@ export function AskPanel() {
     ) : alt ? (
       <div className="ak-foot">
         <span>
-          <kbd>Enter</kbd> {asking ? "ask" : showClips ? "copy" : showHits || inHistory ? "open" : "run"}
+          <kbd>Enter</kbd>{" "}
+          {items[active]?.ctrlRun
+            ? "open"
+            : asking
+              ? "ask"
+              : showClips
+                ? "copy"
+                : showHits || inHistory
+                  ? "open"
+                  : "run"}
         </span>
-        {agent && (asking || inChat) && (
+        {items[active]?.ctrlRun ? (
           <span>
-            <kbd>Ctrl Enter</kbd> continue in {agent}
+            <kbd>Ctrl Enter</kbd> {items[active]?.ctrlHint ?? "open"}
           </span>
+        ) : (
+          agent &&
+          (asking || inChat) && (
+            <span>
+              <kbd>Ctrl Enter</kbd> continue in {agent}
+            </span>
+          )
         )}
         <span>
           <kbd>Ctrl Tab</kbd> switch tab
@@ -859,6 +988,7 @@ export function AskPanel() {
           value={text}
           onChange={(e) => {
             setText(e.target.value);
+            setOpenWhere(null);
             setSelected(INTENT_PENDING);
             setPick(0);
           }}
@@ -1010,7 +1140,16 @@ export function AskPanel() {
                   {it.key ? (
                     <kbd className="ak-key">{it.key}</kbd>
                   ) : (
-                    asking && active === i && <kbd className="ak-key">Enter</kbd>
+                    asking &&
+                    active === i &&
+                    (it.ctrlRun ? (
+                      <span className="ak-keys">
+                        <kbd className="ak-key">Enter</kbd>
+                        <kbd className="ak-key">Ctrl Enter</kbd>
+                      </span>
+                    ) : (
+                      <kbd className="ak-key">Enter</kbd>
+                    ))
                   )}
                 </button>
               </li>
@@ -1037,6 +1176,10 @@ interface Item {
   /** A key shown at the end ("/"). */
   key?: string;
   run: () => void;
+  /** Ctrl Enter: e.g. show a file's folder, or browser incognito. */
+  ctrlRun?: () => void;
+  /** Footer label for Ctrl Enter ("folder", "incognito"). */
+  ctrlHint?: string;
   /** Keep Ask open after running. */
   stay?: boolean;
   /** The row clears the input itself (or keeps it). */
@@ -1178,6 +1321,29 @@ function IconButton({
 
 /** Selected row not chosen yet: the panel picks by what was typed. */
 const INTENT_PENDING = -1;
+
+/** Start-menu private browsing shortcuts (Zen ships one; we synthesize the rest). */
+function isPrivateAppName(name: string): boolean {
+  return /\b(private|incognito|inprivate)\b/i.test(name);
+}
+
+/** Label for a synthesized private browser row. */
+function privateBrowserLabel(browser: string): string {
+  switch (browser) {
+    case "edge":
+      return "Edge InPrivate";
+    case "firefox":
+      return "Firefox Private";
+    case "zen":
+      return "Zen Private";
+    case "brave":
+      return "Brave Incognito";
+    case "samsung":
+      return "Samsung Internet Private";
+    default:
+      return "Chrome Incognito";
+  }
+}
 
 /** A short name ("slack", "dark mode", "settings"), not a question. */
 export function looksLikeName(text: string): boolean {

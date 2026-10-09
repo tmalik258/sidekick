@@ -22,7 +22,7 @@ pub mod uia;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-pub use capabilities::{Browser, Capabilities, default_browser};
+pub use capabilities::{Browser, Capabilities, browser_for_app, default_browser};
 pub use convert::TextBox;
 pub use editors::Editor;
 use serde::Serialize;
@@ -136,12 +136,6 @@ impl Executor {
                 let path = existing_path(args)?;
                 system::reveal(&path)?;
                 Ok(Outcome::msg("Shown in folder"))
-            }
-            "ask_copilot" => {
-                let text = arg(args, "text")?.to_owned();
-                tokio::task::spawn_blocking(move || system::ask_copilot(&text))
-                    .await
-                    .map_err(fail)?
             }
             "copy_text" => {
                 let text = arg(args, "text")?;
@@ -404,6 +398,18 @@ impl Executor {
             )),
             other => Err(ActionError::Unknown(other.to_string())),
         }
+    }
+
+    /// Opens a browser in a private/incognito window (no URL).
+    pub fn open_browser_private(&self, id: &str) -> Result<Outcome, ActionError> {
+        let b = self
+            .caps
+            .browser(id)
+            .ok_or_else(|| ActionError::Failed(format!("{id} is not installed")))?;
+        let mut cmd = std::process::Command::new(&b.path);
+        cmd.arg(b.private_flag());
+        system::spawn_detached(cmd)?;
+        Ok(Outcome::msg(format!("Opened {} (private)", b.label())))
     }
 
     fn open_url(

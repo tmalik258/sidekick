@@ -467,9 +467,23 @@ pub async fn instant_find(app: AppHandle, query: String) -> crate::instant::Resu
         .unwrap_or_default()
 }
 
-/// Starts an app picked from Ask's instant results.
+/// Starts an app picked from Ask's instant results. `private` + `browser`
+/// opens that browser in an incognito/private window instead.
 #[tauri::command]
-pub async fn app_launch(id: String) -> CmdResult<()> {
+pub async fn app_launch(
+    app: AppHandle,
+    id: String,
+    private: Option<bool>,
+    browser: Option<String>,
+) -> CmdResult<()> {
+    if private == Some(true) {
+        let browser = browser.ok_or("That app is not a browser.")?;
+        return crate::state::executor(&app.state::<AppState>())
+            .open_browser_private(&browser)
+            .map(|_| ())
+            .map_err(|e| e.to_string());
+    }
+    let _ = app;
     tauri::async_runtime::spawn_blocking(move || sidekick_actions::pc::launch_app_id(&id))
         .await
         .map_err(|e| e.to_string())?
@@ -516,19 +530,47 @@ pub async fn pc_switch(name: String, on: bool) -> CmdResult<String> {
         .map_err(|e| e.to_string())
 }
 
-/// Opens a file or folder picked from Ask's instant results. Programs and
-/// scripts are shown in their folder instead of run.
+/// Result of opening a file from Ask. When `opened` is false, there is no
+/// default app — the UI should ask where to open it.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileOpenResult {
+    pub opened: bool,
+}
+
+/// Opens a file or folder from Ask. `how`: omit to open when a default app
+/// exists (otherwise `opened: false`); `"editor"`, `"reveal"`, or `"default"`
+/// to force that path. Programs/scripts are shown in their folder instead of run.
 #[tauri::command]
-pub async fn file_open(app: AppHandle, path: String) -> CmdResult<()> {
-    let action = if crate::ask_tools::runs_code(&path) {
-        "reveal_path"
-    } else {
-        "open_path"
+pub async fn file_open(
+    app: AppHandle,
+    path: String,
+    how: Option<String>,
+) -> CmdResult<FileOpenResult> {
+    let exec = crate::state::executor(&app.state::<AppState>());
+    let action = match how.as_deref() {
+        Some("editor") => "open_in_editor",
+        Some("reveal") => "reveal_path",
+        Some("default") => {
+            if crate::ask_tools::runs_code(&path) {
+                "reveal_path"
+            } else {
+                "open_path"
+            }
+        }
+        _ => {
+            if crate::ask_tools::runs_code(&path) {
+                "reveal_path"
+            } else if crate::ask_tools::has_file_association(&path) {
+                "open_path"
+            } else {
+                return Ok(FileOpenResult { opened: false });
+            }
+        }
     };
-    crate::state::executor(&app.state::<AppState>())
-        .run(action, &serde_json::json!({ "path": path }))
+    exec.run(action, &serde_json::json!({ "path": path }))
         .await
-        .map(|_| ())
+        .map(|_| FileOpenResult { opened: true })
         .map_err(|e| e.to_string())
 }
 

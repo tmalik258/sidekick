@@ -20,16 +20,8 @@ import {
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import type { Agents } from "@/lib/types";
-import { AGENT_MARKS, NameField, STEP_TAG } from "./AgentsTab";
+import { AGENT_MARKS, markFor, NameField, STEP_TAG } from "./AgentsTab";
 import { ChatControls } from "./Controls";
-
-const MARK_BY_NAME: Record<string, string> = {
-  "Claude Code": "claude_code",
-  Codex: "codex",
-  "GitHub Copilot": "copilot",
-  Cursor: "cursor",
-  Local: "local",
-};
 
 function state(s: Session): [string, string] {
   if (s.question) return ["ask", "Needs you"];
@@ -64,8 +56,6 @@ function lastSay(s: Session): string | null {
   }
   return null;
 }
-
-export const markFor = (agent: string): [string, string] => AGENT_MARKS[MARK_BY_NAME[agent] ?? ""] ?? ["L", "#8e8e93"];
 
 function Tile({ s, n, focused }: { s: Session; n: number; focused: boolean }) {
   const [st, label] = state(s);
