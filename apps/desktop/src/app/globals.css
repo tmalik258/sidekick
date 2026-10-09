@@ -3342,3 +3342,21 @@ button.ak-cchip:hover,
   mask: linear-gradient(#000 calc(100% - 22px), transparent);
   padding-bottom: 16px;
 }
+.ak-tabs-end {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.ak-tabs-end .ak-lay {
+  margin-left: 0;
+  margin-right: 6px;
+}
+.ak-tab.ak-tabi {
+  padding: 4px 7px;
+}
+/* Settings under the tab row: the search field sits beside the mascot, like Ask's input. */
+.ak .island-settings > div:first-child {
+  padding-left: 44px;
+  padding-top: 6px;
+}

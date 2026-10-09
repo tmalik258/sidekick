@@ -219,10 +219,10 @@ try {
       3000,
     );
     await shot("agents");
-    await clickText("History", ".ak-tabs");
+    await page.click('.ak-tabs [aria-label="History"]');
     await waitFor(
       "the History tab",
-      () => /History/.test(document.querySelector(".ak-tabs [aria-selected=true]")?.textContent ?? ""),
+      () => document.querySelector(".ak-tabs [aria-selected=true]")?.getAttribute("aria-label") === "History",
       3000,
     );
     const overflow = await page.evaluate(() => {

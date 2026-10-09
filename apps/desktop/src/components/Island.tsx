@@ -107,7 +107,7 @@ export function Island() {
   useEffect(listenToAgents, []);
   const view = useSidekick((s) => s.ask?.view);
   // The Ask panel itself (not Settings or the welcome shown in its place).
-  const askPanel = asking && view !== "settings" && view !== "welcome";
+  const askPanel = asking && view !== "welcome";
   const chatting = useSidekick((s) => s.chatId !== null);
   const voiceStatus = useSidekick((s) => s.voiceStatus);
   const online = useSidekick((s) => s.online);

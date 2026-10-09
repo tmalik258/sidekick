@@ -53,6 +53,7 @@ import { FirstRun } from "./ask/States";
 import { Timings } from "./ask/Timings";
 import { Icon } from "./Icon";
 import { markSeen } from "./IslandAgents";
+import { nextTab, type PanelTab, PanelTabs } from "./PanelTabs";
 import { SETTINGS_TABS } from "./SettingsPanel";
 import { SetupSpinner } from "./SetupChecklistRow";
 import { Tip } from "./Tip";
@@ -604,17 +605,14 @@ export function AskPanel() {
     }
   };
 
+  const pickTab = (next: PanelTab) => (next === "settings" ? setAsk({ view: "settings" }) : goTab(next));
+
   altKeys.current = {
     s: toggleSpeak,
     v: () => (hearing !== null ? stopListening() : voiceReady && !streaming && startListening()),
     p: () => setAsk({ localOnly: !ask.localOnly }),
     h: () => !streaming && goTab(tab === "history" ? "ask" : "history"),
-    tab: (back) => {
-      const order: AskTab[] = coder ? ["ask", "agents", "repos", "history"] : ["ask", "history"];
-      const i = order.indexOf(tab);
-      const next = back ? order[(i - 1 + order.length) % order.length] : order[(i + 1) % order.length];
-      goTab(next);
-    },
+    tab: (back) => pickTab(nextTab(tab, coder, !!back)),
     m: () => {
       if (choices.length < 2) return;
       // Auto, then each model that can answer now.
@@ -719,67 +717,58 @@ export function AskPanel() {
   };
 
   const tabs = (
-    <div className="ak-tabs" role="tablist">
-      {(
-        [
-          ["ask", "Ask", null],
-          ["agents", "Agents", working],
-          ["repos", "Repos", null],
-          ["history", "History", "Alt H"],
-        ] as const
-      )
-        // Not a coder: no Agents or Repos.
-        .filter(([id]) => coder || (id !== "agents" && id !== "repos"))
-        .map(([id, label, extra]) => (
-          <span key={id} className="relative">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === id}
-              onClick={() => goTab(id)}
-              className="ak-tab chip"
-            >
-              {label}
-              {typeof extra === "number" && extra > 0 && <i className="n not-italic">{extra}</i>}
-            </button>
-            {typeof extra === "string" && <KeyHint show={alt}>{extra}</KeyHint>}
-          </span>
-        ))}
-      {tab === "agents" && (
-        <fieldset aria-label="Layout" className="ak-lay ak-seg border-0">
-          {(
-            [
-              ["one", "One"],
-              ["board", "Board"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={layout === id}
-              aria-label={label}
-              title={label}
-              onClick={() => setLayout(id)}
-              className="chip"
-            >
-              <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5">
-                {id === "one" ? (
-                  <rect x="3" y="3" width="10" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.4" />
-                ) : (
-                  <path
-                    d="M3 3h4v4H3zM9 3h4v4H9zM3 9h4v4H3zM9 9h4v4H9z"
-                    fill="currentColor"
-                    stroke="currentColor"
-                    strokeWidth="0.6"
-                    strokeLinejoin="round"
-                  />
-                )}
-              </svg>
-            </button>
-          ))}
-        </fieldset>
-      )}
-    </div>
+    <PanelTabs
+      current={tab}
+      onPick={pickTab}
+      coder={coder}
+      working={working}
+      alt={alt}
+      extra={
+        tab === "agents" && (
+          <fieldset aria-label="Layout" className="ak-lay ak-seg border-0">
+            {(
+              [
+                ["one", "One"],
+                ["board", "Board"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={layout === id}
+                aria-label={label}
+                title={label}
+                onClick={() => setLayout(id)}
+                className="chip"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5">
+                  {id === "one" ? (
+                    <rect
+                      x="3"
+                      y="3"
+                      width="10"
+                      height="10"
+                      rx="2"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                    />
+                  ) : (
+                    <path
+                      d="M3 3h4v4H3zM9 3h4v4H9zM3 9h4v4H3zM9 9h4v4H9z"
+                      fill="currentColor"
+                      stroke="currentColor"
+                      strokeWidth="0.6"
+                      strokeLinejoin="round"
+                    />
+                  )}
+                </svg>
+              </button>
+            ))}
+          </fieldset>
+        )
+      }
+    />
   );
 
   if (tab === "repos" && coder) {
