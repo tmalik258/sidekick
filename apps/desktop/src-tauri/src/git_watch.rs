@@ -204,7 +204,7 @@ pub fn base_moved(repo: &Path) -> Option<Value> {
 }
 
 /// Fetches one repo and says so when it has new commits not told about yet.
-fn fetch_and_tell(app: &AppHandle, repo: &Path) {
+pub fn fetch_and_tell(app: &AppHandle, repo: &Path) {
     sidekick_sensors::repos::fetch(repo, FETCH_TIMEOUT);
     with(|w| w.fetched.insert(repo.to_owned(), Instant::now()));
     if let Some(payload) = base_moved(repo) {
@@ -227,6 +227,7 @@ fn fetch_and_tell(app: &AppHandle, repo: &Path) {
         w.told.insert(repo.to_owned(), upstream.clone()).as_deref() != Some(upstream.as_str())
     });
     if new {
+        log::info!("new commits upstream in {}", repo.display());
         app.state::<AppState>()
             .bus
             .publish(Event::new(INCOMING, ReposSensor::ID, payload));

@@ -118,6 +118,7 @@ export function Repos({ maxHeight }: { maxHeight?: number }) {
         <button
           type="button"
           className="ak-rcheck"
+          title="Check now: fetch every repo and look for new commits and PRs"
           onClick={() => void api.reposOverview(true).then(() => refresh?.())}
         >
           checked {since(checked, now)}

@@ -62,11 +62,17 @@ pub fn project_from_title(exe: &str, title: &str) -> String {
         return String::new();
     }
     let parts: Vec<&str> = title.split(" - ").map(str::trim).collect();
-    match parts.len() {
-        0 | 1 => String::new(),
-        2 => parts[0].trim_start_matches('●').trim().to_owned(),
-        n => parts[n - 2].trim_start_matches('●').trim().to_owned(),
-    }
+    let name = match parts.len() {
+        0 | 1 => return String::new(),
+        2 => parts[0],
+        n => parts[n - 2],
+    };
+    // "sidekick [WSL: Ubuntu]" or "sidekick (Workspace)" is still "sidekick".
+    let name = name.trim_start_matches('●').trim();
+    name.split([' ', '\t'])
+        .take_while(|w| !w.starts_with('[') && !w.starts_with('('))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn today() -> String {
@@ -465,6 +471,10 @@ mod tests {
         );
         assert_eq!(
             project_from_title("code.exe", "sidekick - Visual Studio Code"),
+            "sidekick"
+        );
+        assert_eq!(
+            project_from_title("cursor.exe", "toasts.rs - sidekick [WSL: Ubuntu] - Cursor"),
             "sidekick"
         );
         assert_eq!(project_from_title("chrome.exe", "Docs - Google Chrome"), "");

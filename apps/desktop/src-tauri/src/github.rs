@@ -308,6 +308,14 @@ pub async fn overview(app: &AppHandle, fresh: bool) -> Overview {
         let me = me.clone();
         let app = app.clone();
         tasks.push(tauri::async_runtime::spawn(async move {
+            // "checked" asks for news: fetch first, and say so if it is new.
+            if fresh {
+                let (app, path) = (app.clone(), path.clone());
+                let _ = tauri::async_runtime::spawn_blocking(move || {
+                    crate::git_watch::fetch_and_tell(&app, &path);
+                })
+                .await;
+            }
             let slug = sidekick_sensors::repos::github_url(&path)
                 .map(|u| u.trim_start_matches("https://github.com/").to_owned());
             let prs = match (&slug, via) {
