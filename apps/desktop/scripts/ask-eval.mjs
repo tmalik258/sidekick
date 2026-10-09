@@ -28,6 +28,17 @@ const cases = JSON.parse(readFileSync(join(import.meta.dirname, "ask-cases.json"
 mkdirSync(OUT, { recursive: true });
 
 console.log(`Starting ${APP}`);
+// A build older than the last pull tests old code.
+try {
+  const { statSync } = await import("node:fs");
+  const { execSync } = await import("node:child_process");
+  const head = Number(execSync("git log -1 --format=%ct").toString().trim()) * 1000;
+  if (statSync(APP).mtimeMs < head) {
+    console.error("The test build is older than your last pull. Rebuild it first:");
+    console.error("  pnpm --filter desktop tauri build --debug --no-bundle --config src-tauri/tauri.e2e.conf.json");
+    process.exit(1);
+  }
+} catch {}
 const app = spawn(APP, [], {
   env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${PORT}` },
   stdio: "ignore",
@@ -92,8 +103,10 @@ try {
   await invoke("ask_open", { prompt: null, ask: false });
   for (const c of cases) {
     // A fresh chat per question: the + button, then wait for an empty chat.
-    await invoke("ask_open", { prompt: null, ask: false });
-    await page.waitForSelector(".ak-q", { timeout: 5000 });
+    for (let i = 0; i < 3; i++) {
+      await invoke("ask_open", { prompt: null, ask: false });
+      if (await page.waitForSelector(".ak-q", { timeout: 5000 }).catch(() => null)) break;
+    }
     const plus = page.locator('button[aria-label="New chat (Esc)"]').first();
     if (await plus.isVisible().catch(() => false)) await plus.click();
     await page
@@ -111,7 +124,11 @@ try {
     }
     if (!done) {
       // Stop it so the next question does not queue behind it.
-      await page.keyboard.press("Escape").catch(() => undefined);
+      await page
+        .locator("button", { hasText: "Stop" })
+        .first()
+        .click({ timeout: 2000 })
+        .catch(() => undefined);
       await sleep(500);
     }
     const ms = Date.now() - started;
