@@ -445,7 +445,11 @@ function pickerNote(a: AgentInfo): string {
 }
 
 function readyNote(a: AgentInfo): string {
-  if (!a.installed) return "Not installed";
+  if (!a.installed) {
+    // Cursor app on PATH is not the agent CLI Sidekick runs.
+    if (a.id === "cursor") return "Needs agent CLI";
+    return "Not installed";
+  }
   if (a.local) return "On this PC. Slower, best for small, clear changes.";
   if (a.signedIn === false) return "Cloud · sign in needed";
   if (a.limited) return "Cloud · out of usage for now";

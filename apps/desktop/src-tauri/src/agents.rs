@@ -171,7 +171,7 @@ impl Agent {
             Agent::ClaudeCode => "npm install -g @anthropic-ai/claude-code",
             Agent::Codex => "npm install -g @openai/codex",
             Agent::Copilot => "npm install -g @github/copilot",
-            Agent::Cursor => "Install the Cursor CLI from cursor.com/cli",
+            Agent::Cursor => "Install the agent CLI from cursor.com/cli (Sidekick needs cursor-agent, not only the Cursor app)",
             Agent::Local => "Install Ollama from ollama.com",
         }
     }
@@ -223,8 +223,15 @@ impl Agent {
         let installed = self.resolve(s).is_some();
         let signed_in = if installed { self.signed_in() } else { None };
         let limited = self == Agent::ClaudeCode && sidekick_ai::claude_code_limited();
+        // Cursor the app ≠ cursor-agent. When the IDE is here but the agent
+        // CLI is not, say that clearly so the picker does not look wrong.
         let fix = if !installed {
-            Some(self.install_hint().to_owned())
+            Some(match self {
+                Agent::Cursor if which::which("cursor").is_ok() => {
+                    "Install the agent CLI from cursor.com/cli (Cursor app is already installed)".to_owned()
+                }
+                _ => self.install_hint().to_owned(),
+            })
         } else if signed_in == Some(false) {
             Some(self.login_hint().to_owned())
         } else {
