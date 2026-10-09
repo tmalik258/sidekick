@@ -44,7 +44,10 @@ export function Chat({ turns }: { turns: Turn[] }) {
   const skillMode = useSidekick((s) => s.chatSkill);
   const ai = useSidekick((s) => s.settings.ai);
   const last = turns.at(-1);
-  const options = last?.role === "assistant" && !last.streaming ? splitOptions(last.content).options : [];
+  // A reply that is only chips (a weak model copying its instructions) is no answer.
+  const blank = (t: Turn) => !t.streaming && !t.error && !splitOptions(t.content).body.trim();
+  const options =
+    last?.role === "assistant" && !last.streaming && !blank(last) ? splitOptions(last.content).options : [];
   return (
     <div className="ak-body py-0.5">
       {turns.map((t, i) => {
@@ -73,7 +76,12 @@ export function Chat({ turns }: { turns: Turn[] }) {
             ) : t.streaming ? (
               <LiveStep step={t.tool ?? null} since={t.startedAt} />
             ) : null}
-            {!t.streaming && splitOptions(t.content).stats.length > 0 && (
+            {blank(t) && t.provider && (
+              <p className="ak-err" role="alert">
+                No answer came back. Ask again, or pick another model.
+              </p>
+            )}
+            {!t.streaming && !blank(t) && splitOptions(t.content).stats.length > 0 && (
               <div className="ak-stats">
                 {splitOptions(t.content).stats.map((st) => (
                   <span key={st.label} className={`ak-stat${st.hot ? " hot" : ""}`}>
