@@ -796,10 +796,16 @@ pub fn cancel(app: &AppHandle, id: &str) {
 }
 
 fn send_text(app: &AppHandle, id: &str, text: String, speak: bool) {
+    let text = no_dashes(&text);
     if speak {
         crate::voice::answer_text(app, id, &text);
     }
     let _ = app.emit(DELTA_EVENT, Delta { id, text });
+}
+
+/// Answers never use em dashes; a comma reads the same.
+fn no_dashes(text: &str) -> String {
+    text.replace(" \u{2014} ", ", ").replace('\u{2014}', ", ")
 }
 
 /// "Reply to Ali and attach the invoice", "find X then email it": a request

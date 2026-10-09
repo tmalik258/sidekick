@@ -91,12 +91,14 @@ const results = [];
 try {
   await invoke("ask_open", { prompt: null, ask: false });
   for (const c of cases) {
-    // A fresh chat per question.
-    await page.evaluate(() => document.querySelector(".ak-q")?.blur());
-    await page.keyboard.press("Escape");
-    await sleep(300);
+    // A fresh chat per question: the + button, then wait for an empty chat.
     await invoke("ask_open", { prompt: null, ask: false });
     await page.waitForSelector(".ak-q", { timeout: 5000 });
+    const plus = page.locator('button[aria-label="New chat (Esc)"]').first();
+    if (await plus.isVisible().catch(() => false)) await plus.click();
+    await page
+      .waitForFunction(() => !document.querySelector(".ak-ans, .ak-acts, .ak-err"), null, { timeout: 5000 })
+      .catch(() => undefined);
     await page.click(".ak-q");
     await page.keyboard.type(c.q);
     const started = Date.now();
@@ -106,6 +108,11 @@ try {
       done = await page.evaluate(() => !!document.querySelector(".ak-acts, .ak-err"));
       if (done) break;
       await sleep(250);
+    }
+    if (!done) {
+      // Stop it so the next question does not queue behind it.
+      await page.keyboard.press("Escape").catch(() => undefined);
+      await sleep(500);
     }
     const ms = Date.now() - started;
     const a = done ? await read() : { body: "", options: [], stats: [], error: `no answer in ${ANSWER_MS / 1000} s` };

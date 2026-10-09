@@ -1086,6 +1086,9 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           return;
         }
         flushText();
+        // A line written before a tool call is narration ("I'll check your
+        // Downloads"), not the answer: drop it so the answer starts clean.
+        updateLastTurn(id, (t) => (t.content && t.content.length < 240 ? { ...t, content: "" } : t));
         // Steps read as what they do ("Searching the web for ..."), in words.
         const step = label || toolStatus(name).replace(/\.\.\.$/, "");
         updateLastTurn(id, (t) => ({ ...t, tool: step, steps: [...(t.steps ?? []), step] }));

@@ -788,7 +788,24 @@ pub fn is_web(name: &str) -> bool {
 }
 
 /// Runs a local tool, or `None` when `name` is not one of them.
+/// How long a look-up tool may take before the model hears it timed out.
+const TOOL_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
+
 pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Option<String> {
+    // A stuck look-up (OCR, a slow page) must not hold the answer forever.
+    if reads_only(name) {
+        return match tokio::time::timeout(TOOL_LIMIT, run_inner(app, chat_id, name, args)).await {
+            Ok(out) => out,
+            Err(_) => Some(format!(
+                "Error: {name} took over {} s and was stopped. Answer with what you have.",
+                TOOL_LIMIT.as_secs()
+            )),
+        };
+    }
+    run_inner(app, chat_id, name, args).await
+}
+
+async fn run_inner(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Option<String> {
     // An answer started at a pause in speech may look things up, but acts
     // only once the question is final.
     if is_own(name) && !reads_only(name) && !crate::ai::wait_released(chat_id).await {
