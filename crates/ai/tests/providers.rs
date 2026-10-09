@@ -27,20 +27,26 @@ async fn run(p: &dyn AiProvider, prompt: &str) -> (Result<String, String>, Strin
 
 #[cfg(unix)]
 #[tokio::test]
-async fn claude_code_streams_and_reads_the_prompt_from_stdin() {
+async fn claude_code_streams_and_keeps_the_session() {
     use std::os::unix::fs::PermissionsExt;
     let dir = std::env::temp_dir().join(format!("sidekick-ai-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let script = dir.join("claude");
-    // Echoes stdin back as two deltas, then a result line.
+    // Like `claude -p --input-format stream-json`: one message per line on
+    // stdin, each answered with two deltas and a result. The turn number
+    // shows whether the same process answered.
     std::fs::write(
         &script,
         r#"#!/bin/sh
-p=$(cat)
+n=0
 printf '%s\n' '{"type":"system","subtype":"init"}'
-printf '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"you said: "}}}\n'
-printf '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"%s"}}}\n' "$p"
-printf '{"type":"result","subtype":"success","is_error":false,"result":"ignored"}\n'
+while IFS= read -r line; do
+  n=$((n+1))
+  t=$(printf '%s' "$line" | sed 's/.*"text":"\([^"]*\)".*/\1/')
+  printf '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"%s you said: "}}}\n' "$n"
+  printf '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"%s"}}}\n' "$t"
+  printf '{"type":"result","subtype":"success","is_error":false,"result":"ignored"}\n'
+done
 "#,
     )
     .unwrap();
@@ -54,8 +60,30 @@ printf '{"type":"result","subtype":"success","is_error":false,"result":"ignored"
     };
     assert!(p.available().await);
     let (r, streamed) = run(&p, "hello; $(whoami)").await;
-    assert_eq!(r.unwrap(), "you said: hello; $(whoami)");
-    assert_eq!(streamed, "you said: hello; $(whoami)");
+    let first = r.unwrap();
+    assert_eq!(first, "1 you said: hello; $(whoami)");
+    assert_eq!(streamed, first);
+
+    // The follow-up goes to the same session, and only the new message is sent.
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let req = ChatRequest {
+        system: String::new(),
+        messages: vec![
+            Message::user("hello; $(whoami)"),
+            Message {
+                role: sidekick_ai::Role::Assistant,
+                content: first,
+            },
+            Message::user("and again"),
+        ],
+        image: None,
+    };
+    let second = p
+        .chat(&req, &Sink::new(tx), &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(second, "2 you said: and again");
+    sidekick_ai::close_claude_sessions();
     let _ = std::fs::remove_dir_all(dir);
 }
 

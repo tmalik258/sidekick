@@ -536,12 +536,122 @@ pub fn step_label(name: &str, args: &Value) -> String {
     }
 }
 
+/// Tools that only read; the model may run several of them at once.
+pub fn reads_only(name: &str) -> bool {
+    matches!(
+        name,
+        SEARCH | FIND | TODAY | RECENT | SCREEN | PC_STATUS | WEB_SEARCH | READ_PAGE | NOTIFS
+    )
+}
+
+/// One of Sidekick's own tools (not Composio's).
+pub fn is_own(name: &str) -> bool {
+    matches!(
+        name,
+        SEARCH
+            | TODAY
+            | RECENT
+            | OPEN
+            | SCREEN
+            | PROPOSE
+            | FIND
+            | REVEAL
+            | PC_STATUS
+            | PC
+            | WINDOWS
+            | WEB_SEARCH
+            | READ_PAGE
+            | NOTIFS
+            | BROWSER
+            | APP_ACTION
+            | DESKTOP
+            | APPS
+            | OFFICE
+            | RECIPES
+            | REMEMBER
+    )
+}
+
+/// Always offered: what nearly every question needs.
+const CORE: &[&str] = &[SEARCH, FIND, OPEN, PROPOSE];
+/// Tools offered beyond the core, picked by meaning.
+const PICKED: usize = 4;
+/// Each tool's name and the embedding of its description.
+type ToolVectors = Vec<(String, Vec<f32>)>;
+/// Tool descriptions embedded once per embedding model.
+static TOOL_VECTORS: tokio::sync::Mutex<Option<(String, ToolVectors)>> =
+    tokio::sync::Mutex::const_new(None);
+
+/// About eight tools instead of twenty: the core ones plus the closest in
+/// meaning to the question. Small models pick better from fewer. Without an
+/// embedding model every tool is offered.
+pub async fn pick(app: &AppHandle, question: &str, defs: Vec<ToolDef>) -> Vec<ToolDef> {
+    let Some((client, model)) = crate::search::embedder(app) else {
+        return defs;
+    };
+    let embed = async {
+        let mut cached = TOOL_VECTORS.lock().await;
+        if cached.as_ref().is_none_or(|(m, _)| *m != model) {
+            let inputs: Vec<String> = defs
+                .iter()
+                .map(|d| {
+                    crate::search::prefixed(
+                        &model,
+                        "search_document",
+                        &format!("{}: {}", d.name, d.description),
+                    )
+                })
+                .collect();
+            let vectors = client.embed(&model, &inputs).await.ok()?;
+            *cached = Some((
+                model.clone(),
+                defs.iter().map(|d| d.name.clone()).zip(vectors).collect(),
+            ));
+        }
+        let q = client
+            .embed(
+                &model,
+                &[crate::search::prefixed(&model, "search_query", question)],
+            )
+            .await
+            .ok()?
+            .pop()?;
+        Some((q, cached.as_ref()?.1.clone()))
+    };
+    let Ok(Some((q, tools))) = tokio::time::timeout(PICK_TIMEOUT, embed).await else {
+        return defs;
+    };
+    let names = closest(&q, &tools, PICKED);
+    defs.into_iter()
+        .filter(|d| CORE.contains(&d.name.as_str()) || names.contains(&d.name))
+        .collect()
+}
+
+/// Embedding the question may take this long before every tool is offered.
+const PICK_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(600);
+
+/// The `n` tool names closest to `q`, core tools left out.
+fn closest(q: &[f32], tools: &[(String, Vec<f32>)], n: usize) -> Vec<String> {
+    let mut scored: Vec<(f32, &String)> = tools
+        .iter()
+        .filter(|(name, _)| !CORE.contains(&name.as_str()))
+        .map(|(name, v)| (sidekick_core::storage::cosine(q, v), name))
+        .collect();
+    scored.sort_by(|a, b| b.0.total_cmp(&a.0));
+    scored.into_iter().take(n).map(|(_, n)| n.clone()).collect()
+}
+
 pub fn is_web(name: &str) -> bool {
     matches!(name, WEB_SEARCH | READ_PAGE | BROWSER | APP_ACTION | APPS)
 }
 
 /// Runs a local tool, or `None` when `name` is not one of them.
 pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Option<String> {
+    // An answer started at a pause in speech may look things up, but acts
+    // only once the question is final.
+    if is_own(name) && !reads_only(name) && !crate::ai::wait_released(chat_id).await {
+        return Some("Error: the question changed; stop.".into());
+    }
     Some(match name {
         PROPOSE => propose(app, chat_id, args),
         FIND => find(app, args).await,
@@ -624,13 +734,10 @@ pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Op
         }
         RECENT => recent(app),
         OPEN => open(app, args["target"].as_str().unwrap_or_default()).await,
-        SCREEN => match crate::ai::screenshot(app).await {
-            Ok(png) => match screen_text(app, &png).await {
-                Ok(t) if t.is_empty() => "No readable text on screen.".into(),
-                Ok(t) => t,
-                Err(e) => format!("Error: {e}"),
-            },
-            Err(e) => format!("Error: could not capture the screen: {e}"),
+        SCREEN => match screen_now(app).await {
+            Ok(t) if t.is_empty() => "No readable text on screen.".into(),
+            Ok(t) => t,
+            Err(e) => format!("Error: {e}"),
         },
         _ => return None,
     })
@@ -850,6 +957,58 @@ pub async fn run_proposal(app: &AppHandle, id: &str) -> Result<Ran, String> {
 }
 
 /// The text in a screenshot, read on this PC with Tesseract.
+/// Screen text read in the background when Ask opened: (window pid, when,
+/// text). Only kept in memory, and only briefly.
+static SCREEN_CACHE: std::sync::Mutex<Option<(Option<u32>, std::time::Instant, String)>> =
+    std::sync::Mutex::new(None);
+/// Background screen text older than this is read again.
+const SCREEN_FRESH: std::time::Duration = std::time::Duration::from_secs(90);
+
+fn last_pid(app: &AppHandle) -> Option<u32> {
+    lock(&app.state::<AppState>().last_window)
+        .as_ref()
+        .and_then(|w| w["pid"].as_u64())
+        .and_then(|p| u32::try_from(p).ok())
+}
+
+/// The screen text read when Ask opened, while it is still about the same
+/// window.
+pub fn cached_screen(app: &AppHandle) -> Option<String> {
+    let pid = last_pid(app);
+    let cache = SCREEN_CACHE.lock().ok()?;
+    let (p, at, text) = cache.as_ref()?;
+    (*p == pid && at.elapsed() < SCREEN_FRESH).then(|| text.clone())
+}
+
+/// Reads the screen text in the background, so a question about the
+/// screen does not wait for the capture and OCR.
+pub async fn prefetch_screen(app: &AppHandle) {
+    if cached_screen(app).is_some() {
+        return;
+    }
+    let pid = last_pid(app);
+    let Ok(png) = crate::ai::screenshot(app).await else {
+        return;
+    };
+    if let Ok(text) = screen_text(app, &png).await
+        && let Ok(mut cache) = SCREEN_CACHE.lock()
+    {
+        *cache = Some((pid, std::time::Instant::now(), text));
+    }
+}
+
+/// The text of the window the user was in: the background read when it is
+/// fresh, else a new capture.
+pub async fn screen_now(app: &AppHandle) -> Result<String, String> {
+    if let Some(text) = cached_screen(app) {
+        return Ok(text);
+    }
+    let png = crate::ai::screenshot(app)
+        .await
+        .map_err(|e| format!("could not capture the screen: {e}"))?;
+    screen_text(app, &png).await
+}
+
 pub async fn screen_text(app: &AppHandle, png: &[u8]) -> Result<String, String> {
     let state = app.state::<AppState>();
     std::fs::create_dir_all(&state.scratch_dir).map_err(|e| e.to_string())?;
@@ -1060,6 +1219,26 @@ fn runs_code(target: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_tool_is_known_and_reads_are_marked() {
+        for d in defs() {
+            assert!(is_own(&d.name), "{} is missing from is_own", d.name);
+        }
+        assert!(reads_only(SEARCH) && reads_only(WEB_SEARCH));
+        assert!(!reads_only(PROPOSE) && !reads_only(DESKTOP) && !reads_only(OPEN));
+    }
+
+    #[test]
+    fn picks_the_closest_tools_besides_the_core() {
+        let tools = vec![
+            (SEARCH.to_owned(), vec![1.0, 0.0]),
+            (WEB_SEARCH.to_owned(), vec![0.9, 0.1]),
+            (OFFICE.to_owned(), vec![0.0, 1.0]),
+            (TODAY.to_owned(), vec![0.5, 0.5]),
+        ];
+        assert_eq!(closest(&[1.0, 0.0], &tools, 2), vec![WEB_SEARCH, TODAY]);
+    }
 
     #[test]
     fn buttons_never_show_action_names() {

@@ -6,6 +6,7 @@ import { firstToday, isThanks, type Mood, moodForSkill, SUGGESTION_MOOD_MS } fro
 import { type NetNotice, watchNet } from "./net";
 import { cueVolume, playCue, playMood, playSound, preloadSounds } from "./sound";
 import type { SynthSound } from "./synth";
+import { timings } from "./timings";
 import { toolStatus } from "./tools";
 import {
   type ActionResult,
@@ -503,36 +504,94 @@ function helloOncePerDay() {
   if (firstToday()) setTimeout(() => setMood("hello", 2600, "hello"), 900);
 }
 
-export function sendChat(prompt: string, attach?: { clipboard?: boolean; screen?: boolean; speak?: boolean }): boolean {
-  const { ask, turns, chatId, chatPage, chatSkill } = useSidekick.getState();
-  const q = prompt.trim();
-  if (!q || chatId) return false;
-  if (isThanks(q)) thanked();
-  const id = crypto.randomUUID();
+type ChatAttach = { clipboard?: boolean; screen?: boolean; speak?: boolean };
+
+/** What `api.aiChat` needs for question `q` in the chat as it is now. */
+function chatRequest(q: string, attach?: ChatAttach) {
+  const { ask, turns, chatPage, chatSkill, askModel } = useSidekick.getState();
   const history: ChatMessage[] = [
     ...turns.filter((t) => !t.error).map(({ role, content }) => ({ role, content })),
     { role: "user", content: q },
   ];
-  const screen = attach?.screen ?? false;
   const auto = autoContext(q, ask);
-  useSidekick.setState({
-    chatId: id,
-    turns: [...turns, { role: "user", content: q, screen }, { role: "assistant", content: "", streaming: true }],
-  });
-  void api.aiChat(
-    id,
+  return {
     history,
-    {
+    attach: {
       window: (ask?.attachWindow ?? false) || auto.window,
       clipboard: attach?.clipboard ?? ((ask?.attachClip ?? false) || auto.clipboard),
       page: chatPage,
       skill: chatSkill,
-      screen,
+      screen: attach?.screen ?? false,
       speak: attach?.speak ?? false,
-      prefer: useSidekick.getState().askModel,
+      prefer: askModel,
     },
-    ask?.localOnly ?? false,
-  );
+    localOnly: ask?.localOnly ?? false,
+  };
+}
+
+/**
+ * An answer started at a pause in speech, before the question was final.
+ * Rust holds it unseen and unsaid (and lets it only look things up) until
+ * the question ends the same way; then it is shown at once.
+ */
+interface EarlyChat {
+  id: string;
+  q: string;
+  tools: { name: string; label?: string }[];
+  proposals: { id: string; label: string }[];
+}
+let early: EarlyChat | null = null;
+
+function dropEarly() {
+  if (!early) return;
+  void api.aiCancel(early.id);
+  early = null;
+}
+
+function startEarly(q: string, speak: boolean) {
+  if (!q || useSidekick.getState().chatId || early?.q === q) return;
+  dropEarly();
+  const id = crypto.randomUUID();
+  const req = chatRequest(q, { speak });
+  early = { id, q, tools: [], proposals: [] };
+  timings.sent(id);
+  void api.aiChat(id, req.history, { ...req.attach, hold: true }, req.localOnly);
+}
+
+export function sendChat(prompt: string, attach?: ChatAttach): boolean {
+  const { turns, chatId } = useSidekick.getState();
+  const q = prompt.trim();
+  if (!q || chatId) {
+    dropEarly();
+    return false;
+  }
+  if (isThanks(q)) thanked();
+  const adopted = early?.q === q && (attach?.screen ?? false) === false ? early : null;
+  if (!adopted) dropEarly();
+  early = null;
+  const id = adopted?.id ?? crypto.randomUUID();
+  const screen = attach?.screen ?? false;
+  const req = chatRequest(q, attach);
+  useSidekick.setState({
+    chatId: id,
+    turns: [
+      ...turns,
+      { role: "user", content: q, screen },
+      {
+        role: "assistant",
+        content: "",
+        streaming: true,
+        steps: adopted?.tools.map((t) => t.label || toolStatus(t.name).replace(/\.\.\.$/, "")),
+        proposals: adopted?.proposals,
+      },
+    ],
+  });
+  if (adopted) {
+    void api.aiRelease(id);
+    return true;
+  }
+  timings.sent(id);
+  void api.aiChat(id, req.history, req.attach, req.localOnly);
   return true;
 }
 
@@ -642,6 +701,27 @@ export function newChat() {
   });
 }
 
+/** Streamed words waiting for the next frame, by chat. */
+const pendingText = new Map<string, string>();
+let pendingFrame = 0;
+let pendingTimer = 0;
+
+/** Flush on the next frame; a hidden window paints no frames, so on a timer. */
+function scheduleText() {
+  if (pendingFrame || pendingTimer) return;
+  if (document.hidden) pendingTimer = window.setTimeout(flushText, 50);
+  else pendingFrame = requestAnimationFrame(flushText);
+}
+
+function flushText() {
+  if (pendingFrame) cancelAnimationFrame(pendingFrame);
+  if (pendingTimer) clearTimeout(pendingTimer);
+  pendingFrame = 0;
+  pendingTimer = 0;
+  for (const [id, text] of pendingText) updateLastTurn(id, (t) => ({ ...t, content: t.content + text }));
+  pendingText.clear();
+}
+
 function updateLastTurn(id: string, fn: (t: Turn) => Turn) {
   const { chatId, turns } = useSidekick.getState();
   const last = turns[turns.length - 1];
@@ -729,6 +809,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         }
       }),
       listen(EVENTS.askOpen, (open) => {
+        timings.opened(open.sentAt);
         const seq = (useSidekick.getState().ask?.seq ?? 0) + 1;
         const clip = open.clipboard && !open.context.clipboardSecret;
         if (open.page) {
@@ -768,13 +849,20 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           void api.askEnsureWelcome();
         }
       }),
-      listen(EVENTS.voiceHeard, ({ text, final, byVoice }) => {
+      listen(EVENTS.voiceHeard, ({ text, final, pause, byVoice }) => {
         if (!final) {
+          if (pause) {
+            startEarly(text.trim(), useSidekick.getState().settings.voice.speakAnswers);
+            return;
+          }
+          // More words came: the early answer was for a different question.
+          if (early && text.trim() !== early.q) dropEarly();
           useSidekick.setState({ hearing: text });
           watchVoice();
           return;
         }
         const q = text.trim();
+        if (!q) dropEarly();
         const { settings, turns, ask, chatId } = useSidekick.getState();
         if (q) {
           // A stale chatId makes sendChat no-op and drops the Thinking pill,
@@ -795,7 +883,10 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         }
       }),
       listen(EVENTS.aiDelta, ({ id, text }) => {
-        updateLastTurn(id, (t) => ({ ...t, content: t.content + text }));
+        // Words arrive faster than the screen paints: one update per frame.
+        pendingText.set(id, (pendingText.get(id) ?? "") + text);
+        scheduleText();
+        timings.firstWord(id);
         // The first words of a spoken question's answer: open to show it.
         if (sounds && useSidekick.getState().voiceQuestion !== null) {
           useSidekick.setState({ voiceQuestion: null });
@@ -803,14 +894,25 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         }
       }),
       listen(EVENTS.aiTool, ({ id, name, label }) => {
+        if (early?.id === id) {
+          early.tools.push({ name, label });
+          return;
+        }
+        flushText();
         // Steps read as what they do ("Searching the web for ..."), in words.
         const step = label || toolStatus(name).replace(/\.\.\.$/, "");
         updateLastTurn(id, (t) => ({ ...t, tool: step, steps: [...(t.steps ?? []), step] }));
       }),
-      listen(EVENTS.aiProposal, ({ chatId, id, label }) =>
-        updateLastTurn(chatId, (t) => ({ ...t, proposals: [...(t.proposals ?? []), { id, label }] })),
-      ),
+      listen(EVENTS.aiProposal, ({ chatId, id, label }) => {
+        if (early?.id === chatId) {
+          early.proposals.push({ id, label });
+          return;
+        }
+        updateLastTurn(chatId, (t) => ({ ...t, proposals: [...(t.proposals ?? []), { id, label }] }));
+      }),
       listen(EVENTS.aiDone, ({ id, provider, error, handoff }) => {
+        flushText();
+        timings.done(id);
         if (useSidekick.getState().voiceQuestion !== null) useSidekick.setState({ voiceQuestion: null });
         updateLastTurn(id, (t) => ({ ...t, provider, error, handoff, tool: null, streaming: false }));
         if (useSidekick.getState().chatId === id) {

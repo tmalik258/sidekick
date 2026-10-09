@@ -47,6 +47,7 @@ mod state;
 mod stuck;
 mod suggestions;
 mod timetrack;
+mod timings;
 mod tray;
 mod undo;
 mod updates;
@@ -193,6 +194,9 @@ pub fn run() {
             commands::ai_status,
             commands::ai_chat,
             commands::ai_cancel,
+            commands::ai_release,
+            commands::timing_record,
+            commands::timings_recent,
             commands::ask_open,
             commands::ask_ensure_welcome,
             commands::ask_defer_welcome,

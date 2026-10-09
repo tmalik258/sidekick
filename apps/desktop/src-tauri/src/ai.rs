@@ -132,6 +132,47 @@ async fn chat_router(
     Router::new(prefer_first(list, prefer))
 }
 
+/// Gets ready while the user types: loads the local model, opens the
+/// Composio connection, starts a session for the first agent in the user's
+/// order, and reads the screen text for the local model.
+pub fn warm_up(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let settings = lock(&app.state::<AppState>().settings).clone();
+        let mut agent_warmed = false;
+        let mut jobs = Vec::new();
+        for p in providers(&app, &settings.ai, false) {
+            if p.id() == "local" {
+                let server = crate::composio::server(&settings.composio).await;
+                let local: Arc<dyn AiProvider> = Arc::new(crate::composio::LocalWithTools {
+                    inner: local_model(&settings.ai),
+                    app: app.clone(),
+                    chat_id: String::new(),
+                    handoff: Arc::default(),
+                    server,
+                    offline: false,
+                });
+                jobs.push(local);
+            } else if !agent_warmed && !p.is_local() {
+                agent_warmed = true;
+                jobs.push(p);
+            }
+        }
+        for p in jobs {
+            tauri::async_runtime::spawn(async move { p.warm().await });
+        }
+        if settings.ai.local.enabled {
+            crate::ask_tools::prefetch_screen(&app).await;
+        }
+    });
+}
+
+/// Closes warm agent sessions, so changed settings take effect.
+pub fn close_sessions() {
+    sidekick_ai::close_claude_sessions();
+    sidekick_ai::close_codex_sessions();
+}
+
 /// The picked provider first; the rest keep the user's order.
 fn prefer_first(
     mut list: Vec<Arc<dyn AiProvider>>,
@@ -222,6 +263,41 @@ pub struct Attach {
     /// "local"); it goes first, the others stay as a fallback.
     #[serde(default)]
     pub prefer: Option<String>,
+    /// Started early, at a pause in speech: nothing is shown or said until
+    /// `release`, and a cancel drops it unseen.
+    #[serde(default)]
+    pub hold: bool,
+}
+
+/// Chats started early and not shown yet, by id.
+static HELD: std::sync::Mutex<
+    std::collections::BTreeMap<String, tokio::sync::watch::Sender<bool>>,
+> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+/// Waits until held chat `id` is shown. False when it was dropped. A chat
+/// that is not held goes on at once.
+pub async fn wait_released(id: &str) -> bool {
+    let Some(mut rx) = lock(&HELD)
+        .get(id)
+        .map(tokio::sync::watch::Sender::subscribe)
+    else {
+        return true;
+    };
+    loop {
+        if *rx.borrow() {
+            return true;
+        }
+        if rx.changed().await.is_err() {
+            return false;
+        }
+    }
+}
+
+/// Shows a held chat: what it wrote so far, then the rest as it streams.
+pub fn release(id: &str) {
+    if let Some(tx) = lock(&HELD).remove(id) {
+        let _ = tx.send(true);
+    }
 }
 
 /// What Sidekick can notice, for AI writing skills. Keep in sync with the
@@ -301,6 +377,10 @@ pub fn context(app: &AppHandle) -> Context {
     ctx
 }
 
+/// Where the fixed part of the system prompt ends and this moment's
+/// context begins.
+pub const FIXED_END: &str = "\n\nRight now:";
+
 /// Longest page text attached to a chat.
 const MAX_PAGE: usize = 20_000;
 
@@ -311,21 +391,25 @@ fn system_prompt(app: &AppHandle, attach: &Attach) -> String {
             sidekick_skills::FORMAT_GUIDE
         );
     }
-    let mut system = format!(
-        "{SYSTEM}\n\nNow: {}",
+    // Fixed rules first and everything that changes (time, memory, context)
+    // after FIXED_END, so a local server can reuse the processed start.
+    let mut system = SYSTEM.to_owned();
+    if attach.speak {
+        system.push_str(
+            "\n\nThe user asked by voice and your answer is read aloud. Answer in one to three short spoken sentences. No markdown, lists, tables, links or OPTION lines unless they ask for them; if code is needed, keep it to one short block.",
+        );
+    }
+    system.push_str(FIXED_END);
+    system.push_str(&format!(
+        "\nNow: {}",
         chrono::Local::now().format("%A %-d %B %Y, %H:%M")
-    );
+    ));
     let memory = lock(&app.state::<AppState>().settings).memory.clone();
     if !memory.is_empty() {
         system.push_str("\n\nAbout the user (they asked you to remember):\n");
         for m in &memory {
             system.push_str(&format!("- {m}\n"));
         }
-    }
-    if attach.speak {
-        system.push_str(
-            "\n\nThe user asked by voice and your answer is read aloud. Answer in one to three short spoken sentences. No markdown, lists, tables, links or OPTION lines unless they ask for them; if code is needed, keep it to one short block.",
-        );
     }
     if let Some(page) = attach.page.as_deref().filter(|p| !p.trim().is_empty()) {
         let clipped: String = page.chars().take(MAX_PAGE).collect();
@@ -395,6 +479,11 @@ pub fn chat(
     }
     let cancel = CancellationToken::new();
     lock(&app.state::<AppState>().chats).insert(id.clone(), cancel.clone());
+    let held = attach.hold.then(|| {
+        let (tx, rx) = tokio::sync::watch::channel(false);
+        lock(&HELD).insert(id.clone(), tx);
+        rx
+    });
     crate::ask_tools::set_current_chat(&id);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -437,24 +526,54 @@ pub fn chat(
                 .flatten()
         });
         let router = chat_router(&app, &id, &handoff, local_only, prefer.as_deref()).await;
-        let speak = attach.speak && crate::voice::begin_answer(&app, &id);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
         let forward = {
             let app = app.clone();
             let id = id.clone();
             tauri::async_runtime::spawn(async move {
-                while let Some(text) = rx.recv().await {
-                    if speak {
-                        crate::voice::answer_text(&app, &id, &text);
+                // Held: keep the words until the chat is released, or drop
+                // them when it is cancelled.
+                if let Some(mut released) = held {
+                    let mut kept = Vec::new();
+                    let mut ended = false;
+                    loop {
+                        if *released.borrow() {
+                            break;
+                        }
+                        tokio::select! {
+                            text = rx.recv(), if !ended => match text {
+                                Some(t) => kept.push(t),
+                                None => ended = true,
+                            },
+                            changed = released.changed() => if changed.is_err() {
+                                return None;
+                            },
+                        }
                     }
-                    let _ = app.emit(DELTA_EVENT, Delta { id: &id, text });
+                    let speak = attach.speak && crate::voice::begin_answer(&app, &id);
+                    for text in kept {
+                        send_text(&app, &id, text, speak);
+                    }
+                    while let Some(text) = rx.recv().await {
+                        send_text(&app, &id, text, speak);
+                    }
+                    return Some(speak);
                 }
+                let speak = attach.speak && crate::voice::begin_answer(&app, &id);
+                while let Some(text) = rx.recv().await {
+                    send_text(&app, &id, text, speak);
+                }
+                Some(speak)
             })
         };
         let sink = Sink::new(tx);
         let result = router.chat(&req, &sink, &cancel, local_only).await;
         drop(sink);
-        let _ = forward.await;
+        let Some(speak) = forward.await.ok().flatten() else {
+            // Dropped before it was ever shown: nothing to report.
+            lock(&app.state::<AppState>().chats).remove(&id);
+            return;
+        };
         lock(&app.state::<AppState>().chats).remove(&id);
         if let (Ok(answer), Some(q)) = (&result, &question) {
             crate::search::index_chat(&app, &id, q, &answer.text);
@@ -504,9 +623,17 @@ fn no_provider_hint(local_only: bool) -> String {
 }
 
 pub fn cancel(app: &AppHandle, id: &str) {
+    lock(&HELD).remove(id);
     if let Some(token) = lock(&app.state::<AppState>().chats).remove(id) {
         token.cancel();
     }
+}
+
+fn send_text(app: &AppHandle, id: &str, text: String, speak: bool) {
+    if speak {
+        crate::voice::answer_text(app, id, &text);
+    }
+    let _ = app.emit(DELTA_EVENT, Delta { id, text });
 }
 
 /// "Reply to Ali and attach the invoice", "find X then email it": a request
@@ -536,6 +663,7 @@ fn strongest_agent(app: &AppHandle) -> Option<String> {
 
 /// Stops every answer in progress (the global Stop). True when one was running.
 pub fn cancel_all(app: &AppHandle) -> bool {
+    lock(&HELD).clear();
     let tokens: Vec<_> = lock(&app.state::<AppState>().chats)
         .drain()
         .map(|(_, t)| t)
@@ -555,6 +683,7 @@ pub fn watch_readiness(app: &AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
             refresh_readiness(&app).await;
+            sidekick_ai::sweep_sessions();
             tokio::time::sleep(READY_CHECK_EVERY).await;
         }
     });

@@ -29,6 +29,7 @@ import { ModelPicker } from "./ask/ModelPicker";
 import { Kbd, Pill, Row } from "./ask/parts";
 import type { Command } from "./ask/Starters";
 import { ContextChips, contextStarters, soonestMeeting } from "./ask/Starters";
+import { Timings } from "./ask/Timings";
 import { Icon } from "./Icon";
 import { SetupSpinner } from "./SetupChecklistRow";
 
@@ -661,6 +662,7 @@ export function AskPanel() {
           </span>
         </span>
       </div>
+      <Timings />
     </div>
   );
 }

@@ -26,6 +26,9 @@ pub enum Heard {
     Wake,
     /// Text so far, wake phrase included.
     Partial(String),
+    /// The words have not changed for a moment: the question may be done.
+    /// An answer can start now and be dropped if more words come.
+    Pause(String),
     /// The utterance ended. Empty when nothing was said.
     Final(String),
     /// The microphone or engine failed; the listener has stopped.
@@ -48,6 +51,8 @@ pub struct ListenerConfig {
     pub models: PathBuf,
     /// Listen for "Hey Sidekick". Off means push to talk only.
     pub wake_word: bool,
+    /// Talking over Sidekick's voice stops it and starts listening.
+    pub interrupt: bool,
 }
 
 /// Audio kept from before the wake phrase was recognised, so the first
@@ -60,11 +65,62 @@ const QUESTION_GRACE: usize = MIC_RATE as usize * 8;
 /// Longest a question may run: past this, what was heard is taken as said,
 /// so steady background noise can never keep it listening.
 const MAX_LISTEN: usize = MIC_RATE as usize * 20;
+/// Words unchanged this long count as a pause (16 kHz samples).
+const PAUSE: usize = MIC_RATE as usize * 35 / 100;
+/// A voice must stay this much louder than the speakers' echo for this
+/// long to count as talking over Sidekick.
+const BARGE_RATIO: f32 = 3.0;
+const BARGE_MIN_LEVEL: f32 = 0.02;
+const BARGE_LENGTH: usize = MIC_RATE as usize / 5;
+/// How long the speakers' echo is only listened to before a voice can
+/// barge in (16 kHz samples).
+const ECHO_LEARN: usize = MIC_RATE as usize / 2;
+/// How fast the remembered echo level falls back (per chunk).
+const ECHO_DECAY: f32 = 0.97;
 /// No audio this long while listening: the microphone stalled; finish.
 const STALL: Duration = Duration::from_secs(3);
 /// No audio this long at all: the microphone is gone; report it so the app
 /// starts it again.
 const DEAD: Duration = Duration::from_secs(10);
+
+/// Hears a voice over Sidekick's own speech: clearly louder than the
+/// loudest recent echo, for long enough to be a voice and not a click. Its
+/// echo of the speakers is learned as they play, so a headset barges in
+/// easily and loud laptop speakers rarely do.
+#[derive(Debug, Default)]
+struct Barge {
+    echo: f32,
+    /// Audio heard since the speakers started; the first moment only
+    /// learns how loud their echo is.
+    heard: usize,
+    /// Audio of the louder voice, while it lasts.
+    voice: Vec<f32>,
+}
+
+impl Barge {
+    fn push(&mut self, chunk: &[f32]) -> bool {
+        if chunk.is_empty() {
+            return false;
+        }
+        let level = (chunk.iter().map(|x| x * x).sum::<f32>() / chunk.len() as f32).sqrt();
+        if self.heard < ECHO_LEARN {
+            self.heard += chunk.len();
+            self.echo = self.echo.max(level);
+            return false;
+        }
+        if level > (self.echo * BARGE_RATIO).max(BARGE_MIN_LEVEL) {
+            self.voice.extend_from_slice(chunk);
+            if self.voice.len() >= BARGE_LENGTH {
+                return true;
+            }
+        } else {
+            self.voice.clear();
+            self.echo = self.echo.max(level);
+        }
+        self.echo *= ECHO_DECAY;
+        false
+    }
+}
 
 /// Owns the keyword spotter and the streaming recognizer.
 pub struct Engine {
@@ -80,6 +136,16 @@ pub struct Engine {
     transcript_wake: bool,
     /// Sidekick's own voice is playing: audio is dropped, not heard.
     muted: bool,
+    /// Samples since the words last changed, and whether that pause was
+    /// already reported.
+    still: usize,
+    paused: bool,
+    /// Talking over the speakers wakes it (see [`BARGE_RATIO`]).
+    interrupt: bool,
+    barge: Barge,
+    /// Listening started by talking over the speakers: audio is heard even
+    /// though the speakers were playing a moment ago.
+    barged: bool,
 }
 
 fn model(
@@ -160,9 +226,10 @@ impl Engine {
             ),
             decoding_method: Some("greedy_search".into()),
             enable_endpoint: true,
-            // Give up after 4 s of silence, end 0.9 s after speech, cap at 30 s.
+            // Give up after 4 s of silence, end 0.6 s after speech, cap at 30 s.
+            // An answer may already start at the pause before that (Heard::Pause).
             rule1_min_trailing_silence: 4.0,
-            rule2_min_trailing_silence: 0.9,
+            rule2_min_trailing_silence: 0.6,
             rule3_min_utterance_length: 30.0,
             ..Default::default()
         };
@@ -179,6 +246,11 @@ impl Engine {
             heard: 0,
             transcript_wake: transcript,
             muted: false,
+            still: 0,
+            paused: false,
+            interrupt: false,
+            barge: Barge::default(),
+            barged: false,
         })
     }
 
@@ -190,6 +262,16 @@ impl Engine {
             self.reset();
         }
         self.muted = muted;
+        self.barged = false;
+        self.barge = Barge::default();
+    }
+
+    pub fn set_interrupt(&mut self, on: bool) {
+        self.interrupt = on;
+    }
+
+    fn talks_over(&mut self, chunk: &[f32]) -> bool {
+        self.interrupt && self.barge.push(chunk)
     }
 
     /// Back to waiting, as if just started: nothing heard, nothing pending.
@@ -239,6 +321,8 @@ impl Engine {
         self.fresh_spotter();
         self.listening = true;
         self.heard = 0;
+        self.still = 0;
+        self.paused = false;
         self.last.clear();
         let prime: Vec<f32> = self.recent.iter().copied().collect();
         self.recognizer.reset(&self.stream);
@@ -247,8 +331,15 @@ impl Engine {
 
     /// Feeds 16 kHz mono audio and returns what was heard.
     pub fn feed(&mut self, chunk: &[f32]) -> Vec<Heard> {
-        if self.muted {
-            return Vec::new();
+        if self.muted && !self.barged {
+            if !self.talks_over(chunk) {
+                return Vec::new();
+            }
+            // Only the voice that talked over is primed, not the echo.
+            self.recent = std::mem::take(&mut self.barge.voice).into();
+            self.barged = true;
+            self.start_listening();
+            return vec![Heard::Wake];
         }
         let mut out = Vec::new();
         self.recent.extend(chunk.iter().copied());
@@ -292,7 +383,15 @@ impl Engine {
         let text = self.current_text();
         if text != self.last {
             self.last = text.clone();
+            self.still = 0;
+            self.paused = false;
             out.push(Heard::Partial(text.clone()));
+        } else if self.listening {
+            self.still += chunk.len();
+            if !self.paused && self.still >= PAUSE && !crate::text::strip_wake(&text).is_empty() {
+                self.paused = true;
+                out.push(Heard::Pause(text.clone()));
+            }
         }
         if self.recognizer.is_endpoint(&self.stream) {
             self.recognizer.reset(&self.stream);
@@ -386,7 +485,10 @@ impl Listener {
             .name("sidekick-listener".into())
             .spawn(move || {
                 let mut engine = match Engine::new(&config.models, config.wake_word) {
-                    Ok(e) => e,
+                    Ok(mut e) => {
+                        e.set_interrupt(config.interrupt);
+                        e
+                    }
                     Err(e) => {
                         let _ = ready_tx.send(Err(e));
                         return;
@@ -461,5 +563,47 @@ impl Drop for Listener {
         if let Some(t) = self.thread.take() {
             let _ = t.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tone(level: f32, ms: usize) -> Vec<f32> {
+        let n = MIC_RATE as usize * ms / 1000;
+        (0..n)
+            .map(|i| if i % 2 == 0 { level } else { -level })
+            .collect()
+    }
+
+    fn talks(b: &mut Barge, level: f32, ms: usize) -> bool {
+        tone(level, ms).chunks(1600).any(|c| b.push(c))
+    }
+
+    #[test]
+    fn a_voice_well_over_the_echo_barges_in() {
+        let mut b = Barge::default();
+        assert!(!talks(&mut b, 0.05, 500), "the echo alone never barges");
+        assert!(!talks(&mut b, 0.05, 500));
+        assert!(!talks(&mut b, 0.1, 500), "twice the echo is not enough");
+        assert!(talks(&mut b, 0.4, 300));
+        assert!(b.voice.len() >= BARGE_LENGTH);
+    }
+
+    #[test]
+    fn a_short_click_does_not_barge() {
+        let mut b = Barge::default();
+        assert!(!talks(&mut b, 0.05, 500));
+        assert!(!talks(&mut b, 0.9, 100));
+        assert!(!talks(&mut b, 0.05, 100), "the click ended");
+        assert!(b.voice.is_empty());
+    }
+
+    #[test]
+    fn silence_alone_needs_a_real_voice() {
+        let mut b = Barge::default();
+        assert!(!talks(&mut b, 0.01, 600), "below the floor");
+        assert!(talks(&mut b, 0.1, 300), "a headset voice over quiet");
     }
 }
