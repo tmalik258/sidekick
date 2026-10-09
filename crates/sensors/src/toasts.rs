@@ -82,6 +82,9 @@ pub fn read_since(path: &Path, after: i64) -> Result<Vec<Toast>, String> {
         Ok(rows
             .flatten()
             .filter_map(|(id, app_id, payload, arrived)| {
+                if is_noise(&app_id) {
+                    return None;
+                }
                 let (title, body) = parse_payload(&String::from_utf8_lossy(&payload));
                 if title.is_empty() && body.is_empty() {
                     return None;
@@ -196,6 +199,15 @@ pub fn unwrap_phone(app_id: &str, title: String, body: String) -> (String, Strin
     let new_title = lines.next().unwrap_or_default().trim().to_owned();
     let rest = lines.next().unwrap_or_default().trim().to_owned();
     (app, new_title, rest, true)
+}
+
+/// Windows' own alerts that never need a person, like "an app is
+/// downloading a file" (AppInitiatedDownload).
+const NOISE: &[&str] = &["appinitiateddownload"];
+
+pub fn is_noise(app_id: &str) -> bool {
+    let lower = app_id.to_lowercase();
+    NOISE.iter().any(|n| lower.contains(n))
 }
 
 /// Known senders by a piece of their id, then a best guess from the id.
@@ -313,6 +325,8 @@ mod tests {
         assert_eq!(app_name("Microsoft.Office.OUTLOOK.EXE.15"), "Outlook");
         assert_eq!(app_name("Contoso.Notes_abc123!App"), "Notes");
         assert_eq!(app_name(r"C:\Tools\acme.exe"), "Acme");
+        assert!(is_noise("Windows.SystemToast.AppInitiatedDownload"));
+        assert!(!is_noise("com.squirrel.slack.slack"));
     }
 
     #[test]
