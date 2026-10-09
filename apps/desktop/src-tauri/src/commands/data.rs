@@ -18,6 +18,12 @@ pub fn routines_today(app: AppHandle) -> Vec<crate::routines::Item> {
     crate::routines::today(&app)
 }
 
+/// Takes one app or site out of the morning setup.
+#[tauri::command]
+pub fn routines_remove(app: AppHandle, kind: String, key: String) -> CmdResult<usize> {
+    crate::routines::remove(&app, &kind, &key)
+}
+
 /// Forgets every learned routine.
 #[tauri::command]
 pub fn routines_forget(app: AppHandle) -> CmdResult<usize> {

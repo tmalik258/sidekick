@@ -12,6 +12,8 @@ export interface Material {
   haloOpacity: number;
   eye: string;
   eyeGlow: string;
+  /** A layer over the body's gradient: an iridescent or metal sheen. */
+  sheen?: string;
 }
 
 export interface OrbNodes {
@@ -97,6 +99,7 @@ export class OrbEngine {
     st.setProperty("--o1", m.body[0]);
     st.setProperty("--eye", m.eye);
     st.setProperty("--eye-glow", m.eyeGlow);
+    st.setProperty("--sheen", m.sheen ?? "none");
     this.paint();
   }
 

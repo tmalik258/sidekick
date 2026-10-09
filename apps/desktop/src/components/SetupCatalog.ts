@@ -140,7 +140,7 @@ export const SETUP_CATALOG: Array<{
     id: "vscode",
     group: "tools",
     title: "Code editor",
-    why: "Opens your projects and files. VS Code, Cursor or Windsurf.",
+    why: "Opens your projects and files: Cursor, VS Code, Antigravity, PyCharm and others.",
     recommended: true,
   },
   {

@@ -63,6 +63,8 @@ pub struct Settings {
     pub pause: Pause,
     /// Orb appearance: one of [`THEMES`].
     pub theme: String,
+    /// The island's colour behind its content: one of [`ISLAND_COLORS`].
+    pub island_color: String,
     /// UI sound kit: one of [`SOUND_KITS`].
     pub sound_kit: String,
     /// Per-skill switches set by the user.
@@ -72,6 +74,9 @@ pub struct Settings {
     /// More global shortcuts, by action (talk, accept, dismiss, screen,
     /// clipboard, pause, settings). Empty turns one off.
     pub shortcuts: BTreeMap<String, String>,
+    /// Where projects and files open: an editor id ("cursor", "pycharm"),
+    /// or "auto" for the one used most this week.
+    pub code_editor: String,
     /// Folders with git repos to check at the end of the day.
     /// Empty means the usual places (code, projects, source/repos, ...).
     pub code_folders: Vec<String>,
@@ -545,7 +550,18 @@ pub struct SkillPref {
 /// turns it off.
 pub const SENSORS_OFF_BY_DEFAULT: [&str; 0] = [];
 
-pub const THEMES: [&str; 3] = ["pearl", "graphite", "midnight"];
+pub const THEMES: [&str; 7] = [
+    "pearl", "aurora", "chrome", "peach", "mint", "lilac", "onyx",
+];
+/// Island colours; the glass ones are a deep tint with a light rim.
+pub const ISLAND_COLORS: [&str; 6] = [
+    "black_glass",
+    "graphite",
+    "midnight",
+    "smoke",
+    "warm_graphite",
+    "solid_black",
+];
 /// "sidekick" is synthesized in the app (soft tones with character);
 /// "01" is the SND kit.
 pub const SOUND_KITS: [&str; 2] = ["sidekick", "01"];
@@ -561,10 +577,12 @@ impl Default for Settings {
             sensors: BTreeMap::new(),
             pause: Pause::None,
             theme: THEMES[0].to_string(),
+            island_color: ISLAND_COLORS[0].to_string(),
             sound_kit: SOUND_KITS[0].to_string(),
             skills: BTreeMap::new(),
             palette_hotkey: DEFAULT_PALETTE_HOTKEY.into(),
             shortcuts: default_shortcuts(),
+            code_editor: "auto".into(),
             code_folders: Vec::new(),
             end_of_day_hour: 18,
             index_folders: Vec::new(),
@@ -639,8 +657,18 @@ impl Settings {
             *v = v.clamp(0.0, 1.0);
         }
         self.collapse_after_secs = self.collapse_after_secs.clamp(2, 120);
+        // The dark orbs of 0.1 became Onyx.
+        if matches!(self.theme.as_str(), "graphite" | "midnight") {
+            self.theme = "onyx".into();
+        }
         if !THEMES.contains(&self.theme.as_str()) {
             self.theme = THEMES[0].to_string();
+        }
+        if self.code_editor.trim().is_empty() {
+            self.code_editor = "auto".into();
+        }
+        if !ISLAND_COLORS.contains(&self.island_color.as_str()) {
+            self.island_color = ISLAND_COLORS[0].to_string();
         }
         if !SOUND_KITS.contains(&self.sound_kit.as_str()) {
             self.sound_kit = SOUND_KITS[0].to_string();
@@ -808,6 +836,19 @@ mod tests {
         .sanitized();
         assert_eq!(s.theme, "pearl");
         assert_eq!(s.sound_kit, "sidekick");
+    }
+
+    #[test]
+    fn old_dark_orbs_become_onyx_and_islands_default_to_glass() {
+        let s = Settings {
+            theme: "midnight".into(),
+            island_color: "neon".into(),
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(s.theme, "onyx");
+        assert_eq!(s.island_color, "black_glass");
+        assert_eq!(Settings::default().island_color, "black_glass");
     }
 
     #[test]

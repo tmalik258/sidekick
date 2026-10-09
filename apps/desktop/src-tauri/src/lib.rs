@@ -17,6 +17,7 @@ mod decisions_test;
 mod detect;
 #[cfg(test)]
 mod drift_test;
+mod editors;
 mod extension;
 mod fathom;
 mod files;
@@ -189,6 +190,7 @@ pub fn run() {
             commands::choices_reset,
             commands::routines_today,
             commands::routines_forget,
+            commands::routines_remove,
             commands::actions_recent,
             commands::reveal_path,
             commands::ai_status,
@@ -197,6 +199,7 @@ pub fn run() {
             commands::ai_release,
             commands::timing_record,
             commands::timings_recent,
+            commands::editors_list,
             commands::ask_open,
             commands::ask_ensure_welcome,
             commands::ask_defer_welcome,
@@ -371,6 +374,7 @@ pub fn start_features(app: &AppHandle) {
     }
     let roots = repo_roots(&state::lock(&state.settings));
     timetrack::start(app);
+    editors::start(app);
     moments::start(app);
     inbox::start(app);
     recipes::start(app);
