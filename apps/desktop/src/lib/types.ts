@@ -177,6 +177,8 @@ export interface AiSettings {
     gguf: string;
   };
   decisions: boolean;
+  /** New Ask chats start with This PC only on. */
+  localOnly: boolean;
 }
 
 export const PROVIDER_LABELS: Record<string, string> = {
@@ -210,6 +212,8 @@ export interface Turn extends ChatMessage {
   streaming?: boolean;
   /** A screenshot went with this question. */
   screen?: boolean;
+  /** This question was asked with This PC only on; a reopened chat keeps it. */
+  localOnly?: boolean;
   /** Why the local model suggests continuing in Claude Code. */
   handoff?: string | null;
   /** The tool the model is using right now. */
@@ -402,6 +406,7 @@ export const DEFAULT_SETTINGS: Settings = {
       gguf: "",
     },
     decisions: true,
+    localOnly: false,
   },
   calendar: { remindMinutes: 5 },
   semanticSearch: { enabled: true, model: "nomic-embed-text" },

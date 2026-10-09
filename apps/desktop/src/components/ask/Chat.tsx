@@ -10,7 +10,7 @@ import { useNow } from "@/lib/hooks";
 import { Markdown } from "@/lib/markdown";
 import { splitOptions } from "@/lib/options";
 import { useReveal } from "@/lib/reveal";
-import { askAgain, askWhenOnline, retryLast, thinkHarder, useSidekick } from "@/lib/store";
+import { askAgain, askWhenOnline, retryLast, setAsk, thinkHarder, useSidekick } from "@/lib/store";
 import { type Agents, type AiSettings, PROVIDER_LABELS, type Turn } from "@/lib/types";
 import { AnswerOptions, Proposals, pendingCount } from "./Proposals";
 import { FailureCard } from "./States";
@@ -393,8 +393,11 @@ export function Retry() {
 export function Handoff({ turns, reason }: { turns: Turn[]; reason: string | null }) {
   const [state, setState] = useState<string>("idle");
   const agent = useAgentName();
+  const local = useSidekick((s) => s.ask?.localOnly ?? false);
   if (!agent) return null;
   const go = () => {
+    // Handing off is the opt-in: this chat leaves the PC from here on.
+    if (local) setAsk({ localOnly: false });
     setState("opening");
     const messages = turns.filter((t) => !t.error && t.content.trim()).map(({ role, content }) => ({ role, content }));
     handOff(messages, reason)
@@ -407,13 +410,18 @@ export function Handoff({ turns, reason }: { turns: Turn[]; reason: string | nul
   return (
     <div className="mt-1.5 flex flex-col gap-1">
       {reason && <p className="text-[12px] text-[rgb(235_235_245/0.6)]">Too much for the local model: {reason}.</p>}
+      {local && (
+        <p className="text-[12px] text-[rgb(235_235_245/0.6)]">
+          This chat is on this PC only. Continuing sends it to {agent}.
+        </p>
+      )}
       <button
         type="button"
         disabled={state === "opening"}
         onClick={go}
         className={`ak-chip chip self-start disabled:opacity-50 ${reason ? "primary" : ""}`}
       >
-        {state === "opening" ? "Opening..." : `Continue in ${agent}`}
+        {state === "opening" ? "Opening..." : local ? `Allow and continue in ${agent}` : `Continue in ${agent}`}
       </button>
       {state !== "idle" && state !== "opening" && <p className="text-[12px] text-[#ffb4ae]">{state}</p>}
     </div>

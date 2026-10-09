@@ -384,6 +384,10 @@ pub struct AiSettings {
     pub semif: SemIfPref,
     /// Let SemIf or the local model rank suggestion options.
     pub decisions: bool,
+    /// New Ask chats start with This PC only on: the chat stays on the
+    /// local model and is never handed to a cloud agent. Each chat can
+    /// still turn it off for itself.
+    pub local_only: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -491,6 +495,7 @@ impl Default for AiSettings {
             openrouter: CloudPref::default(),
             semif: SemIfPref::default(),
             decisions: true,
+            local_only: false,
         }
     }
 }
