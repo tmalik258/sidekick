@@ -7,6 +7,7 @@
 
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "motion/react";
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { useAgents } from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
 import { ISLAND_TOP, PANEL_PAD } from "@/lib/islandSize";
@@ -14,7 +15,7 @@ import type { NetNotice } from "@/lib/net";
 import { playSound } from "@/lib/sound";
 import { connect, notePick, setHovered, uiVolume, useSidekick, watchWaiting } from "@/lib/store";
 import { isPaused, type MascotState, type Suggestion } from "@/lib/types";
-import { ASK_ORB, AskPanel, VoiceBars } from "./AskPanel";
+import { ASK_MASCOT, ASK_ORB, ASK_PAD, AskPanel, VoiceBars } from "./AskPanel";
 import { Icon } from "./Icon";
 import { Glance, RoundButton } from "./IslandGlance";
 import { IslandGuide, useGuide } from "./IslandGuide";
@@ -63,8 +64,10 @@ const COMPACT = {
   orb: 26,
 };
 const EXPANDED = { width: 388, minHeight: 78, radius: 30, pad: PANEL_PAD };
-/** Ask mode: wider, so commands and answers have room. */
-const ASK_WIDTH = 560;
+/** Ask mode, as in the design: 420 wide, 580 for the Agents tab. */
+const ASK_WIDTH = 420;
+const AGENTS_WIDTH = 580;
+const ASK_RADIUS = 26;
 /** The welcome: a short read, so a narrower column than Ask. */
 const WELCOME_WIDTH = 440;
 /** A setup guide: room for its steps and copy buttons. */
@@ -87,7 +90,10 @@ const resize = { type: "spring", bounce: 0, duration: 0.34 } as const;
 export function Island() {
   const { mascot, settings, suggestion, hovered: rawHover, visible, ready } = useSidekick();
   const asking = useSidekick((s) => s.ask !== null);
+  const askTab = useAgents((s) => s.tab);
   const view = useSidekick((s) => s.ask?.view);
+  // The Ask panel itself (not Settings or the welcome shown in its place).
+  const askPanel = asking && view !== "settings" && view !== "welcome";
   const chatting = useSidekick((s) => s.chatId !== null);
   const voiceStatus = useSidekick((s) => s.voiceStatus);
   const online = useSidekick((s) => s.online);
@@ -95,11 +101,21 @@ export function Island() {
   const waiting = useSidekick((s) => (s.ask ? null : s.waiting));
   const justDone = useSidekick((s) => s.justDone);
   // A task still running after Ask closed: its current step, small.
-  const working = useSidekick((s) => {
+  const chatWorking = useSidekick((s) => {
     const last = s.turns[s.turns.length - 1];
     if (!s.chatId || !last?.streaming) return null;
     return last.tool ? `${last.tool}...` : "Working...";
   });
+  // Agents keep working with Ask closed: a small pill says so, and says
+  // when one needs an answer. Hovering it opens Ask.
+  const agentWorking = useAgents((s) => {
+    const waiting = s.sessions.find((x) => x.status === "waiting");
+    if (waiting) return `${waiting.agent} needs you`;
+    const busy = s.sessions.filter((x) => x.status === "working");
+    if (busy.length > 1) return `${busy.length} agents working`;
+    return busy[0] ? `${busy[0].agent}: ${busy[0].project}` : null;
+  });
+  const working = useSidekick((s) => (s.ask ? null : (chatWorking ?? agentWorking)));
   const guide = useGuide(waiting);
   // Voice with Ask closed: a compact pill while listening and thinking; the
   // island opens only when the answer starts.
@@ -172,8 +188,10 @@ export function Island() {
   useEffect(() => {
     if (!intent || quiet || asking || !settings.onboarded) return;
     if (voiceQuestion === null && working === null) return;
+    // An agent's pill opens the Agents tab.
+    if (chatWorking === null && agentWorking !== null) useAgents.setState({ tab: "agents" });
     void api.askOpen();
-  }, [intent, quiet, asking, settings.onboarded, voiceQuestion, working]);
+  }, [intent, quiet, asking, settings.onboarded, voiceQuestion, working, chatWorking, agentWorking]);
 
   const [contentHeight, setContentHeight] = useState(0);
   const bump = useMotionValue(1);
@@ -242,7 +260,9 @@ export function Island() {
   const width = asking
     ? view === "welcome"
       ? WELCOME_WIDTH
-      : ASK_WIDTH
+      : askPanel && askTab === "agents"
+        ? AGENTS_WIDTH
+        : ASK_WIDTH
     : expanded
       ? showGuide
         ? GUIDE_WIDTH
@@ -258,8 +278,10 @@ export function Island() {
               : COMPACT.width;
   // The island window is already fixed (~560 tall); do not re-cap against
   // innerHeight or Settings/Welcome get clipped by the shell spring.
-  const height = expanded ? Math.max(EXPANDED.minHeight, contentHeight + EXPANDED.pad) : COMPACT.height;
-  const radius = expanded ? EXPANDED.radius : COMPACT.radius;
+  const height = expanded
+    ? Math.max(EXPANDED.minHeight, contentHeight + (askPanel ? ASK_PAD.bottom : EXPANDED.pad))
+    : COMPACT.height;
+  const radius = askPanel ? ASK_RADIUS : expanded ? EXPANDED.radius : COMPACT.radius;
   // The bounce is for opening only; once open, size changes are calm.
   const [settled, setSettled] = useState(false);
   useEffect(() => {
@@ -292,9 +314,9 @@ export function Island() {
   if (!ready) return null;
 
   // The orb scales from its top-left corner, so these are its visual corner.
-  const orbScale = asking ? ASK_ORB / ORB : expanded ? 1 : COMPACT.orb / ORB;
-  const orbX = expanded ? EXPANDED.pad : (COMPACT.height - COMPACT.orb) / 2 + 1;
-  const orbY = expanded ? EXPANDED.pad : (COMPACT.height - COMPACT.orb) / 2;
+  const orbScale = askPanel ? ASK_MASCOT.size / ORB : asking ? ASK_ORB / ORB : expanded ? 1 : COMPACT.orb / ORB;
+  const orbX = askPanel ? ASK_MASCOT.x : expanded ? EXPANDED.pad : (COMPACT.height - COMPACT.orb) / 2 + 1;
+  const orbY = askPanel ? ASK_MASCOT.y : expanded ? EXPANDED.pad : (COMPACT.height - COMPACT.orb) / 2;
   // Hidden for a fullscreen app, the island still comes back under the cursor.
   const shown = visible || rawHover;
 
@@ -352,7 +374,11 @@ export function Island() {
               key="ask"
               ref={contentRef}
               className="absolute top-0 right-0"
-              style={{ left: EXPANDED.pad, paddingTop: EXPANDED.pad, paddingRight: EXPANDED.pad }}
+              style={
+                askPanel
+                  ? { left: ASK_PAD.x, paddingTop: ASK_PAD.top, paddingRight: ASK_PAD.x }
+                  : { left: EXPANDED.pad, paddingTop: EXPANDED.pad, paddingRight: EXPANDED.pad }
+              }
               initial={reduced ? { opacity: 0 } : { opacity: 0, filter: "blur(6px)", y: 4 }}
               animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
               exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}

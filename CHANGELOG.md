@@ -38,6 +38,16 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 
 - Routines are now Morning setup, under Settings > Skills, with one switch: Ask first, Open by itself or Off. Click an app or site to take it out.
 
+### Agents
+
+- Ask has three tabs: Ask, Agents and History (Ctrl Tab). History holds past chats and agent sessions.
+- The Agents tab runs Claude Code or Codex in a project inside the island: pick the project and a mode (Plan, Ask, Edit or Full), then watch its plan, each step and what it says. Steer it while it works, or ask for more after.
+- Its questions come to the island: Allow (Alt A), Always (Alt Y) or No (Alt N).
+- When it is done, review every change by file: keep or undo one change, a whole file, or everything. Files it created go to the Recycle Bin. This needs the project to be a git repository.
+- A ring shows how much of the context is used; Open in terminal (Alt T) carries on in the CLI.
+- Continue in Claude Code from Ask now carries on in the Agents tab instead of a terminal.
+- With Ask closed, a small pill says an agent is working or needs you; hovering it opens the Agents tab.
+
 ### Ask
 
 - The header holds everything you change often: speak replies (Alt S), talk (Alt V), history (Alt H) and the model (Alt M), in a Graphite menu that says where each model runs.

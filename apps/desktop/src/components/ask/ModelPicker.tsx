@@ -79,11 +79,11 @@ export function ModelPicker({
         aria-expanded={open}
         title="Model (Alt M)"
         onClick={() => setOpen((o) => !o)}
-        className="chip flex h-7 items-center gap-1.5 rounded-full bg-white/[0.1] pr-2 pl-2.5 text-[12px] font-medium text-white/85 hover:bg-white/[0.16]"
+        className="ak-model chip"
       >
-        <span className="size-1.5 rounded-full bg-[#30d158]" aria-hidden="true" />
+        <span className="ak-dot" aria-hidden="true" />
         {picked ? (SHORT[shown.id] ?? shown.id) : "Auto"}
-        <Icon name="chevron" size={12} />
+        <Icon name="chevron" size={10} />
       </button>
       <KeyHint show={keys}>Alt M</KeyHint>
       {open && (

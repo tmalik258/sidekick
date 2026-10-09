@@ -1,5 +1,4 @@
 "use client";
-import { motion } from "motion/react";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
 import { runProposal, sendChat, useSidekick } from "@/lib/store";
@@ -80,63 +79,75 @@ export function Proposals({ items, keys }: { items: Proposal[]; keys: boolean })
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [keys, many]);
+  // One action is a button; several are a checklist that ticks as each runs.
+  if (items.length < 2) {
+    return (
+      <div className="ak-chips">
+        {items.map((p) =>
+          p.ran ? (
+            <Ran key={p.id} p={p} undoRef={p === undoable && keys ? undoRef : undefined} />
+          ) : (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => void runProposal(p.id)}
+              className="ak-chip primary chip ak-in"
+            >
+              {p.label}
+              {keys && <kbd>Alt 1</kbd>}
+            </button>
+          ),
+        )}
+      </div>
+    );
+  }
   return (
-    <div className="mt-2 flex flex-col gap-1.5">
-      {many && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void doAll()}
-          className="chip flex min-h-8 items-center gap-2 self-start rounded-full bg-[#0a84ff] px-3.5 py-1.5 text-[13px] font-medium text-white hover:bg-[#0a84ff]/90 disabled:opacity-60"
-        >
-          {busy ? "Working..." : `Do all ${pending.length}`}
-          {keys && !busy && <kbd className="shrink-0 font-sans text-[11px] text-white/60">Alt A</kbd>}
-        </button>
-      )}
-      {items.map((p) =>
-        p.ran ? (
-          <div key={p.id} className="flex items-center gap-2 text-[12.5px]">
-            <span className={`size-1.5 shrink-0 rounded-full ${p.ran.ok ? "bg-[#30d158]" : "bg-[#ff453a]"}`} />
-            <span className="min-w-0 flex-1 truncate text-[rgb(235_235_245/0.75)]">{p.ran.message}</span>
-            {p.ran.ok && p.ran.undoId != null && !p.ran.undone && (
-              <UndoProposal proposal={p} buttonRef={p === undoable && keys ? undoRef : undefined} />
-            )}
-            {p.ran.ok && p.ran.path && (
-              <button
-                type="button"
-                onClick={() => void api.revealPath(p.ran?.path ?? "")}
-                className="chip shrink-0 rounded-full bg-white/[0.12] px-2.5 py-1 text-[12px] text-white/90 hover:bg-white/[0.2]"
-              >
-                Show
-              </button>
-            )}
-          </div>
-        ) : (
-          <motion.button
+    <div className="ak-body">
+      <div className="ak-prs">
+        {items.map((p, i) => (
+          <button
             key={p.id}
             type="button"
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2, delay: pending.indexOf(p) * 0.04, ease: [0.23, 1, 0.32, 1] }}
+            disabled={!!p.ran || busy}
             onClick={() => void runProposal(p.id)}
-            className={`chip flex min-h-8 items-center gap-2 self-start rounded-full px-3.5 py-1.5 text-[13px] font-medium ${
-              pending.indexOf(p) === 0 && !many
-                ? "bg-white text-black hover:bg-white/90"
-                : "bg-white/[0.12] text-white hover:bg-white/[0.2]"
-            }`}
+            data-state={p.ran ? (p.ran.ok ? "done" : "failed") : "waiting"}
+            title={p.ran?.message}
+            className="ak-pr ak-in"
+            style={{ animationDelay: `${i * 40}ms` }}
           >
-            {p.label}
-            {keys && pending.indexOf(p) < 9 && (
-              <kbd
-                className={`shrink-0 font-sans text-[11px] ${pending.indexOf(p) === 0 && !many ? "text-black/40" : "text-white/35"}`}
-              >
-                Alt {pending.indexOf(p) + 1}
-              </kbd>
-            )}
-          </motion.button>
-        ),
-      )}
+            <span className="ak-cb" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate">{p.ran && !p.ran.ok ? p.ran.message : p.label}</span>
+            {!p.ran && keys && pending.indexOf(p) < 9 && <kbd>Alt {pending.indexOf(p) + 1}</kbd>}
+          </button>
+        ))}
+      </div>
+      <div className="ak-chips">
+        {pending.length > 0 && (
+          <button type="button" disabled={busy} onClick={() => void doAll()} className="ak-chip primary chip">
+            {busy ? "Working..." : `Do all ${pending.length}`}
+            {keys && !busy && <kbd>Alt A</kbd>}
+          </button>
+        )}
+        {undoable && <UndoProposal proposal={undoable} buttonRef={keys ? undoRef : undefined} />}
+      </div>
     </div>
+  );
+}
+
+/** What one action did, with Undo and Show when they apply. */
+function Ran({ p, undoRef }: { p: Proposal; undoRef?: RefObject<HTMLButtonElement | null> }) {
+  if (!p.ran) return null;
+  return (
+    <span className="flex min-w-0 basis-full items-center gap-2 text-[12.5px]">
+      <span className={`size-1.5 shrink-0 rounded-full ${p.ran.ok ? "bg-[#30d158]" : "bg-[#ff453a]"}`} />
+      <span className="min-w-0 flex-1 truncate text-[rgb(235_235_245/0.75)]">{p.ran.message}</span>
+      {p.ran.ok && p.ran.undoId != null && !p.ran.undone && <UndoProposal proposal={p} buttonRef={undoRef} />}
+      {p.ran.ok && p.ran.path && (
+        <button type="button" onClick={() => void api.revealPath(p.ran?.path ?? "")} className="ak-chip chip">
+          Show
+        </button>
+      )}
+    </span>
   );
 }
 
@@ -159,10 +170,10 @@ export function UndoProposal({
           .then((m) => setState(m))
           .catch((e) => setState(String(e)))
       }
-      className="chip shrink-0 rounded-full bg-white/[0.12] px-2.5 py-1 text-[12px] text-white/90 hover:bg-white/[0.2]"
+      className="ak-chip chip"
     >
       Undo
-      {buttonRef && <kbd className="ml-1.5 font-sans text-[11px] text-white/35">Alt U</kbd>}
+      {buttonRef && <kbd>Alt U</kbd>}
     </button>
   );
 }
@@ -175,28 +186,18 @@ export function AnswerOptions({ options: all, start }: { options: string[]; star
   const shown = Math.max(0, Math.min(options.length, 9 - start));
   useAltDigits(shown, start, (n) => sendChat(options[n]));
   return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
+    <div className="ak-chips">
       {options.map((o, i) => (
-        <motion.button
+        <button
           key={o}
           type="button"
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2, delay: i * 0.04, ease: [0.23, 1, 0.32, 1] }}
           onClick={() => sendChat(o)}
-          className={`chip flex min-h-8 max-w-full items-center gap-2 rounded-full px-3 py-1.5 text-left text-[13px] font-medium ${
-            i === 0 && start === 0
-              ? "bg-white text-black hover:bg-white/90"
-              : "bg-white/[0.12] text-white hover:bg-white/[0.2]"
-          }`}
+          className={`ak-chip chip ak-in max-w-full text-left ${i === 0 && start === 0 ? "primary" : ""}`}
+          style={{ animationDelay: `${i * 40}ms` }}
         >
           <span className="leading-snug">{o}</span>
-          <kbd
-            className={`shrink-0 font-sans text-[11px] ${i === 0 && start === 0 ? "text-black/40" : "text-white/35"}`}
-          >
-            {i < shown ? `Alt ${start + i + 1}` : ""}
-          </kbd>
-        </motion.button>
+          {i < shown && <kbd>Alt {start + i + 1}</kbd>}
+        </button>
       ))}
     </div>
   );

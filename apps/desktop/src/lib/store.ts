@@ -722,7 +722,12 @@ function flushText() {
   if (pendingTimer) clearTimeout(pendingTimer);
   pendingFrame = 0;
   pendingTimer = 0;
-  for (const [id, text] of pendingText) updateLastTurn(id, (t) => ({ ...t, content: t.content + text }));
+  for (const [id, text] of pendingText)
+    updateLastTurn(id, (t) => ({
+      ...t,
+      content: t.content + text,
+      firstMs: t.firstMs ?? (t.startedAt ? Date.now() - t.startedAt : undefined),
+    }));
   pendingText.clear();
 }
 

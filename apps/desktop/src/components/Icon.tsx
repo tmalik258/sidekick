@@ -37,6 +37,10 @@ const BODIES = {
     '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 16.5v-9M8.5 11 12 7.5l3.5 3.5"/></g>',
   wifiOff:
     '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path d="M2 8.8a15 15 0 0 1 20 0"/><path d="M5.3 12.5a10 10 0 0 1 13.4 0"/><path d="M8.6 16.1a5 5 0 0 1 6.8 0"/><path d="M3.5 3.5l17 17"/></g><circle cx="12" cy="19.5" r="1.25" fill="currentColor"/>',
+  // Drawn for Sidekick (not from Solar).
+  lock: '<g fill="currentColor"><rect x="4.5" y="10.5" width="15" height="11" rx="2.5"/><path fill="none" stroke="currentColor" stroke-width="2.2" d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></g>',
+  terminal:
+    '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="m5 8 4 4-4 4M12 17h7"/></g>',
 } as const;
 
 export type IconName = keyof typeof BODIES;

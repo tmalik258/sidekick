@@ -38,10 +38,12 @@ mod pipeline;
 mod privacy;
 mod projects;
 mod recipes;
+mod review;
 mod routines;
 mod screen;
 mod search;
 mod secrets;
+mod sessions;
 mod setup;
 mod shortcuts;
 mod state;
@@ -200,6 +202,15 @@ pub fn run() {
             commands::timing_record,
             commands::timings_recent,
             commands::editors_list,
+            commands::agent_start,
+            commands::agent_handoff,
+            commands::agent_send,
+            commands::agent_stop,
+            commands::agent_answer,
+            commands::agent_changes,
+            commands::agent_undo,
+            commands::agent_close,
+            commands::agent_terminal,
             commands::ask_open,
             commands::ask_ensure_welcome,
             commands::ask_defer_welcome,
