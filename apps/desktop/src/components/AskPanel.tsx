@@ -612,6 +612,8 @@ export function AskPanel() {
     v: () => (hearing !== null ? stopListening() : voiceReady && !streaming && startListening()),
     p: () => setAsk({ localOnly: !ask.localOnly }),
     h: () => !streaming && goTab(tab === "history" ? "ask" : "history"),
+    o: () => tab === "agents" && setLayout("one"),
+    b: () => tab === "agents" && setLayout("board"),
     tab: (back) => pickTab(nextTab(tab, coder, !!back)),
     m: () => {
       if (choices.length < 2) return;
@@ -728,18 +730,18 @@ export function AskPanel() {
           <fieldset aria-label="Layout" className="ak-lay ak-seg border-0">
             {(
               [
-                ["one", "One"],
-                ["board", "Board"],
+                ["one", "One", "Alt O"],
+                ["board", "Board", "Alt B"],
               ] as const
-            ).map(([id, label]) => (
+            ).map(([id, label, key]) => (
               <button
                 key={id}
                 type="button"
                 aria-pressed={layout === id}
                 aria-label={label}
-                title={label}
+                title={`${label} (${key})`}
                 onClick={() => setLayout(id)}
-                className="chip"
+                className="chip relative"
               >
                 <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5">
                   {id === "one" ? (
@@ -763,6 +765,7 @@ export function AskPanel() {
                     />
                   )}
                 </svg>
+                <KeyHint show={alt}>{key}</KeyHint>
               </button>
             ))}
           </fieldset>

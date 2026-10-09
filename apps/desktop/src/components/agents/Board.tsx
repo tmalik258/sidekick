@@ -153,7 +153,7 @@ function Tile({ s, n, focused }: { s: Session; n: number; focused: boolean }) {
         </>
       ) : say ? (
         <>
-          <p className="ak-tsay ak-tclamp">{say}</p>
+          <p className="ak-tsay ak-tclamp">{plain(say)}</p>
           <div className="ak-tacts">
             <button type="button" className="ak-chip chip" onClick={open}>
               Open
@@ -299,6 +299,17 @@ function EmptySlot({ recent, n }: { recent: Session[]; n: number }) {
   );
 }
 
+/** A reply as plain text for a tile: no **, `, # or [link](url) marks. */
+function plain(md: string): string {
+  return md
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/(\*\*|__|`)/g, "")
+    .replace(/^\s*(#+|[-*]|\d+\.)\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function Board({ sessions }: { sessions: Session[]; keys?: boolean }) {
   const focus = useAgents((s) => s.focus);
   const live = sessions.filter((s) => !s.restored || s.status !== "ended");
@@ -307,6 +318,13 @@ export function Board({ sessions }: { sessions: Session[]; keys?: boolean }) {
   const [text, setText] = useState("");
   const grid = useRef<HTMLDivElement>(null);
   const [below, setBelow] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const targetId = target?.id;
+  // Ready to type on open, and again when Ctrl 1-9 picks another tile.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: focus again when the target changes
+  useEffect(() => {
+    requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
+  }, [targetId]);
 
   // Ctrl 1-9 puts a tile in focus.
   useEffect(() => {
@@ -411,6 +429,7 @@ export function Board({ sessions }: { sessions: Session[]; keys?: boolean }) {
           </div>
           <div className="ak-row">
             <input
+              ref={inputRef}
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
