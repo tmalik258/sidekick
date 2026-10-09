@@ -27,6 +27,7 @@ const cases = JSON.parse(readFileSync(join(import.meta.dirname, "ask-cases.json"
 );
 mkdirSync(OUT, { recursive: true });
 
+console.log(`Starting ${APP}`);
 const app = spawn(APP, [], {
   env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${PORT}` },
   stdio: "ignore",
@@ -41,7 +42,10 @@ async function stop() {
 async function connect() {
   const started = Date.now();
   while (Date.now() - started < 60_000) {
-    if (app.exitCode !== null) throw new Error(`Sidekick exited with code ${app.exitCode}`);
+    if (app.exitCode !== null)
+      throw new Error(
+        `the test build closed at once (code ${app.exitCode}). Is your normal Sidekick still running? Quit it from the tray and run this again.`,
+      );
     try {
       browser = await chromium.connectOverCDP(`http://127.0.0.1:${PORT}`);
       for (let i = 0; i < 100; i++) {
@@ -64,6 +68,7 @@ const page = await connect().catch(async (e) => {
   await stop();
   process.exit(1);
 });
+console.log(`Connected. Asking ${cases.length} questions, hands off until it is done.`);
 const invoke = (cmd, args = {}) =>
   page.evaluate(([c, a]) => window.__TAURI_INTERNALS__.invoke(c, a).catch((e) => ({ error: String(e) })), [cmd, args]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
