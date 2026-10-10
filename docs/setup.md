@@ -8,7 +8,7 @@ Sidekick works on its own after install. Each item below turns on more of it. Th
 | --- | --- | --- |
 | Claude Code | `irm https://claude.ai/install.ps1 \| iex`, then run `claude` once to sign in | Chat, drafts and skills with your Claude plan |
 | Ollama | `winget install -e --id Ollama.Ollama`. **Install** in Sidekick also starts Ollama and downloads the chat model below | Free local AI on this PC |
-| Local chat model | Picked for your PC: `ollama pull qwen3:8b` (5.2 GB) with an 8 GB+ graphics card, `qwen3:4b` (2.5 GB) with a 4 GB+ card or 16 GB of memory, otherwise `qwen3:1.7b` (1.4 GB) | Answers that never leave the PC |
+| Local chat model | Picked for your PC: `ollama pull qwen3:8b` (5.2 GB) with an 8 GB+ graphics card, `qwen3:4b` (2.5 GB) with a 6 GB+ card or 16 GB of memory, otherwise `qwen2.5:3b-instruct-q4_K_M` (1.9 GB) on a 4 GB card or lighter | Answers that never leave the PC |
 | Search model | `ollama pull nomic-embed-text` (about 270 MB) | Search by meaning, not only exact words |
 | Anthropic API key (optional) | `setx ANTHROPIC_API_KEY "your-key"`, then restart Sidekick | Pay as you go instead of a Claude plan |
 

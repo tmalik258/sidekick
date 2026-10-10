@@ -4,6 +4,10 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Local model
+
+- Chat model pick by graphics: `qwen3:8b` on 8 GB+, `qwen3:4b` on 6 GB+ (or 16 GB of memory), and `qwen2.5:3b-instruct-q4_K_M` on a 4 GB card or lighter (replaces `qwen3:1.7b`).
+
 ### Fixes from testing
 
 - Every answer is read aloud when the speaker button is on, typed questions included, even with the wake word off. Spoken questions still get short spoken answers; typed ones keep their formatting.
@@ -83,7 +87,7 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 
 - Sidekick reaches Ollama on `127.0.0.1` instead of `localhost`. Windows tried IPv6 first, and a fresh Ollama only listens on IPv4, so it looked stopped until "Expose Ollama to the network" was turned on.
 - Installing Ollama from Sidekick also starts it and downloads the chat model, in one PowerShell window.
-- The chat model suits the PC: `qwen3:8b` with an 8 GB graphics card, `qwen3:4b` with 4 GB or 16 GB of memory, otherwise `qwen3:1.7b`.
+- The chat model suits the PC: `qwen3:8b` with an 8 GB graphics card, `qwen3:4b` with 6 GB or 16 GB of memory, otherwise `qwen2.5:3b-instruct-q4_K_M` on a 4 GB card or lighter.
 
 ### Ready for release
 
