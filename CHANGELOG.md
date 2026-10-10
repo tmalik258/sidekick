@@ -4,6 +4,8 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-10
+
 ### Local model
 
 - Chat model pick by graphics: `qwen3:8b` on 8 GB+, `qwen3:4b` on 6 GB+ (or 16 GB of memory), and `qwen2.5:3b-instruct-q4_K_M` on a 4 GB card or lighter (replaces `qwen3:1.7b`).
@@ -157,7 +159,7 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 - Listening shows rainbow bars and your words, in Ask and in the compact pill.
 - The mascot talks along while it reads an answer aloud.
 
-## [0.1.0] - Unreleased
+## [0.1.0] - 2026-10-06
 
 The first public release.
 
@@ -201,5 +203,6 @@ The first public release.
 - Update checks once a day. A small sign on the island shows a waiting update; installs are checked against SHA256SUMS.txt and only run after your click.
 - History with Undo for files Sidekick creates (24 hours).
 
-[Unreleased]: https://github.com/tmalik258/sidekick/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/tmalik258/sidekick/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/tmalik258/sidekick/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tmalik258/sidekick/releases/tag/v0.1.0
