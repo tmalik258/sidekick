@@ -934,7 +934,7 @@ commands.setup_detect = () => ({
     folder("C:\\Users\\you\\Desktop", "Desktop"),
     folder("C:\\Users\\you\\Downloads", "Downloads"),
   ],
-  chatModels: ["qwen3:1.7b"],
+  chatModels: ["qwen2.5:3b-instruct-q4_K_M"],
   embedModels: [],
   claudeInstalled: true,
   claudeHooks: false,
@@ -970,7 +970,7 @@ commands.extension_install = (a) => {
 };
 commands.local_models = () => ({
   reachable: !previewFlag("nomodel"),
-  chat: ["qwen3:1.7b", "llama3.2:3b"],
+  chat: ["qwen2.5:3b-instruct-q4_K_M", "llama3.2:3b"],
   vision: ["moondream:latest"],
   embed: ["nomic-embed-text"],
 });

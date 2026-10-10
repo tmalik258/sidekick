@@ -195,17 +195,18 @@ pub struct ChatPick {
     pub size: &'static str,
 }
 
-/// The biggest Qwen 3 that answers quickly here: a graphics card holds the
+/// The biggest model that answers quickly here: a graphics card holds the
 /// whole model, otherwise it runs on the processor, where a small one keeps
 /// answers fast.
 pub fn chat_model_for(graphics: u64, memory: u64) -> ChatPick {
     const GB: u64 = 1 << 30;
     let (model, size) = if graphics >= 8 * GB {
         ("qwen3:8b", "5.2 GB")
-    } else if graphics >= 4 * GB || memory >= 15 * GB {
+    } else if graphics >= 6 * GB || memory >= 15 * GB {
         ("qwen3:4b", "2.5 GB")
     } else {
-        ("qwen3:1.7b", "1.4 GB")
+        // 4 GB cards and lighter PCs.
+        ("qwen2.5:3b-instruct-q4_K_M", "1.9 GB")
     };
     ChatPick {
         model: model.to_owned(),
@@ -1257,19 +1258,26 @@ mod tests {
     fn picks_a_chat_model_for_the_pc() {
         const GB: u64 = 1 << 30;
         assert_eq!(chat_model_for(12 * GB, 32 * GB).model, "qwen3:8b");
-        assert_eq!(chat_model_for(6 * GB, 16 * GB).model, "qwen3:4b");
+        assert_eq!(chat_model_for(6 * GB, 8 * GB).model, "qwen3:4b");
         assert_eq!(chat_model_for(512 << 20, 16 * GB).model, "qwen3:4b");
-        assert_eq!(chat_model_for(0, 8 * GB).model, "qwen3:1.7b");
+        assert_eq!(
+            chat_model_for(4 * GB, 8 * GB).model,
+            "qwen2.5:3b-instruct-q4_K_M"
+        );
+        assert_eq!(
+            chat_model_for(0, 8 * GB).model,
+            "qwen2.5:3b-instruct-q4_K_M"
+        );
     }
 
     #[test]
     fn chains_steps_with_a_path_refresh() {
         let script = chain(&[
             "winget install -e --id Ollama.Ollama".into(),
-            "ollama pull qwen3:1.7b".into(),
+            "ollama pull qwen2.5:3b-instruct-q4_K_M".into(),
         ]);
         assert!(script.starts_with("winget install"));
-        assert!(script.ends_with("ollama pull qwen3:1.7b"));
+        assert!(script.ends_with("ollama pull qwen2.5:3b-instruct-q4_K_M"));
         assert!(script.contains("GetEnvironmentVariable('Path','User')"));
     }
 

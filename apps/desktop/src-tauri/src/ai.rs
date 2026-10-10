@@ -923,7 +923,7 @@ pub(crate) async fn screenshot(app: &AppHandle) -> Result<Vec<u8>, String> {
 
 fn no_provider_hint(local_only: bool) -> String {
     if local_only {
-        "No local model is running. Start Ollama (ollama serve) and pull a model, e.g. ollama pull qwen3:1.7b.".into()
+        "No local model is running. Start Ollama (ollama serve) and pull a model, e.g. ollama pull qwen2.5:3b-instruct-q4_K_M.".into()
     } else {
         "No AI is set up yet. Install Claude Code and sign in, start Ollama, or set ANTHROPIC_API_KEY. See Settings > AI.".into()
     }
