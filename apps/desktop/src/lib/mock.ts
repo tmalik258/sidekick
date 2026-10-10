@@ -1161,6 +1161,8 @@ commands.search = (a) => [
   },
 ];
 commands.search_reindex = () => undefined;
+commands.drive_index_status = () => ({ available: true, live: false });
+commands.drive_index_set = () => undefined;
 commands.open_reference = () => undefined;
 commands.time_today = () => [
   { app: "Visual Studio Code", project: "sidekick", secs: 9420 },

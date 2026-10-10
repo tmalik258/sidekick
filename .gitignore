@@ -13,3 +13,4 @@ apps/desktop/src-tauri/resources/voice-models/
 # Local AI assistant notes (Next.js dev writes the apps/desktop ones)
 CLAUDE.md
 AGENTS.md
+apps/desktop/src-tauri/binaries/

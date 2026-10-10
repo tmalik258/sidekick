@@ -244,6 +244,8 @@ export const api = {
   search: (query: string) => invoke<SearchHit[]>("search", { query }),
   searchStatus: () => invoke<{ items: number; embedded: number; embedError: string | null }>("search_status"),
   searchReindex: () => invoke<void>("search_reindex"),
+  driveIndexStatus: () => invoke<{ available: boolean; live: boolean }>("drive_index_status"),
+  driveIndexSet: (on: boolean) => invoke<void>("drive_index_set", { on }),
   openReference: (source: string, reference: string) => invoke<void>("open_reference", { source, reference }),
   actionUndo: (id: number) => invoke<string>("action_undo", { id }),
   clipboardHistory: (limit = 60) => invoke<{ text: string; ts: string }[]>("clipboard_history", { limit }),

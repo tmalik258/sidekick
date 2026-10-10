@@ -43,6 +43,13 @@ jobs:
           $cmd = "trusted-signing-cli -e $env:SIGNING_ENDPOINT -a $env:SIGNING_ACCOUNT -c $env:SIGNING_PROFILE -d Sidekick %1"
           $json.bundle | Add-Member -NotePropertyName windows -NotePropertyValue @{ signCommand = $cmd } -Force
           $json | ConvertTo-Json -Depth 10 | Set-Content $conf
+      # The optional drive indexer service ships next to the app.
+      - name: Build drive indexer
+        shell: pwsh
+        run: |
+          cargo build --release -p sidekick-ntfs --bin sidekick-indexer
+          New-Item -ItemType Directory -Force apps/desktop/src-tauri/binaries | Out-Null
+          Copy-Item target/release/sidekick-indexer.exe apps/desktop/src-tauri/binaries/sidekick-indexer-x86_64-pc-windows-msvc.exe
       - run: pnpm build
         env:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -52,7 +59,7 @@ jobs:
         if: ${{ env.AZURE_CLIENT_ID != '' }}
         shell: pwsh
         run: |
-          $files = Get-ChildItem target/release/sidekick*.exe, target/release/bundle/nsis/*.exe, target/release/bundle/msi/*.msi
+          $files = Get-ChildItem target/release/sidekick*.exe -Exclude sidekick-indexer.exe; $files += Get-ChildItem target/release/bundle/nsis/*.exe, target/release/bundle/msi/*.msi
           foreach ($f in $files) {
             $sig = Get-AuthenticodeSignature $f
             Write-Output "$($f.Name): $($sig.Status)"

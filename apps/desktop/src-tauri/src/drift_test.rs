@@ -38,14 +38,14 @@ fn invoked() -> BTreeSet<String> {
 
 #[test]
 fn every_ui_command_is_registered() {
-    let registered: BTreeSet<String> = LIB
-        .match_indices("commands::")
-        .map(|(at, _)| {
-            LIB[at + "commands::".len()..]
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-                .collect()
-        })
+    // The last segment of every path in the handler list, whatever module
+    // the command lives in (commands::x, names::x).
+    let start = LIB.find("generate_handler![").expect("a handler list");
+    let list = &LIB[start..start + LIB[start..].find("])").expect("its end")];
+    let registered: BTreeSet<String> = list
+        .lines()
+        .filter_map(|l| l.trim().trim_end_matches(',').rsplit("::").next())
+        .map(str::to_owned)
         .collect();
     let missing: Vec<_> = invoked()
         .into_iter()
