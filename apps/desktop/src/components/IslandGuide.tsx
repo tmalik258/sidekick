@@ -108,12 +108,14 @@ export function IslandGuide({ waiting, guide }: { waiting: Waiting; guide: Guide
       {copies.length > 0 && (
         <div className="mt-2.5 flex flex-wrap gap-1.5">
           {copies.map((b, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: labels can repeat and the list never reorders
             <GuideChip key={`copy-${i}-${b.label}`} button={b} hint={key(b)} done={copied === b.label} />
           ))}
         </div>
       )}
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
         {actions.map((b, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: labels can repeat and the list never reorders
           <GuideChip key={`act-${i}-${b.label}`} button={b} hint={key(b)} />
         ))}
         <button

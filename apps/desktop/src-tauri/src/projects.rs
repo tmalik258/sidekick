@@ -154,13 +154,17 @@ pub fn infos(app: &AppHandle) -> Vec<ProjectInfo> {
         let ra = rank.get(&a.name.to_ascii_lowercase());
         let rb = rank.get(&b.name.to_ascii_lowercase());
         match (ra, rb) {
-            (Some((da, sa)), Some((db, sb))) => db
-                .cmp(da)
-                .then(sb.cmp(sa))
-                .then_with(|| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase())),
+            (Some((da, sa)), Some((db, sb))) => db.cmp(da).then(sb.cmp(sa)).then_with(|| {
+                a.name
+                    .to_ascii_lowercase()
+                    .cmp(&b.name.to_ascii_lowercase())
+            }),
             (Some(_), None) => std::cmp::Ordering::Less,
             (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()),
+            (None, None) => a
+                .name
+                .to_ascii_lowercase()
+                .cmp(&b.name.to_ascii_lowercase()),
         }
     });
     out

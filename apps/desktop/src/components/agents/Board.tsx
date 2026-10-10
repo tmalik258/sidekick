@@ -239,6 +239,10 @@ function EmptySlot({
     setHighlight(0);
     onDismiss?.();
   };
+  // Latest closePick for the Esc listener, so it never calls a stale onDismiss.
+  const closePickRef = useRef(closePick);
+  closePickRef.current = closePick;
+
   // Keep the picker on a real project when the list loads or draft goes stale.
   useEffect(() => {
     if (!list.length) return;
@@ -270,7 +274,7 @@ function EmptySlot({
       if (agent) {
         setAgent(null);
         setPrompt("");
-      } else closePick();
+      } else closePickRef.current();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
@@ -368,7 +372,9 @@ function EmptySlot({
         </span>
         <span className="ak-empty-t">Start or bring back</span>
         {recent.length > 0 ? (
-          <span className="ak-empty-s">{recent.length} paused · {ready.length} ready</span>
+          <span className="ak-empty-s">
+            {recent.length} paused · {ready.length} ready
+          </span>
         ) : (
           <span className="ak-empty-s">{ready.map(([, name]) => name).join(" · ")}</span>
         )}
@@ -446,9 +452,7 @@ function EmptySlot({
             ))}
           </div>
           <p className="ak-pickhint">
-            {pickedPath
-              ? "1–3 agent · [ ] project · Enter · Esc"
-              : "Add a project in Settings first"}
+            {pickedPath ? "1–3 agent · [ ] project · Enter · Esc" : "Add a project in Settings first"}
           </p>
           {recent.length > 0 && (
             <div className="ak-trec">

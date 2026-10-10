@@ -550,10 +550,7 @@ export function AskPanel() {
             hint: a.minutes >= 60 ? `${Math.round(a.minutes / 60)} h this week` : undefined,
             run: () =>
               void runOpen(async () => {
-                await api.appLaunch(
-                  a.id,
-                  privateNamed && browser ? { private: true, browser } : undefined,
-                );
+                await api.appLaunch(a.id, privateNamed && browser ? { private: true, browser } : undefined);
                 return true;
               }, `Opened ${a.name}`),
           });

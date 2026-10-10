@@ -104,9 +104,7 @@ pub fn island_ready(app: AppHandle) {
 /// Matches OS autostart to the setting (enable when desired but missing).
 pub fn sync_launch_at_login(app: &AppHandle, want: bool) -> Result<(), String> {
     let autolaunch = app.autolaunch();
-    let on = autolaunch
-        .is_enabled()
-        .map_err(|e| e.to_string())?;
+    let on = autolaunch.is_enabled().map_err(|e| e.to_string())?;
     if want == on {
         return Ok(());
     }

@@ -316,9 +316,7 @@ export function activeCount(sessions: Session[]): number {
 
 function entriesCancelRunning(entries: Entry[]): Entry[] {
   return entries.map((e) =>
-    e.kind === "step" && e.step.state === "running"
-      ? { kind: "step", step: { ...e.step, state: "cancelled" } }
-      : e,
+    e.kind === "step" && e.step.state === "running" ? { kind: "step", step: { ...e.step, state: "cancelled" } } : e,
   );
 }
 
@@ -480,10 +478,7 @@ function noteUsage(agent: string, u: SeenUsage) {
   const key = u.window || "plan";
   try {
     const all = seenAll();
-    localStorage.setItem(
-      USAGE_KEY,
-      JSON.stringify({ ...all, [agent]: { ...all[agent], [key]: u } }),
-    );
+    localStorage.setItem(USAGE_KEY, JSON.stringify({ ...all, [agent]: { ...all[agent], [key]: u } }));
   } catch {
     // Not kept: the picker just shows nothing for this agent.
   }

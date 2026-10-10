@@ -968,6 +968,7 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
     <div className="mt-3 flex flex-wrap items-center gap-1.5">
       {suggestion.options.map((option, i) => (
         <motion.button
+          // biome-ignore lint/suspicious/noArrayIndexKey: labels can repeat and the list never reorders
           key={`${i}-${option}`}
           type="button"
           onClick={(e) => choose(suggestion, i, e.shiftKey)}

@@ -457,7 +457,10 @@ impl Storage {
 
     /// Per project from `day` on: (lowercase name, total secs, last day with time).
     /// Newest activity first, then most time — for project pickers.
-    pub fn time_by_project_since(&self, day: &str) -> Result<Vec<(String, i64, String)>, StorageError> {
+    pub fn time_by_project_since(
+        &self,
+        day: &str,
+    ) -> Result<Vec<(String, i64, String)>, StorageError> {
         let mut stmt = self.conn.prepare(
             "SELECT LOWER(project), SUM(secs) AS total, MAX(day) AS last_day FROM app_time
              WHERE day >= ?1 AND TRIM(project) != ''

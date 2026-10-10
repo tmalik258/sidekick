@@ -75,7 +75,11 @@ pub fn tracked(skill_id: &str) -> bool {
 /// A screenshot is already on the clipboard, so "always copy" adds nothing.
 /// The morning card asks for itself (after five Open alls), so it is left out.
 /// Disk-low: opening Storage settings every time the drive is low does not help.
-const NEVER_AUTO: &[&str] = &["files.screenshot", "system.morning-brief", "system.disk-low"];
+const NEVER_AUTO: &[&str] = &[
+    "files.screenshot",
+    "system.morning-brief",
+    "system.disk-low",
+];
 
 /// Whether a skill may become automatic ("Always do this").
 pub fn can_automate(skill_id: &str) -> bool {

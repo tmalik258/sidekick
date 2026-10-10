@@ -87,19 +87,10 @@ export function agentMarkId(agent: string): string {
 }
 
 /** Letter and colour from a session's agent display name. */
-export const markFor = (agent: string): [string, string] =>
-  AGENT_MARKS[agentMarkId(agent)] ?? ["L", "#8e8e93"];
+export const markFor = (agent: string): [string, string] => AGENT_MARKS[agentMarkId(agent)] ?? ["L", "#8e8e93"];
 
 /** Agent chip: Clawd / Codex art when we have it, else letter + colour. */
-export function AgentMark({
-  agent,
-  sm,
-  className = "",
-}: {
-  agent: string;
-  sm?: boolean;
-  className?: string;
-}) {
+export function AgentMark({ agent, sm, className = "" }: { agent: string; sm?: boolean; className?: string }) {
   const id = agentMarkId(agent);
   const image = AGENT_IMAGES[id];
   const [letter, color] = markFor(agent);
@@ -338,14 +329,14 @@ function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorC
                   label="Agent"
                   value={pickedAgent}
                   onChange={setAgent}
-                    options={[...choices, ...missing].map((c) => ({
-                      value: c.id,
-                      label: c.name,
-                      sub: pickerNote(c),
-                      icon: AGENT_MARKS[c.id]?.[0] ?? "C",
-                      color: AGENT_MARKS[c.id]?.[1] ?? "#d97757",
-                      image: AGENT_IMAGES[c.id],
-                    }))}
+                  options={[...choices, ...missing].map((c) => ({
+                    value: c.id,
+                    label: c.name,
+                    sub: pickerNote(c),
+                    icon: AGENT_MARKS[c.id]?.[0] ?? "C",
+                    color: AGENT_MARKS[c.id]?.[1] ?? "#d97757",
+                    image: AGENT_IMAGES[c.id],
+                  }))}
                 />
               </span>
             ) : (
@@ -985,7 +976,9 @@ function EntryRow({ entry: e, onRewind }: { entry: Entry; onRewind?: () => void 
     <>
       <div className="ak-tg ak-in" data-s={st.state}>
         <span className="ak-k mono">{STEP_TAG[st.tool] ?? st.tool.slice(0, 5)}</span>
-        <span className={`shrink-0 ${st.state === "running" ? "text-white" : st.state === "cancelled" ? "text-[var(--i3)]" : ""}`}>
+        <span
+          className={`shrink-0 ${st.state === "running" ? "text-white" : st.state === "cancelled" ? "text-[var(--i3)]" : ""}`}
+        >
           {st.label}
         </span>
         {st.detail && <span className="d mono">{st.detail}</span>}
