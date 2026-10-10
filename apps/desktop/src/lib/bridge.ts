@@ -20,6 +20,7 @@ import type {
   ChatSummary,
   CloudId,
   ComposioStatus,
+  CursorChat,
   EditorList,
   ExtensionGuide,
   FileChange,
@@ -31,9 +32,11 @@ import type {
   Learned,
   LocalModels,
   MascotState,
+  MergeState,
   NotifyLevel,
   ProviderStatus,
   Recipe,
+  ReposOverview,
   RoutineItem,
   SearchHit,
   Settings,
@@ -112,7 +115,7 @@ export interface EventPayloads {
   [EVENTS.aiTool]: { id: string; name: string; label?: string };
   [EVENTS.aiProposal]: { chatId: string; id: string; label: string; step?: boolean };
   [EVENTS.askOpen]: AskOpen;
-  [EVENTS.askClose]: { reason: "close" | "defer" };
+  [EVENTS.askClose]: { reason: "close" | "defer"; panelGen?: number };
   [EVENTS.actionResult]: ActionResult;
   [EVENTS.settingsChanged]: Settings;
   [EVENTS.voiceState]: VoiceStatus;
@@ -167,7 +170,6 @@ export const api = {
   cloudKeySet: (id: CloudId, key: string) => invoke<Settings>("cloud_key_set", { id, key }),
   cloudKeyClear: (id: CloudId) => invoke<Settings>("cloud_key_clear", { id }),
   openrouterModels: () => invoke<RouterModel[]>("openrouter_models"),
-  copilotAsk: (text: string) => invoke<string>("copilot_ask", { text }),
   crashPending: () => invoke<string | null>("crash_pending"),
   crashDismiss: () => invoke<void>("crash_dismiss"),
   settingsGet: () => invoke<Settings>("settings_get"),
@@ -250,8 +252,14 @@ export const api = {
   projectLaunch: (path: string) => invoke<string>("project_launch", { path }),
   editorsList: () => invoke<EditorList>("editors_list"),
   instantFind: (query: string) => invoke<InstantResults>("instant_find", { query }),
-  appLaunch: (id: string) => invoke<void>("app_launch", { id }),
-  fileOpen: (path: string) => invoke<void>("file_open", { path }),
+  appLaunch: (id: string, opts?: { private?: boolean; browser?: string }) =>
+    invoke<void>("app_launch", {
+      id,
+      private: opts?.private ?? null,
+      browser: opts?.browser ?? null,
+    }),
+  fileOpen: (path: string, how?: "editor" | "reveal" | "default") =>
+    invoke<{ opened: boolean }>("file_open", { path, how: how ?? null }),
   aiHandoff: (messages: ChatMessage[], reason: string | null) => invoke<string>("ai_handoff", { messages, reason }),
   aiRunProposal: (id: string) =>
     invoke<{ ok: boolean; message: string; undoId: number | null; path: string | null }>("ai_run_proposal", { id }),
@@ -263,11 +271,20 @@ export const api = {
   composioUseKey: (key: string) => invoke<string>("composio_use_key", { key }),
   agentsStatus: () => invoke<Agents>("agents_status"),
   agentUsual: (path: string) => invoke<string | null>("agent_usual", { path }),
-  agentStart: (agent: string, path: string, prompt: string, mode: AgentMode) =>
-    invoke<AgentStarted>("agent_start", { agent, path, prompt, mode }),
+  agentStart: (
+    agent: string,
+    path: string,
+    prompt: string,
+    mode: AgentMode,
+    model: string | null = null,
+    effort: string | null = null,
+  ) => invoke<AgentStarted>("agent_start", { agent, path, prompt, mode, model, effort }),
   agentHandoff: (messages: ChatMessage[], reason: string | null) =>
     invoke<AgentStarted>("agent_handoff", { messages, reason }),
   agentSend: (id: string, text: string) => invoke<void>("agent_send", { id, text }),
+  agentTune: (id: string, model: string | null, effort: string | null) =>
+    invoke<void>("agent_tune", { id, model, effort }),
+  agentFinish: (id: string) => invoke<string>("agent_finish", { id }),
   agentStop: (id: string) => invoke<void>("agent_stop", { id }),
   agentAnswer: (question: string, answer: "allow" | "always" | "deny") =>
     invoke<void>("agent_answer", { question, answer }),
@@ -280,14 +297,25 @@ export const api = {
   pcSwitch: (name: string, on: boolean) => invoke<string>("pc_switch", { name, on }),
   agentMemory: (id: string) => invoke<number | null>("agent_memory", { id }),
   agentOpenEditor: (id: string) => invoke<void>("agent_open_editor", { id }),
+  cursorChats: () => invoke<CursorChat[]>("cursor_chats"),
+  cursorOpen: (path: string) => invoke<void>("cursor_open", { path }),
   agentRewindPreview: (id: string, index: number) => invoke<number>("agent_rewind_preview", { id, index }),
   agentRewind: (id: string, index: number) => invoke<number>("agent_rewind", { id, index }),
   agentFiles: (id: string, query: string) => invoke<string[]>("agent_files", { id, query }),
   agentCommands: (id: string) =>
     invoke<{ name: string; description: string; group: string }[]>("agent_commands", { id }),
   aiOpenLink: (target: string) => invoke<string>("ai_open_link", { target }),
+  reposOverview: (fresh: boolean) => invoke<ReposOverview>("repos_overview", { fresh }),
+  repoPull: (path: string, stash: boolean) => invoke<string>("repo_pull", { path, stash }),
+  repoOpen: (path: string) => invoke<void>("repo_open", { path }),
+  mergeState: (path: string) => invoke<MergeState>("merge_state", { path }),
+  mergeKeep: (path: string, file: string, side: "mine" | "theirs" | "both") =>
+    invoke<void>("merge_keep", { path, file, side }),
+  mergeEnd: (path: string, finish: boolean) => invoke<ActionResult>("merge_end", { path, finish }),
   codexAddNotify: () => invoke<string | null>("codex_add_notify"),
   codexAddMcp: () => invoke<string | null>("codex_add_mcp"),
+  freezeReport: () => invoke<{ what: string; ms: number; at: number }[]>("freeze_report"),
+  freezeSummary: () => invoke<{ commands: number; stalls: number; worstMs: number }>("freeze_summary"),
   guideKeys: (buttons: number) => invoke<void>("guide_keys", { buttons }),
   notificationsStatus: () => invoke<InboxStatus>("notifications_status"),
   notificationsSetLevel: (from: string, level: NotifyLevel | "auto") =>

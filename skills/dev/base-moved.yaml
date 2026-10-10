@@ -1,0 +1,15 @@
+id: dev.base_moved
+name: Main moved under your branch
+description: When the main branch gets new commits while you work on a feature branch, offer to merge them into your branch. Never rebases; your changes are put aside and back, and conflicts open in the island.
+priority: 50
+cooldown_secs: 1800
+dedupe: "{{path}}:{{upstream}}"
+trigger:
+  event: dev.base_moved
+suggestion:
+  title: "{{name}}: {{behind}} new on {{base}}, {{branch}} is behind"
+  detail: "By {{who}}. Latest: {{latest}}"
+  options:
+    - { label: Update my branch, action: git_update_branch, args: { path: "{{path}}" } }
+    - { label: Show commits, action: git_show_commits, args: { path: "{{path}}" } }
+    - { label: "Open in {{editor}}", action: open_in_editor, args: { path: "{{path}}" }, requires: ["tool:code"] }

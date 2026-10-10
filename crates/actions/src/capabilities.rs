@@ -41,6 +41,37 @@ impl Browser {
     }
 }
 
+/// Browser id from a Start-menu app name / AppID (Ask adds a private row per browser).
+pub fn browser_for_app(name: &str, app_id: &str) -> Option<&'static str> {
+    let hay = format!("{name} {app_id}").to_ascii_lowercase();
+    if hay.contains("chrome remote") || hay.contains("chromedriver") {
+        return None;
+    }
+    if hay.contains("msedge") || hay.contains("microsoft edge") {
+        return Some("edge");
+    }
+    if hay.contains("brave") {
+        return Some("brave");
+    }
+    if hay.contains("firefox") {
+        return Some("firefox");
+    }
+    if name.eq_ignore_ascii_case("zen")
+        || hay.contains("zen browser")
+        || hay.contains("\\zen.exe")
+        || hay.contains("/zen.exe")
+    {
+        return Some("zen");
+    }
+    if hay.contains("samsung") && hay.contains("internet") {
+        return Some("samsung");
+    }
+    if hay.contains("chrome") || hay.contains("chromium") {
+        return Some("chrome");
+    }
+    None
+}
+
 /// Which browser opens web links, from its ProgId (`ChromeHTML`,
 /// `MSEdgeHTM`, `BraveHTML`, `FirefoxURL-...`).
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -402,6 +433,14 @@ mod tests {
             Some("firefox")
         );
         assert_eq!(browser_for_prog_id("SomethingElse"), None);
+    }
+
+    #[test]
+    fn knows_browsers_from_start_menu_names() {
+        assert_eq!(browser_for_app("Google Chrome", "Chrome"), Some("chrome"));
+        assert_eq!(browser_for_app("Microsoft Edge", "MSEdge"), Some("edge"));
+        assert_eq!(browser_for_app("Slack", "Slack"), None);
+        assert_eq!(browser_for_app("Chrome Remote Desktop", "crd"), None);
     }
 
     #[test]

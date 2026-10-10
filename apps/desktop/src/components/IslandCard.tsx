@@ -97,7 +97,8 @@ export function CardChips({ options, quiet }: { options: CardOption[]; quiet?: C
     <div className="mt-3 flex flex-wrap items-center gap-1.5" style={FULL}>
       {options.map((o, i) => (
         <button
-          key={o.label}
+          // biome-ignore lint/suspicious/noArrayIndexKey: labels can repeat and the list never reorders
+          key={`${i}-${o.label}`}
           type="button"
           onClick={o.run}
           className={`chip flex max-w-full min-h-8 items-center gap-2 rounded-full px-3 py-1.5 text-left text-[13px] font-medium tracking-[-0.01em] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff] ${

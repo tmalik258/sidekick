@@ -21,11 +21,14 @@ import {
   type InboxStatus,
   MASCOT_STATES,
   type NotifyLevel,
+  type SkillInfo,
   type StoredEvent,
 } from "@/lib/types";
 import { SetupChecklist, usePendingByTab } from "../SetupChecklist";
 import { Tip } from "../Tip";
 import { Button, ChipList, Field, FolderPicker, Section, Select, Slider, Toggle } from "./ui";
+
+const DAY_SUMMARY_SKILL = "system.day-summary";
 
 const SOUND_KITS: [string, string][] = [
   [SYNTH_KIT, "Sidekick"],
@@ -70,6 +73,8 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
         keywords="code folders repos git projects end of day wsl"
       >
         <CodeFolders chosen={settings.codeFolders} onChange={(codeFolders) => save({ codeFolders })} />
+        <CloneRules rules={settings.cloneRules ?? {}} onChange={(cloneRules) => save({ cloneRules })} />
+        <DaySummaryToggle onError={onError} />
         <Field label="My day ends at">
           <Select
             label="My day ends at"
@@ -192,6 +197,32 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
 
 const TAB_NAMES: Record<string, string> = { ai: "AI", connections: "Apps", privacy: "Privacy" };
 
+/** Opt-in standup / timesheet card after the day ends. Off by default. */
+function DaySummaryToggle({ onError }: { onError: (e: string) => void }) {
+  const [skill, setSkill] = useState<SkillInfo | null>(null);
+  useEffect(() => {
+    void api
+      .skillsList()
+      .then((list) => setSkill(list.find((s) => s.id === DAY_SUMMARY_SKILL) ?? null))
+      .catch((e: unknown) => onError(String(e)));
+  }, [onError]);
+  if (!skill) return null;
+  return (
+    <Toggle
+      label="End of day summary"
+      hint="Standup / timesheet card after your day ends. Off until you turn it on."
+      checked={skill.enabled}
+      onChange={(enabled) => {
+        setSkill({ ...skill, enabled });
+        void api.skillSet(DAY_SUMMARY_SKILL, enabled, false).catch((e: unknown) => {
+          onError(String(e));
+          setSkill({ ...skill, enabled: skill.enabled });
+        });
+      }}
+    />
+  );
+}
+
 /** Steps left on other tabs, as one tap each, so Home never repeats them. */
 function LeftElsewhere({ onOpenTab }: { onOpenTab: (tab: string) => void }) {
   const pending = usePendingByTab();
@@ -230,6 +261,79 @@ function CodeFolders({ chosen, onChange }: { chosen: string[]; onChange: (next: 
         empty={data ? "No git repos found in the usual places. Add the folder that holds your projects." : ""}
       />
     </>
+  );
+}
+
+/** Same chrome as TextField — live value so Add does not race blur. */
+const CLONE_INPUT =
+  "min-w-0 rounded-md border border-(--border) bg-transparent px-2 py-1 text-[13px] outline-none placeholder:text-(--muted) focus:border-(--accent)";
+
+/** Where clones go by owner: learned from your clones, editable here. */
+function CloneRules({
+  rules,
+  onChange,
+}: {
+  rules: Record<string, string>;
+  onChange: (r: Record<string, string>) => void;
+}) {
+  const [owner, setOwner] = useState("");
+  const [folder, setFolder] = useState("");
+  const entries = Object.entries(rules);
+  const add = () => {
+    if (!owner.trim() || !folder.trim()) return;
+    onChange({ ...rules, [owner.trim()]: folder.trim() });
+    setOwner("");
+    setFolder("");
+  };
+  return (
+    <Field
+      label="Where clones go"
+      hint="Copy a repo link and Sidekick offers to clone it here. Learned from where you clone."
+      stack
+    >
+      <div className="flex flex-col gap-1.5">
+        {entries.map(([o, f]) => (
+          <div key={o} className="flex items-center gap-2 text-[13px]">
+            <span className="mono min-w-0 flex-1 truncate">
+              {o} goes to {f}
+            </span>
+            <button
+              type="button"
+              className="chip"
+              onClick={() => {
+                const next = { ...rules };
+                delete next[o];
+                onChange(next);
+              }}
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+        <div className="flex min-w-0 items-center gap-2">
+          <input
+            className={`${CLONE_INPUT} flex-1`}
+            value={owner}
+            onChange={(e) => setOwner(e.target.value)}
+            placeholder="Owner, e.g. acme"
+            aria-label="Owner"
+            spellCheck={false}
+          />
+          <input
+            className={`${CLONE_INPUT} flex-[2]`}
+            value={folder}
+            onChange={(e) => setFolder(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && add()}
+            placeholder="Folder, e.g. D:\\Acme"
+            aria-label="Folder"
+            spellCheck={false}
+          />
+          <button type="button" className="chip shrink-0" onClick={add}>
+            Add
+          </button>
+        </div>
+      </div>
+    </Field>
   );
 }
 

@@ -27,6 +27,8 @@ export function Glance({ paused }: { paused: boolean }) {
   const away = useAway();
   const { data: crash, refresh: refreshCrash } = useCached<string | null>("crash", api.crashPending);
   if (crash) return <CrashCard note={crash} onDone={() => void refreshCrash()} />;
+  // A question waiting comes first: it is answered right here.
+  if (sessions.some((s) => s.question)) return <AgentsGlance sessions={sessions} />;
   if (away.rows.length > 0) return <AwayCard />;
   if (sessions.some((s) => s.status === "working" || s.status === "waiting"))
     return <AgentsGlance sessions={sessions} />;

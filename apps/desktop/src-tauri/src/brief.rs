@@ -33,6 +33,7 @@ pub struct Pr {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Repo {
     pub name: String,
+    pub path: String,
     pub changed: usize,
     pub ahead: usize,
 }
@@ -63,14 +64,8 @@ pub fn compose(
     let mut lines = Vec::new();
 
     if !routine.is_empty() {
-        parts.push(format!(
-            "Your usual: {}",
-            routine
-                .iter()
-                .map(|(_, label)| label.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
+        // The buttons name the apps, so the line only asks.
+        parts.push("Open your usual apps?".into());
         lines.push("Usual start:".into());
         for (kind, label) in routine {
             lines.push(format!("- {label} ({kind})"));
@@ -153,6 +148,7 @@ pub fn compose(
         parts.push(usual);
     }
     let first_url = reviews.first().or(mine.first()).map(|p| p.url.clone());
+    let first_repo = repos.first();
     Some(Event::new(
         MORNING_BRIEF,
         "time",
@@ -162,6 +158,8 @@ pub fn compose(
             "reviews": reviews.len(),
             "first_url": first_url.unwrap_or_default(),
             "first_title": reviews.first().or(mine.first()).map(|p| p.title.clone()).unwrap_or_default(),
+            "first_repo": first_repo.map(|r| r.name.as_str()).unwrap_or_default(),
+            "first_repo_path": first_repo.map(|r| r.path.as_str()).unwrap_or_default(),
         }),
     ))
 }
@@ -374,6 +372,7 @@ fn unsaved_repos(roots: &[PathBuf]) -> Vec<Repo> {
             let (changed, ahead) = sidekick_sensors::repos::unsaved(&repo)?;
             Some(Repo {
                 name: repo.file_name()?.to_string_lossy().into_owned(),
+                path: repo.to_string_lossy().into_owned(),
                 changed,
                 ahead,
             })
@@ -547,6 +546,7 @@ mod tests {
         }];
         let repos = [Repo {
             name: "api".into(),
+            path: "C:\\code\\api".into(),
             changed: 3,
             ahead: 1,
         }];
@@ -570,6 +570,8 @@ mod tests {
         assert!(text.contains("- 15:00 Design review"));
         assert!(text.contains("- me/api: Fix login (https://github.com/me/api/pull/1)"));
         assert_eq!(e.payload["first_url"], "https://github.com/me/api/pull/1");
+        assert_eq!(e.payload["first_repo"], "api");
+        assert_eq!(e.payload["first_repo_path"], "C:\\code\\api");
     }
 
     #[test]
@@ -579,12 +581,12 @@ mod tests {
             ("site".to_owned(), "github.com".to_owned()),
         ];
         let only = compose(&[], &[], &[], &[], &[], &Waiting::default(), &routine).unwrap();
-        assert_eq!(only.payload["headline"], "Your usual: Code, github.com");
+        assert_eq!(only.payload["headline"], "Open your usual apps?");
         let meetings = [("10:00".to_owned(), "Standup".to_owned())];
         let both = compose(&[], &meetings, &[], &[], &[], &Waiting::default(), &routine).unwrap();
         assert_eq!(
             both.payload["headline"],
-            "1 meeting · Your usual: Code, github.com"
+            "1 meeting · Open your usual apps?"
         );
     }
 

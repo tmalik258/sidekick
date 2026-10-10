@@ -30,6 +30,33 @@ function numbered(h: Hunk): { n: number; kind: "add" | "del" | "ctxl"; text: str
   return out;
 }
 
+/** Placeholder file cards while git diffs are read (same idea as ReposLoading). */
+function ReviewLoading() {
+  return (
+    <div className="ak-rv-load" role="status" aria-busy="true" aria-label="Reading changes">
+      <div className="ak-rv-head">
+        <b>Review changes</b>
+        <span className="shimmer-text">Reading diffs</span>
+      </div>
+      {[72, 54, 63].map((w, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: fixed placeholder rows
+        <div key={i} className="ak-rv-file ak-rskel" aria-hidden="true" style={{ animationDelay: `${i * 100}ms` }}>
+          <div className="ak-rv-fh">
+            <i className="ak-rbar" style={{ width: `${w}%` }} />
+          </div>
+          <div className="ak-rv-hunk">
+            <div className="ak-rv-skel-lines">
+              <i className="ak-rbar" style={{ width: "88%" }} />
+              <i className="ak-rbar" style={{ width: "64%" }} />
+              <i className="ak-rbar" style={{ width: "76%" }} />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function Review({ session, maxHeight, onDone }: { session: Session; maxHeight: number; onDone: () => void }) {
   const [files, setFiles] = useState<FileChange[] | null>(null);
   const [active, setActive] = useState(0);
@@ -47,6 +74,11 @@ export function Review({ session, maxHeight, onDone }: { session: Session; maxHe
       .catch((e: unknown) => setError(String(e)));
   }, [session.id]);
   useEffect(load, [load]);
+
+  // Nothing to review: leave immediately (button should not open this).
+  useEffect(() => {
+    if (files !== null && files.length === 0 && !error) onDone();
+  }, [files, error, onDone]);
 
   const undo = useCallback(
     (path: string | null, hunk: number | null) =>
@@ -93,15 +125,15 @@ export function Review({ session, maxHeight, onDone }: { session: Session; maxHe
     return () => window.removeEventListener("keydown", onKey);
   }, [sel, open.length, undo, keepAll]);
 
+  if (files === null) return <ReviewLoading />;
+
   const changes = list.reduce((n, f) => n + f.hunks.length, 0);
   return (
     <div className="ak-tl ak-in">
       <div className="ak-rv-head">
         <b>Review changes</b>
         <span className="sub2">
-          {files === null
-            ? "Loading..."
-            : `${list.length} ${list.length === 1 ? "file" : "files"} · ${changes} ${changes === 1 ? "change" : "changes"}`}
+          {list.length} {list.length === 1 ? "file" : "files"} · {changes} {changes === 1 ? "change" : "changes"}
         </span>
         <span className="keys mono">↑↓ move · K keep · U undo</span>
       </div>
@@ -181,7 +213,6 @@ export function Review({ session, maxHeight, onDone }: { session: Session; maxHe
             })}
           </div>
         ))}
-        {files !== null && list.length === 0 && <p className="ak-done">No changes left.</p>}
       </div>
       <div className="ak-chips">
         <button type="button" onClick={keepAll} className="ak-chip primary chip">

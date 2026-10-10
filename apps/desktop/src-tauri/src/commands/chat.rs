@@ -67,6 +67,8 @@ pub async fn agent_start(
     path: String,
     prompt: String,
     mode: crate::sessions::Mode,
+    model: Option<String>,
+    effort: Option<String>,
 ) -> CmdResult<crate::sessions::Started> {
     // The agent you use for this project is remembered and picked next
     // time you do not name one.
@@ -88,7 +90,16 @@ pub async fn agent_start(
         let ts = chrono::Utc::now().to_rfc3339();
         let _ = lock(&app.state::<AppState>().storage).record_choice(&key, agent.id(), &ts);
     }
-    crate::sessions::start(&app, agent, std::path::Path::new(&path), &prompt, mode).await
+    crate::sessions::start_tuned(
+        &app,
+        agent,
+        std::path::Path::new(&path),
+        &prompt,
+        mode,
+        model,
+        effort,
+    )
+    .await
 }
 
 /// Continues an Ask conversation in Claude Code or Codex, inside the island.
@@ -114,8 +125,8 @@ pub async fn agent_handoff(
 
 /// A follow-up, or a steer while it works.
 #[tauri::command]
-pub async fn agent_send(id: String, text: String) -> CmdResult<()> {
-    tauri::async_runtime::spawn_blocking(move || crate::sessions::send(&id, &text))
+pub async fn agent_send(app: AppHandle, id: String, text: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::send(&app, &id, &text))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -370,10 +381,13 @@ pub async fn chat_save(
 }
 
 #[tauri::command]
-pub fn chat_delete(state: State<'_, AppState>, id: String) -> CmdResult<()> {
-    lock(&state.storage)
-        .delete_chat(&id)
-        .map_err(|e| e.to_string())
+pub async fn chat_delete(app: AppHandle, id: String) -> CmdResult<()> {
+    off_ui(move || {
+        lock(&app.state::<AppState>().storage)
+            .delete_chat(&id)
+            .map_err(|e| e.to_string())
+    })
+    .await?
 }
 
 #[derive(Serialize)]
@@ -456,9 +470,23 @@ pub async fn instant_find(app: AppHandle, query: String) -> crate::instant::Resu
         .unwrap_or_default()
 }
 
-/// Starts an app picked from Ask's instant results.
+/// Starts an app picked from Ask's instant results. `private` + `browser`
+/// opens that browser in an incognito/private window instead.
 #[tauri::command]
-pub async fn app_launch(id: String) -> CmdResult<()> {
+pub async fn app_launch(
+    app: AppHandle,
+    id: String,
+    private: Option<bool>,
+    browser: Option<String>,
+) -> CmdResult<()> {
+    if private == Some(true) {
+        let browser = browser.ok_or("That app is not a browser.")?;
+        return crate::state::executor(&app.state::<AppState>())
+            .open_browser_private(&browser)
+            .map(|_| ())
+            .map_err(|e| e.to_string());
+    }
+    let _ = app;
     tauri::async_runtime::spawn_blocking(move || sidekick_actions::pc::launch_app_id(&id))
         .await
         .map_err(|e| e.to_string())?
@@ -505,19 +533,47 @@ pub async fn pc_switch(name: String, on: bool) -> CmdResult<String> {
         .map_err(|e| e.to_string())
 }
 
-/// Opens a file or folder picked from Ask's instant results. Programs and
-/// scripts are shown in their folder instead of run.
+/// Result of opening a file from Ask. When `opened` is false, there is no
+/// default app — the UI should ask where to open it.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileOpenResult {
+    pub opened: bool,
+}
+
+/// Opens a file or folder from Ask. `how`: omit to open when a default app
+/// exists (otherwise `opened: false`); `"editor"`, `"reveal"`, or `"default"`
+/// to force that path. Programs/scripts are shown in their folder instead of run.
 #[tauri::command]
-pub async fn file_open(app: AppHandle, path: String) -> CmdResult<()> {
-    let action = if crate::ask_tools::runs_code(&path) {
-        "reveal_path"
-    } else {
-        "open_path"
+pub async fn file_open(
+    app: AppHandle,
+    path: String,
+    how: Option<String>,
+) -> CmdResult<FileOpenResult> {
+    let exec = crate::state::executor(&app.state::<AppState>());
+    let action = match how.as_deref() {
+        Some("editor") => "open_in_editor",
+        Some("reveal") => "reveal_path",
+        Some("default") => {
+            if crate::ask_tools::runs_code(&path) {
+                "reveal_path"
+            } else {
+                "open_path"
+            }
+        }
+        _ => {
+            if crate::ask_tools::runs_code(&path) {
+                "reveal_path"
+            } else if crate::ask_tools::has_file_association(&path) {
+                "open_path"
+            } else {
+                return Ok(FileOpenResult { opened: false });
+            }
+        }
     };
-    crate::state::executor(&app.state::<AppState>())
-        .run(action, &serde_json::json!({ "path": path }))
+    exec.run(action, &serde_json::json!({ "path": path }))
         .await
-        .map(|_| ())
+        .map(|_| FileOpenResult { opened: true })
         .map_err(|e| e.to_string())
 }
 
@@ -529,4 +585,147 @@ pub async fn agent_memory(id: String) -> Option<u64> {
         .await
         .ok()
         .flatten()
+}
+
+/// The model and thinking for one session, from its chat box.
+#[tauri::command]
+pub fn agent_tune(id: String, model: Option<String>, effort: Option<String>) {
+    crate::sessions::tune(&id, model, effort);
+}
+
+/// Finish a session that ran in its own worktree: merge it back.
+#[tauri::command]
+pub async fn agent_finish(id: String) -> CmdResult<String> {
+    tauri::async_runtime::spawn_blocking(move || crate::sessions::finish(&id))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Chats started in Cursor, for the Agents list.
+#[tauri::command]
+pub async fn cursor_chats() -> Vec<crate::cursor_chats::CursorChat> {
+    tauri::async_runtime::spawn_blocking(|| crate::cursor_chats::list(10))
+        .await
+        .unwrap_or_default()
+}
+
+/// Opens a Cursor chat's project in Cursor ("Open in Cursor").
+#[tauri::command]
+pub async fn cursor_open(app: AppHandle, path: String) -> CmdResult<()> {
+    if !std::path::Path::new(&path).is_dir() {
+        return Err("That project folder is gone.".into());
+    }
+    if let Ok(cursor) = which::which("cursor") {
+        let mut cmd = tokio::process::Command::new(cursor);
+        cmd.arg(&path);
+        crate::agents::hide_console(&mut cmd);
+        return cmd.spawn().map(|_| ()).map_err(|e| e.to_string());
+    }
+    crate::state::executor(&app.state::<AppState>())
+        .run(
+            "open_in_editor",
+            &serde_json::json!({ "path": path, "editor": "cursor" }),
+        )
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// The Repos list in Agents.
+#[tauri::command]
+pub async fn repos_overview(app: AppHandle, fresh: bool) -> crate::github::Overview {
+    crate::github::overview(&app, fresh).await
+}
+
+/// Pull from the Repos list: fast-forward only, stashing when asked.
+#[tauri::command]
+pub async fn repo_pull(path: String, stash: bool) -> CmdResult<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        sidekick_actions::dev::pull(std::path::Path::new(&path), stash)
+            .map(|o| o.message)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// The update the island is walking through: what still clashes.
+#[tauri::command]
+pub async fn merge_state(path: String) -> CmdResult<sidekick_actions::dev::MergeState> {
+    tauri::async_runtime::spawn_blocking(move || {
+        sidekick_actions::dev::merge_state(std::path::Path::new(&path)).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Solves one clashing file with "mine", "theirs" or "both".
+#[tauri::command]
+pub async fn merge_keep(path: String, file: String, side: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        sidekick_actions::dev::merge_keep(std::path::Path::new(&path), &file, &side)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Finish update or Undo update. A finished one goes in the history with Undo.
+#[tauri::command]
+pub async fn merge_end(
+    app: AppHandle,
+    path: String,
+    finish: bool,
+) -> CmdResult<crate::suggestions::ActionResult> {
+    let repo = path.clone();
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        let p = std::path::Path::new(&repo);
+        if finish {
+            sidekick_actions::dev::merge_finish(p)
+        } else {
+            sidekick_actions::dev::merge_undo(p)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    let undo_path = finish.then(|| out.path.clone()).flatten();
+    let record = ActionRecord {
+        id: 0,
+        ts: chrono::Utc::now().to_rfc3339(),
+        skill_id: "dev.base_moved".into(),
+        action: "git_update_branch".into(),
+        label: if finish {
+            "Finish update"
+        } else {
+            "Undo update"
+        }
+        .into(),
+        ok: true,
+        message: out.message.clone(),
+        auto: false,
+        undo_path,
+        undone: false,
+    };
+    let undo_id = lock(&app.state::<AppState>().storage)
+        .log_action(&record)
+        .ok()
+        .filter(|_| record.undo_path.is_some());
+    Ok(crate::suggestions::ActionResult {
+        ok: true,
+        message: out.message,
+        path: None,
+        auto: false,
+        undo_id,
+    })
+}
+
+/// Opens a repo in the user's editor.
+#[tauri::command]
+pub async fn repo_open(app: AppHandle, path: String) -> CmdResult<()> {
+    crate::state::executor(&app.state::<AppState>())
+        .run("open_in_editor", &serde_json::json!({ "path": path }))
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }

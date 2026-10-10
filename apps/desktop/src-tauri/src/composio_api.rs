@@ -189,6 +189,55 @@ pub fn merge_apps(connected: &BTreeSet<String>) -> Vec<App> {
     out
 }
 
+/// Account ids from a "Multiple … accounts connected" error, e.g.
+/// `- "gmail_amy-plim"`.
+pub fn multi_account_ids(err: &str) -> Vec<String> {
+    let lower = err.to_ascii_lowercase();
+    if !lower.contains("multiple") || !lower.contains("accounts connected") {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for line in err.lines() {
+        let t = line.trim().trim_start_matches('-').trim();
+        let Some(id) = t.strip_prefix('"').and_then(|s| s.strip_suffix('"')) else {
+            continue;
+        };
+        if !id.is_empty()
+            && id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        {
+            out.push(id.to_owned());
+        }
+    }
+    out
+}
+
+/// Concatenate list-shaped tool payloads from several accounts into one.
+pub fn merge_tool_data(parts: &[Value]) -> Value {
+    if parts.is_empty() {
+        return Value::Null;
+    }
+    if parts.len() == 1 {
+        return parts[0].clone();
+    }
+    const KEYS: &[&str] = &["messages", "matches", "issues", "items", "events"];
+    for k in KEYS {
+        let mut all = Vec::new();
+        let mut found = false;
+        for p in parts {
+            if let Some(a) = find_array(p, &[k]) {
+                found = true;
+                all.extend(a.iter().cloned());
+            }
+        }
+        if found {
+            return json!({ *k: all });
+        }
+    }
+    parts[0].clone()
+}
+
 /// The result of the first tool in a multi-execute answer.
 pub fn first_result(v: &Value) -> Result<Value, String> {
     if let Some(err) = v["error"].as_str().filter(|e| !e.is_empty()) {
@@ -313,5 +362,23 @@ mod tests {
         let v = json!({ "data": { "response_data": { "items": [1, 2] } } });
         assert_eq!(find_array(&v, &["items"]).unwrap().len(), 2);
         assert!(find_array(&json!({ "x": 1 }), &["items"]).is_none());
+    }
+
+    #[test]
+    fn parses_multi_account_error_ids() {
+        let err = "GMAIL_FETCH_EMAILS: Multiple gmail accounts connected. Specify which to use via the 'account' field:\n- \"gmail_amy-plim\"\n- \"gmail_ware-wega\"";
+        assert_eq!(
+            multi_account_ids(err),
+            vec!["gmail_amy-plim".to_owned(), "gmail_ware-wega".to_owned()]
+        );
+        assert!(multi_account_ids("No connected account").is_empty());
+    }
+
+    #[test]
+    fn merges_list_payloads_from_accounts() {
+        let a = json!({ "messages": [{ "subject": "one" }] });
+        let b = json!({ "messages": [{ "subject": "two" }] });
+        let m = merge_tool_data(&[a, b]);
+        assert_eq!(m["messages"].as_array().unwrap().len(), 2);
     }
 }

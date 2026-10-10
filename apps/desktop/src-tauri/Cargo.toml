@@ -19,6 +19,8 @@ chrono.workspace = true
 dirs = "7"
 sha2 = "0.10"
 which = "8"
+rusqlite.workspace = true
+rfd = "0.15"
 getrandom = "0.3"
 sysinfo = { version = "0.39", default-features = false, features = ["system", "disk"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
@@ -29,6 +31,7 @@ serde_json.workspace = true
 sidekick-actions.workspace = true
 sidekick-ai.workspace = true
 sidekick-core.workspace = true
+sidekick-calc.workspace = true
 sidekick-sensors.workspace = true
 sidekick-layout.workspace = true
 sidekick-skills.workspace = true

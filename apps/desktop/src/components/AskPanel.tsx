@@ -6,7 +6,17 @@
 // the morph, this owns the content.
 
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type AskTab, activeCount, handOff, listenToAgents, type Session, setTab, useAgents } from "@/lib/agents";
+import {
+  type AskTab,
+  activeCount,
+  handOff,
+  interruptSession,
+  listenToAgents,
+  type Session,
+  setLayout,
+  setTab,
+  useAgents,
+} from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { useAltHeld } from "@/lib/hooks";
@@ -14,9 +24,11 @@ import {
   cancelChat,
   newChat,
   openChat,
+  runOpen,
   sendChat,
   setAsk,
   setAskModel,
+  showDone,
   startListening,
   startSkill,
   stopListening,
@@ -27,12 +39,14 @@ import {
 import {
   type CalendarToday,
   type ChatSummary,
+  type EditorList,
   type InstantResults,
   isPaused,
   type ProviderStatus,
   type SearchHit,
 } from "@/lib/types";
 import { AgentsTab } from "./agents/AgentsTab";
+import { Repos } from "./agents/Repos";
 import { Chat, useAgentName } from "./ask/Chat";
 import { Clips, Results } from "./ask/Lists";
 import { ModelPicker } from "./ask/ModelPicker";
@@ -43,6 +57,7 @@ import { FirstRun } from "./ask/States";
 import { Timings } from "./ask/Timings";
 import { Icon } from "./Icon";
 import { markSeen } from "./IslandAgents";
+import { nextTab, type PanelTab, PanelTabs } from "./PanelTabs";
 import { SETTINGS_TABS } from "./SettingsPanel";
 import { SetupSpinner } from "./SetupChecklistRow";
 import { Tip } from "./Tip";
@@ -67,8 +82,9 @@ const EARLY_SESSIONS = (() => {
 
 /** Input + chips + footer + gaps; scroll area keeps the rest under the Ask cap. */
 const ASK_CHROME = 118;
-const ASK_SCROLL_CAP = 330;
-/** Island window is ~560 tall (tauri.conf); leave room for chrome + pad. */
+/** Two board tile rows at full size (196 + gap + 196); island window is 640 tall. */
+const ASK_SCROLL_CAP = 400;
+/** Island window is ~640 tall (tauri.conf); leave room for chrome + pad. */
 const ASK_SCROLL_FLOOR = 120;
 
 function askScrollMax(): number {
@@ -133,7 +149,10 @@ export function AskPanel() {
   const [text, setText] = useState(ask?.prompt ?? "");
   const alt = useAltHeld();
   const tab = useAgents((s) => s.tab);
+  const layout = useAgents((s) => s.layout);
   const working = useAgents((s) => activeCount(s.sessions));
+  // "Do you work with code?" No hides Agents and Repos; unanswered counts as yes.
+  const coder = useSidekick((s) => s.settings.codes !== false);
   useEffect(listenToAgents, []);
   const speak = useSidekick((s) => s.settings.voice.speakAnswers);
   const toggleSpeak = useCallback(() => {
@@ -163,15 +182,29 @@ export function AskPanel() {
   const [selected, setSelected] = useState(0);
   const { data: providersData, refresh: refreshProviders } = useCached<ProviderStatus[]>("ai-status", api.aiStatus);
   const providers = providersData ?? [];
+  // While nothing is set up yet, keep checking so FirstRun goes away once a
+  // provider is configured (e.g. This PC install finished writing settings).
+  const anySetUp = providers.some((p) => p.id !== "semif" && p.configured);
+  useEffect(() => {
+    if (anySetUp || providersData === null) return;
+    const id = setInterval(() => void refreshProviders().catch(() => undefined), 3000);
+    return () => clearInterval(id);
+  }, [anySetUp, providersData, refreshProviders]);
   const [handoffError, setHandoffError] = useState<string | null>(null);
+  /** The chat's name when renamed; its first question otherwise. */
+  const [chatName, setChatName] = useState<string | null>(null);
   const [hits, setHits] = useState<{ query: string; items: SearchHit[] } | null>(null);
   const [clips, setClips] = useState<{ text: string; ts: string }[] | null>(null);
+  /** File with no default app: Ask shows where to open it. */
+  const [openWhere, setOpenWhere] = useState<{ name: string; path: string } | null>(null);
   const [historyKind, setHistoryKind] = useState<HistoryKind>("all");
   const agentSessions = useAgents((s) => s.sessions);
+  const { data: editors } = useCached<EditorList>("editors", api.editorsList);
+  const editorName = editors?.current ?? editors?.editors[0]?.name ?? null;
   // The highlighted clip, search result, or history row, moved with the arrow keys.
   const [pick, setPick] = useState(0);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new list starts at its top
-  useEffect(() => setPick(0), [clips, hits, tab, historyKind]);
+  useEffect(() => setPick(0), [clips, hits, tab, historyKind, openWhere]);
   // Esc works wherever focus is in Ask (after clicking a button or chip);
   // the input handles it itself.
   const escRef = useRef<() => void>(() => undefined);
@@ -226,6 +259,7 @@ export function AskPanel() {
     markSeen();
     setSelected(0);
     setClips(null);
+    setOpenWhere(null);
     setHandoffError(null);
     void refreshProviders().catch(() => undefined);
     void api.projectsList().then(setProjects);
@@ -285,6 +319,7 @@ export function AskPanel() {
         context: ask?.context ?? null,
         page: chatPage,
         meeting: soonestMeeting(calendar),
+        coder,
         // After the row runs (which clears the input), type the prefix in.
         focusInput: (prefix) =>
           requestAnimationFrame(() => {
@@ -292,15 +327,17 @@ export function AskPanel() {
             inputRef.current?.focus({ preventScroll: true });
           }),
       }),
-    [ask?.context, chatPage, calendar],
+    [ask?.context, chatPage, calendar, coder],
   );
   const resetChat = useCallback(() => {
     if (useSidekick.getState().hearing !== null) stopListening();
     newChat();
+    setChatName(null);
     setText("");
     setSelected(0);
     setClips(null);
     setHits(null);
+    setOpenWhere(null);
     setPick(0);
     nearBottom.current = true;
     requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
@@ -375,10 +412,107 @@ export function AskPanel() {
   const showHits = hits !== null && !asking && !showClips && !inHistory && !slash;
   const showChat = inChat && !showHits && !showClips && !inHistory && !slash && !(asking && !inChat);
 
+  const openFile = (path: string, how?: "editor" | "reveal" | "default") => {
+    const name = path.split(/[\\/]/).pop() ?? path;
+    // No how yet: probe without Closing Ask so the "Open with" picker can show.
+    if (!how) {
+      void api.fileOpen(path).then(
+        (r) => {
+          if (!r.opened) {
+            setHandoffError(null);
+            setOpenWhere({ name, path });
+            setSelected(0);
+            return;
+          }
+          setOpenWhere(null);
+          setText("");
+          void api.askClose();
+          showDone(`Opened ${name}`);
+        },
+        (e: unknown) => setHandoffError(String(e)),
+      );
+      return;
+    }
+    setOpenWhere(null);
+    setText("");
+    void runOpen(async () => {
+      const r = await api.fileOpen(path, how);
+      return r.opened;
+    }, `Opened ${name}`);
+  };
+
+  const openHit = (source: string, reference: string, title?: string) => {
+    const label =
+      title?.trim() ||
+      (source === "page" ? reference.replace(/^https?:\/\//, "").split("/")[0] : undefined) ||
+      reference.split(/[\\/]/).pop() ||
+      reference;
+    void runOpen(async () => {
+      await api.openReference(source, reference);
+      return true;
+    }, `Opened ${label}`);
+  };
+
   // The rows under the input: starters, then everything that matches by
   // name (instant, no AI), then Search and Teach at the end.
   const items: Item[] = [];
-  if (!inHistory && !showClips && !showHits && hearing === null) {
+  if (openWhere) {
+    const { name, path } = openWhere;
+    const group = `Open ${name}`;
+    if (editorName) {
+      items.push({
+        id: "open-editor",
+        group,
+        icon: <Icon name="file" size={12} />,
+        label: `Open in ${editorName}`,
+        hint: "No default app",
+        run: () => openFile(path, "editor"),
+        stay: true,
+        keepText: true,
+      });
+    }
+    items.push(
+      {
+        id: "open-reveal",
+        group: editorName ? undefined : group,
+        icon: <Icon name="folder" size={12} />,
+        label: "Show in folder",
+        hint: editorName ? undefined : "No default app",
+        run: () => openFile(path, "reveal"),
+        stay: true,
+        keepText: true,
+      },
+      {
+        id: "open-default",
+        icon: <Icon name="file" size={12} />,
+        label: "Open with…",
+        hint: "Windows",
+        run: () => openFile(path, "default"),
+        stay: true,
+        keepText: true,
+      },
+      {
+        id: "open-back",
+        icon: <span className="text-[11px]">←</span>,
+        label: "Back",
+        run: () => setOpenWhere(null),
+        stay: true,
+        keepText: true,
+      },
+    );
+  } else if (!inHistory && !showClips && !showHits && hearing === null) {
+    // Math answers itself: Enter copies the result.
+    if (asking && !inChat && instant.calc) {
+      const result = instant.calc;
+      items.push({
+        id: "calc",
+        group: "Calculator",
+        icon: <span className="text-[12px] font-bold">=</span>,
+        label: result,
+        hint: "Enter copies",
+        run: () => void navigator.clipboard.writeText(result).catch(() => undefined),
+      });
+    }
     if (asking) {
       items.push({
         id: "ask",
@@ -399,15 +533,43 @@ export function AskPanel() {
         const named = (group: string, list: Command[]) => {
           for (const [n, c] of list.entries()) items.push({ ...commandItem(c), group: n === 0 ? group : undefined });
         };
-        for (const [n, a] of instant.apps.entries()) {
+        // Browsers get a separate private/incognito row (like Zen's Start-menu
+        // "Private Browsing"), not a Ctrl Enter shortcut on the main app.
+        const privateBrowsers = new Set(
+          instant.apps.filter((a) => a.browser && isPrivateAppName(a.name)).map((a) => a.browser as string),
+        );
+        let appsGrouped = false;
+        for (const a of instant.apps) {
+          const browser = a.browser ?? null;
+          const privateNamed = !!(browser && isPrivateAppName(a.name));
           items.push({
             id: `app:${a.id}`,
-            group: n === 0 ? "Apps" : undefined,
+            group: !appsGrouped ? "Apps" : undefined,
             icon: <span className="text-[11px] font-bold text-white">{a.name.slice(0, 1).toUpperCase()}</span>,
             label: a.name,
             hint: a.minutes >= 60 ? `${Math.round(a.minutes / 60)} h this week` : undefined,
-            run: () => void api.appLaunch(a.id),
+            run: () =>
+              void runOpen(async () => {
+                await api.appLaunch(a.id, privateNamed && browser ? { private: true, browser } : undefined);
+                return true;
+              }, `Opened ${a.name}`),
           });
+          appsGrouped = true;
+          if (browser && !privateNamed && !privateBrowsers.has(browser)) {
+            privateBrowsers.add(browser);
+            const label = privateBrowserLabel(browser);
+            items.push({
+              id: `app-private:${browser}`,
+              icon: <span className="text-[11px] font-bold text-white">{label.slice(0, 1).toUpperCase()}</span>,
+              label,
+              hint: "Private window",
+              run: () =>
+                void runOpen(async () => {
+                  await api.appLaunch(a.id, { private: true, browser });
+                  return true;
+                }, `Opened ${label}`),
+            });
+          }
         }
         named(
           "Commands",
@@ -423,7 +585,11 @@ export function AskPanel() {
               label: p.name,
               hint: "Editor and terminal",
               icon: "folder" as const,
-              run: () => void api.projectLaunch(p.path),
+              run: () =>
+                void runOpen(async () => {
+                  await api.projectLaunch(p.path);
+                  return true;
+                }, `Opened ${p.name}`),
             })),
         );
         for (const [n, f] of instant.files.entries()) {
@@ -433,7 +599,12 @@ export function AskPanel() {
             icon: <Icon name={f.folder ? "folder" : "file"} size={12} />,
             label: f.name,
             hint: f.place,
-            run: () => void api.fileOpen(f.path),
+            // Enter opens the file; Ctrl Enter shows its folder.
+            run: () => openFile(f.path),
+            ctrlRun: () => openFile(f.path, "reveal"),
+            ctrlHint: "folder",
+            stay: true,
+            keepText: true,
           });
         }
         // "turn on hotspot", "hotspot off", "open bluetooth settings".
@@ -454,7 +625,11 @@ export function AskPanel() {
               label: `${p.label} settings`,
               hint: "Windows Settings",
               icon: "settings" as const,
-              run: () => void api.windowsSettingsOpen(p.page),
+              run: () =>
+                void runOpen(async () => {
+                  await api.windowsSettingsOpen(p.page);
+                  return true;
+                }, `Opened ${p.label} settings`),
             };
             const name = p.switch;
             if (!name) return [open];
@@ -562,7 +737,13 @@ export function AskPanel() {
   // A short name ("slack", "settings") picks its match; a question picks Ask.
   // "turn on hotspot" picks the switch itself.
   const switchRow = /\b(on|off|enable|disable)\b/i.test(text) ? items.findIndex((i) => i.id.startsWith("switch:")) : -1;
-  const intentRow = asking && switchRow > 0 ? switchRow : asking && rows > 3 && looksLikeName(text) ? 1 : 0;
+  const intentRow = openWhere
+    ? 0
+    : asking && switchRow > 0
+      ? switchRow
+      : asking && rows > 3 && looksLikeName(text)
+        ? 1
+        : 0;
   const active = Math.min(selected === INTENT_PENDING ? intentRow : selected, Math.max(rows - 1, 0));
   // Models that can answer now; the picked one (if still there) goes first.
   const choices = providers.filter((p) => p.available && (!ask.localOnly || p.local) && p.id !== "semif");
@@ -573,6 +754,7 @@ export function AskPanel() {
     setTab(next);
     setText("");
     setPick(0);
+    setOpenWhere(null);
     if (next === "history") {
       setClips(null);
       setHits(null);
@@ -587,17 +769,16 @@ export function AskPanel() {
     }
   };
 
+  const pickTab = (next: PanelTab) => (next === "settings" ? setAsk({ view: "settings" }) : goTab(next));
+
   altKeys.current = {
     s: toggleSpeak,
     v: () => (hearing !== null ? stopListening() : voiceReady && !streaming && startListening()),
     p: () => setAsk({ localOnly: !ask.localOnly }),
     h: () => !streaming && goTab(tab === "history" ? "ask" : "history"),
-    tab: (back) => {
-      const order: AskTab[] = ["ask", "agents", "history"];
-      const i = order.indexOf(tab);
-      const next = back ? order[(i - 1 + order.length) % order.length] : order[(i + 1) % order.length];
-      goTab(next);
-    },
+    o: () => tab === "agents" && setLayout("one"),
+    b: () => tab === "agents" && setLayout("board"),
+    tab: (back) => pickTab(nextTab(tab, coder, !!back)),
     m: () => {
       if (choices.length < 2) return;
       // Auto, then each model that can answer now.
@@ -625,7 +806,7 @@ export function AskPanel() {
       setText("");
     } else if (showHits && hits) {
       const h = hits.items[i];
-      if (h) void api.openReference(h.source, h.reference);
+      if (h) openHit(h.source, h.reference, h.title);
     }
   };
 
@@ -634,8 +815,12 @@ export function AskPanel() {
       // Esc interrupts the agent that is working; otherwise it closes Ask.
       const { sessions, current } = useAgents.getState();
       const s = sessions.find((x) => x.id === current);
-      if (s && (s.status === "working" || s.status === "waiting")) void api.agentStop(s.id);
+      if (s && (s.status === "working" || s.status === "waiting")) interruptSession(s.id);
       else void api.askClose();
+      return;
+    }
+    if (openWhere) {
+      setOpenWhere(null);
       return;
     }
     if (inHistory || slash) {
@@ -672,8 +857,13 @@ export function AskPanel() {
       e.preventDefault();
       setSelected((active - 1 + rows) % rows);
     } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-      // Ctrl Enter: this conversation (and what is typed) goes to the coding agent.
       e.preventDefault();
+      const item = rows ? items[active] : undefined;
+      if (item?.ctrlRun) {
+        item.ctrlRun();
+        return;
+      }
+      // Otherwise: this conversation (and what is typed) goes to the coding agent.
       if (!agent) return;
       const messages = turns
         .filter((t) => !t.error && t.content.trim())
@@ -702,26 +892,71 @@ export function AskPanel() {
   };
 
   const tabs = (
-    <div className="ak-tabs" role="tablist">
-      {(
-        [
-          ["ask", "Ask", null],
-          ["agents", "Agents", working],
-          ["history", "History", "Alt H"],
-        ] as const
-      ).map(([id, label, extra]) => (
-        <span key={id} className="relative">
-          <button type="button" role="tab" aria-selected={tab === id} onClick={() => goTab(id)} className="ak-tab chip">
-            {label}
-            {typeof extra === "number" && extra > 0 && <i className="n not-italic">{extra}</i>}
-          </button>
-          {typeof extra === "string" && <KeyHint show={alt}>{extra}</KeyHint>}
-        </span>
-      ))}
-    </div>
+    <PanelTabs
+      current={tab}
+      onPick={pickTab}
+      coder={coder}
+      working={working}
+      alt={alt}
+      extra={
+        tab === "agents" && (
+          <fieldset aria-label="Layout" className="ak-lay ak-seg border-0">
+            {(
+              [
+                ["one", "One", "Alt O"],
+                ["board", "Board", "Alt B"],
+              ] as const
+            ).map(([id, label, key]) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={layout === id}
+                aria-label={label}
+                title={`${label} (${key})`}
+                onClick={() => setLayout(id)}
+                className="chip relative"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5">
+                  {id === "one" ? (
+                    <rect
+                      x="3"
+                      y="3"
+                      width="10"
+                      height="10"
+                      rx="2"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                    />
+                  ) : (
+                    <path
+                      d="M3 3h4v4H3zM9 3h4v4H9zM3 9h4v4H3zM9 9h4v4H9z"
+                      fill="currentColor"
+                      stroke="currentColor"
+                      strokeWidth="0.6"
+                      strokeLinejoin="round"
+                    />
+                  )}
+                </svg>
+                <KeyHint show={alt}>{key}</KeyHint>
+              </button>
+            ))}
+          </fieldset>
+        )
+      }
+    />
   );
 
-  if (tab === "agents") {
+  if (tab === "repos" && coder) {
+    return (
+      <div className="ak">
+        {tabs}
+        <Repos maxHeight={scrollMax} />
+      </div>
+    );
+  }
+
+  if (tab === "agents" && coder) {
     return (
       <div className="ak">
         {tabs}
@@ -730,9 +965,9 @@ export function AskPanel() {
     );
   }
 
-  // No model yet: the first-run card says how to add one, so the footer
-  // keeps its usual line.
-  const firstRun = !best && providersData !== null && !inChat && !asking && !slash && !inHistory && !showClips;
+  // First-run card only when nothing is set up yet. If a provider is
+  // configured but not running, the footer says so — not this picker.
+  const firstRun = !anySetUp && providersData !== null && !inChat && !asking && !slash && !inHistory && !showClips;
   const footer =
     !best && !firstRun ? (
       <div className="ak-foot items-center">
@@ -752,12 +987,28 @@ export function AskPanel() {
     ) : alt ? (
       <div className="ak-foot">
         <span>
-          <kbd>Enter</kbd> {asking ? "ask" : showClips ? "copy" : showHits || inHistory ? "open" : "run"}
+          <kbd>Enter</kbd>{" "}
+          {items[active]?.ctrlRun
+            ? "open"
+            : asking
+              ? "ask"
+              : showClips
+                ? "copy"
+                : showHits || inHistory
+                  ? "open"
+                  : "run"}
         </span>
-        {agent && (asking || inChat) && (
+        {items[active]?.ctrlRun ? (
           <span>
-            <kbd>Ctrl Enter</kbd> continue in {agent}
+            <kbd>Ctrl Enter</kbd> {items[active]?.ctrlHint ?? "open"}
           </span>
+        ) : (
+          agent &&
+          (asking || inChat) && (
+            <span>
+              <kbd>Ctrl Enter</kbd> continue in {agent}
+            </span>
+          )
         )}
         <span>
           <kbd>Ctrl Tab</kbd> switch tab
@@ -775,87 +1026,116 @@ export function AskPanel() {
       </div>
     ) : null;
 
-  return (
-    <div className="ak">
-      {tabs}
-      <div className="ak-bar">
-        {hearing !== null ? (
-          <Hearing text={hearing} />
-        ) : (
-          <input
-            ref={inputRef}
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              setSelected(INTENT_PENDING);
-              setPick(0);
-            }}
-            onKeyDown={onKey}
-            placeholder={inHistory ? "Search history" : inChat ? "Ask a follow-up" : "Ask anything"}
-            spellCheck={false}
-            className="ak-q"
-          />
-        )}
-        <div className="ak-right">
-          {inHistory ? (
-            <fieldset className="ak-seg border-0" aria-label="Show">
-              {(["all", "chats", "agents"] as const).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  aria-pressed={historyKind === k}
-                  onClick={() => setHistoryKind(k)}
-                  className="chip capitalize"
-                >
-                  {k}
-                </button>
-              ))}
-            </fieldset>
-          ) : hearing !== null ? (
-            <button type="button" onClick={stopListening} className="ak-stop chip">
-              Stop <kbd>Esc</kbd>
-            </button>
-          ) : (
-            <>
-              <IconButton
-                label={speak ? "Speak replies: on (Alt S)" : "Speak replies: off (Alt S)"}
-                pressed={speak}
-                keys={alt}
-                hint="Alt S"
-                onClick={toggleSpeak}
+  const field = (
+    <div className="ak-bar">
+      {hearing !== null ? (
+        <Hearing text={hearing} />
+      ) : (
+        <input
+          ref={inputRef}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setOpenWhere(null);
+            setSelected(INTENT_PENDING);
+            setPick(0);
+          }}
+          onKeyDown={onKey}
+          placeholder={inHistory ? "Search history" : inChat ? "Ask a follow-up" : "Ask anything"}
+          spellCheck={false}
+          className="ak-q"
+        />
+      )}
+      <div className="ak-right">
+        {inHistory ? (
+          <fieldset className="ak-seg border-0" aria-label="Show">
+            {(["all", "chats", "agents"] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={historyKind === k}
+                onClick={() => setHistoryKind(k)}
+                className="chip capitalize"
               >
-                <Icon name={speak ? "speaker" : "speakerOff"} size={14} />
+                {k}
+              </button>
+            ))}
+          </fieldset>
+        ) : hearing !== null ? (
+          <button type="button" onClick={stopListening} className="ak-stop chip">
+            Stop <kbd>Esc</kbd>
+          </button>
+        ) : (
+          <>
+            <IconButton
+              label={speak ? "Speak replies: on (Alt S)" : "Speak replies: off (Alt S)"}
+              pressed={speak}
+              keys={alt}
+              hint="Alt S"
+              onClick={toggleSpeak}
+            >
+              <Icon name={speak ? "speaker" : "speakerOff"} size={14} />
+            </IconButton>
+            {voiceReady && !streaming && (
+              <IconButton
+                label={`Talk, or say Hey ${assistant} (Alt V)`}
+                keys={alt}
+                hint="Alt V"
+                onClick={startListening}
+              >
+                <Icon name="mic" size={14} />
               </IconButton>
-              {voiceReady && !streaming && (
-                <IconButton
-                  label={`Talk, or say Hey ${assistant} (Alt V)`}
-                  keys={alt}
-                  hint="Alt V"
-                  onClick={startListening}
-                >
-                  <Icon name="mic" size={14} />
-                </IconButton>
-              )}
-              {streaming ? (
-                <button type="button" onClick={cancelChat} className="ak-stop chip">
-                  Stop <kbd>Esc</kbd>
-                </button>
-              ) : (
-                <>
-                  {best && <ModelPicker choices={choices} best={best} picked={pickedModel} keys={alt} />}
-                  {inChat && (
-                    <IconButton label="New chat (Esc)" keys={alt} hint="Esc" onClick={resetChat}>
-                      <Icon name="plus" size={15} />
-                    </IconButton>
-                  )}
-                </>
-              )}
-            </>
-          )}
-        </div>
+            )}
+            {streaming ? (
+              <button type="button" onClick={cancelChat} className="ak-stop chip">
+                Stop <kbd>Esc</kbd>
+              </button>
+            ) : (
+              <>
+                {best && <ModelPicker choices={choices} best={best} picked={pickedModel} keys={alt} />}
+                {inChat && !showChat && (
+                  <IconButton label="New chat (Esc)" keys={alt} hint="Esc" onClick={resetChat}>
+                    <Icon name="plus" size={15} />
+                  </IconButton>
+                )}
+              </>
+            )}
+          </>
+        )}
       </div>
+    </div>
+  );
 
-      {!inHistory && <ContextLine keys={alt} />}
+  return (
+    <div className="ak" data-chat={showChat || undefined}>
+      {tabs}
+      {showChat && (
+        <div className="ak-head">
+          <input
+            aria-label="Chat name"
+            value={chatName ?? turns.find((t) => t.role === "user")?.content ?? ""}
+            onChange={(e) => setChatName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === "Escape") {
+                e.preventDefault();
+                inputRef.current?.focus();
+              }
+            }}
+            spellCheck={false}
+            className="ak-title ak-cname"
+          />
+          <IconButton label="New chat (Esc)" keys={alt} hint="Esc" onClick={resetChat}>
+            <Icon name="plus" size={15} />
+          </IconButton>
+        </div>
+      )}
+      {/* In a chat the field is a box at the bottom: what goes with the
+          question on top, then the field, then the model and voice. The
+          same wrapper either way, so the input keeps focus on send. */}
+      <div className={showChat ? "ak-askc" : "contents"}>
+        {field}
+        {!inHistory && <ContextLine keys={alt} />}
+      </div>
 
       {showClips && clips ? (
         <div key="clips" className="ak-scroll ak-in" style={{ maxHeight: scrollMax }}>
@@ -877,6 +1157,7 @@ export function AskPanel() {
             items={hits.items}
             active={Math.min(pick, hits.items.length - 1)}
             onHover={setPick}
+            onOpen={(h) => openHit(h.source, h.reference, h.title)}
           />
         </div>
       ) : showChat && !(asking && rows > 0 && !inChat) ? (
@@ -893,7 +1174,7 @@ export function AskPanel() {
             style={{ maxHeight: scrollMax }}
           >
             {items.map((it, i) => (
-              <li key={it.id}>
+              <li key={it.id} ref={scrollIfActive(active === i)}>
                 {it.group && <p className="ak-group">{it.group}</p>}
                 <button
                   type="button"
@@ -908,7 +1189,16 @@ export function AskPanel() {
                   {it.key ? (
                     <kbd className="ak-key">{it.key}</kbd>
                   ) : (
-                    asking && active === i && <kbd className="ak-key">Enter</kbd>
+                    asking &&
+                    active === i &&
+                    (it.ctrlRun ? (
+                      <span className="ak-keys">
+                        <kbd className="ak-key">Enter</kbd>
+                        <kbd className="ak-key">Ctrl Enter</kbd>
+                      </span>
+                    ) : (
+                      <kbd className="ak-key">Enter</kbd>
+                    ))
                   )}
                 </button>
               </li>
@@ -935,6 +1225,10 @@ interface Item {
   /** A key shown at the end ("/"). */
   key?: string;
   run: () => void;
+  /** Ctrl Enter: e.g. show a file's folder, or browser incognito. */
+  ctrlRun?: () => void;
+  /** Footer label for Ctrl Enter ("folder", "incognito"). */
+  ctrlHint?: string;
   /** Keep Ask open after running. */
   stay?: boolean;
   /** The row clears the input itself (or keeps it). */
@@ -1076,6 +1370,29 @@ function IconButton({
 
 /** Selected row not chosen yet: the panel picks by what was typed. */
 const INTENT_PENDING = -1;
+
+/** Start-menu private browsing shortcuts (Zen ships one; we synthesize the rest). */
+function isPrivateAppName(name: string): boolean {
+  return /\b(private|incognito|inprivate)\b/i.test(name);
+}
+
+/** Label for a synthesized private browser row. */
+function privateBrowserLabel(browser: string): string {
+  switch (browser) {
+    case "edge":
+      return "Edge InPrivate";
+    case "firefox":
+      return "Firefox Private";
+    case "zen":
+      return "Zen Private";
+    case "brave":
+      return "Brave Incognito";
+    case "samsung":
+      return "Samsung Internet Private";
+    default:
+      return "Chrome Incognito";
+  }
+}
 
 /** A short name ("slack", "dark mode", "settings"), not a question. */
 export function looksLikeName(text: string): boolean {

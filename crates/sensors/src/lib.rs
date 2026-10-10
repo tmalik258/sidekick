@@ -28,7 +28,7 @@ pub use claude_code::{Approvals, ClaudeCodeSensor};
 pub use clipboard::ClipboardSensor;
 pub use downloads::DownloadsSensor;
 pub use gate::{GateState, SensorGate, SensorGateHandle};
-pub use idle::IdleSensor;
+pub use idle::{IdleSensor, is_lock_ui, session_locked};
 pub use ports::PortsSensor;
 pub use repos::ReposSensor;
 pub use system::{

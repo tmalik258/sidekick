@@ -10,6 +10,7 @@ repository = "https://github.com/tmalik258/sidekick"
 
 [workspace.dependencies]
 sidekick-core = { path = "crates/core" }
+sidekick-calc = { path = "crates/calc" }
 sidekick-sensors = { path = "crates/sensors" }
 sidekick-skills = { path = "crates/skills" }
 sidekick-actions = { path = "crates/actions" }

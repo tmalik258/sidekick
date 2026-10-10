@@ -1,0 +1,8 @@
+[package]
+name = "sidekick-calc"
+description = "Math and percentages for Ask's instant results"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

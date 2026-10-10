@@ -9,12 +9,6 @@ suggestion:
   title: "Good morning"
   detail: "{{headline}}"
   options:
-    - { label: Open all, action: routine_open_all, when: { routine_count: { regex: "^[1-9]" }, auto: { equals: "" } } }
-    - { label: "{{item1}}", action: routine_open, args: { index: "1" }, when: { item1: { regex: "." }, auto: { equals: "" } } }
-    - { label: "{{item2}}", action: routine_open, args: { index: "2" }, when: { item2: { regex: "." }, auto: { equals: "" } } }
-    - { label: "{{item3}}", action: routine_open, args: { index: "3" }, when: { item3: { regex: "." }, auto: { equals: "" } } }
-    - { label: Always open these, action: routine_auto, args: { on: "true" }, when: { offer_auto: { equals: "1" } } }
-    - { label: Stop opening these by itself, action: routine_auto, args: { on: "false" }, when: { auto: { equals: "1" } } }
     - label: Plan my day
       action: ask_ai
       args:
@@ -23,5 +17,12 @@ suggestion:
         clipboard: "false"
       requires: ["ai"]
     - { label: "Open {{first_title}}", action: open_url, args: { url: "{{first_url}}" }, when: { first_url: { regex: "^https://github.com/" } } }
+    - { label: "Open {{first_repo}}", action: open_in_editor, args: { path: "{{first_repo_path}}" }, when: { first_repo_path: { regex: "." } }, requires: ["tool:code"] }
+    - { label: "Open {{first_repo}} folder", action: open_folder, args: { path: "{{first_repo_path}}" }, when: { first_repo_path: { regex: "." } } }
+    - { label: Copy, action: copy_text, args: { text: "{{text}}" }, when: { text: { regex: "." } } }
+    - { label: Open all, action: routine_open_all, when: { routine_count: { regex: "^[1-9]" }, auto: { equals: "" } } }
+    - { label: "{{item1}}", action: routine_open, args: { index: "1" }, when: { item1: { regex: "." }, auto: { equals: "" } } }
     - { label: Not today, action: routine_skip, when: { routine_count: { regex: "^[1-9]" }, auto: { equals: "" } } }
-    - { label: Copy, action: copy_text, args: { text: "{{text}}" }, when: { routine_count: { regex: "^0" } } }
+    - { label: Don't ask about apps, action: routine_off, when: { routine_count: { regex: "^[1-9]" }, auto: { equals: "" } } }
+    - { label: Always open these, action: routine_auto, args: { on: "true" }, when: { offer_auto: { equals: "1" } } }
+    - { label: Stop opening these by itself, action: routine_auto, args: { on: "false" }, when: { auto: { equals: "1" } } }

@@ -217,10 +217,20 @@ fn parse_choice(text: &str, d: &Decision) -> Option<String> {
     let start = text.find('{')?;
     let end = text.rfind('}')?;
     let v: Value = serde_json::from_str(text.get(start..=end)?).ok()?;
-    let choice = v["choice"].as_str()?;
+    let choice = v["choice"].as_str()?.trim();
+    // Exact id, or chatty forms like "o1: Chrome" / "o1 Chrome".
     d.options
         .iter()
         .find(|o| o.id == choice)
+        .or_else(|| {
+            d.options.iter().find(|o| {
+                choice.starts_with(&o.id)
+                    && choice
+                        .as_bytes()
+                        .get(o.id.len())
+                        .is_none_or(|c| !c.is_ascii_alphanumeric())
+            })
+        })
         .map(|o| o.id.clone())
 }
 
@@ -328,5 +338,9 @@ mod tests {
         );
         assert_eq!(parse_choice(r#"{"choice":"delete"}"#, &d), None);
         assert_eq!(parse_choice("no json", &d), None);
+        assert_eq!(
+            parse_choice(r#"{"choice": "skip: Skip this"}"#, &d),
+            Some("skip".into())
+        );
     }
 }

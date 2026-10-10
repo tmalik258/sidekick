@@ -13,7 +13,9 @@
     "check:keys": "node scripts/check-keys.mjs",
     "visual": "node scripts/visual.mjs",
     "speed": "node scripts/speed.mjs",
-    "e2e": "node scripts/e2e.mjs"
+    "e2e": "node scripts/e2e.mjs",
+    "ask-eval": "node scripts/ask-eval.mjs",
+    "ask-check": "node scripts/ask-check.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.1",

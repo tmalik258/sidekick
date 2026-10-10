@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Expression } from "@/components/orb/expressions";
+import { setTab, startHere } from "./agents";
 import { api, EVENTS, listen } from "./bridge";
 import { putCached, SETUP_STATUS_CACHE_KEY } from "./cache";
 import { firstToday, isThanks, type Mood, moodForSkill, SUGGESTION_MOOD_MS } from "./mood";
@@ -16,6 +17,7 @@ import {
   type ExtensionGuide,
   type HitRect,
   type MascotState,
+  type MergeState,
   type Proposal,
   type Settings,
   type Suggestion,
@@ -51,6 +53,8 @@ interface SidekickState {
   ready: boolean;
   /** Outcome of the last action, shown while the mascot reports it. */
   lastResult: ActionResult | null;
+  /** A branch update stopped on conflicts, solved file by file in the island. */
+  merge: { path: string; state: MergeState } | null;
   /** The option being carried out, shown while the island works on it. */
   running: string | null;
   /** Ask mode: the island is a panel for commands and chat. */
@@ -134,6 +138,8 @@ export interface AskState {
   prompt: string;
   /** Bumped on every open, so the panel refocuses. */
   seq: number;
+  /** Matches Rust `panelGen` for this open. */
+  panelGen: number;
   attachWindow: boolean;
   attachClip: boolean;
   localOnly: boolean;
@@ -144,8 +150,6 @@ export interface AskState {
 }
 
 const MODEL_KEY = "sidekick.askModel";
-/** The Ask model choice that hands questions to the Copilot app. */
-export const COPILOT_APP = "copilot_app";
 
 function savedModel(): string | null {
   try {
@@ -182,6 +186,7 @@ export const useSidekick = create<SidekickState>(() => ({
   fullscreen: false,
   ready: false,
   lastResult: null,
+  merge: null,
   running: null,
   ask: null,
   turns: [],
@@ -308,6 +313,28 @@ export function showDone(text: string) {
   clearTimeout(doneTimer);
   useSidekick.setState({ donePill: text, voiceQuestion: null });
   doneTimer = setTimeout(() => useSidekick.setState({ donePill: null }), DONE_PILL_MS);
+}
+
+/**
+ * Close Ask, show Opening…, run an open, then Opened… (or an error card).
+ * `open` returns false when nothing was opened (caller may show a picker).
+ */
+export async function runOpen(open: () => Promise<boolean>, doneMessage: string): Promise<boolean> {
+  void api.askClose();
+  useSidekick.setState({ mascot: "working", running: "Opening" });
+  try {
+    const opened = await open();
+    useSidekick.setState({ running: null });
+    if (!opened) return false;
+    showDone(doneMessage);
+    return true;
+  } catch (e) {
+    useSidekick.setState({
+      running: null,
+      lastResult: { ok: false, message: String(e), path: null, auto: false, undoId: null },
+    });
+    return false;
+  }
 }
 
 /** How long the island keeps the Done card after a waited step. */
@@ -540,6 +567,18 @@ export function setMood(id: Expression, ms: number, sound?: SynthSound) {
   if (sound) playMood(sound, uiVolume(), useSidekick.getState().settings.soundKit);
 }
 
+/** Marks a result whose branch update stopped on conflicts. */
+const MERGE_AT = "git-merge:";
+
+/** Loads the conflicts of an update into the island. */
+export async function openMerge(path: string) {
+  try {
+    useSidekick.setState({ merge: { path, state: await api.mergeState(path) } });
+  } catch (e) {
+    useSidekick.setState({ lastResult: { ok: false, message: String(e), path: null, auto: false, undoId: null } });
+  }
+}
+
 /** Two failures this close together make the mascot sad, not just "oops". */
 const SAD_WITHIN_MS = 10 * 60_000;
 let failures = 0;
@@ -640,22 +679,6 @@ function startEarly(q: string, speak: boolean) {
   void api.aiChat(id, req.history, { ...req.attach, hold: true }, req.localOnly);
 }
 
-/** Puts the question (with the page or app it is about) on the clipboard
- * and opens Copilot; the answer is read there. */
-function askCopilot(q: string) {
-  const { turns, ask, chatPage } = useSidekick.getState();
-  const app = ask?.context.app;
-  const about = chatPage ? `\n\nAbout this page: ${chatPage}` : app ? `\n\n(In ${app})` : "";
-  const reply = (content: string) =>
-    useSidekick.setState({
-      turns: [...useSidekick.getState().turns.slice(0, -1), { role: "assistant", content, provider: "copilot" }],
-    });
-  useSidekick.setState({
-    turns: [...turns, { role: "user", content: q, screen: false }, { role: "assistant", content: "", streaming: true }],
-  });
-  api.copilotAsk(`${q}${about}`).then(reply, (e: unknown) => reply(`Could not open Copilot: ${String(e)}`));
-}
-
 export function sendChat(prompt: string, attach?: ChatAttach): boolean {
   const { turns, chatId } = useSidekick.getState();
   const q = prompt.trim();
@@ -664,11 +687,6 @@ export function sendChat(prompt: string, attach?: ChatAttach): boolean {
     return false;
   }
   if (isThanks(q)) thanked();
-  if (useSidekick.getState().askModel === COPILOT_APP) {
-    dropEarly();
-    askCopilot(q);
-    return true;
-  }
   const adopted = early?.q === q && (attach?.screen ?? false) === false ? early : null;
   if (!adopted) dropEarly();
   early = null;
@@ -851,6 +869,8 @@ const RESUME_MS = 10 * 60_000;
 /** This PC only of the chat that was open, for when Ask comes back to it. */
 let keptLocalOnly = false;
 let askClosedAt = Date.now();
+/** Last close generation from Rust; drops late open events. */
+let lastPanelCloseGen = 0;
 
 function updateLastTurn(id: string, fn: (t: Turn) => Turn) {
   const { chatId, turns } = useSidekick.getState();
@@ -929,8 +949,11 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         const mood = moodForSkill(suggestion.skillId);
         if (mood) setMood(mood, SUGGESTION_MOOD_MS);
       }),
-      listen(EVENTS.actionResult, (lastResult) => {
+      listen(EVENTS.actionResult, (result) => {
+        const merging = result.path?.startsWith(MERGE_AT) ? result.path.slice(MERGE_AT.length) : null;
+        const lastResult = merging ? { ...result, path: null } : result;
         useSidekick.setState({ lastResult, running: null });
+        if (merging) void openMerge(merging);
         // Done with nothing to undo or open: a compact pill, not a card.
         if (lastResult.ok && !lastResult.undoId && !lastResult.path && !useSidekick.getState().ask) {
           showDone(lastResult.message);
@@ -964,6 +987,8 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         }
       }),
       listen(EVENTS.askOpen, (open) => {
+        const panelGen = open.panelGen ?? 0;
+        if (panelGen > 0 && panelGen <= lastPanelCloseGen) return;
         timings.opened(open.sentAt);
         const seq = (useSidekick.getState().ask?.seq ?? 0) + 1;
         // Back within 10 minutes: the last chat is still there. Later, a new one.
@@ -978,15 +1003,16 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         resumeSettingsTab = null;
         // This PC only belongs to the chat: it stays while the chat goes on.
         // A new chat starts from the setting.
-        const prev = useSidekick.getState();
-        const sameChat = prev.turns.length > 0;
-        const localOnly = sameChat ? (prev.ask?.localOnly ?? keptLocalOnly) : prev.settings.ai.localOnly;
+        const state = useSidekick.getState();
+        const sameChat = state.turns.length > 0;
+        const localOnly = sameChat ? (state.ask?.localOnly ?? keptLocalOnly) : state.settings.ai.localOnly;
         useSidekick.setState({
           ask: {
             view: open.view ?? "ask",
             context: open.context,
-            prompt: open.ask ? "" : (open.prompt ?? ""),
+            prompt: open.ask || open.project ? "" : (open.prompt ?? ""),
             seq,
+            panelGen,
             attachWindow: false,
             attachClip: clip,
             localOnly,
@@ -994,9 +1020,17 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
             settingsTab,
           },
         });
+        if (open.project) startHere(open.project, open.prompt);
+        else if (open.tab === "agents" || open.tab === "ask") setTab(open.tab);
         if (open.ask && open.prompt) sendChat(open.prompt, { clipboard: clip });
       }),
       listen(EVENTS.askClose, (payload) => {
+        const panelGen = payload.panelGen ?? 0;
+        const current = useSidekick.getState().ask;
+        if (panelGen > 0 && current !== null && current.panelGen > 0 && panelGen < current.panelGen) {
+          return;
+        }
+        if (panelGen > 0) lastPanelCloseGen = panelGen;
         askClosedAt = Date.now();
         keptLocalOnly = useSidekick.getState().ask?.localOnly ?? false;
         if (useSidekick.getState().hearing !== null) stopListening();
@@ -1049,6 +1083,12 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         }
       }),
       listen(EVENTS.aiDelta, ({ id, text }) => {
+        // The model took back what it wrote (a tool call written as text).
+        if (text === "\u0001clear") {
+          pendingText.delete(id);
+          updateLastTurn(id, (t) => ({ ...t, content: "" }));
+          return;
+        }
         // Words arrive faster than the screen paints: one update per frame.
         pendingText.set(id, (pendingText.get(id) ?? "") + text);
         scheduleText();
@@ -1065,6 +1105,9 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           return;
         }
         flushText();
+        // A line written before a tool call is narration ("I'll check your
+        // Downloads"), not the answer: drop it so the answer starts clean.
+        updateLastTurn(id, (t) => (t.content && t.content.length < 240 ? { ...t, content: "" } : t));
         // Steps read as what they do ("Searching the web for ..."), in words.
         const step = label || toolStatus(name).replace(/\.\.\.$/, "");
         updateLastTurn(id, (t) => ({ ...t, tool: step, steps: [...(t.steps ?? []), step] }));

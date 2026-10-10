@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use chrono::Utc;
+use chrono::{Local, Utc};
 use serde::Serialize;
 use serde_json::Value;
 use sidekick_core::Event;
@@ -17,6 +17,9 @@ use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, lock};
 
+/// How far back time-tracking ranks the project picker.
+const RANK_DAYS: i64 = 30;
+
 pub const REPO_OPENED: &str = "dev.repo_opened";
 /// The same project is checked again after this long.
 const RECHECK: Duration = Duration::from_secs(3 * 60 * 60);
@@ -25,7 +28,7 @@ const LIST_TTL: Duration = Duration::from_secs(10 * 60);
 static CHECKED: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
 static LIST: Mutex<Option<(Instant, Vec<PathBuf>)>> = Mutex::new(None);
 
-fn roots(app: &AppHandle) -> Vec<PathBuf> {
+pub fn roots(app: &AppHandle) -> Vec<PathBuf> {
     let folders = lock(&app.state::<AppState>().settings).code_folders.clone();
     if folders.is_empty() {
         ReposSensor::default_roots()
@@ -127,7 +130,17 @@ pub struct ProjectInfo {
 }
 
 pub fn infos(app: &AppHandle) -> Vec<ProjectInfo> {
-    list(app)
+    let since = (Local::now() - chrono::Duration::days(RANK_DAYS))
+        .format("%Y-%m-%d")
+        .to_string();
+    // Lowercase name → (last day worked, total secs). Recent first, then most time.
+    let rank: HashMap<String, (String, i64)> = lock(&app.state::<AppState>().storage)
+        .time_by_project_since(&since)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(name, secs, last)| (name.to_ascii_lowercase(), (last, secs)))
+        .collect();
+    let mut out: Vec<ProjectInfo> = list(app)
         .into_iter()
         .map(|p| ProjectInfo {
             name: p
@@ -136,7 +149,25 @@ pub fn infos(app: &AppHandle) -> Vec<ProjectInfo> {
                 .unwrap_or_default(),
             path: p.to_string_lossy().into_owned(),
         })
-        .collect()
+        .collect();
+    out.sort_by(|a, b| {
+        let ra = rank.get(&a.name.to_ascii_lowercase());
+        let rb = rank.get(&b.name.to_ascii_lowercase());
+        match (ra, rb) {
+            (Some((da, sa)), Some((db, sb))) => db.cmp(da).then(sb.cmp(sa)).then_with(|| {
+                a.name
+                    .to_ascii_lowercase()
+                    .cmp(&b.name.to_ascii_lowercase())
+            }),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a
+                .name
+                .to_ascii_lowercase()
+                .cmp(&b.name.to_ascii_lowercase()),
+        }
+    });
+    out
 }
 
 #[cfg(test)]

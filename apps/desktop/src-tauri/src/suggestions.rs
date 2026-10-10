@@ -339,7 +339,7 @@ pub fn offer(app: &AppHandle, mut proposal: Proposal) {
 fn why_line(taken: i64, dismissed: i64) -> String {
     let total = taken + dismissed;
     if total == 0 {
-        "New suggestion. Not now tells me to ask less.".into()
+        String::new()
     } else if taken >= dismissed {
         format!("You took this {taken} of {total} times.")
     } else {
@@ -425,6 +425,7 @@ fn show(app: &AppHandle, proposal: Proposal) {
         title: proposal.title.clone(),
         detail: proposal.detail.clone(),
         options: proposal.options.iter().map(|o| o.label.clone()).collect(),
+        actions: proposal.options.iter().map(|o| o.action.clone()).collect(),
         always: proposal
             .options
             .iter()
@@ -729,6 +730,50 @@ async fn execute(
                     path: None,
                 });
         }
+        "clone_pick" => {
+            return crate::clone::pick_and_clone(app, arg("url").unwrap_or_default()).await;
+        }
+        "git_clone" => {
+            let out = crate::state::executor(&app.state::<AppState>())
+                .run(&option.action, &option.args)
+                .await
+                .map_err(|e| e.to_string())?;
+            if let Some(path) = &out.path {
+                crate::clone::after_clone(
+                    app,
+                    arg("url").unwrap_or_default(),
+                    arg("dir").unwrap_or_default(),
+                    path,
+                    false,
+                );
+            }
+            return Ok(out);
+        }
+        "clone_rule" => {
+            let (owner, dir) = (
+                arg("owner").unwrap_or_default(),
+                arg("dir").unwrap_or_default(),
+            );
+            crate::clone::keep_rule(app, owner, dir)?;
+            return Ok(sidekick_actions::Outcome {
+                message: format!("Saved. {owner} repos go to {dir} from now on"),
+                path: None,
+            });
+        }
+        "agent_here" => {
+            crate::ask::open(
+                app,
+                crate::ask::Open {
+                    project: arg("path").map(str::to_owned),
+                    prompt: arg("prompt").map(str::to_owned),
+                    ..Default::default()
+                },
+            );
+            return Ok(sidekick_actions::Outcome {
+                message: "Opened Agents".into(),
+                path: None,
+            });
+        }
         "fathom_followup" => {
             return crate::fathom::follow_up(
                 app,
@@ -769,7 +814,7 @@ async fn execute(
                 path: Some(path),
             });
         }
-        "routine_open_all" | "routine_open" | "routine_skip" | "routine_auto" => {
+        "routine_open_all" | "routine_open" | "routine_skip" | "routine_auto" | "routine_off" => {
             let message = match option.action.as_str() {
                 "routine_open_all" => crate::routines::open_all(app, true).await?,
                 "routine_open" => {
@@ -777,6 +822,7 @@ async fn execute(
                     crate::routines::open_one(app, n).await?
                 }
                 "routine_skip" => crate::routines::skip_today(app),
+                "routine_off" => crate::routines::set_off(app)?,
                 _ => crate::routines::set_auto(app, arg("on") == Some("true"))?,
             };
             return Ok(sidekick_actions::Outcome {
@@ -1006,7 +1052,7 @@ mod tests {
 
     #[test]
     fn why_line_reads_the_track_record() {
-        assert!(why_line(0, 0).starts_with("New"));
+        assert_eq!(why_line(0, 0), "");
         assert_eq!(why_line(4, 1), "You took this 4 of 5 times.");
         assert!(why_line(1, 3).starts_with("You skipped this 3 of 4"));
     }

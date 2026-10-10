@@ -10,8 +10,8 @@ import { useNow } from "@/lib/hooks";
 import { Markdown } from "@/lib/markdown";
 import { splitOptions } from "@/lib/options";
 import { useReveal } from "@/lib/reveal";
-import { askAgain, askWhenOnline, retryLast, setAsk, thinkHarder, useSidekick } from "@/lib/store";
-import { type Agents, type AiSettings, PROVIDER_LABELS, type Turn } from "@/lib/types";
+import { askAgain, askWhenOnline, retryLast, setAsk, setAskModel, thinkHarder, useSidekick } from "@/lib/store";
+import { type Agents, type AiSettings, PROVIDER_LABELS, type ProviderStatus, type Turn } from "@/lib/types";
 import { AnswerOptions, Proposals, pendingCount } from "./Proposals";
 import { FailureCard } from "./States";
 
@@ -44,7 +44,10 @@ export function Chat({ turns }: { turns: Turn[] }) {
   const skillMode = useSidekick((s) => s.chatSkill);
   const ai = useSidekick((s) => s.settings.ai);
   const last = turns.at(-1);
-  const options = last?.role === "assistant" && !last.streaming ? splitOptions(last.content).options : [];
+  // A reply that is only chips (a weak model copying its instructions) is no answer.
+  const blank = (t: Turn) => !t.streaming && !t.error && !splitOptions(t.content).body.trim();
+  const options =
+    last?.role === "assistant" && !last.streaming && !blank(last) ? splitOptions(last.content).options : [];
   return (
     <div className="ak-body py-0.5">
       {turns.map((t, i) => {
@@ -73,6 +76,24 @@ export function Chat({ turns }: { turns: Turn[] }) {
             ) : t.streaming ? (
               <LiveStep step={t.tool ?? null} since={t.startedAt} />
             ) : null}
+            {blank(t) && t.provider && (
+              <p className="ak-err" role="alert">
+                No answer came back. Ask again, or try another model.
+              </p>
+            )}
+            {!t.streaming && isLast && t.provider && (blank(t) || t.handoff) && !t.error && (
+              <TryAnother from={t.provider} />
+            )}
+            {!t.streaming && !blank(t) && splitOptions(t.content).stats.length > 0 && (
+              <div className="ak-stats">
+                {splitOptions(t.content).stats.map((st) => (
+                  <span key={st.label} className={`ak-stat${st.hot ? " hot" : ""}`}>
+                    {st.label}
+                    <b>{st.value}</b>
+                  </span>
+                ))}
+              </div>
+            )}
             {t.streaming && t.content && t.tool && (
               <p className="ak-status">
                 <span className="shimmer-text text-[rgb(235_235_245/0.6)]">{t.tool}...</span>
@@ -104,8 +125,6 @@ export function Chat({ turns }: { turns: Turn[] }) {
             {skillMode && !t.streaming && yamlBlock(t.content) && <AddSkill yaml={yamlBlock(t.content) ?? ""} />}
             {t.proposals && t.proposals.length > 0 && <Proposals items={t.proposals} keys={isLast} />}
             {isLast && options.length > 0 && <AnswerOptions options={options} start={pendingCount(t.proposals)} />}
-            {/* Offered when the local model gives up; Ctrl Enter works when an agent is installed. */}
-            {!t.streaming && isLast && t.handoff && !t.error && <Handoff turns={turns} reason={t.handoff} />}
           </div>
         );
       })}
@@ -273,17 +292,27 @@ function AnswerActions({
     );
   return (
     <div className="grid gap-1">
-      <div className="ak-acts">
-        <button type="button" onClick={copy} onMouseLeave={() => setCopied(false)} className="ak-act chip">
-          <ActIcon d="M8 8h12v12H8zM16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
-          {copied ? "Copied" : "Copy"} {key("C")}
+      <div className="ak-acts" data-detail={detail}>
+        <button
+          type="button"
+          onClick={copy}
+          onMouseLeave={() => setCopied(false)}
+          aria-label={copied ? "Copied" : "Copy"}
+          title={copied ? "Copied" : "Copy · Alt C"}
+          className="ak-act ico chip"
+        >
+          <ActIcon
+            d={
+              copied ? "M5 12.5l4.5 4.5L19 7.5" : "M8 8h12v12H8zM16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"
+            }
+          />
         </button>
         <button
           type="button"
           onClick={read}
           aria-label={speaking ? "Stop reading" : "Read aloud"}
-          title={speaking ? "Stop reading" : "Read aloud"}
-          className="ak-act chip"
+          title={speaking ? "Stop reading" : "Read aloud · Alt L"}
+          className="ak-act ico chip"
         >
           <ActIcon
             d={
@@ -292,12 +321,16 @@ function AnswerActions({
                 : "M11 5 6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"
             }
           />
-          {key("L")}
         </button>
         {again && (
-          <button type="button" onClick={() => askAgain()} className="ak-act chip">
+          <button
+            type="button"
+            onClick={() => askAgain()}
+            aria-label="Retry"
+            title="Retry · Alt T"
+            className="ak-act ico chip"
+          >
             <ActIcon d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4.5h-4.5" />
-            Retry {key("T")}
           </button>
         )}
         {think && (
@@ -400,6 +433,40 @@ export function Handoff({ turns, reason }: { turns: Turn[]; reason: string | nul
         {state === "opening" ? "Opening..." : local ? `Allow and continue in ${agent}` : `Continue in ${agent}`}
       </button>
       {state !== "idle" && state !== "opening" && <p className="text-[12px] text-[#ffb4ae]">{state}</p>}
+    </div>
+  );
+}
+
+/**
+ * The answer fell short: ask the same question with a model the user picks.
+ * No model is favoured, and a cloud one only runs when they choose it.
+ */
+function TryAnother({ from }: { from: string }) {
+  const [open, setOpen] = useState(false);
+  const { data } = useCached<ProviderStatus[]>("ai-status", api.aiStatus);
+  const local = useSidekick((s) => s.ask?.localOnly ?? false);
+  const others = (data ?? []).filter((p) => p.available && p.id !== from && p.id !== "semif");
+  if (others.length === 0) return null;
+  const pick = (p: ProviderStatus) => {
+    // Picking a cloud model is the opt-in: this chat leaves the PC from here.
+    if (local && !p.local) setAsk({ localOnly: false });
+    setAskModel(p.id);
+    askAgain();
+  };
+  return (
+    <div className="ak-chips">
+      {open ? (
+        others.map((p) => (
+          <button key={p.id} type="button" onClick={() => pick(p)} className="ak-chip chip">
+            {PROVIDER_LABELS[p.id] ?? p.id}
+            <span className="text-[rgb(235_235_245/0.6)]">{p.local ? " · on this PC" : " · sends this chat out"}</span>
+          </button>
+        ))
+      ) : (
+        <button type="button" onClick={() => setOpen(true)} className="ak-chip chip">
+          Try another model
+        </button>
+      )}
     </div>
   );
 }

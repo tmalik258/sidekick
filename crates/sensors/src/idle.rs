@@ -8,6 +8,9 @@ use crate::{Sensor, SensorGate};
 /// Notices when the user steps away and comes back, from the
 /// time since the last keyboard or mouse input. Suggestions wait while the
 /// user is away instead of popping up to an empty room.
+///
+/// The Windows lock screen still sees mouse movement, so "back" only fires
+/// after the session is unlocked — not while LockApp / LogonUI is up.
 pub struct IdleSensor {
     pub away_after: Duration,
 }
@@ -28,6 +31,13 @@ impl Default for IdleSensor {
 
 const CHECK_EVERY: Duration = Duration::from_secs(2);
 
+/// Lock / sign-in UI: not a real app the user was "in".
+pub fn is_lock_ui(name: &str) -> bool {
+    let n = name.trim().to_ascii_lowercase();
+    let stem = n.trim_end_matches(".exe");
+    stem == "lockapp" || stem == "logonui" || stem == "authhost" || stem == "credentialuibroker"
+}
+
 impl Sensor for IdleSensor {
     fn id(&self) -> &'static str {
         Self::ID
@@ -46,14 +56,22 @@ impl Sensor for IdleSensor {
                 if !gate.allows(Self::ID) {
                     continue;
                 }
+                let locked = session_locked();
                 match away {
-                    None if idle >= self.away_after => {
+                    // Locked counts as away even before the idle timer fills.
+                    None if locked || idle >= self.away_after => {
                         away = Some(idle);
                         bus.publish(Event::new(
                             Self::IDLE,
                             Self::ID,
                             serde_json::json!({ "idle_secs": idle.as_secs() }),
                         ));
+                    }
+                    // Mouse on the lock screen resets idle; keep the stretch.
+                    Some(longest) if locked => {
+                        if idle > longest {
+                            away = Some(idle);
+                        }
                     }
                     Some(longest) if idle < CHECK_EVERY * 2 => {
                         away = None;
@@ -96,4 +114,44 @@ pub fn idle_time() -> Option<Duration> {
 #[cfg(not(windows))]
 pub fn idle_time() -> Option<Duration> {
     None
+}
+
+/// True while the Windows session is locked (login / lock screen).
+///
+/// Mouse movement still resets idle there; callers must not treat that as
+/// the user being back until this is false.
+#[cfg(windows)]
+pub fn session_locked() -> bool {
+    use windows_sys::Win32::Foundation::FALSE;
+    use windows_sys::Win32::System::StationsAndDesktops::{CloseDesktop, OpenInputDesktop};
+    // DESKTOP_READOBJECTS — enough to probe; fails while the workstation is locked.
+    const DESKTOP_READOBJECTS: u32 = 0x0001;
+    // SAFETY: no handle retained on failure; CloseDesktop on success.
+    let desk = unsafe { OpenInputDesktop(0, FALSE, DESKTOP_READOBJECTS) };
+    if desk.is_null() {
+        return true;
+    }
+    unsafe {
+        let _ = CloseDesktop(desk);
+    }
+    false
+}
+
+#[cfg(not(windows))]
+pub fn session_locked() -> bool {
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lock_ui_names() {
+        assert!(is_lock_ui("LockApp.exe"));
+        assert!(is_lock_ui("lockapp"));
+        assert!(is_lock_ui("LogonUI.exe"));
+        assert!(!is_lock_ui("Cursor.exe"));
+        assert!(!is_lock_ui("Code"));
+    }
 }

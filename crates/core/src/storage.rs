@@ -455,6 +455,22 @@ impl Storage {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
+    /// Per project from `day` on: (lowercase name, total secs, last day with time).
+    /// Newest activity first, then most time — for project pickers.
+    pub fn time_by_project_since(
+        &self,
+        day: &str,
+    ) -> Result<Vec<(String, i64, String)>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT LOWER(project), SUM(secs) AS total, MAX(day) AS last_day FROM app_time
+             WHERE day >= ?1 AND TRIM(project) != ''
+             GROUP BY LOWER(project)
+             ORDER BY last_day DESC, total DESC",
+        )?;
+        let rows = stmt.query_map([day], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
     pub fn clear_time(&self) -> Result<usize, StorageError> {
         Ok(self.conn.execute("DELETE FROM app_time", [])?)
     }
@@ -1146,7 +1162,20 @@ mod tests {
             s.time_by_app_since("2026-10-02").unwrap(),
             vec![("Code".to_owned(), 5)]
         );
-        assert_eq!(s.clear_time().unwrap(), 3);
+        assert_eq!(
+            s.time_by_project_since("2026-10-01").unwrap(),
+            vec![("sidekick".to_owned(), 155, "2026-10-02".to_owned())]
+        );
+        s.add_time("2026-10-02", "Code", "other", 10).unwrap();
+        s.add_time("2026-09-01", "Code", "old", 9_999).unwrap();
+        assert_eq!(
+            s.time_by_project_since("2026-10-01").unwrap(),
+            vec![
+                ("sidekick".to_owned(), 155, "2026-10-02".to_owned()),
+                ("other".to_owned(), 10, "2026-10-02".to_owned()),
+            ]
+        );
+        assert_eq!(s.clear_time().unwrap(), 5);
     }
 
     #[test]

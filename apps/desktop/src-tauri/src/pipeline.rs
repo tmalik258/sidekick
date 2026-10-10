@@ -97,10 +97,14 @@ async fn handle(app: &AppHandle, mut event: Event) {
     store(app, event.clone()).await;
     search::index_event(app, &event);
     crate::stuck::observe(app, &event);
+    crate::clone::observe(app, &event);
     crate::routines::observe(app, &event);
 
     if event.kind == IdleSensor::IDLE || event.kind == IdleSensor::ACTIVE {
-        let away = event.kind == IdleSensor::IDLE;
+        // Lock screen still emits input; IdleSensor only sends ACTIVE after unlock.
+        // If we somehow get ACTIVE while still locked, stay away.
+        let away = event.kind == IdleSensor::IDLE
+            || (event.kind == IdleSensor::ACTIVE && sidekick_sensors::session_locked());
         app.state::<AppState>()
             .away
             .store(away, std::sync::atomic::Ordering::Relaxed);
@@ -119,9 +123,17 @@ async fn handle(app: &AppHandle, mut event: Event) {
     if event.kind == WindowSensor::EVENT_KIND {
         island::follow_active_monitor(app, &event.payload);
         island::follow_fullscreen(app, &event.payload);
+        let exe = event.payload["exe"].as_str().unwrap_or_default();
+        let app_name = event.payload["app"].as_str().unwrap_or_default();
+        // Lock / sign-in UI: pause time and skip "where was I" — IdleSensor owns away.
+        if sidekick_sensors::is_lock_ui(exe) || sidekick_sensors::is_lock_ui(app_name) {
+            timetrack::on_away(app);
+            return;
+        }
         *lock(&app.state::<AppState>().last_window) = Some(event.payload.clone());
         timetrack::on_window(app, &event.payload);
         crate::projects::on_window(app, &event.payload);
+        crate::git_watch::on_window(app, &event.payload);
         crate::moments::on_window(&event.payload);
     }
 
@@ -149,8 +161,11 @@ async fn handle(app: &AppHandle, mut event: Event) {
 
 /// Runs the skills on `event` and offers what matched.
 fn propose(app: &AppHandle, event: &Event) {
+    // "Do you work with code?" No: no repo or agent cards.
+    let coder = lock(&app.state::<AppState>().settings).codes != Some(false);
     if let Some(proposal) = evaluate(app, event)
         && !crate::learn::is_muted(app, &proposal.skill_id)
+        && (coder || !proposal.skill_id.starts_with("dev."))
     {
         // Ranking may ask a model, so it runs beside the event loop.
         let app = app.clone();

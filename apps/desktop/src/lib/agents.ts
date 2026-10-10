@@ -12,7 +12,7 @@ export interface Step {
   tool: string;
   label: string;
   detail: string;
-  state: "running" | "done" | "failed";
+  state: "running" | "done" | "failed" | "cancelled";
   /** The end of a command's output, folded under the step. */
   output?: string;
 }
@@ -49,6 +49,16 @@ export interface Session extends AgentStarted {
   note?: string | null;
   /** Cut off by a restart: nothing runs until Resume. */
   restored?: boolean;
+  /** The Ollama model a Local session runs. */
+  localModel?: string;
+  /** Picked in the chat box; null is the agent's default. */
+  model?: string | null;
+  /** Thinking: off, low, medium, high; null is the default. */
+  effort?: string | null;
+  /** Merged back with Finish. */
+  finished?: boolean;
+  /** The local model went round in circles: offer a handoff. */
+  stuck?: boolean;
 }
 
 /** Half the context used: Claude Code works best compacted from here. */
@@ -59,14 +69,27 @@ export function dismissCompact(id: string) {
   update(id, (s) => ({ ...s, compactDismissed: true }));
 }
 
-export type AskTab = "ask" | "agents" | "history";
+export type AskTab = "ask" | "agents" | "repos" | "history";
+
+/** One session big, or the board of live tiles. */
+export type AgentsLayout = "one" | "board";
+
+/** A 1440p screen or bigger fits three board tiles across. */
+export const wideScreen = () => typeof window !== "undefined" && window.screen.height >= 1440;
 
 interface AgentsState {
+  layout: AgentsLayout;
+  /** The board tile the chat box talks to. */
+  focus: string | null;
   /** Ask's tab: quick questions, agent sessions, or history. */
   tab: AskTab;
   sessions: Session[];
   /** The session shown in the Agents tab; null shows New. */
   current: string | null;
+  /** The project New starts in, when something picked it. */
+  draftPath?: string | null;
+  /** What New's box starts with ("Ask an agent to fix it"). */
+  draftPrompt?: string | null;
 }
 
 /** Sessions are kept in this window's storage, so the timeline comes back
@@ -89,7 +112,51 @@ function loadSessions(): Session[] {
   }
 }
 
-export const useAgents = create<AgentsState>(() => ({ tab: "ask", sessions: loadSessions(), current: null }));
+const LAYOUT_KEY = "sidekick.agentsLayout";
+
+function loadLayout(): AgentsLayout {
+  try {
+    return localStorage.getItem(LAYOUT_KEY) === "board" ? "board" : "one";
+  } catch {
+    return "one";
+  }
+}
+
+export const useAgents = create<AgentsState>(() => ({
+  tab: "ask",
+  sessions: loadSessions(),
+  current: null,
+  layout: typeof window === "undefined" ? "one" : loadLayout(),
+  focus: null,
+}));
+
+export function setLayout(layout: AgentsLayout) {
+  useAgents.setState({ layout });
+  try {
+    localStorage.setItem(LAYOUT_KEY, layout);
+  } catch {
+    // Not kept: the layout resets after a restart.
+  }
+}
+
+/** Gives a session your own name; it shows in the row and the board. */
+export function renameSession(id: string, title: string) {
+  const t = title.trim();
+  if (t) update(id, (s) => ({ ...s, title: t }));
+}
+
+/** Model and thinking for one session, from its chat box. */
+export function tuneSession(id: string, model: string | null, effort: string | null) {
+  update(id, (s) => ({ ...s, model, effort }));
+  void api.agentTune(id, model, effort);
+}
+
+/** Merges a session's own worktree back into its repo. */
+export async function finishSession(id: string): Promise<string> {
+  const msg = await api.agentFinish(id);
+  update(id, (s) => ({ ...s, finished: true }));
+  return msg;
+}
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 useAgents.subscribe((st) => {
@@ -106,15 +173,37 @@ useAgents.subscribe((st) => {
   }, 400);
 });
 
-export const setTab = (tab: AskTab) => useAgents.setState({ tab });
+/** Opens a tab. Agents defaults to New unless a session is still working or waiting. */
+export function setTab(tab: AskTab) {
+  if (tab !== "agents") {
+    useAgents.setState({ tab });
+    return;
+  }
+  const st = useAgents.getState();
+  const cur = st.sessions.find((s) => s.id === st.current);
+  const live = cur !== undefined && (cur.status === "working" || cur.status === "waiting");
+  useAgents.setState({ tab, current: live ? st.current : null });
+}
+
+/** Opens New in Agents for one project ("Start an agent here"). */
+export const startHere = (path: string, prompt?: string | null) =>
+  useAgents.setState({ tab: "agents", current: null, draftPath: path, draftPrompt: prompt ?? null });
 
 function update(id: string, fn: (s: Session) => Session) {
   useAgents.setState((st) => ({ sessions: st.sessions.map((s) => (s.id === id ? fn(s) : s)) }));
 }
 
-export async function startSession(agent: string, path: string, prompt: string, mode: AgentMode): Promise<string> {
-  const started = await api.agentStart(agent, path, prompt, mode);
+export async function startSession(
+  agent: string,
+  path: string,
+  prompt: string,
+  mode: AgentMode,
+  model: string | null = null,
+  effort: string | null = null,
+): Promise<string> {
+  const started = await api.agentStart(agent, path, prompt, mode, model, effort);
   addSession(started, prompt, mode, prompt);
+  update(started.id, (s) => ({ ...s, model, effort }));
   return started.id;
 }
 
@@ -137,6 +226,20 @@ function addSession(started: AgentStarted, title: string, mode: AgentMode, first
   useAgents.setState((st) => ({ sessions: [session, ...st.sessions], current: started.id, tab: "agents" }));
 }
 
+/** Hands a stuck session to the agent that gets handoffs, with what was
+ * said so far. */
+export function handOffSession(s: Session) {
+  const messages = s.entries.flatMap((e): { role: "user" | "assistant"; content: string }[] =>
+    e.kind === "you"
+      ? [{ role: "user", content: e.text }]
+      : e.kind === "text"
+        ? [{ role: "assistant", content: e.text }]
+        : [],
+  );
+  update(s.id, (x) => ({ ...x, stuck: false }));
+  return handOff(messages, `${s.agent} got stuck in ${s.project}`);
+}
+
 /** Continues an Ask conversation in Claude Code or Codex, here in the island. */
 export async function handOff(messages: { role: "user" | "assistant"; content: string }[], reason: string | null) {
   const started = await api.agentHandoff(messages, reason);
@@ -151,6 +254,7 @@ export function sendToSession(id: string, text: string) {
     ...s,
     entries: [...s.entries, { kind: "you", text }],
     status: "working",
+    stuck: false,
     turnAt: Date.now(),
     tookMs: null,
     note: null,
@@ -210,6 +314,12 @@ export function activeCount(sessions: Session[]): number {
   return sessions.filter((s) => s.status === "working" || s.status === "waiting").length;
 }
 
+function entriesCancelRunning(entries: Entry[]): Entry[] {
+  return entries.map((e) =>
+    e.kind === "step" && e.step.state === "running" ? { kind: "step", step: { ...e.step, state: "cancelled" } } : e,
+  );
+}
+
 function onEvent(e: { session: string; kind: string } & Record<string, unknown>) {
   const id = e.session;
   switch (e.kind) {
@@ -225,6 +335,8 @@ function onEvent(e: { session: string; kind: string } & Record<string, unknown>)
             : [...s.entries, { kind: "text", text: mask(text) }];
         return { ...s, entries };
       });
+    case "cancel_steps":
+      return update(id, (s) => ({ ...s, entries: entriesCancelRunning(s.entries) }));
     case "step":
       return update(id, (s) => {
         const at = s.entries.findIndex((x) => x.kind === "step" && x.step.id === e.id);
@@ -252,6 +364,10 @@ function onEvent(e: { session: string; kind: string } & Record<string, unknown>)
         };
         return { ...s, entries: [...s.entries, { kind: "step", step }] };
       });
+    case "stuck":
+      return update(id, (s) => ({ ...s, stuck: true }));
+    case "model":
+      return update(id, (s) => ({ ...s, localModel: String(e.name ?? "") }));
     case "plan":
       return update(id, (s) => ({ ...s, plan: (e.items as PlanItem[]) ?? [] }));
     case "usage":
@@ -262,6 +378,16 @@ function onEvent(e: { session: string; kind: string } & Record<string, unknown>)
         return { ...s, usage, compactDismissed };
       });
     case "limit":
+      if (typeof e.used === "number") {
+        const agent = useAgents.getState().sessions.find((x) => x.id === id)?.agent;
+        if (agent)
+          noteUsage(agent, {
+            used: e.used,
+            window: String(e.window ?? ""),
+            resetsAt: typeof e.resetsAt === "number" ? e.resetsAt : null,
+            at: Date.now(),
+          });
+      }
       return update(id, (s) => ({
         ...s,
         limit:
@@ -307,4 +433,98 @@ export function listenToAgents() {
   if (started) return;
   started = true;
   void listen(EVENTS.agentEvent, onEvent);
+}
+
+/** One plan-limit window an agent reported, kept so the picker and usage pop can show it. */
+export interface SeenUsage {
+  used: number;
+  window: string;
+  resetsAt: number | null;
+  at: number;
+}
+
+const USAGE_KEY = "sidekick.agentUsage";
+
+/** Per agent, each rate-limit window (5-hour, weekly, …). */
+type SeenByAgent = Record<string, Record<string, SeenUsage>>;
+
+function isSeenUsage(v: unknown): v is SeenUsage {
+  return !!v && typeof v === "object" && "used" in v && "window" in v && "at" in v;
+}
+
+/** Older stores kept one SeenUsage per agent; lift those into a window map. */
+function seenAll(): SeenByAgent {
+  try {
+    const raw = JSON.parse(localStorage.getItem(USAGE_KEY) ?? "{}") as Record<string, unknown>;
+    const out: SeenByAgent = {};
+    for (const [agent, v] of Object.entries(raw)) {
+      if (isSeenUsage(v)) {
+        out[agent] = { [v.window || "plan"]: v };
+      } else if (v && typeof v === "object") {
+        const windows: Record<string, SeenUsage> = {};
+        for (const [w, u] of Object.entries(v as Record<string, unknown>)) {
+          if (isSeenUsage(u)) windows[w] = u;
+        }
+        if (Object.keys(windows).length) out[agent] = windows;
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function noteUsage(agent: string, u: SeenUsage) {
+  const key = u.window || "plan";
+  try {
+    const all = seenAll();
+    localStorage.setItem(USAGE_KEY, JSON.stringify({ ...all, [agent]: { ...all[agent], [key]: u } }));
+  } catch {
+    // Not kept: the picker just shows nothing for this agent.
+  }
+}
+
+/** Every plan window Sidekick has seen for an agent (5-hour, weekly, …). */
+export function seenWindows(agent: string): SeenUsage[] {
+  const map = seenAll()[agent];
+  if (!map) return [];
+  return Object.values(map);
+}
+
+/** The busiest live window, for a one-line chip; null when never seen. */
+export function seenUsage(agent: string): SeenUsage | null {
+  const now = Date.now();
+  const live = seenWindows(agent).filter((u) => !(u.resetsAt !== null && u.resetsAt * 1000 <= now));
+  if (live.length === 0) return null;
+  return live.reduce((a, b) => (pct(b) > pct(a) ? b : a));
+}
+
+function pct(u: SeenUsage): number {
+  return Math.round(u.used <= 1 ? u.used * 100 : u.used);
+}
+
+/** "85% of 5-hour, 20 min ago"; "ready" once every window has reset; null when never seen. */
+export function usageLine(agent: string, now = Date.now()): string | null {
+  const all = seenWindows(agent);
+  if (all.length === 0) return null;
+  const live = all.filter((u) => !(u.resetsAt !== null && u.resetsAt * 1000 <= now));
+  if (live.length === 0) return "ready";
+  const u = live.reduce((a, b) => (pct(b) > pct(a) ? b : a));
+  const span = u.window === "five_hour" ? "5-hour" : u.window.startsWith("seven_day") ? "week" : "plan";
+  const mins = Math.round((now - u.at) / 60_000);
+  const ago = mins < 1 ? "just now" : mins < 60 ? `${mins} min ago` : `${Math.round(mins / 60)} h ago`;
+  return `${pct(u)}% of ${span}, ${ago}`;
+}
+
+/** Esc / Stop: leave the session idle right away; Rust keeps it resumable on the next send. */
+export function interruptSession(id: string) {
+  update(id, (s) => ({
+    ...s,
+    status: "idle",
+    question: null,
+    tookMs: s.tookMs ?? Date.now() - s.turnAt,
+    error: null,
+    entries: entriesCancelRunning(s.entries),
+  }));
+  void api.agentStop(id);
 }

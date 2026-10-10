@@ -46,6 +46,9 @@ pub struct AppHit {
     pub id: String,
     /// Minutes in this app over the last week, for ranking and the hint.
     pub minutes: i64,
+    /// Known browser id (`chrome`, `edge`, …): Ask lists a private window row.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub browser: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -62,6 +65,8 @@ pub struct FileHit {
 pub struct Results {
     pub apps: Vec<AppHit>,
     pub files: Vec<FileHit>,
+    /// "18% of 2450" worked out: "441".
+    pub calc: Option<String>,
 }
 
 /// Rebuilds the app and file lists in the background when old or missing.
@@ -113,6 +118,12 @@ pub fn find(app: &AppHandle, query: &str) -> Results {
     if query.chars().count() < 2 {
         return Results::default();
     }
+    if let Some(answer) = sidekick_calc::calculate(query) {
+        return Results {
+            calc: Some(sidekick_calc::format(answer)),
+            ..Results::default()
+        };
+    }
     refresh(app);
     let usage = week_usage(app);
     let apps = lock(&APPS)
@@ -120,7 +131,11 @@ pub fn find(app: &AppHandle, query: &str) -> Results {
         .map(|(_, list)| rank_apps(list, query, &usage))
         .unwrap_or_default();
     let files = find_files(app, query);
-    Results { apps, files }
+    Results {
+        apps,
+        files,
+        calc: None,
+    }
 }
 
 /// Matching apps, the ones used most this week first; among apps not used,
@@ -152,6 +167,7 @@ pub fn rank_apps(list: &[(String, String)], query: &str, usage: &[(String, i64)]
         .into_iter()
         .take(8)
         .map(|(name, id)| AppHit {
+            browser: sidekick_actions::browser_for_app(name, id).map(str::to_owned),
             name: name.clone(),
             id: id.clone(),
             minutes: minutes(name),

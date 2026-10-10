@@ -258,9 +258,39 @@ async fn call(c: &ComposioSettings, tool: &str, args: Value) -> Result<Value, St
 }
 
 /// Runs one app tool for Sidekick itself (calendar, brief, notes).
+/// When several accounts are connected, fans out with `account` and merges lists.
 pub async fn run_tool(c: &ComposioSettings, tool: &str, args: Value) -> Result<Value, String> {
-    let v = call(c, api::EXECUTE_TOOL, api::execute_args(tool, args)).await?;
-    api::first_result(&v).map_err(|e| format!("{tool}: {e}"))
+    async fn once(c: &ComposioSettings, tool: &str, args: Value) -> Result<Value, String> {
+        let v = call(c, api::EXECUTE_TOOL, api::execute_args(tool, args)).await?;
+        api::first_result(&v).map_err(|e| format!("{tool}: {e}"))
+    }
+    if args.get("account").is_some() {
+        return once(c, tool, args).await;
+    }
+    match once(c, tool, args.clone()).await {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            let ids = api::multi_account_ids(&e);
+            if ids.is_empty() {
+                return Err(e);
+            }
+            let mut parts = Vec::new();
+            for id in ids {
+                let mut a = args.clone();
+                if let Some(obj) = a.as_object_mut() {
+                    obj.insert("account".into(), Value::String(id.clone()));
+                }
+                match once(c, tool, a).await {
+                    Ok(v) => parts.push(v),
+                    Err(err) => log::warn!("{tool} account {id}: {err}"),
+                }
+            }
+            if parts.is_empty() {
+                return Err(e);
+            }
+            Ok(api::merge_tool_data(&parts))
+        }
+    }
 }
 
 /// A link given by hand (or copied from Claude Code) with its headers.
@@ -603,19 +633,41 @@ impl AiProvider for LocalWithTools {
             .find(|m| m.role == sidekick_ai::Role::User)
             .map(|m| m.content.as_str())
             .unwrap_or_default();
-        let mut defs = crate::ask_tools::pick(&self.app, question, crate::ask_tools::defs()).await;
+        let started = std::time::Instant::now();
+        // The local model picks tools by words: an embedding call first
+        // would make Ollama swap models on every question.
+        let mut defs = if self.inner.id() == "local" {
+            if crate::ask_tools::needs_no_tools(question) {
+                Vec::new()
+            } else {
+                crate::ask_tools::by_words(question, crate::ask_tools::defs())
+            }
+        } else {
+            crate::ask_tools::pick(&self.app, question, crate::ask_tools::defs()).await
+        };
         if self.offline {
             defs.retain(|d| !crate::ask_tools::is_web(&d.name));
         }
-        if client.is_some() {
-            defs.extend(pick_tools(&tools, question));
-        } else {
-            defs.push(handoff_tool());
+        // Small talk and writing get no tools at all.
+        let chatty = defs.is_empty();
+        if !chatty {
+            if client.is_some() {
+                defs.extend(pick_tools(&tools, question));
+            } else {
+                defs.push(handoff_tool());
+            }
         }
+        log::info!(
+            "ask: {} tools for {} after {} ms",
+            defs.len(),
+            self.inner.id(),
+            started.elapsed().as_millis()
+        );
         let mut with_tools = req.clone();
         // Right after the fixed rules, so the start of the prompt stays the
         // same from message to message and the local server reuses its cache.
         match with_tools.system.find(crate::ai::FIXED_END) {
+            _ if chatty => {}
             Some(at) => with_tools.system.insert_str(at, TOOLS_SYSTEM),
             None => with_tools.system.push_str(TOOLS_SYSTEM),
         }
@@ -678,8 +730,38 @@ impl AiProvider for LocalWithTools {
         }
         if end.text.trim().is_empty() {
             lock(&self.handoff).get_or_insert_with(|| "the local model gave no answer".into());
+        } else if looks_like_tool_text(&end.text) {
+            // A small model that writes its tool call as text instead of
+            // making it: not an answer, so offer a stronger model.
+            lock(&self.handoff)
+                .get_or_insert_with(|| "the local model wrote a tool call as text".into());
         }
         Ok(end.text)
+    }
+}
+
+/// `{"name": "notifications", "arguments": {...}}` or "SEARCH: ... RESULT:"
+/// written out as the answer.
+fn looks_like_tool_text(text: &str) -> bool {
+    let t = text.trim();
+    (t.starts_with('{') && t.contains("\"name\"") && t.contains("\"arguments\""))
+        || t.lines().any(|l| {
+            let l = l.trim_start();
+            l.starts_with("SEARCH:") || l.starts_with("RESULT:") || l.starts_with("ACTION:")
+        })
+}
+
+#[cfg(test)]
+mod tool_text_tests {
+    #[test]
+    fn spots_tool_calls_written_as_text() {
+        assert!(super::looks_like_tool_text(
+            r#"{"name": "notifications", "arguments": {"level": "important"}}"#
+        ));
+        assert!(super::looks_like_tool_text(
+            "SEARCH: \"aapl\"\nRESULT: https://x"
+        ));
+        assert!(!super::looks_like_tool_text("Bluetooth is on."));
     }
 }
 

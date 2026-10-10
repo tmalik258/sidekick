@@ -7,7 +7,8 @@
 
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "motion/react";
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
-import { listenToAgents, useAgents } from "@/lib/agents";
+import { useShallow } from "zustand/react/shallow";
+import { listenToAgents, useAgents, wideScreen } from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useNow, useSystemLook } from "@/lib/hooks";
 import { ISLAND_TOP, PANEL_PAD } from "@/lib/islandSize";
@@ -22,6 +23,7 @@ import { Glance, RoundButton } from "./IslandGlance";
 import { IslandGuide, useGuide } from "./IslandGuide";
 import { IslandSettings } from "./IslandSettings";
 import { IslandWelcome } from "./IslandWelcome";
+import { MergeCard } from "./MergeCard";
 import { Orb } from "./Orb";
 import { PreparingVoice } from "./PreparingVoice";
 import { Tip } from "./Tip";
@@ -48,8 +50,8 @@ const DETAIL: Record<MascotState, string> = {
   error: "Details are in the log.",
 };
 
-/** States that hold the island open without hover. */
-const OPEN_STATES: ReadonlySet<MascotState> = new Set(["suggesting", "listening", "working", "success", "error"]);
+/** States that hold the island open without hover. Working and plain Done stay a compact pill. */
+const OPEN_STATES: ReadonlySet<MascotState> = new Set(["suggesting", "listening", "error"]);
 
 const ORB = 44;
 const COMPACT = {
@@ -69,6 +71,9 @@ const EXPANDED = { width: 388, minHeight: 78, radius: 30, pad: PANEL_PAD };
 /** Ask mode, as in the design: 420 wide, 580 for the Agents tab. */
 const ASK_WIDTH = 420;
 const AGENTS_WIDTH = 580;
+/** The board: two tiles across, three on a 1440p screen and up. */
+const BOARD_WIDTH = 680;
+const BOARD_WIDE_WIDTH = 940;
 /** Voice, Full listening style. */
 const FULL_VOICE_WIDTH = 400;
 const ASK_RADIUS = 26;
@@ -98,14 +103,17 @@ export function Island() {
   const { mascot, settings, suggestion, hovered: rawHover, visible, ready } = useSidekick();
   const asking = useSidekick((s) => s.ask !== null);
   const askTab = useAgents((s) => s.tab);
+  const agentsLayout = useAgents((s) => s.layout);
+  const agentCurrent = useAgents((s) => s.current);
   useEffect(listenToAgents, []);
   const view = useSidekick((s) => s.ask?.view);
   // The Ask panel itself (not Settings or the welcome shown in its place).
-  const askPanel = asking && view !== "settings" && view !== "welcome";
+  const askPanel = asking && view !== "welcome";
   const chatting = useSidekick((s) => s.chatId !== null);
   const voiceStatus = useSidekick((s) => s.voiceStatus);
   const online = useSidekick((s) => s.online);
   const netNotice = useSidekick((s) => s.netNotice);
+  const merging = useSidekick((s) => s.merge !== null);
   const waiting = useSidekick((s) => (s.ask ? null : s.waiting));
   const justDone = useSidekick((s) => s.justDone);
   // A task still running after Ask closed: its current step, small.
@@ -119,22 +127,68 @@ export function Island() {
   const agentWorking = useAgents((s) => {
     const waiting = s.sessions.find((x) => x.status === "waiting");
     if (waiting) return `${waiting.agent} needs you`;
-    const busy = s.sessions.filter((x) => x.status === "working");
-    if (busy.length > 1) return `${busy.length} agents working`;
+    const live = s.sessions.filter((x) => x.status === "working" || x.status === "waiting");
+    const busy = live.filter((x) => x.status === "working");
+    if (live.length > 1)
+      return busy.length === live.length
+        ? `${live.length} agents working`
+        : `${live.length} agents · ${busy.length} working`;
     return busy[0] ? `${busy[0].agent}: ${busy[0].project}` : null;
   });
-  const working = useSidekick((s) => (s.ask ? null : (chatWorking ?? agentWorking)));
+  // One ring arc per running agent in the compact pill.
+  const agentDots = useAgents(
+    useShallow((s) => s.sessions.filter((x) => x.status === "working" || x.status === "waiting").map((x) => x.status)),
+  );
+  // A question opens the island by itself, unless Do Not Disturb, a
+  // fullscreen app or a pause says to stay small; it shrinks back once
+  // answered.
+  const questionId = useAgents((s) => s.sessions.find((x) => x.question)?.question?.id ?? null);
+  const fullscreen = useSidekick((s) => s.fullscreen);
+  const [dndOn, setDndOn] = useState(false);
+  useEffect(() => {
+    if (!questionId) return;
+    let live = true;
+    void api
+      .dndGet()
+      .then((v) => live && setDndOn(v === true))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [questionId]);
+  // Skill / action in flight with Ask closed: same slim pill as chat/agents.
+  // Combine outside a store selector so closed-over chat/agent labels stay fresh.
+  const skillWorking = useSidekick((s) => {
+    if (s.ask || s.mascot !== "working") return null;
+    return s.running ? `${s.running}...` : "Working on it";
+  });
+  const working = asking ? null : (chatWorking ?? agentWorking ?? skillWorking);
   // An agent waiting on an answer: the mascot looks up curious and the pill
   // shows an amber dot instead of the busy bars.
   const agentAsks = useAgents((s) => s.sessions.some((x) => x.status === "waiting"));
-  const asksYou = working !== null && chatWorking === null && agentAsks;
+  const asksYou = working !== null && chatWorking === null && skillWorking === null && agentAsks;
   const guide = useGuide(waiting);
   // Voice with Ask closed: a compact pill while listening and thinking; the
   // island opens only when the answer starts.
   const hearing = useSidekick((s) => (s.ask ? null : s.hearing));
   const voiceQuestion = useSidekick((s) => (s.ask ? null : s.voiceQuestion));
   // Something finished that needs nothing more: a short done pill.
-  const donePill = useSidekick((s) => (s.ask ? null : s.donePill));
+  // Also covers mascot success without Undo / Open (e.g. "Switched to Claude"
+  // after Settings closed — showDone was skipped while Ask was open).
+  const donePill = useSidekick((s) => {
+    if (s.ask) return null;
+    if (s.donePill) return s.donePill;
+    if (s.mascot !== "success") return null;
+    const r = s.lastResult;
+    if (r?.undoId != null || r?.path) return null;
+    return r?.message ?? "Done";
+  });
+  // Success that still needs Undo or Open folder: keep the expanded card.
+  const successCard = useSidekick((s) => {
+    if (s.ask || s.mascot !== "success") return false;
+    const r = s.lastResult;
+    return !!(r && (r.undoId != null || r.path));
+  });
   // Focus mode: a compact pill with the focus face and the time left.
   const focusUntil = useSidekick((s) => (s.ask ? null : s.focusUntil));
   const focusLeft = useFocusLeft(focusUntil);
@@ -191,6 +245,7 @@ export function Island() {
     done?: boolean;
     focus?: boolean;
     asks?: boolean;
+    dots?: string[];
   } | null = asking
     ? null
     : donePill !== null
@@ -200,7 +255,7 @@ export function Island() {
         : hearing !== null || mascot === "listening"
           ? { text: hearing ?? "", thinking: false }
           : working !== null
-            ? { text: working, thinking: !asksYou, working: true, asks: asksYou }
+            ? { text: working, thinking: !asksYou, working: true, asks: asksYou, dots: agentDots }
             : focusLeft !== null
               ? { text: `Focus · ${focusLeft}`, thinking: false, focus: true }
               : null;
@@ -216,15 +271,20 @@ export function Island() {
     !voicePill.done &&
     (settings.voice.listeningStyle ?? "compact") === "full";
   // Suggestions stay normal during thinking — do not gate them on !voicePill.
+  const askOpens =
+    questionId !== null && !dndOn && !fullscreen && !paused && settings.onboarded && agentsOnly && !quiet;
   const expanded =
     asking ||
+    askOpens ||
     fullVoice ||
     preparingVoice ||
     (hovered && (!voicePill || agentsOnly)) ||
     guiding ||
     (OPEN_STATES.has(mascot) && !voicePill) ||
+    successCard ||
     !!suggestion ||
-    (!!netNotice && !voicePill);
+    (!!netNotice && !voicePill) ||
+    merging;
   // At rest only the sphere shows. The shell keeps its size (so hover and the
   // orb position do not move) but loses its background.
   const bare =
@@ -309,7 +369,14 @@ export function Island() {
     ? view === "welcome"
       ? WELCOME_WIDTH
       : askPanel && askTab === "agents"
-        ? AGENTS_WIDTH
+        ? agentsLayout === "board"
+          ? wideScreen()
+            ? BOARD_WIDE_WIDTH
+            : BOARD_WIDTH
+          : // New session is sparse: keep Ask's width until a session is open.
+            agentCurrent === null
+            ? ASK_WIDTH
+            : AGENTS_WIDTH
         : ASK_WIDTH
     : expanded
       ? fullVoice
@@ -326,7 +393,7 @@ export function Island() {
             : !online
               ? COMPACT.offlineWidth
               : COMPACT.width;
-  // The island window is already fixed (~560 tall); do not re-cap against
+  // The island window is already fixed (~640 tall); do not re-cap against
   // innerHeight or Settings/Welcome get clipped by the shell spring.
   const height = expanded
     ? Math.max(EXPANDED.minHeight, contentHeight + (askPanel ? ASK_PAD.bottom : EXPANDED.pad))
@@ -434,7 +501,9 @@ export function Island() {
         </motion.div>
 
         <AnimatePresence initial={false}>
-          {!expanded && voicePill && <VoicePill key="voice" {...voicePill} />}
+          {!expanded && voicePill && (
+            <VoicePill key="voice" {...voicePill} onOpen={agentsOnly ? () => openBoard() : undefined} />
+          )}
           {!expanded && !bare && !voicePill && (
             <CompactTrailing
               key="compact"
@@ -596,6 +665,46 @@ function voiceShellWidth(text: string, thinking: boolean, working?: boolean): nu
 
 /** Voice in the compact island: green bars and the words as they come
  * while listening, then "Thinking" with the question until the answer. */
+/** The compact agents pill opens Agents on the board. */
+function openBoard() {
+  useAgents.setState({ tab: "agents", layout: "board" });
+  void api.askOpen();
+}
+
+const DOT: Record<string, string> = { working: "#64d2ff", waiting: "#ff9f0a" };
+
+// One arc per running agent around a slow-turning ring: blue works, orange waits.
+function AgentRing({ states }: { states: string[] }) {
+  const r = 6;
+  const c = 2 * Math.PI * r;
+  const gap = 2.2;
+  const seg = c / states.length - gap;
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className="size-4 animate-[spin_3s_linear_infinite] motion-reduce:animate-none"
+      role="img"
+      aria-label={`${states.length} agents`}
+    >
+      {states.map((d, i) => (
+        <circle
+          // biome-ignore lint/suspicious/noArrayIndexKey: one arc per agent, in order
+          key={i}
+          cx="8"
+          cy="8"
+          r={r}
+          fill="none"
+          stroke={DOT[d] ?? "rgb(255 255 255 / 0.3)"}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray={`${seg} ${c - seg}`}
+          strokeDashoffset={-i * (seg + gap)}
+        />
+      ))}
+    </svg>
+  );
+}
+
 function VoicePill({
   text,
   thinking,
@@ -603,6 +712,8 @@ function VoicePill({
   done,
   focus,
   asks,
+  dots,
+  onOpen,
 }: {
   text: string;
   thinking: boolean;
@@ -610,6 +721,8 @@ function VoicePill({
   done?: boolean;
   focus?: boolean;
   asks?: boolean;
+  dots?: string[];
+  onOpen?: () => void;
 }) {
   const label = voiceLabel(text, thinking, working || done || focus);
   return (
@@ -621,13 +734,23 @@ function VoicePill({
       exit={{ opacity: 0, transition: { duration: 0.08 } }}
       aria-live="polite"
     >
-      <span
-        className={`min-w-0 flex-1 truncate text-[12.5px] font-medium ${
-          text.trim() || thinking ? "text-white/90" : "text-white/62"
-        }`}
-      >
-        {label}
-      </span>
+      {onOpen ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="min-w-0 flex-1 truncate text-left text-[12.5px] font-medium text-white/90"
+        >
+          {label}
+        </button>
+      ) : (
+        <span
+          className={`min-w-0 flex-1 truncate text-[12.5px] font-medium ${
+            text.trim() || thinking ? "text-white/90" : "text-white/62"
+          }`}
+        >
+          {label}
+        </span>
+      )}
       {done ? (
         <span className="text-[#30d158]">
           <Icon name="check" size={14} />
@@ -646,6 +769,8 @@ function VoicePill({
           <span className="absolute inset-0 animate-ping rounded-full bg-[#ff9f0a]/60 motion-reduce:animate-none" />
           <span className="relative size-2 rounded-full bg-[#ff9f0a]" />
         </span>
+      ) : dots && dots.length > 1 ? (
+        <AgentRing states={dots} />
       ) : thinking ? (
         <Activity />
       ) : (
@@ -741,7 +866,9 @@ function ExpandedContent({
   const result = useSidekick((s) => s.lastResult);
   const running = useSidekick((s) => s.running);
   const netNotice = useSidekick((s) => s.netNotice);
+  const merge = useSidekick((s) => s.merge);
   const reporting = (mascot === "success" || mascot === "error" || mascot === "working") && !suggestion;
+  if (merge && !suggestion) return <MergeCard path={merge.path} />;
   if (netNotice && !suggestion) return <NetNoticeCard notice={netNotice} />;
   // A suggestion that expired or was taken leaves nothing to show: fall back to the glance.
   if (!suggestion && (mascot === "idle" || mascot === "sleeping" || mascot === "suggesting")) {
@@ -766,7 +893,9 @@ function ExpandedContent({
           </p>
           <p
             className={`mt-0.5 ${
-              suggestion?.skillId.startsWith("notify.") ? "line-clamp-4 whitespace-pre-line" : "line-clamp-2"
+              suggestion?.skillId.startsWith("notify.") || (!suggestion && detail.includes("\n"))
+                ? "line-clamp-6 whitespace-pre-line"
+                : "line-clamp-2"
             } text-[13px] leading-4.5 tracking-[-0.005em] text-[rgb(235_235_245/0.6)]`}
           >
             {detail}
@@ -839,7 +968,8 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
     <div className="mt-3 flex flex-wrap items-center gap-1.5">
       {suggestion.options.map((option, i) => (
         <motion.button
-          key={option}
+          // biome-ignore lint/suspicious/noArrayIndexKey: labels can repeat and the list never reorders
+          key={`${i}-${option}`}
           type="button"
           onClick={(e) => choose(suggestion, i, e.shiftKey)}
           initial={{ opacity: 0, y: 6, filter: "blur(4px)" }}
@@ -896,17 +1026,35 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
   );
 }
 
+const OPEN_ACTIONS = new Set([
+  "open_path",
+  "open_folder",
+  "open_in_editor",
+  "open_url",
+  "open_app",
+  "launch_app",
+  "open_system_page",
+  "routine_open",
+  "routine_open_all",
+]);
+
+function runningLabel(suggestion: Suggestion, index: number): string {
+  const action = suggestion.actions[index];
+  if (action && OPEN_ACTIONS.has(action)) return "Opening";
+  return suggestion.options[index] ?? "Working";
+}
+
 /** Shift opens a link in a private window. */
 function choose(suggestion: Suggestion, index: number, priv = false) {
   playSound("select", uiVolume(), useSidekick.getState().settings.soundKit);
-  useSidekick.setState({ running: suggestion.options[index] ?? null });
+  useSidekick.setState({ running: runningLabel(suggestion, index) });
   notePick(suggestion.skillId, suggestion.options[index] ?? "");
   void api.suggestionChoose(suggestion.id, index, priv);
 }
 
 function always(suggestion: Suggestion, index: number) {
   playSound("select", uiVolume(), useSidekick.getState().settings.soundKit);
-  useSidekick.setState({ running: suggestion.options[index] ?? null });
+  useSidekick.setState({ running: runningLabel(suggestion, index) });
   void api.suggestionAlways(suggestion.id, index);
 }
 

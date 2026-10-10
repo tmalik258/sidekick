@@ -72,16 +72,6 @@ pub async fn cloud_key_clear(app: AppHandle, id: String) -> CmdResult<Settings> 
     apply_settings(&app, next)
 }
 
-/// Opens Copilot (personal accounts have no API) with `text` copied.
-#[tauri::command]
-pub async fn copilot_ask(app: AppHandle, text: String) -> CmdResult<String> {
-    let exec = crate::state::executor(&app.state::<AppState>());
-    exec.run("ask_copilot", &serde_json::json!({ "text": text }))
-        .await
-        .map(|o| o.message)
-        .map_err(|e| e.to_string())
-}
-
 /// One model OpenRouter offers, with its price in US dollars per million
 /// tokens (0 for free ones).
 #[derive(Serialize, Debug, PartialEq)]

@@ -2,6 +2,7 @@ id: system.day-summary
 name: End of day summary
 description: At the end of the day, show where your time went by project, ready to paste into a standup or timesheet or keep in a work log. Unpushed work has its own card.
 priority: 45
+enabled_by_default: false
 cooldown_secs: 43200
 trigger:
   event: time.day_summary

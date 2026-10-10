@@ -1,0 +1,16 @@
+id: dev.github-ci
+name: CI failed on your PR
+description: When a check fails on one of your open pull requests, say which one and offer the logs or a coding agent to fix it.
+priority: 70
+cooldown_secs: 30
+dedupe: "{{url}}"
+trigger:
+  event: dev.github
+  where:
+    kind: { equals: ci_failed }
+suggestion:
+  title: "CI failed on your PR"
+  detail: "{{slug}}#{{number}} {{title}}: {{check}}"
+  options:
+    - { label: Open logs, action: open_url, args: { url: "{{logs}}" } }
+    - { label: Ask an agent to fix it, action: agent_here, args: { path: "{{path}}", prompt: "CI check \"{{check}}\" failed on PR #{{number}} ({{title}}), branch {{branch}}. Find out why with gh pr checks {{number}} and the logs, fix it, and say what you changed." }, when: { has_path: { equals: true } } }

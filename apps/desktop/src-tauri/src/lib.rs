@@ -7,10 +7,12 @@ mod brief;
 mod browser;
 mod chat_prune;
 mod claude_config;
+mod clone;
 mod codex_config;
 mod commands;
 mod composio;
 mod composio_api;
+mod cursor_chats;
 mod decide;
 #[cfg(test)]
 mod decisions_test;
@@ -27,6 +29,8 @@ mod files;
 mod find;
 mod focus;
 mod freeze;
+mod git_watch;
+mod github;
 mod health;
 mod inbox;
 mod instant;
@@ -119,6 +123,7 @@ pub fn run() {
         })
         .invoke_handler(freeze::timed(tauri::generate_handler![
             commands::freeze_report,
+            commands::freeze_summary,
             commands::app_info,
             commands::system_look,
             commands::diagnostics,
@@ -127,7 +132,6 @@ pub fn run() {
             commands::cloud_key_set,
             commands::cloud_key_clear,
             commands::openrouter_models,
-            commands::copilot_ask,
             commands::crash_pending,
             commands::crash_dismiss,
             commands::settings_get,
@@ -255,6 +259,16 @@ pub fn run() {
             commands::agent_files,
             commands::agent_commands,
             commands::agent_open_editor,
+            commands::agent_tune,
+            commands::agent_finish,
+            commands::cursor_chats,
+            commands::cursor_open,
+            commands::repos_overview,
+            commands::repo_pull,
+            commands::merge_state,
+            commands::merge_keep,
+            commands::merge_end,
+            commands::repo_open,
             commands::ask_open,
             commands::ask_ensure_welcome,
             commands::ask_defer_welcome,
@@ -366,10 +380,16 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     if !settings_onboarded(app) && !voice::voice_ready(app) {
         voice::prepare_then_welcome(app);
     }
-    if settings_onboarded(app) {
-        start_features(app);
+    // Features wait for island_ready so first paint is not blocked.
+    // Sync OS startup entry: defaults to on, but enable() never ran unless
+    // the toggle flipped.
+    let want_login = state::lock(&app.state::<AppState>().settings).launch_at_login;
+    if let Err(e) = commands::sync_launch_at_login(app, want_login) {
+        log::warn!("could not sync launch at login: {e}");
     }
     net::start(app);
+    git_watch::start(app);
+    github::start(app);
     tauri::async_runtime::spawn(async move {
         let sensors: Vec<Box<dyn Sensor>> = vec![
             Box::new(DownloadsSensor::new()),

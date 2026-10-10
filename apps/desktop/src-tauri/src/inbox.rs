@@ -541,12 +541,22 @@ pub fn start(app: &AppHandle) {
     });
 }
 
+/// Screenshot tools only exist to capture; their toasts ("copied to clipboard")
+/// are noise, and focusing them is not "the app you were in".
+const IGNORE_NOTIFY: &[&str] = &[
+    "sidekick",
+    "screensketch",
+    "snippingtool",
+    "screenclippinghost",
+];
+
 fn denied(app_name: &str, s: &sidekick_core::Settings) -> bool {
     let lower = app_name.to_lowercase();
-    lower == "sidekick"
+    let stem = lower.trim_end_matches(".exe");
+    IGNORE_NOTIFY.contains(&stem)
         || s.deny_apps
             .iter()
-            .any(|d| d.trim_end_matches(".exe").eq_ignore_ascii_case(&lower))
+            .any(|d| d.trim_end_matches(".exe").eq_ignore_ascii_case(stem))
 }
 
 async fn take(app: &AppHandle, settings: &sidekick_core::Settings, t: Toast, think: bool) {

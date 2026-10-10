@@ -259,7 +259,29 @@ export function TextField({
   );
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
+export function Field({
+  label,
+  hint,
+  children,
+  stack = false,
+}: {
+  label: string;
+  hint?: ReactNode;
+  children: ReactNode;
+  /** Label above the control — for wide forms that crush a side-by-side row. */
+  stack?: boolean;
+}) {
+  if (stack) {
+    return (
+      <div className="flex flex-col gap-2 text-[13px]">
+        <span>
+          {label}
+          {hint && <span className="mt-0.5 block text-[11.5px] text-(--muted)">{hint}</span>}
+        </span>
+        {children}
+      </div>
+    );
+  }
   return (
     <div className="flex items-center justify-between gap-4 text-[13px]">
       <span className="min-w-0">
@@ -275,13 +297,26 @@ export function Field({ label, hint, children }: { label: string; hint?: ReactNo
  * line under it, a letter icon and a separator before it. */
 export type SelectOption =
   | [string, string]
-  | { value: string; label: string; sub?: string; icon?: string; color?: string; sepBefore?: boolean };
+  | {
+      value: string;
+      label: string;
+      sub?: string;
+      /** Full text for the native tooltip (e.g. a complete path). */
+      title?: string;
+      icon?: string;
+      /** Picture instead of the letter icon (e.g. Claude Code's Clawd). */
+      image?: string;
+      color?: string;
+      sepBefore?: boolean;
+    };
 
 interface Row {
   value: string;
   label: string;
   sub?: string;
+  title?: string;
   icon?: string;
+  image?: string;
   color?: string;
   sepBefore?: boolean;
 }
@@ -302,6 +337,7 @@ export function Select({
   variant = "chip",
   overlay = true,
   searchable,
+  menuWidth,
 }: {
   value: string;
   options: SelectOption[];
@@ -319,6 +355,8 @@ export function Select({
   overlay?: boolean;
   /** A filter field at the top of the menu (long lists). */
   searchable?: boolean;
+  /** A wider menu than the chip, for rows with a line under each. */
+  menuWidth?: number;
 }) {
   const rows = options.map(toRow);
   // Keep an unknown current value visible, but never invent a second row that
@@ -344,7 +382,7 @@ export function Select({
   const menu = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const listId = useId();
-  const rich = list.some((r) => r.sub || r.icon);
+  const rich = list.some((r) => r.sub || r.icon || r.image);
   // Opens upward when the panel has no room below the chip.
   const [up, setUp] = useState(false);
   const [float, setFloat] = useState<{ left: number; top: number; width: number; above: boolean } | null>(null);
@@ -355,8 +393,12 @@ export function Select({
     if (!el) return;
     const r = el.getBoundingClientRect();
     const want = Math.min(288, Math.max(shown.length, 1) * (rich ? 44 : 32) + menuChrome);
-    const above = window.innerHeight - r.bottom < want && r.top - want > 0;
-    const width = Math.min(296, Math.max(rich ? 220 : r.width, r.width));
+    // Prefer above when there is not enough room below. The island window is
+    // short; opening down near the bottom clips the menu off-screen.
+    const spaceBelow = window.innerHeight - r.bottom;
+    const spaceAbove = r.top;
+    const above = spaceBelow < want && spaceAbove >= spaceBelow;
+    const width = menuWidth ?? Math.min(296, Math.max(rich ? 220 : r.width, r.width));
     const left = Math.min(Math.max(8, r.left), window.innerWidth - width - 8);
     const top = above ? r.top - 4 : r.bottom + 4;
     setUp(above);
@@ -393,7 +435,9 @@ export function Select({
       const limit = box && box !== document.body ? box.getBoundingClientRect().bottom : window.innerHeight;
       const want = Math.min(288, Math.max(shown.length, 1) * (rich ? 44 : 32) + menuChrome);
       const r = el.getBoundingClientRect();
-      setUp(limit - r.bottom < want && r.top - want > 0);
+      const spaceBelow = limit - r.bottom;
+      const spaceAbove = r.top - (box && box !== document.body ? box.getBoundingClientRect().top : 0);
+      setUp(spaceBelow < want && spaceAbove >= spaceBelow);
     }
     const onDoc = (e: MouseEvent) => {
       const t = e.target as Node;
@@ -510,23 +554,30 @@ export function Select({
               role="option"
               tabIndex={-1}
               aria-selected={selected}
+              title={r.title}
               onMouseEnter={() => setActive(i)}
               onClick={() => pick(r.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") pick(r.value);
               }}
               className={`grid w-full cursor-default items-center gap-2.5 rounded-[9px] px-[9px] py-1.5 text-left text-[13px] transition-colors duration-100 ${
-                r.icon ? "grid-cols-[24px_1fr_auto]" : "grid-cols-[1fr_auto]"
-              } ${i === active ? "bg-white/[0.09] text-white" : "text-white/85"}`}
+                r.icon || r.image ? "grid-cols-[24px_1fr_auto]" : "grid-cols-[1fr_auto]"
+              } ${i === active ? "bg-white/[0.12] text-white" : "text-white/85 hover:bg-white/[0.06]"}`}
             >
-              {r.icon && (
-                <span
-                  className="grid size-6 place-items-center rounded-[7px] text-[10.5px] font-bold text-white shadow-[inset_0_0_0_0.5px_rgb(255_255_255/0.12)]"
-                  style={{ background: r.color ?? "#2b2b30" }}
-                  aria-hidden="true"
-                >
-                  {r.icon}
+              {r.image ? (
+                <span className="grid size-6 place-items-center overflow-hidden rounded-[7px]" aria-hidden="true">
+                  <img src={r.image} alt="" className="size-5 object-contain" draggable={false} />
                 </span>
+              ) : (
+                r.icon && (
+                  <span
+                    className="grid size-6 place-items-center rounded-[7px] text-[10.5px] font-bold text-white shadow-[inset_0_0_0_0.5px_rgb(255_255_255/0.12)]"
+                    style={{ background: r.color ?? "#2b2b30" }}
+                    aria-hidden="true"
+                  >
+                    {r.icon}
+                  </span>
+                )
               )}
               <span className="grid min-w-0">
                 <span className={`truncate ${r.sub ? "font-medium" : ""}`}>{r.label}</span>

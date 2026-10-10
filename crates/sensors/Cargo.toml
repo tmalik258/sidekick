@@ -34,6 +34,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_System_Power",
     "Win32_System_Registry",
+    "Win32_System_StationsAndDesktops",
     "Win32_System_SystemInformation",
 ] }
 

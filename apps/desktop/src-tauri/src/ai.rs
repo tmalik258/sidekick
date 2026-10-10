@@ -2,7 +2,7 @@
 //! for ranking suggestions.
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use sidekick_ai::{
@@ -60,8 +60,12 @@ it or stop and ask. Stop after 12 steps and say where you got to. Anything that 
 pays or deletes waits for the user's tap; prepare it and say so.
 - Paths and links: write them as markdown links, [name](C:\\full\\path) or [name](https://...), \
 so the user can click them.
+- Always write the answer itself first. STAT and OPTION lines only add to an answer, never replace it.
 - When there is a clear next step, end with up to three lines, each \"OPTION: \" and a short \
-action in the user's words, like \"OPTION: Open invoice.pdf\".
+action in the user's words about things in this answer (a file you found, an app you named).
+- When the answer rests on numbers a tool just measured (CPU, memory, disk, sizes, counts), put up to four \
+lines before the OPTION lines, each \"STAT: label | value\", adding \"| high\" to a value that is the \
+problem. Never write a STAT line without a tool result behind it, and none on questions that are not about numbers.
 - Code or commands only when asked, in fenced code blocks.
 - Never use em dashes.";
 
@@ -273,22 +277,70 @@ pub struct ProviderStatus {
     id: &'static str,
     available: bool,
     local: bool,
+    /// Set up to answer later (installed / model / key), even if not running now.
+    configured: bool,
+}
+
+/// Whether this answering path is set up, ignoring "is it running right now".
+fn configured(ai: &AiSettings, id: &str) -> bool {
+    match id {
+        "local" => ai.local.enabled && !ai.local.model.trim().is_empty(),
+        "claude_code" => {
+            ai.claude_code.enabled
+                && ClaudeCode {
+                    path: Some(ai.claude_code.path.trim())
+                        .filter(|p| !p.is_empty())
+                        .map(Into::into),
+                    model: None,
+                    workdir: std::env::temp_dir(),
+                    mcp_config: None,
+                }
+                .resolve()
+                .is_some()
+        }
+        "codex" => {
+            ai.codex.enabled
+                && Codex {
+                    path: Some(ai.codex.path.trim())
+                        .filter(|p| !p.is_empty())
+                        .map(Into::into),
+                    model: None,
+                    workdir: std::env::temp_dir(),
+                    mcp: None,
+                }
+                .resolve()
+                .is_some()
+        }
+        "anthropic" => {
+            ai.anthropic.enabled
+                && std::env::var("ANTHROPIC_API_KEY").is_ok_and(|k| !k.trim().is_empty())
+        }
+        "gemini" | "groq" | "openrouter" => {
+            cloud_pref(ai, id).is_some_and(|p| p.enabled)
+                && crate::secrets::get(&key_name(id)).is_some()
+        }
+        _ => false,
+    }
 }
 
 pub async fn status(app: &AppHandle) -> Vec<ProviderStatus> {
     let ai = lock(&app.state::<AppState>().settings).ai.clone();
+    crate::setup::refresh_user_env("ANTHROPIC_API_KEY");
     let mut out = Vec::new();
     for p in providers(app, &ai, true) {
+        let id = p.id();
         out.push(ProviderStatus {
-            id: p.id(),
+            id,
             available: p.available().await,
             local: p.is_local(),
+            configured: configured(&ai, id),
         });
     }
     out.push(ProviderStatus {
         id: "semif",
         available: semif(app, &ai).available().await,
         local: true,
+        configured: false,
     });
     out
 }
@@ -454,7 +506,7 @@ fn system_prompt(app: &AppHandle, attach: &Attach) -> String {
     let mut system = SYSTEM.to_owned();
     if attach.voice {
         system.push_str(
-            "\n\nThe user asked by voice and your answer is read aloud. Answer in one to three short spoken sentences. No markdown, lists, tables, links or OPTION lines unless they ask for them; if code is needed, keep it to one short block.",
+            "\n\nThe user asked by voice and your answer is read aloud. Answer in one to three short spoken sentences. No markdown, lists, tables, links, STAT or OPTION lines unless they ask for them; if code is needed, keep it to one short block.",
         );
     }
     system.push_str(FIXED_END);
@@ -540,6 +592,55 @@ struct Done {
     cost: Option<f64>,
 }
 
+/// Short chat id for terminal lines.
+fn ask_tag(id: &str) -> &str {
+    id.get(..8).unwrap_or(id)
+}
+
+/// What the user sent (all Ask models go through `chat`).
+fn log_ask_user(id: &str, question: &str, attach: &Attach, local_only: bool) {
+    let mut flags = Vec::new();
+    if local_only {
+        flags.push("local_only");
+    }
+    if attach.screen {
+        flags.push("screen");
+    }
+    if attach.voice {
+        flags.push("voice");
+    }
+    if attach.clipboard {
+        flags.push("clipboard");
+    }
+    if attach.window {
+        flags.push("window");
+    }
+    if attach.think {
+        flags.push("think");
+    }
+    if attach.hold {
+        flags.push("hold");
+    }
+    if let Some(p) = attach.prefer.as_deref() {
+        flags.push(p);
+    }
+    let flags = if flags.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", flags.join(" "))
+    };
+    log::info!("ask {} → user{flags}: {question}", ask_tag(id));
+}
+
+/// What came back (provider name, or ERROR).
+fn log_ask_reply(id: &str, provider: &str, started: Instant, text: &str, error: Option<&str>) {
+    let ms = started.elapsed().as_millis();
+    match error {
+        Some(err) => log::info!("ask {} ← {provider} ERROR ({ms} ms): {err}", ask_tag(id)),
+        None => log::info!("ask {} ← {provider} ({ms} ms): {text}", ask_tag(id)),
+    }
+}
+
 /// Starts a streamed chat. Text arrives as `ai://delta`, the end as `ai://done`.
 pub fn chat(
     app: &AppHandle,
@@ -571,22 +672,28 @@ pub fn chat(
     crate::ask_tools::set_current_chat(&id);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        let started = Instant::now();
         let question = messages
             .iter()
             .rev()
             .find(|m| m.role == sidekick_ai::Role::User)
             .map(|m| m.content.clone());
+        if let Some(q) = question.as_deref() {
+            log_ask_user(&id, q, &attach, local_only);
+        }
         let image = if attach.screen {
             match screenshot(&app).await {
                 Ok(png) => Some(png),
                 Err(err) => {
                     lock(&app.state::<AppState>().chats).remove(&id);
+                    let msg = format!("Could not capture the screen: {err}");
+                    log_ask_reply(&id, "screen", started, "", Some(&msg));
                     let _ = app.emit(
                         DONE_EVENT,
                         Done {
                             id,
                             provider: None,
-                            error: Some(format!("Could not capture the screen: {err}")),
+                            error: Some(msg),
                             handoff: None,
                             cost: None,
                         },
@@ -599,6 +706,31 @@ pub fn chat(
         };
         // "Turn on hotspot", "mute": done at once, no model to misread it.
         // Not while held: the question may still change.
+        // "18% of 2450": worked out here, at once, never by a model.
+        if let Some(answer) = (!attach.hold && !attach.screen)
+            .then(|| question.as_deref().and_then(sidekick_calc::calculate))
+            .flatten()
+        {
+            lock(&app.state::<AppState>().chats).remove(&id);
+            let speak = attach.speak && crate::voice::begin_answer(&app, &id);
+            let text = sidekick_calc::format(answer);
+            log_ask_reply(&id, "instant", started, &text, None);
+            send_text(&app, &id, text, speak);
+            if speak {
+                crate::voice::answer_done(&app, &id, None);
+            }
+            let _ = app.emit(
+                DONE_EVENT,
+                Done {
+                    id,
+                    provider: Some("instant".into()),
+                    error: None,
+                    handoff: None,
+                    cost: None,
+                },
+            );
+            return;
+        }
         if let Some(cmd) = (!attach.hold && !attach.screen)
             .then(|| question.as_deref().and_then(crate::quick::command))
             .flatten()
@@ -623,6 +755,7 @@ pub fn chat(
                 Ok(message) => (message, None),
                 Err(e) => (String::new(), Some(e.to_string())),
             };
+            log_ask_reply(&id, "instant", started, &text, error.as_deref());
             // Ask closed (said by voice): a compact done pill, not the panel.
             if !text.is_empty() && crate::ask::is_open(&app) {
                 send_text(&app, &id, text, speak);
@@ -740,23 +873,35 @@ pub fn chat(
         }
         let handoff = lock(&handoff).take();
         let done = match result {
-            Ok(answer) => Done {
-                id,
-                handoff: handoff.filter(|_| is_compat(&answer.provider)),
-                cost: cost.filter(|_| answer.provider == "anthropic"),
-                provider: Some(answer.provider),
-                error: None,
-            },
-            Err(err) => Done {
-                id,
-                provider: None,
-                cost: None,
-                handoff,
-                error: Some(match err {
+            Ok(answer) => {
+                log_ask_reply(&id, &answer.provider, started, &answer.text, None);
+                Done {
+                    id,
+                    handoff: handoff.filter(|_| is_compat(&answer.provider)),
+                    cost: cost.filter(|_| answer.provider == "anthropic"),
+                    provider: Some(answer.provider),
+                    error: None,
+                }
+            }
+            Err(err) => {
+                let error = match err {
                     sidekick_ai::AiError::NoProvider => no_provider_hint(local_only),
                     other => other.to_string(),
-                }),
-            },
+                };
+                let who =
+                    attach
+                        .prefer
+                        .as_deref()
+                        .unwrap_or(if local_only { "local" } else { "router" });
+                log_ask_reply(&id, who, started, "", Some(&error));
+                Done {
+                    id,
+                    provider: None,
+                    cost: None,
+                    handoff,
+                    error: Some(error),
+                }
+            }
         };
         if speak {
             crate::voice::answer_done(&app, &done.id, done.error.as_deref());
@@ -792,10 +937,20 @@ pub fn cancel(app: &AppHandle, id: &str) {
 }
 
 fn send_text(app: &AppHandle, id: &str, text: String, speak: bool) {
+    if text == sidekick_ai::CLEAR {
+        let _ = app.emit(DELTA_EVENT, Delta { id, text });
+        return;
+    }
+    let text = no_dashes(&text);
     if speak {
         crate::voice::answer_text(app, id, &text);
     }
     let _ = app.emit(DELTA_EVENT, Delta { id, text });
+}
+
+/// Answers never use em dashes; a comma reads the same.
+fn no_dashes(text: &str) -> String {
+    text.replace(" \u{2014} ", ", ").replace('\u{2014}', ", ")
 }
 
 /// "Reply to Ali and attach the invoice", "find X then email it": a request

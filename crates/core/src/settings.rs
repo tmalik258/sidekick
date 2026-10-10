@@ -31,6 +31,7 @@ impl Pause {
 
 /// Shortcuts besides Ask, with their defaults.
 pub const SHORTCUTS: &[(&str, &str)] = &[
+    ("agents", "Ctrl+Shift+Space"),
     ("talk", "Ctrl+Alt+Space"),
     ("accept", "Ctrl+Alt+Enter"),
     ("dismiss", "Ctrl+Alt+Backspace"),
@@ -83,6 +84,9 @@ pub struct Settings {
     pub code_folders: Vec<String>,
     /// Local hour after which unsaved work is reported.
     pub end_of_day_hour: u32,
+    /// Where clones go, by owner ("abdullahalhoothy" to "D:\\Abdullah"),
+    /// learned from where you cloned before or set in Settings.
+    pub clone_rules: BTreeMap<String, String>,
     /// Folders whose text files are searchable (opt in).
     pub index_folders: Vec<String>,
     pub ai: AiSettings,
@@ -239,7 +243,7 @@ impl Default for NotificationSettings {
     }
 }
 
-/// Password managers are ignored from the start.
+/// Password managers and screenshot tools are ignored from the start.
 pub const DEFAULT_DENY_APPS: &[&str] = &[
     "1password.exe",
     "bitwarden.exe",
@@ -249,6 +253,9 @@ pub const DEFAULT_DENY_APPS: &[&str] = &[
     "dashlane.exe",
     "enpass.exe",
     "proton pass.exe",
+    "screensketch.exe",
+    "snippingtool.exe",
+    "screenclippinghost.exe",
 ];
 
 /// Search by meaning with an embedding model on this PC.
@@ -645,6 +652,7 @@ impl Default for Settings {
             shortcuts: default_shortcuts(),
             code_editor: "auto".into(),
             code_folders: Vec::new(),
+            clone_rules: BTreeMap::new(),
             end_of_day_hour: 18,
             index_folders: Vec::new(),
             ai: AiSettings::default(),
@@ -722,6 +730,11 @@ impl Settings {
 
     /// Clamps values that came from the UI or a hand-edited file.
     pub fn sanitized(mut self) -> Self {
+        // Set up before "Do you work with code?" was asked: keep everything
+        // they had, Agents included.
+        if self.onboarded && self.codes.is_none() {
+            self.codes = Some(true);
+        }
         self.master_volume = self.master_volume.clamp(0.0, 1.0);
         for v in self.cue_volumes.values_mut() {
             *v = v.clamp(0.0, 1.0);
@@ -804,6 +817,31 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn people_set_up_before_the_code_question_keep_agents() {
+        let old = Settings {
+            onboarded: true,
+            codes: None,
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(old.codes, Some(true));
+        let new = Settings {
+            onboarded: false,
+            codes: None,
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(new.codes, None);
+        let no = Settings {
+            onboarded: true,
+            codes: Some(false),
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(no.codes, Some(false));
+    }
 
     #[test]
     fn moves_older_voices_to_the_new_default_once() {

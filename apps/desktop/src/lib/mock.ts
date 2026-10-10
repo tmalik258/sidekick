@@ -143,7 +143,6 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
       tools: true,
     },
   ],
-  copilot_ask: () => "Copilot is open with your question copied. Paste it there (Ctrl V).",
   report_save: () => "C:\\Users\\you\\Downloads\\Sidekick report 2026-10-08 0930.txt",
   diagnostics: () => "Sidekick 0.1.0 (browser mock)\nWindows 11 Pro 24H2\nModels in order: local, claude_code",
   crash_pending: () => (previewFlag("crash") ? "2026-10-07T09:12:00Z panicked at src/voice.rs:120:9" : null),
@@ -243,7 +242,126 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   routines_forget: () => 12,
   routines_remove: () => 1,
   ai_open_link: (a) => `Opened ${String(a.target)}`,
-  agents_status: () => ({ claudeCode: true, codex: true, copilot: true, cursor: false, handoff: "Claude Code" }),
+  agent_tune: () => null,
+  agent_finish: () => "Merged wt/store-tests back",
+  cursor_chats: () => [
+    {
+      id: "c1",
+      title: "Tidy checkout form",
+      path: "C:/code/shop",
+      project: "shop",
+      updatedAt: Date.now() - 120_000,
+      status: "working",
+      lastReply: "Moved validation into one hook and kept the error text as it was.",
+    },
+  ],
+  cursor_open: () => null,
+  agents_status: () => ({
+    claudeCode: true,
+    codex: true,
+    copilot: true,
+    cursor: false,
+    handoff: "Claude Code",
+    list: [
+      { id: "claude_code", name: "Claude Code", installed: true, signedIn: true, limited: false, fix: null },
+      { id: "codex", name: "Codex", installed: true, signedIn: false, limited: false, fix: "codex login" },
+      { id: "copilot", name: "GitHub Copilot", installed: true, signedIn: null, limited: false, fix: null },
+      {
+        id: "cursor",
+        name: "Cursor",
+        installed: false,
+        signedIn: null,
+        limited: false,
+        fix: "Install the Cursor CLI from cursor.com/cli",
+      },
+      { id: "local", name: "Local", installed: true, signedIn: true, limited: false, fix: null, local: true },
+    ],
+  }),
+  repos_overview: () => ({
+    via: "gh",
+    repos: [
+      {
+        name: "shop",
+        path: "C:/code/shop",
+        slug: "acme/shop",
+        branch: "fix-login",
+        ahead: 1,
+        behind: 3,
+        changed: 2,
+        ci: "fail",
+        reviews: 1,
+        prs: [
+          {
+            number: 42,
+            title: "Fix login redirect",
+            url: "https://github.com/acme/shop/pull/42",
+            branch: "fix-login",
+            mine: true,
+            ci: "fail",
+            failing: ["test (windows)", "https://github.com/acme/shop/actions/runs/1"],
+            reviewRequested: false,
+          },
+          {
+            number: 40,
+            title: "Cart totals in cents",
+            url: "https://github.com/acme/shop/pull/40",
+            branch: "cents",
+            mine: false,
+            ci: "pass",
+            failing: null,
+            reviewRequested: true,
+          },
+        ],
+      },
+      {
+        name: "site",
+        path: "C:/code/site",
+        slug: "acme/site",
+        branch: "main",
+        ahead: 0,
+        behind: 0,
+        changed: 0,
+        ci: "none",
+        reviews: 0,
+        prs: [],
+      },
+    ],
+  }),
+  repo_pull: () => "Pulled 3 commits",
+  repo_open: () => null,
+  merge_state: () => ({
+    branch: "feat/finish",
+    main: "main",
+    stashed: true,
+    files: [
+      {
+        file: "apps/desktop/src/lib/store.ts",
+        spots: 2,
+        mine: 'const last = turns.findLast((t) => t.role === "user");\nconst localOnly = last?.localOnly ?? settings.ai.localOnly;',
+        theirs: "const meta = await api.chatMeta(id);\nconst localOnly = meta.localOnly;",
+      },
+      {
+        file: "crates/core/src/settings.rs",
+        spots: 1,
+        mine: "pub local_only: bool,",
+        theirs: "pub git_watch: GitWatch,",
+      },
+      {
+        file: "apps/desktop/src/components/settings/AiTab.tsx",
+        spots: 3,
+        mine: 'title="Privacy"\nhint="Chats on this PC only use Ollama."',
+        theirs: 'title="Repos"\nhint="Where clones go and how often to check."',
+      },
+    ],
+  }),
+  merge_keep: () => null,
+  merge_end: (a) => ({
+    ok: true,
+    message: a.finish ? "Merged main, your changes are back" : "Back exactly as before the update",
+    path: null,
+    auto: false,
+    undoId: a.finish ? 7 : null,
+  }),
   codex_add_notify: () => "C:\\Users\\you\\.codex\\config.toml.sidekick-backup-20261002",
   codex_add_mcp: () => null,
   guide_keys: () => null,
@@ -920,6 +1038,7 @@ commands.instant_find = (a) => {
   const q = String(a.query ?? "").toLowerCase();
   const apps = [
     { name: "Cursor", id: "cursor", minutes: 840 },
+    { name: "Google Chrome", id: "chrome", minutes: 400, browser: "chrome" },
     { name: "Slack", id: "slack", minutes: 120 },
     { name: "Spotify", id: "spotify", minutes: 0 },
   ].filter((x) => x.name.toLowerCase().includes(q.split(" ")[0] ?? ""));
@@ -932,7 +1051,14 @@ commands.instant_find = (a) => {
 commands.app_launch = () => undefined;
 commands.windows_settings_open = () => undefined;
 commands.pc_switch = (a) => `${String(a?.name)} ${a?.on ? "on" : "off"}`;
-commands.file_open = () => undefined;
+commands.file_open = (a) => {
+  const how = a.how as string | null | undefined;
+  const path = String(a.path ?? "");
+  if (how === "editor" || how === "reveal" || how === "default") return { opened: true };
+  // No default for source-like names in the browser mock.
+  if (/\.(tsx?|jsx?|rs)$/i.test(path)) return { opened: false };
+  return { opened: true };
+};
 commands.project_launch = () => "Opened sidekick in VS Code and a terminal";
 commands.search_status = () => ({ items: 1240, embedded: 1240, embedError: null });
 commands.calendar_today = () => ({
@@ -1118,15 +1244,17 @@ commands.learned_list = () => [
 ];
 commands.learned_forget = () => undefined;
 commands.learned_forget_all = () => undefined;
+commands.freeze_report = () => [];
+commands.freeze_summary = () => ({ commands: 0, stalls: 0, worstMs: 0 });
 commands.ai_status = () =>
   previewFlag("nomodel")
     ? []
     : [
-        { id: "claude_code", available: true, local: false },
-        { id: "codex", available: true, local: false },
-        { id: "anthropic", available: false, local: false },
-        { id: "local", available: true, local: true },
-        { id: "semif", available: false, local: true },
+        { id: "claude_code", available: true, local: false, configured: true },
+        { id: "codex", available: true, local: false, configured: true },
+        { id: "anthropic", available: false, local: false, configured: false },
+        { id: "local", available: true, local: true, configured: true },
+        { id: "semif", available: false, local: true, configured: false },
       ];
 
 export const mock = {

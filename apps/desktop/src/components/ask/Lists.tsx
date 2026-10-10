@@ -116,11 +116,13 @@ export function Results({
   items,
   active,
   onHover,
+  onOpen,
 }: {
   query: string;
   items: SearchHit[];
   active: number;
   onHover: (i: number) => void;
+  onOpen: (hit: SearchHit) => void;
 }) {
   if (items.length === 0)
     return (
@@ -139,7 +141,7 @@ export function Results({
               disabled={!opens}
               aria-current={i === active}
               onMouseMove={() => onHover(i)}
-              onClick={() => void api.openReference(h.source, h.reference)}
+              onClick={() => onOpen(h)}
               className={`flex w-full flex-col gap-0.5 rounded-[14px] px-1.5 py-1.5 text-left transition-colors duration-100 ${
                 i === active ? "bg-white/[0.14] ring-1 ring-inset ring-white/25" : "enabled:hover:bg-white/[0.08]"
               }`}

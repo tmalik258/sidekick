@@ -1,0 +1,16 @@
+id: dev.github-merged
+name: Your PR was merged
+description: When one of your pull requests is merged, offer to switch back to the main branch, pull it, and delete the merged branch.
+priority: 55
+cooldown_secs: 30
+dedupe: "{{url}}"
+trigger:
+  event: dev.github
+  where:
+    kind: { equals: merged }
+suggestion:
+  title: "Your PR was merged"
+  detail: "{{slug}}#{{number}} {{title}}"
+  options:
+    - { label: "Pull main, delete {{branch}}", action: git_after_merge, args: { path: "{{path}}", branch: "{{branch}}" }, when: { has_path: { equals: true } } }
+    - { label: Open the PR, action: open_url, args: { url: "{{url}}" } }

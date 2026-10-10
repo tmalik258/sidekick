@@ -5,7 +5,7 @@
 
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { COPILOT_APP, setAskModel, setOverlayHit, useSidekick } from "@/lib/store";
+import { setAskModel, setOverlayHit } from "@/lib/store";
 import { PROVIDER_LABELS, type ProviderStatus } from "@/lib/types";
 import { Icon } from "../Icon";
 import { Tip } from "../Tip";
@@ -43,7 +43,7 @@ export function ModelPicker({
   const listRef = useRef<HTMLDivElement>(null);
   const chipRef = useRef<HTMLSpanElement>(null);
   // The menu floats over the window, so the island keeps its size.
-  const [at, setAt] = useState<{ left: number; top: number } | null>(null);
+  const [at, setAt] = useState<{ left: number; top: number; above: boolean; height: number } | null>(null);
   const items: { id: string | null; title: string; note: string }[] = [
     {
       id: null,
@@ -55,10 +55,7 @@ export function ModelPicker({
       title: PROVIDER_LABELS[p.id] ?? p.id,
       note: PROVIDER_NOTES[p.id] ?? (p.local ? "On this PC" : ""),
     })),
-    // Copilot for personal accounts has no API: Sidekick hands the question over.
-    { id: COPILOT_APP, title: "Copilot app", note: "Opens Copilot with your question copied" },
   ];
-  const copilot = useSidekick((s) => s.askModel) === COPILOT_APP;
   useEffect(() => {
     if (!open) {
       setAt(null);
@@ -67,10 +64,21 @@ export function ModelPicker({
     const r = chipRef.current?.getBoundingClientRect();
     if (!r) return;
     const width = 256;
+    const height = 30 + items.length * 46;
     const left = Math.min(Math.max(8, r.right - width), window.innerWidth - width - 8);
-    const top = r.bottom + 6;
-    setAt({ left, top });
-    setOverlayHit({ x: left, y: top, width, height: 30 + items.length * 46 });
+    // Ask sits at the bottom of a short island window: open above when there
+    // is not enough room below (otherwise the menu is clipped).
+    const spaceBelow = window.innerHeight - r.bottom;
+    const spaceAbove = r.top;
+    const above = spaceBelow < height && spaceAbove >= spaceBelow;
+    const top = above ? r.top - 6 : r.bottom + 6;
+    setAt({ left, top, above, height });
+    setOverlayHit({
+      x: left,
+      y: above ? top - height : top,
+      width,
+      height,
+    });
     requestAnimationFrame(() => listRef.current?.querySelector<HTMLButtonElement>("[aria-checked=true]")?.focus());
     return () => setOverlayHit(null);
   }, [open, items.length]);
@@ -102,7 +110,7 @@ export function ModelPicker({
           className="ak-model chip"
         >
           <span className="ak-dot" aria-hidden="true" />
-          {copilot ? "Copilot" : picked ? (SHORT[shown.id] ?? shown.id) : "Auto"}
+          {picked ? (SHORT[shown.id] ?? shown.id) : "Auto"}
           <Icon name="chevron" size={10} />
         </button>
       </Tip>
@@ -123,14 +131,18 @@ export function ModelPicker({
               role="menu"
               aria-label="Model"
               onKeyDown={onListKey}
-              style={{ left: at.left, top: at.top }}
+              style={
+                at.above
+                  ? { left: at.left, bottom: window.innerHeight - at.top, width: 256 }
+                  : { left: at.left, top: at.top, width: 256 }
+              }
               className="menu fixed z-30 flex w-64 flex-col gap-0.5 rounded-[14px] p-1 text-[13px]"
             >
               <p className="px-2.5 pt-1 pb-0.5 text-[11px] font-medium text-[rgb(235_235_245/0.45)]">
                 Answers come from
               </p>
               {items.map((it) => {
-                const on = copilot ? it.id === COPILOT_APP : (picked?.id ?? null) === it.id;
+                const on = (picked?.id ?? null) === it.id;
                 return (
                   <button
                     key={it.id ?? "auto"}

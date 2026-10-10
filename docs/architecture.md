@@ -36,6 +36,8 @@ cargo test --workspace
 pnpm lint && pnpm typecheck && pnpm --filter desktop build
 ```
 
+Native crashes and UI-thread freezes: [debugging.md](debugging.md).
+
 ## Style
 
 - No em dashes in user-facing text or docs.

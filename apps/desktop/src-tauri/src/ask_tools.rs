@@ -680,6 +680,31 @@ pub fn is_own(name: &str) -> bool {
 }
 
 /// Always offered: what nearly every question needs.
+/// Greetings and writing help: answered from the words alone, so no tool
+/// list for a small model to read first.
+pub fn needs_no_tools(question: &str) -> bool {
+    let q = question.trim().to_lowercase();
+    let first = q.split_whitespace().next().unwrap_or_default();
+    let small_talk = q.split_whitespace().count() <= 4
+        && [
+            "hi", "hello", "hey", "thanks", "thank", "ok", "okay", "yo", "can", "good", "bye",
+        ]
+        .contains(&first.trim_matches(|c: char| !c.is_alphanumeric()))
+        && !q.contains("file")
+        && !q.contains("open");
+    let writing = [
+        "rewrite",
+        "rephrase",
+        "reword",
+        "translate",
+        "summarize",
+        "proofread",
+    ]
+    .contains(&first)
+        || (first == "write" && !q.contains("file"));
+    small_talk || writing
+}
+
 const CORE: &[&str] = &[SEARCH, FIND, OPEN, PROPOSE];
 /// Tools offered beyond the core, picked by meaning.
 const PICKED: usize = 4;
@@ -693,6 +718,9 @@ static TOOL_VECTORS: tokio::sync::Mutex<Option<(String, ToolVectors)>> =
 /// meaning to the question. Small models pick better from fewer. Without an
 /// embedding model every tool is offered.
 pub async fn pick(app: &AppHandle, question: &str, defs: Vec<ToolDef>) -> Vec<ToolDef> {
+    if needs_no_tools(question) {
+        return Vec::new();
+    }
     let Some((client, model)) = crate::search::embedder(app) else {
         return by_words(question, defs);
     };
@@ -737,7 +765,7 @@ pub async fn pick(app: &AppHandle, question: &str, defs: Vec<ToolDef>) -> Vec<To
 /// Without an embedding model: the tools whose name or description share
 /// the most words with the question, plus the core ones. Every tool when
 /// nothing matches, so a question is never left without the right one.
-fn by_words(question: &str, defs: Vec<ToolDef>) -> Vec<ToolDef> {
+pub fn by_words(question: &str, defs: Vec<ToolDef>) -> Vec<ToolDef> {
     let words: Vec<String> = question
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| w.len() >= 4)
@@ -755,8 +783,13 @@ fn by_words(question: &str, defs: Vec<ToolDef>) -> Vec<ToolDef> {
         })
         .filter(|(n, _)| *n > 0)
         .collect();
+    // Nothing matches ("hi", "rewrite this"): the core tools only, not all
+    // twenty. Every tool is prompt the model must read before its first word.
     if scored.is_empty() {
-        return defs;
+        return defs
+            .into_iter()
+            .filter(|d| CORE.contains(&d.name.as_str()))
+            .collect();
     }
     scored.sort_by_key(|a| std::cmp::Reverse(a.0));
     let names: Vec<String> = scored.into_iter().take(PICKED).map(|(_, n)| n).collect();
@@ -788,7 +821,24 @@ pub fn is_web(name: &str) -> bool {
 }
 
 /// Runs a local tool, or `None` when `name` is not one of them.
+/// How long a look-up tool may take before the model hears it timed out.
+const TOOL_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
+
 pub async fn run(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Option<String> {
+    // A stuck look-up (OCR, a slow page) must not hold the answer forever.
+    if reads_only(name) {
+        return match tokio::time::timeout(TOOL_LIMIT, run_inner(app, chat_id, name, args)).await {
+            Ok(out) => out,
+            Err(_) => Some(format!(
+                "Error: {name} took over {} s and was stopped. Answer with what you have.",
+                TOOL_LIMIT.as_secs()
+            )),
+        };
+    }
+    run_inner(app, chat_id, name, args).await
+}
+
+async fn run_inner(app: &AppHandle, chat_id: &str, name: &str, args: &Value) -> Option<String> {
     // An answer started at a pause in speech may look things up, but acts
     // only once the question is final.
     if is_own(name) && !reads_only(name) && !crate::ai::wait_released(chat_id).await {
@@ -1593,6 +1643,107 @@ pub fn runs_code(target: &str) -> bool {
         .is_some_and(|e| RUNS.contains(&e.to_ascii_lowercase().as_str()))
 }
 
+/// Whether Windows (or this OS) has a default app that can open `path`.
+/// No extension, or no ProgId / open command → Ask should ask where to open it.
+pub fn has_file_association(path: &str) -> bool {
+    let p = std::path::Path::new(path);
+    if p.is_dir() {
+        return true;
+    }
+    let Some(ext) = p.extension().and_then(|e| e.to_str()) else {
+        return false;
+    };
+    #[cfg(windows)]
+    {
+        association_prog_id(ext).is_some_and(|id| has_shell_open(&id))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = ext;
+        true
+    }
+}
+
+#[cfg(windows)]
+fn association_prog_id(ext: &str) -> Option<String> {
+    let dot = format!(".{}", ext.to_ascii_lowercase());
+    reg_value(
+        &format!(
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\{dot}\UserChoice"
+        ),
+        "ProgId",
+    )
+    .filter(|id| !id.is_empty())
+    .or_else(|| reg_default(&format!(r"HKCR\{dot}")).filter(|id| !id.is_empty()))
+}
+
+#[cfg(windows)]
+fn has_shell_open(prog_id: &str) -> bool {
+    reg_default(&format!(r"HKCR\{prog_id}\shell\open\command")).is_some_and(|cmd| !cmd.is_empty())
+}
+
+#[cfg(windows)]
+fn reg_value(key: &str, name: &str) -> Option<String> {
+    use std::os::windows::process::CommandExt;
+    let out = std::process::Command::new("reg")
+        .args(["query", key, "/v", name])
+        .creation_flags(0x0800_0000)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let needle = name.to_ascii_lowercase();
+    text.lines()
+        .find(|l| l.to_ascii_lowercase().contains(&needle))
+        .and_then(|l| l.split_whitespace().last())
+        .map(str::to_owned)
+}
+
+#[cfg(windows)]
+fn reg_default(key: &str) -> Option<String> {
+    use std::os::windows::process::CommandExt;
+    let out = std::process::Command::new("reg")
+        .args(["query", key, "/ve"])
+        .creation_flags(0x0800_0000)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    text.lines().find(|l| l.contains("REG_")).and_then(|l| {
+        // "    (Default)    REG_SZ    value" — value may be missing.
+        let mut parts = l.split_whitespace();
+        let _ = parts.next()?; // (Default)
+        let _ = parts.next()?; // REG_SZ
+        let rest: Vec<_> = parts.collect();
+        if rest.is_empty() {
+            None
+        } else {
+            Some(rest.join(" "))
+        }
+    })
+}
+
+#[cfg(test)]
+mod no_tools_tests {
+    #[test]
+    fn greetings_and_writing_skip_tools() {
+        assert!(super::needs_no_tools("hi"));
+        assert!(super::needs_no_tools("can you hear me"));
+        assert!(super::needs_no_tools(
+            "rewrite this to sound friendlier: send me the report"
+        ));
+        assert!(super::needs_no_tools(
+            "write a short reply saying I'll be late"
+        ));
+        assert!(!super::needs_no_tools("what's my battery at"));
+        assert!(!super::needs_no_tools("open the file report.docx"));
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -1604,8 +1755,8 @@ mod tests {
         assert!(picked.len() <= CORE.len() + PICKED);
         assert_eq!(
             by_words("hi", all.clone()).len(),
-            all.len(),
-            "nothing matches: every tool"
+            CORE.len(),
+            "nothing matches: the core tools only"
         );
     }
 
@@ -1741,6 +1892,11 @@ mod tests {
         assert!(!runs_code("C:/Users/me/Downloads/invoice.pdf"));
         assert!(!runs_code("C:/Users/me/Projects"));
         assert!(!runs_code("https://example.com/setup.exe"));
+    }
+
+    #[test]
+    fn files_without_an_extension_need_a_choice() {
+        assert!(!super::has_file_association("C:/Users/me/NOTES"));
     }
 
     #[test]

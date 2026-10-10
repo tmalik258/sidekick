@@ -47,6 +47,8 @@ export interface Settings {
   codeFolders: string[];
   indexFolders: string[];
   endOfDayHour: number;
+  /** Where clones go, by owner. */
+  cloneRules?: Record<string, string>;
   ai: AiSettings;
   voice: VoiceSettings;
   calendar: { remindMinutes: number };
@@ -196,6 +198,8 @@ export interface ProviderStatus {
   id: string;
   available: boolean;
   local: boolean;
+  /** Installed / keyed / model chosen — even if not running right now. */
+  configured: boolean;
 }
 
 export interface ChatMessage {
@@ -270,6 +274,12 @@ export interface AskOpen {
   sentAt?: number;
   /** Which Settings tab to show with view "settings". */
   settingsTab?: string | null;
+  /** Opens Agents with a new session in this project. */
+  project?: string | null;
+  /** Ask panel tab to show. */
+  tab?: "ask" | "agents" | null;
+  /** Rust open generation; stale opens after a close are ignored. */
+  panelGen?: number;
 }
 
 /** One measured moment, for the timings overlay. */
@@ -320,6 +330,8 @@ export interface Suggestion {
   title: string;
   detail: string;
   options: string[];
+  /** Action id per option (parallel to options), for Opening… feedback. */
+  actions: string[];
   /** Which options can become "Always do this". */
   always?: boolean[];
   /** Why this showed, from how often you took this kind before. */
@@ -370,6 +382,7 @@ export const DEFAULT_SETTINGS: Settings = {
   soundKit: "sidekick",
   paletteHotkey: "Ctrl+Space",
   shortcuts: {
+    agents: "Ctrl+Shift+Space",
     talk: "Ctrl+Alt+Space",
     accept: "Ctrl+Alt+Enter",
     dismiss: "Ctrl+Alt+Backspace",
@@ -381,6 +394,7 @@ export const DEFAULT_SETTINGS: Settings = {
   codeFolders: [],
   indexFolders: [],
   endOfDayHour: 18,
+  cloneRules: {},
   ai: {
     order: ["local", "gemini", "groq", "claude_code", "codex", "anthropic", "openrouter"],
     claudeCode: { enabled: true, path: "", model: FAST_CLAUDE_MODEL },
@@ -465,6 +479,22 @@ export const SENSOR_IDS = [
     hint: "Holds suggestions while you are away and shows them when you are back.",
   },
 ] as const;
+
+/** One file the branch update left clashing. */
+export interface Clash {
+  file: string;
+  spots: number;
+  mine: string;
+  theirs: string;
+}
+
+/** An update of a feature branch from main, stopped on conflicts. */
+export interface MergeState {
+  branch: string;
+  main: string;
+  stashed: boolean;
+  files: Clash[];
+}
 
 export interface ActionResult {
   ok: boolean;
@@ -639,6 +669,7 @@ export interface ChatSummary {
 
 /** Shortcut actions besides Ask, in the order Settings shows them. */
 export const SHORTCUT_ACTIONS: { id: string; label: string }[] = [
+  { id: "agents", label: "Agents" },
   { id: "talk", label: "Talk" },
   { id: "accept", label: "Accept the suggestion" },
   { id: "dismiss", label: "Stop or Not now" },
@@ -671,6 +702,8 @@ export interface AgentStarted {
   branch: string | null;
   /** Changes can be reviewed and undone (the project uses git). */
   reviewable: boolean;
+  /** Its own worktree's branch, when another session was in this repo. */
+  worktree?: string | null;
 }
 
 export interface FileChange {
@@ -688,6 +721,67 @@ export interface Agents {
   cursor: boolean;
   /** The agent that gets handoffs by name, or null when none is installed. */
   handoff: string | null;
+  /** Every agent with whether it is ready, for the picker. */
+  list?: AgentInfo[];
+}
+
+/** A chat started in Cursor's own window, watched from Agents. */
+export interface CursorChat {
+  id: string;
+  title: string;
+  path: string | null;
+  project: string;
+  updatedAt: number;
+  status: "working" | "idle";
+  lastReply: string;
+}
+
+/** One agent in the picker. */
+export interface AgentInfo {
+  id: string;
+  name: string;
+  installed: boolean;
+  /** null when Sidekick cannot tell. */
+  signedIn: boolean | null;
+  /** Out of plan usage for now. */
+  limited: boolean;
+  /** The one step that makes it ready. */
+  fix: string | null;
+  /** Runs on this PC; nothing leaves it. */
+  local?: boolean;
+}
+
+/** One open pull request in the Repos list. */
+export interface RepoPr {
+  number: number;
+  title: string;
+  url: string;
+  branch: string;
+  mine: boolean;
+  ci: "pass" | "fail" | "pending" | "none";
+  /** The first failing check and its link. */
+  failing: [string, string] | null;
+  reviewRequested: boolean;
+}
+
+/** One repo in the Repos list. */
+export interface RepoRow {
+  name: string;
+  path: string;
+  slug: string | null;
+  branch: string;
+  ahead: number;
+  behind: number;
+  changed: number;
+  prs: RepoPr[];
+  ci: RepoPr["ci"];
+  reviews: number;
+}
+
+export interface ReposOverview {
+  /** How GitHub is reached: the gh sign-in, Composio, or not at all. */
+  via: "gh" | "composio" | "none";
+  repos: RepoRow[];
 }
 
 /** How much a notification interrupts. */
@@ -757,8 +851,10 @@ export interface AgentSettings {
 
 /** Ask's instant results: apps and files named like what is typed, no AI. */
 export interface InstantResults {
-  apps: { name: string; id: string; minutes: number }[];
+  apps: { name: string; id: string; minutes: number; browser?: string | null }[];
   files: { name: string; path: string; folder: boolean; place: string }[];
+  /** "18% of 2450" worked out, when the text is math. */
+  calc?: string | null;
 }
 
 /** Something Sidekick learned, for Settings > Memory. */

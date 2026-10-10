@@ -102,9 +102,12 @@ export function AgentsGlance({ sessions }: { sessions: Session[] }) {
     onClick: () => openSession(s.id),
   }));
   const allow = waiting ? () => answerQuestion(waiting.id, "allow") : undefined;
+  const always = waiting ? () => answerQuestion(waiting.id, "always") : undefined;
   const deny = waiting ? () => answerQuestion(waiting.id, "deny") : undefined;
   const open = () => openSession(lead?.id ?? "");
-  useKeys({ Enter: allow, "Alt N": deny });
+  useKeys({ Enter: allow, "Alt Y": always, "Alt N": deny, "Alt O": waiting ? open : undefined });
+  const others = active.filter((s) => s !== waiting);
+  const othersAsk = others.some((s) => s.question);
   const limited = sessions.find((x) => x.limit);
   return (
     <div className="flex flex-col">
@@ -119,7 +122,12 @@ export function AgentsGlance({ sessions }: { sessions: Session[] }) {
       />
       <CardList rows={rows} />
       {limited?.limit && <CardNote>{limitNote(limited.agent, limited.limit)}</CardNote>}
-      {waiting && allow && deny ? (
+      {waiting && others.length > 0 && (
+        <p className="px-3 pt-1 text-[12px] text-[rgb(235_235_245/0.45)]">
+          {others.length} more {othersAsk ? "running" : "working · nothing else needs you"}
+        </p>
+      )}
+      {waiting && allow && always && deny ? (
         <CardChips
           options={[
             {
@@ -127,7 +135,9 @@ export function AgentsGlance({ sessions }: { sessions: Session[] }) {
               keys: "Enter",
               run: allow,
             },
+            { label: "Allow this session", keys: "Alt Y", run: always },
             { label: "Deny", keys: "Alt N", run: deny },
+            { label: "Open in Agents", keys: "Alt O", run: open },
           ]}
         />
       ) : null}
@@ -165,7 +175,7 @@ export function useAway(): {
         onClick: () => openSession(s.id),
       });
     } else if (endedAt && endedAt > seen && (s.status === "idle" || s.status === "ended")) {
-      if (s.reviewable) reviewId ??= s.id;
+      if (s.reviewable && s.changes > 0) reviewId ??= s.id;
       rows.push({
         key: s.id,
         dot: "done",

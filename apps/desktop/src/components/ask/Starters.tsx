@@ -116,6 +116,7 @@ export function roleStarters(
   clip: string | null | undefined,
   focusInput: (prefix: string) => void,
   now = new Date(),
+  coder = true,
 ): Command[] {
   const out: Command[] = [];
   const where = `${context?.app ?? ""} ${context?.title ?? ""}`;
@@ -150,7 +151,7 @@ export function roleStarters(
       stay: true,
     });
   }
-  if (CODE.test(where)) {
+  if (coder && CODE.test(where)) {
     out.push({
       id: "starter:delegate",
       label: "Hand this to a coding agent",
@@ -192,15 +193,28 @@ export function contextStarters({
   page,
   meeting,
   focusInput,
+  coder = true,
 }: {
   context: AskContext | null;
   page: string | null;
   meeting: { title: string; start: string } | null;
   focusInput: (prefix: string) => void;
+  /** "Do you work with code?" No: starters about mail, notes and the day. */
+  coder?: boolean;
 }): Command[] {
   const out: Command[] = [];
   const clip = context?.clipboardSecret ? null : context?.clipboardKind;
-  if (clip === "stack_trace") {
+  if (!coder && clip) {
+    out.push({
+      id: "starter:clip",
+      label: "Summarize what I copied",
+      hint: "Three lines",
+      icon: "ask",
+      run: () => sendChat("Summarize what I copied in three short lines.", { clipboard: true }),
+      stay: true,
+    });
+  }
+  if (coder && clip === "stack_trace") {
     out.push({
       id: "starter:error",
       label: "Explain the error I copied",
@@ -243,7 +257,7 @@ export function contextStarters({
       stay: true,
     });
   }
-  out.push(...roleStarters(context, clip, focusInput));
+  out.push(...roleStarters(context, clip, focusInput, new Date(), coder));
   out.push(
     {
       id: "starter:find",
