@@ -5,6 +5,8 @@
    - `apps/desktop/src-tauri/tauri.conf.json` (`version`)
    - `apps/desktop/package.json` (`version`)
 2. In `CHANGELOG.md`, move the entries under Unreleased to a new version heading with today's date, and add its compare link at the bottom.
+   Check that the entries cover the release's features, improvements and fixes, remove outdated behavior and shortcuts, and update the release highlights in `README.md`.
+   Refresh `Cargo.lock` so every workspace package has the release version.
 3. Run the tool-choice eval against the default local model. It sends the 100 prompts in `apps/desktop/src-tauri/evals/prompts.json` and fails below 85% right:
 
 ```bash

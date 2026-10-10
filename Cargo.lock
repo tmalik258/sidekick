@@ -5190,7 +5190,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "sidekick-actions"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "arboard",
  "clipboard-win",
@@ -5212,7 +5212,7 @@ dependencies = [
 
 [[package]]
 name = "sidekick-ai"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -5229,11 +5229,11 @@ dependencies = [
 
 [[package]]
 name = "sidekick-calc"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "sidekick-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "log",
@@ -5247,7 +5247,7 @@ dependencies = [
 
 [[package]]
 name = "sidekick-desktop"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "arboard",
  "async-trait",
@@ -5288,7 +5288,7 @@ dependencies = [
 
 [[package]]
 name = "sidekick-layout"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "windows-sys 0.61.2",
@@ -5296,7 +5296,7 @@ dependencies = [
 
 [[package]]
 name = "sidekick-sensors"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "active-win-pos-rs",
  "arboard",
@@ -5322,7 +5322,7 @@ dependencies = [
 
 [[package]]
 name = "sidekick-skills"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "log",
  "regex",
@@ -5335,7 +5335,7 @@ dependencies = [
 
 [[package]]
 name = "sidekick-voice"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bzip2 0.4.4",
  "cpal",
