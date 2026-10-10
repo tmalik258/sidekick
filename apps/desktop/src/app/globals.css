@@ -2995,7 +2995,7 @@ select.ak-mi option {
   font-size: 10px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: rgb(235 235 245 / 0.35);
+  color: rgb(235 235 245 / 0.42);
 }
 .ak-tpick button[data-focus="true"] .ak-tpick-key {
   color: rgb(var(--pick) / 0.9);
