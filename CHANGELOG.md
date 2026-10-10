@@ -6,6 +6,19 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 
 ## [0.2.0] - 2026-10-10
 
+### Parallel agents, repositories and everyday Ask
+
+- Run up to four agent sessions in One or Board view, with editable session names, model and thinking controls, and usage details. Extra sessions use their own git worktrees, with Finish to merge the work back.
+- Added GitHub Copilot, Cursor's agent CLI and a local Ollama coding agent alongside Claude Code and Codex. Installing the Cursor editor alone does not install its agent CLI.
+- Added a Repos tab with branches, ahead/behind counts, pull requests, CI and review requests. GitHub uses an existing `gh` sign-in or Composio; actionable CI, review and merge notices come to the island.
+- Repositories refresh in the background and offer incoming commits or an update when the base branch moves. Branch updates put local changes aside and support conflict review, Finish update and Undo update in the island.
+- Copy a GitHub, GitLab or Bitbucket repository link to clone it, or open/pull an existing clone. Sidekick can remember the destination for an owner.
+- Added instant installed-app and file matches as you type in Ask, plus calculator results without a model. v0.1.0 had Search my stuff; these instant results are new in v0.2.0.
+- Added clearer recovery for empty answers or stuck tools.
+- Settings > AI > Privacy > Local only sets the default for new chats. Each chat saves its own This PC only choice; handing it to a coding agent explicitly turns that choice off for that chat.
+- Choosing Not a coder hides Agents and Repos and adjusts starters and suggestions; existing users keep the coding features.
+- Fixed long Ask answers and action rows overflowing the panel, preserved file line endings when undoing changes, and ignored duplicate Windows download notifications.
+
 ### Local model
 
 - Chat model pick by graphics: `qwen3:8b` on 8 GB+, `qwen3:4b` on 6 GB+ (or 16 GB of memory), and `qwen2.5:3b-instruct-q4_K_M` on a 4 GB card or lighter (replaces `qwen3:1.7b`).
@@ -15,7 +28,7 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 - Every answer is read aloud when the speaker button is on, typed questions included, even with the wake word off. Spoken questions still get short spoken answers; typed ones keep their formatting.
 - Voice Test works after changing the voice or speed: only the speaking engine reloads, the microphone keeps listening, and Test shows "Loading voice" until it plays.
 - "Turn on hotspot", "mute", "wifi off", "volume 40" and similar run at once without a model, including common mishearings like "horsepot".
-- The local model stays loaded for 30 minutes after each answer and loads as soon as the wake word is heard, so the first word comes sooner. A slow start says "Waking up the AI".
+- The local model stays loaded for 10 minutes after each answer and loads as soon as the wake word is heard, so the first word comes sooner. A slow start says "Waking up the AI".
 - Copy, Retry and Think harder are real buttons under each answer. Who answered and how fast sit behind an info button: hover to peek, click to keep them shown.
 - The steps line closes again after you open it.
 - Questions and answers can be selected and copied.
@@ -32,7 +45,7 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 
 ### Plan first and instant results
 
-- A task with several steps shows its plan first: Run (Enter) does the steps in order and ticks each off, and Undo all (Alt Z) puts them back.
+- A task with several steps shows its plan first: Run (Enter) does the steps in order and ticks each off, and Undo all puts them back.
 - Typing in Ask shows installed apps and files by name before any model runs, the apps you use most first.
 
 ### More for agents
@@ -46,7 +59,7 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 
 ### Clearer states
 
-- When an answer fails, Ask says what happened and offers the fix: Start Ollama, download the model, sign in again, ask the local model when a cloud one is busy, or ask again when you are back online. Retry is Alt R.
+- When an answer fails, Ask says what happened and offers the fix: Start Ollama, download the model, sign in again, ask the local model when a cloud one is busy, or ask again when you are back online. Retry is Alt T.
 - With no model set up yet, Ask shows how Sidekick can answer (This PC, Claude Code, Codex or your API key) and sets up the one you pick; apps, files and commands work already.
 - Offline, the context line says so and a web question can wait: Ask when I'm back online (Alt O).
 - After three minutes away, hovering the island shows what finished or is waiting meanwhile, with Review, Answer and Clear all.
@@ -72,7 +85,7 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 - Instant results show on the first keystroke: the app and file lists are built in the background when Sidekick starts and when Ask opens, then matched in memory.
 - Agents, chats, editors and the island's look are read off the UI thread, so a slow disk or process scan no longer freezes Sidekick. Session memory is no longer measured on the UI thread every 5 seconds.
 - "Lighter Ollama" in Setup: one answer at a time, flash attention, an 8-bit cache and an 8K context (4K cut the start of chats with tools), about half the memory and faster answers. Setup says when Ollama's own Context length setting holds it at 4K. The local model now unloads after 10 idle minutes instead of 30.
-- Local Qwen3 answers without hidden thinking unless the question needs it (why, compare, plan, maths, long questions), so the first word comes in seconds. "Think harder" (Alt H) under a local answer asks again with thinking on.
+- Local Qwen3 answers without hidden thinking unless the question needs it (why, compare, plan, maths, long questions), so the first word comes in seconds. "Think harder" (Alt K) under a local answer asks again with thinking on.
 - After you send, the input clears ("Ask a follow-up") and your question shows above the answer.
 - The app, what you copied and This PC only look like toggles again: a tick when on, an outline with + when left out.
 - Holding Alt shows only the letter on each control, like Windows KeyTips.
@@ -123,7 +136,7 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 
 - A new Appearance tab in Settings for the mascot, the island and how the island behaves.
 - Mascot colours: Pearl, Aurora, Chrome, Peach, Mint, Lilac and Onyx. Graphite and Midnight become Onyx.
-- Island colours: Black glass (the new default, a deep tint with a light rim), Graphite, Midnight, Smoke, Warm graphite and Solid black.
+- Island colours: Black glass (a deep tint with a light rim), Graphite, Midnight, Smoke, Warm graphite and Solid black (the default for new installs).
 
 ### Code editor
 
@@ -136,10 +149,10 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 
 ### Agents
 
-- Ask has three tabs: Ask, Agents and History (Ctrl Tab). History holds past chats and agent sessions.
+- Ask includes Ask, Agents and Repos, with History and Settings icons in the same tab row (Ctrl Tab). History holds past chats and agent sessions.
 - The Agents tab runs Claude Code or Codex in a project inside the island: pick the project and a mode (Plan, Ask, Edit or Full), then watch its plan, each step and what it says. Steer it while it works, or ask for more after.
-- Its questions come to the island: Allow (Alt A), Always (Alt Y) or No (Alt N).
-- When it is done, review every change by file: keep or undo one change, a whole file, or everything. Files it created go to the Recycle Bin. This needs the project to be a git repository.
+- Its permission questions come to the island: Allow, Allow this session or Deny.
+- When it is done, review every change by file: keep or undo one change, a whole file, or everything. Files it created go to the Recycle Bin. Projects without git use a private snapshot in Sidekick's data folder.
 - A ring shows how much of the context is used; Open in terminal (Alt T) carries on in the CLI.
 - Continue in Claude Code from Ask now carries on in the Agents tab instead of a terminal.
 - With Ask closed, a small pill says an agent is working or needs you; hovering it opens the Agents tab.

@@ -31,6 +31,17 @@ Sidekick lives in a small island at the top of your screen, with a friendly orb 
 - **Works without AI.** Rules handle the everyday moments. Add Claude Code, the Anthropic API, Codex or a local model through Ollama for answers, drafts and multi-step tasks.
 - **Yours to shape.** Switch skills on, off or to automatic, record your own shortcuts, and write your own skills in YAML.
 
+## What's new in v0.2.0
+
+Released October 10, 2026. See the [full changelog](CHANGELOG.md#020---2026-10-10) for features, improvements and fixes since v0.1.0.
+
+- **Coding agents in the island:** run up to four sessions with Claude Code, Codex, GitHub Copilot, Cursor's agent CLI or a local Ollama model. Review changes, keep or undo them, rewind and resume after restarting.
+- **Repos and GitHub:** see branches, incoming commits, pull requests and CI; update a branch with conflict review in the island, or copy a repository link to clone it.
+- **New instant results in Ask:** find installed apps and files as you type, or calculate an expression, without waiting for AI.
+- **Faster Ask and voice:** warmer AI sessions, faster spoken replies and clearer recovery when a model is unavailable.
+- **More control:** new appearance options, automatic editor detection, Morning setup and a Local only default for new chats under Settings > AI > Privacy.
+- **Windows fixes:** more reliable Ollama connections, answers that fit the panel, steadier This PC only behavior, voice test fixes and shortcuts that avoid GPU overlays.
+
 ## Install
 
 1. Download the latest installer from [Releases](https://github.com/tmalik258/sidekick/releases/latest):
@@ -109,7 +120,7 @@ Sidekick runs on your PC and keeps its data there. Passwords and API keys you co
 
 - Windows 10 or 11
 - Rust (stable) with the MSVC toolchain
-- Node.js 22+ and pnpm 10 (`corepack enable`)
+- Node.js 22+ and pnpm 12.8.1 (pinned in `package.json`; `corepack enable`)
 
 ### Run
 
