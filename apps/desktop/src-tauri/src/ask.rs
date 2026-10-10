@@ -1,13 +1,13 @@
 //! Ask mode: the island itself grows into a panel for commands
-//! and chat. A global shortcut (Ctrl+Space by default) or the island's Ask
-//! button opens it; Esc or clicking anywhere else closes it. Until onboarding
-//! is finished, the island stays locked on welcome: blur, Esc and the Ask
-//! shortcut cannot dismiss it for good. Hide parks it (other apps stay usable);
-//! hovering the island brings welcome back (the UI asks, unless a waiting
-//! guide is showing). Only Skip or Start mark onboarded.
+//! and chat. Ctrl+Space opens Ask; Ctrl+Shift+Space opens Agents. Esc or
+//! clicking anywhere else closes it. Until onboarding is finished, the island
+//! stays locked on welcome: blur, Esc and the Ask shortcut cannot dismiss it
+//! for good. Hide parks it (other apps stay usable); hovering the island
+//! brings welcome back (the UI asks, unless a waiting guide is showing).
+//! Only Skip or Start mark onboarded.
 
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -30,20 +30,27 @@ const BLUR_GRACE: Duration = Duration::from_millis(500);
 /// follows must toggle Ask mode closed rather than race the blur.
 const BLUR_SETTLE: Duration = Duration::from_millis(150);
 static OPENED_AT: Mutex<Option<Instant>> = Mutex::new(None);
+/// Serializes open/close/toggle so duplicate shortcut events cannot race.
+static PANEL_LOCK: Mutex<()> = Mutex::new(());
+/// Bumped on each open/close; blur-settle tasks only run if their gen still matches.
+static BLUR_GEN: AtomicU64 = AtomicU64::new(0);
 /// Welcome stays put until Skip/Start; normal Ask still closes on blur.
 static KEEP_ON_BLUR: AtomicBool = AtomicBool::new(false);
 /// User hid welcome for now; hover (or Ask shortcut) brings it back.
 static WELCOME_DEFERRED: AtomicBool = AtomicBool::new(false);
+/// Last panel tab the open shortcuts asked for ("ask" / "agents").
+static PANEL_TAB: Mutex<Option<&'static str>> = Mutex::new(None);
+/// Monotonic id for each open; close carries the same id so the UI can drop
+/// stale events when shortcuts fire faster than the webview applies them.
+static PANEL_GEN: AtomicU64 = AtomicU64::new(0);
 
 /// Why Ask folded away. `defer` parks welcome; `close` is a real dismiss.
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Close {
     pub reason: &'static str,
+    pub panel_gen: u64,
 }
-
-const CLOSE_REAL: Close = Close { reason: "close" };
-const CLOSE_DEFER: Close = Close { reason: "defer" };
 
 fn just_opened() -> bool {
     OPENED_AT
@@ -98,9 +105,13 @@ pub struct Open {
     pub project: Option<String>,
     /// Which Settings tab to show with view "settings" ("memory").
     pub settings_tab: Option<&'static str>,
+    /// Ask panel tab to show: "ask" or "agents".
+    pub tab: Option<&'static str>,
     /// When the open was asked for (ms since 1970), for the open-to-ready
     /// timing.
     pub sent_at: i64,
+    /// Matches the close event that ends this open.
+    pub panel_gen: u64,
 }
 
 pub fn is_open(app: &AppHandle) -> bool {
@@ -126,8 +137,12 @@ pub fn setup(app: &AppHandle, hotkey: &str) {
                 } else {
                     let app = app.clone();
                     let w = w.clone();
+                    let blur_gen = BLUR_GEN.load(Ordering::SeqCst);
                     tauri::async_runtime::spawn(async move {
                         tokio::time::sleep(BLUR_SETTLE).await;
+                        if BLUR_GEN.load(Ordering::SeqCst) != blur_gen {
+                            return;
+                        }
                         if is_deferred() {
                             return;
                         }
@@ -161,15 +176,41 @@ pub fn register(app: &AppHandle, hotkey: &str) -> Result<(), String> {
 }
 
 pub fn toggle(app: &AppHandle) {
+    toggle_tab(app, "ask");
+}
+
+/// Opens (or closes, if already on) the Agents tab.
+pub fn toggle_agents(app: &AppHandle) {
+    toggle_tab(app, "agents");
+}
+
+fn panel_tab() -> Option<&'static str> {
+    PANEL_TAB.lock().ok().and_then(|t| *t)
+}
+
+fn toggle_tab(app: &AppHandle, tab: &'static str) {
+    let Ok(_guard) = PANEL_LOCK.lock() else {
+        return;
+    };
+    let open_now = is_open(app);
+    let current = panel_tab();
     if needs_welcome(app) {
-        resume_welcome(app);
+        log::info!("welcome resumed (was parked: {})", is_deferred());
+        WELCOME_DEFERRED.store(false, Ordering::SeqCst);
+        ensure_welcome_impl(app);
         return;
     }
-    if is_open(app) {
-        close(app);
-    } else {
-        open(app, Open::default());
+    if open_now && current == Some(tab) {
+        close_impl(app);
+        return;
     }
+    open_impl(
+        app,
+        Open {
+            tab: Some(tab),
+            ..Default::default()
+        },
+    );
 }
 
 /// Parks welcome without finishing onboarding. Other apps stay usable until
@@ -188,7 +229,13 @@ pub fn defer_welcome(app: &AppHandle) {
         return;
     }
     if let Some(window) = app.get_webview_window(LABEL) {
-        let _ = window.emit(CLOSE_EVENT, CLOSE_DEFER);
+        let _ = window.emit(
+            CLOSE_EVENT,
+            Close {
+                reason: "defer",
+                panel_gen: PANEL_GEN.load(Ordering::SeqCst),
+            },
+        );
         if *lock(&state.island_hidden) {
             let _ = window.emit(island::VISIBLE_EVENT, false);
         }
@@ -204,12 +251,22 @@ pub fn resume_welcome(app: &AppHandle) {
     }
     log::info!("welcome resumed (was parked: {})", is_deferred());
     WELCOME_DEFERRED.store(false, Ordering::SeqCst);
-    ensure_welcome(app);
+    let Ok(_guard) = PANEL_LOCK.lock() else {
+        return;
+    };
+    ensure_welcome_impl(app);
 }
 
 /// Opens welcome if onboarding is unfinished and not parked by Hide.
 /// Always re-emits so a missed cold-start event is repaired (Locked state).
 pub fn ensure_welcome(app: &AppHandle) {
+    let Ok(_guard) = PANEL_LOCK.lock() else {
+        return;
+    };
+    ensure_welcome_impl(app);
+}
+
+fn ensure_welcome_impl(app: &AppHandle) {
     if !needs_welcome(app) || is_deferred() {
         return;
     }
@@ -218,7 +275,7 @@ pub fn ensure_welcome(app: &AppHandle) {
         crate::voice::prepare_then_welcome(app);
         return;
     }
-    open(
+    open_impl(
         app,
         Open {
             view: Some("welcome"),
@@ -227,7 +284,15 @@ pub fn ensure_welcome(app: &AppHandle) {
     );
 }
 
-pub fn open(app: &AppHandle, mut open: Open) {
+pub fn open(app: &AppHandle, open: Open) {
+    let Ok(_guard) = PANEL_LOCK.lock() else {
+        return;
+    };
+    open_impl(app, open);
+}
+
+fn open_impl(app: &AppHandle, mut open: Open) {
+    BLUR_GEN.fetch_add(1, Ordering::SeqCst);
     crate::instant::refresh(app);
     let Some(window) = app.get_webview_window(LABEL) else {
         return;
@@ -243,6 +308,13 @@ pub fn open(app: &AppHandle, mut open: Open) {
         *t = Some(Instant::now());
     }
     open.sent_at = chrono::Utc::now().timestamp_millis();
+    open.panel_gen = PANEL_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    if open.project.is_some() {
+        open.tab = Some("agents");
+    }
+    if let Ok(mut t) = PANEL_TAB.lock() {
+        *t = open.tab.or(Some("ask"));
+    }
     KEEP_ON_BLUR.store(sticky_welcome(open.view), Ordering::SeqCst);
     let state = app.state::<AppState>();
     state.ask_open.store(true, Ordering::SeqCst);
@@ -263,18 +335,36 @@ pub fn open(app: &AppHandle, mut open: Open) {
 }
 
 pub fn close(app: &AppHandle) {
+    let Ok(_guard) = PANEL_LOCK.lock() else {
+        return;
+    };
+    close_impl(app);
+}
+
+fn close_impl(app: &AppHandle) {
     if needs_welcome(app) && !is_deferred() {
         // Skip/Start must set onboarded before close; otherwise reopen welcome.
-        ensure_welcome(app);
+        ensure_welcome_impl(app);
         return;
     }
     let state = app.state::<AppState>();
     if !state.ask_open.swap(false, Ordering::SeqCst) {
         return;
     }
+    BLUR_GEN.fetch_add(1, Ordering::SeqCst);
+    if let Ok(mut t) = PANEL_TAB.lock() {
+        *t = None;
+    }
     KEEP_ON_BLUR.store(false, Ordering::SeqCst);
     if let Some(window) = app.get_webview_window(LABEL) {
-        let _ = window.emit(CLOSE_EVENT, CLOSE_REAL);
+        let panel_gen = PANEL_GEN.load(Ordering::SeqCst);
+        let _ = window.emit(
+            CLOSE_EVENT,
+            Close {
+                reason: "close",
+                panel_gen,
+            },
+        );
         if *lock(&state.island_hidden) {
             let _ = window.emit(island::VISIBLE_EVENT, false);
         }

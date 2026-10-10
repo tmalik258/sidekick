@@ -107,14 +107,14 @@ export function IslandGuide({ waiting, guide }: { waiting: Waiting; guide: Guide
       )}
       {copies.length > 0 && (
         <div className="mt-2.5 flex flex-wrap gap-1.5">
-          {copies.map((b) => (
-            <GuideChip key={b.label} button={b} hint={key(b)} done={copied === b.label} />
+          {copies.map((b, i) => (
+            <GuideChip key={`copy-${i}-${b.label}`} button={b} hint={key(b)} done={copied === b.label} />
           ))}
         </div>
       )}
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
-        {actions.map((b) => (
-          <GuideChip key={b.label} button={b} hint={key(b)} />
+        {actions.map((b, i) => (
+          <GuideChip key={`act-${i}-${b.label}`} button={b} hint={key(b)} />
         ))}
         <button
           type="button"

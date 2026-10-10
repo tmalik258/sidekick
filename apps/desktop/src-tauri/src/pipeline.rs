@@ -101,7 +101,10 @@ async fn handle(app: &AppHandle, mut event: Event) {
     crate::routines::observe(app, &event);
 
     if event.kind == IdleSensor::IDLE || event.kind == IdleSensor::ACTIVE {
-        let away = event.kind == IdleSensor::IDLE;
+        // Lock screen still emits input; IdleSensor only sends ACTIVE after unlock.
+        // If we somehow get ACTIVE while still locked, stay away.
+        let away = event.kind == IdleSensor::IDLE
+            || (event.kind == IdleSensor::ACTIVE && sidekick_sensors::session_locked());
         app.state::<AppState>()
             .away
             .store(away, std::sync::atomic::Ordering::Relaxed);
@@ -120,6 +123,13 @@ async fn handle(app: &AppHandle, mut event: Event) {
     if event.kind == WindowSensor::EVENT_KIND {
         island::follow_active_monitor(app, &event.payload);
         island::follow_fullscreen(app, &event.payload);
+        let exe = event.payload["exe"].as_str().unwrap_or_default();
+        let app_name = event.payload["app"].as_str().unwrap_or_default();
+        // Lock / sign-in UI: pause time and skip "where was I" — IdleSensor owns away.
+        if sidekick_sensors::is_lock_ui(exe) || sidekick_sensors::is_lock_ui(app_name) {
+            timetrack::on_away(app);
+            return;
+        }
         *lock(&app.state::<AppState>().last_window) = Some(event.payload.clone());
         timetrack::on_window(app, &event.payload);
         crate::projects::on_window(app, &event.payload);

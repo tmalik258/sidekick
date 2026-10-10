@@ -5,11 +5,11 @@
 // that opens a small popover above it, so no slash commands are needed.
 
 import { type CSSProperties, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { type Session, seenUsage } from "@/lib/agents";
+import { type Session, seenUsage, seenWindows } from "@/lib/agents";
 import { CLAUDE_MODELS, CODEX_MODELS, FAST_CLAUDE_MODEL } from "@/lib/ai-models";
 import { setOverlayHit } from "@/lib/store";
 import { Select, type SelectOption } from "../settings/ui";
-import { AGENT_MARKS } from "./AgentsTab";
+import { AGENT_IMAGES, AGENT_MARKS } from "./AgentsTab";
 
 /** Thinking levels; "max" is the most each agent allows. */
 const LEVELS: [string, string, string][] = [
@@ -195,31 +195,52 @@ export function ChatControls({
   const local = idOf(agent) === "local";
   const level = LEVELS.find(([v]) => v === effort);
 
-  // Usage: this session's limit when it reported one, else the last seen.
-  const seen = seenUsage(agent);
-  const plan =
-    limit && limit.used !== null
-      ? { used: limit.used, window: limit.window, resetsAt: limit.resetsAt, at: Date.now() }
-      : seen && !(seen.resetsAt !== null && seen.resetsAt * 1000 <= Date.now())
-        ? seen
-        : null;
-  const planPct = plan ? Math.round(plan.used <= 1 ? plan.used * 100 : plan.used) : null;
+  // Plan windows: this session's warning plus every window Sidekick has seen.
+  const now = Date.now();
+  const byWindow = new Map<string, { used: number; window: string; resetsAt: number | null; at: number }>();
+  for (const u of seenWindows(agent)) {
+    if (u.resetsAt !== null && u.resetsAt * 1000 <= now) continue;
+    byWindow.set(u.window, u);
+  }
+  if (limit && limit.used !== null) {
+    byWindow.set(limit.window, {
+      used: limit.used,
+      window: limit.window,
+      resetsAt: limit.resetsAt,
+      at: now,
+    });
+  }
+  const plans = [...byWindow.values()].sort((a, b) => {
+    const rank = (w: string) => (w === "five_hour" ? 0 : w.startsWith("seven_day") ? 1 : 2);
+    return rank(a.window) - rank(b.window);
+  });
+  const top = seenUsage(agent);
+  const planPct = top ? Math.round(top.used <= 1 ? top.used * 100 : top.used) : null;
   const ctxPct = usage ? Math.round(Math.min(1, usage.used / usage.window) * 100) : null;
   const ringPct = ctxPct ?? planPct ?? 0;
   const usageText = [
     ctxPct !== null ? `${ctxPct}% context` : null,
-    planPct !== null && plan ? `${planPct}% ${windowName(plan.window).toLowerCase()}` : null,
+    top && planPct !== null ? `${planPct}% ${windowName(top.window).toLowerCase()}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
 
+  const image = AGENT_IMAGES[idOf(agent)];
   const modelOptions: SelectOption[] = [
-    { value: "", label: "Default", sub: "What the agent is set to use", icon: mark, color },
+    {
+      value: "",
+      label: "Default",
+      sub: "What the agent is set to use",
+      icon: image ? undefined : mark,
+      image,
+      color,
+    },
     ...models.map(([v, l]) => ({
       value: v,
       label: l,
       sub: ABOUT[v] ? `${ABOUT[v][0]} · ${ABOUT[v][1]}` : undefined,
-      icon: mark,
+      icon: image ? undefined : mark,
+      image,
       color,
     })),
   ];
@@ -351,34 +372,39 @@ export function ChatControls({
                     </div>
                   </>
                 )}
-                {usage && plan && <div className="ak-pop-sep" />}
-                {plan && planPct !== null && (
+                {usage && plans.length > 0 && <div className="ak-pop-sep" />}
+                {plans.length > 0 && (
                   <>
                     <div className="ak-pop-h">
                       <span>Plan usage limits</span>
                     </div>
-                    <div className="ak-lim">
-                      <div className="ak-pop-h">
-                        <span className="font-normal">{windowName(plan.window)}</span>
-                        <span className="ak-pop-m">
-                          {[resetText(plan.resetsAt), `${planPct}%`].filter(Boolean).join(" · ")}
-                        </span>
-                      </div>
-                      <div className="ak-pbar">
-                        <i
-                          className="ak-pfill"
-                          style={{ width: `${planPct}%`, background: planPct > 65 ? "#ff9f0a" : undefined }}
-                        />
-                      </div>
-                    </div>
+                    {plans.map((p) => {
+                      const pPct = Math.round(p.used <= 1 ? p.used * 100 : p.used);
+                      return (
+                        <div key={p.window} className="ak-lim">
+                          <div className="ak-pop-h">
+                            <span className="font-normal">{windowName(p.window)}</span>
+                            <span className="ak-pop-m">
+                              {[resetText(p.resetsAt), `${pPct}%`].filter(Boolean).join(" · ")}
+                            </span>
+                          </div>
+                          <div className="ak-pbar">
+                            <i
+                              className="ak-pfill"
+                              style={{ width: `${pPct}%`, background: pPct > 65 ? "#ff9f0a" : undefined }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
                   </>
                 )}
                 <div className="ak-pop-h">
                   <span className="ak-pop-m">
-                    {idOf(agent) === "codex"
+                    {idOf(agent) === "codex" && plans.length === 0
                       ? "Live from Codex"
-                      : plan
-                        ? `Sent with ${agent}'s usage warnings; last seen ${ago(plan.at)}`
+                      : plans.length > 0
+                        ? `Sent with ${agent}'s usage warnings; last seen ${ago(Math.max(...plans.map((p) => p.at)))}`
                         : "Plan limits show once the agent reports them"}
                   </span>
                   {onCompact && (

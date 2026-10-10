@@ -14,7 +14,7 @@ use crate::manifest::{Matcher, Skill, Trust};
 use crate::template::{Vars, render, vars_from};
 
 /// Most chips shown at once.
-pub const MAX_OPTIONS: usize = 5;
+pub const MAX_OPTIONS: usize = 8;
 
 /// What the app knows that skills depend on.
 pub trait Env {
@@ -216,12 +216,13 @@ fn is_private(option: &ProposedOption) -> bool {
 }
 
 /// Rewrite the "Default browser" marker to the real OS default name, drop the
-/// duplicate named chip, and pin that option first.
+/// duplicate named chip, and pin that option first. Other open_url chips
+/// (e.g. "Open {{first_title}}" on the morning card) are left alone.
 fn pin_named_default(options: &mut Vec<ProposedOption>, id: &str) {
     let label = browser_label(id).to_string();
-    let marker = options
-        .iter()
-        .position(|o| o.action == "open_url" && browser_arg(o).is_none());
+    let marker = options.iter().position(|o| {
+        o.action == "open_url" && o.label == "Default browser" && browser_arg(o).is_none()
+    });
 
     let Some(mut marker) = marker else {
         if let Some(i) = options
@@ -415,10 +416,12 @@ suggestion:
                 "day.morning_brief",
                 "time",
                 serde_json::json!({
-                    "headline": "Your usual: Code, github.com", "text": "",
+                    "headline": "Your usual: Code, github.com",
+                    "text": "Usual start:\n- Code (app)",
                     "first_url": "", "first_title": "",
+                    "first_repo": "", "first_repo_path": "",
                     "routine_count": routine, "item1": if routine > 0 { "Code" } else { "" },
-                    "item2": if routine > 1 { "github.com" } else { "" }, "item3": "",
+                    "item2": "", "item3": "",
                     "auto": auto, "offer_auto": offer,
                 }),
             )
@@ -431,11 +434,12 @@ suggestion:
         assert_eq!(
             labels(p),
             [
+                "Copy",
                 "Open all",
                 "Code",
-                "github.com",
+                "Not today",
+                "Don't ask about apps",
                 "Always open these",
-                "Not today"
             ]
         );
         let mut e2 = Engine::new(vec![
@@ -445,7 +449,7 @@ suggestion:
                 .unwrap(),
         ]);
         let p = e2.evaluate(&event(2, "1", ""), &env(), now).unwrap();
-        assert_eq!(labels(p), ["Stop opening these by itself"]);
+        assert_eq!(labels(p), ["Copy", "Stop opening these by itself"]);
         let mut e3 = Engine::new(vec![
             crate::builtin()
                 .into_iter()
@@ -454,6 +458,39 @@ suggestion:
         ]);
         let p = e3.evaluate(&event(0, "", ""), &env(), now).unwrap();
         assert_eq!(labels(p), ["Copy"]);
+    }
+
+    #[test]
+    fn morning_open_pr_is_not_renamed_to_default_browser() {
+        let brief = crate::builtin()
+            .into_iter()
+            .find(|s| s.id == "system.morning-brief")
+            .unwrap();
+        let mut e = Engine::new(vec![brief]);
+        let mut env = env();
+        env.default_browser = Some("zen");
+        let ev = Event::new(
+            "day.morning_brief",
+            "time",
+            serde_json::json!({
+                "headline": "1 review waiting",
+                "text": "Reviews:\n- Fix login",
+                "first_url": "https://github.com/me/api/pull/1",
+                "first_title": "Fix login",
+                "first_repo": "", "first_repo_path": "",
+                "routine_count": 1, "item1": "Zen", "item2": "", "item3": "",
+                "auto": "", "offer_auto": "",
+            }),
+        );
+        let p = e.evaluate(&ev, &env, Instant::now()).unwrap();
+        let labels: Vec<_> = p.options.iter().map(|o| o.label.as_str()).collect();
+        assert!(labels.contains(&"Open Fix login"), "{labels:?}");
+        assert!(labels.contains(&"Zen"), "{labels:?}");
+        assert_eq!(
+            labels.iter().filter(|l| **l == "Zen").count(),
+            1,
+            "routine Zen must not collide with renamed open_url: {labels:?}"
+        );
     }
 
     #[test]

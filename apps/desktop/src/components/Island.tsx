@@ -393,7 +393,7 @@ export function Island() {
             : !online
               ? COMPACT.offlineWidth
               : COMPACT.width;
-  // The island window is already fixed (~560 tall); do not re-cap against
+  // The island window is already fixed (~640 tall); do not re-cap against
   // innerHeight or Settings/Welcome get clipped by the shell spring.
   const height = expanded
     ? Math.max(EXPANDED.minHeight, contentHeight + (askPanel ? ASK_PAD.bottom : EXPANDED.pad))
@@ -968,7 +968,7 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
     <div className="mt-3 flex flex-wrap items-center gap-1.5">
       {suggestion.options.map((option, i) => (
         <motion.button
-          key={option}
+          key={`${i}-${option}`}
           type="button"
           onClick={(e) => choose(suggestion, i, e.shiftKey)}
           initial={{ opacity: 0, y: 6, filter: "blur(4px)" }}
@@ -1025,17 +1025,35 @@ function Options({ suggestion }: { suggestion: Suggestion }) {
   );
 }
 
+const OPEN_ACTIONS = new Set([
+  "open_path",
+  "open_folder",
+  "open_in_editor",
+  "open_url",
+  "open_app",
+  "launch_app",
+  "open_system_page",
+  "routine_open",
+  "routine_open_all",
+]);
+
+function runningLabel(suggestion: Suggestion, index: number): string {
+  const action = suggestion.actions[index];
+  if (action && OPEN_ACTIONS.has(action)) return "Opening";
+  return suggestion.options[index] ?? "Working";
+}
+
 /** Shift opens a link in a private window. */
 function choose(suggestion: Suggestion, index: number, priv = false) {
   playSound("select", uiVolume(), useSidekick.getState().settings.soundKit);
-  useSidekick.setState({ running: suggestion.options[index] ?? null });
+  useSidekick.setState({ running: runningLabel(suggestion, index) });
   notePick(suggestion.skillId, suggestion.options[index] ?? "");
   void api.suggestionChoose(suggestion.id, index, priv);
 }
 
 function always(suggestion: Suggestion, index: number) {
   playSound("select", uiVolume(), useSidekick.getState().settings.soundKit);
-  useSidekick.setState({ running: suggestion.options[index] ?? null });
+  useSidekick.setState({ running: runningLabel(suggestion, index) });
   void api.suggestionAlways(suggestion.id, index);
 }
 

@@ -9,6 +9,7 @@ import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { askWhenOnline, retryLast, setAsk, setAskModel, useSidekick } from "@/lib/store";
 import type { SetupItem, SetupStatus, Turn } from "@/lib/types";
+import { AGENT_IMAGES } from "../agents/AgentsTab";
 import { useAgentName } from "./Chat";
 
 interface Failure {
@@ -265,7 +266,13 @@ export function FirstRun() {
       <div className="grid gap-1.5">
         {options.map((o) => (
           <div key={o.id} className={`ak-opt ${o.recommended && !pcReady ? "rec" : ""}`}>
-            <span className="oi">{o.title.slice(0, 1)}</span>
+            {AGENT_IMAGES[o.id] ? (
+              <span className="oi oi-pic" aria-hidden="true">
+                <img src={AGENT_IMAGES[o.id]} alt="" draggable={false} />
+              </span>
+            ) : (
+              <span className="oi">{o.title.slice(0, 1)}</span>
+            )}
             <span className="min-w-0">
               <span className="ot">{o.title}</span>
               <span className="od">{o.note}</span>

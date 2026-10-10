@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { Expression } from "@/components/orb/expressions";
-import { startHere } from "./agents";
+import { setTab, startHere } from "./agents";
 import { api, EVENTS, listen } from "./bridge";
 import { putCached, SETUP_STATUS_CACHE_KEY } from "./cache";
 import { firstToday, isThanks, type Mood, moodForSkill, SUGGESTION_MOOD_MS } from "./mood";
@@ -138,6 +138,8 @@ export interface AskState {
   prompt: string;
   /** Bumped on every open, so the panel refocuses. */
   seq: number;
+  /** Matches Rust `panelGen` for this open. */
+  panelGen: number;
   attachWindow: boolean;
   attachClip: boolean;
   localOnly: boolean;
@@ -311,6 +313,28 @@ export function showDone(text: string) {
   clearTimeout(doneTimer);
   useSidekick.setState({ donePill: text, voiceQuestion: null });
   doneTimer = setTimeout(() => useSidekick.setState({ donePill: null }), DONE_PILL_MS);
+}
+
+/**
+ * Close Ask, show Opening…, run an open, then Opened… (or an error card).
+ * `open` returns false when nothing was opened (caller may show a picker).
+ */
+export async function runOpen(open: () => Promise<boolean>, doneMessage: string): Promise<boolean> {
+  void api.askClose();
+  useSidekick.setState({ mascot: "working", running: "Opening" });
+  try {
+    const opened = await open();
+    useSidekick.setState({ running: null });
+    if (!opened) return false;
+    showDone(doneMessage);
+    return true;
+  } catch (e) {
+    useSidekick.setState({
+      running: null,
+      lastResult: { ok: false, message: String(e), path: null, auto: false, undoId: null },
+    });
+    return false;
+  }
 }
 
 /** How long the island keeps the Done card after a waited step. */
@@ -845,6 +869,8 @@ const RESUME_MS = 10 * 60_000;
 /** This PC only of the chat that was open, for when Ask comes back to it. */
 let keptLocalOnly = false;
 let askClosedAt = Date.now();
+/** Last close generation from Rust; drops late open events. */
+let lastPanelCloseGen = 0;
 
 function updateLastTurn(id: string, fn: (t: Turn) => Turn) {
   const { chatId, turns } = useSidekick.getState();
@@ -961,6 +987,8 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         }
       }),
       listen(EVENTS.askOpen, (open) => {
+        const panelGen = open.panelGen ?? 0;
+        if (panelGen > 0 && panelGen <= lastPanelCloseGen) return;
         timings.opened(open.sentAt);
         const seq = (useSidekick.getState().ask?.seq ?? 0) + 1;
         // Back within 10 minutes: the last chat is still there. Later, a new one.
@@ -975,15 +1003,16 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         resumeSettingsTab = null;
         // This PC only belongs to the chat: it stays while the chat goes on.
         // A new chat starts from the setting.
-        const prev = useSidekick.getState();
-        const sameChat = prev.turns.length > 0;
-        const localOnly = sameChat ? (prev.ask?.localOnly ?? keptLocalOnly) : prev.settings.ai.localOnly;
+        const state = useSidekick.getState();
+        const sameChat = state.turns.length > 0;
+        const localOnly = sameChat ? (state.ask?.localOnly ?? keptLocalOnly) : state.settings.ai.localOnly;
         useSidekick.setState({
           ask: {
             view: open.view ?? "ask",
             context: open.context,
             prompt: open.ask || open.project ? "" : (open.prompt ?? ""),
             seq,
+            panelGen,
             attachWindow: false,
             attachClip: clip,
             localOnly,
@@ -992,9 +1021,16 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           },
         });
         if (open.project) startHere(open.project, open.prompt);
+        else if (open.tab === "agents" || open.tab === "ask") setTab(open.tab);
         if (open.ask && open.prompt) sendChat(open.prompt, { clipboard: clip });
       }),
       listen(EVENTS.askClose, (payload) => {
+        const panelGen = payload.panelGen ?? 0;
+        const current = useSidekick.getState().ask;
+        if (panelGen > 0 && current !== null && current.panelGen > 0 && panelGen < current.panelGen) {
+          return;
+        }
+        if (panelGen > 0) lastPanelCloseGen = panelGen;
         askClosedAt = Date.now();
         keptLocalOnly = useSidekick.getState().ask?.localOnly ?? false;
         if (useSidekick.getState().hearing !== null) stopListening();

@@ -10,6 +10,7 @@ import {
   type AskTab,
   activeCount,
   handOff,
+  interruptSession,
   listenToAgents,
   type Session,
   setLayout,
@@ -23,9 +24,11 @@ import {
   cancelChat,
   newChat,
   openChat,
+  runOpen,
   sendChat,
   setAsk,
   setAskModel,
+  showDone,
   startListening,
   startSkill,
   stopListening,
@@ -79,8 +82,9 @@ const EARLY_SESSIONS = (() => {
 
 /** Input + chips + footer + gaps; scroll area keeps the rest under the Ask cap. */
 const ASK_CHROME = 118;
-const ASK_SCROLL_CAP = 330;
-/** Island window is ~560 tall (tauri.conf); leave room for chrome + pad. */
+/** Two board tile rows at full size (196 + gap + 196); island window is 640 tall. */
+const ASK_SCROLL_CAP = 400;
+/** Island window is ~640 tall (tauri.conf); leave room for chrome + pad. */
 const ASK_SCROLL_FLOOR = 120;
 
 function askScrollMax(): number {
@@ -409,20 +413,44 @@ export function AskPanel() {
   const showChat = inChat && !showHits && !showClips && !inHistory && !slash && !(asking && !inChat);
 
   const openFile = (path: string, how?: "editor" | "reveal" | "default") => {
-    void api.fileOpen(path, how).then(
-      (r) => {
-        if (r.opened) {
+    const name = path.split(/[\\/]/).pop() ?? path;
+    // No how yet: probe without Closing Ask so the "Open with" picker can show.
+    if (!how) {
+      void api.fileOpen(path).then(
+        (r) => {
+          if (!r.opened) {
+            setHandoffError(null);
+            setOpenWhere({ name, path });
+            setSelected(0);
+            return;
+          }
           setOpenWhere(null);
           setText("");
           void api.askClose();
-          return;
-        }
-        setHandoffError(null);
-        setOpenWhere({ name: path.split(/[\\/]/).pop() ?? path, path });
-        setSelected(0);
-      },
-      (e: unknown) => setHandoffError(String(e)),
-    );
+          showDone(`Opened ${name}`);
+        },
+        (e: unknown) => setHandoffError(String(e)),
+      );
+      return;
+    }
+    setOpenWhere(null);
+    setText("");
+    void runOpen(async () => {
+      const r = await api.fileOpen(path, how);
+      return r.opened;
+    }, `Opened ${name}`);
+  };
+
+  const openHit = (source: string, reference: string, title?: string) => {
+    const label =
+      title?.trim() ||
+      (source === "page" ? reference.replace(/^https?:\/\//, "").split("/")[0] : undefined) ||
+      reference.split(/[\\/]/).pop() ||
+      reference;
+    void runOpen(async () => {
+      await api.openReference(source, reference);
+      return true;
+    }, `Opened ${label}`);
   };
 
   // The rows under the input: starters, then everything that matches by
@@ -520,7 +548,14 @@ export function AskPanel() {
             icon: <span className="text-[11px] font-bold text-white">{a.name.slice(0, 1).toUpperCase()}</span>,
             label: a.name,
             hint: a.minutes >= 60 ? `${Math.round(a.minutes / 60)} h this week` : undefined,
-            run: () => void api.appLaunch(a.id, privateNamed && browser ? { private: true, browser } : undefined),
+            run: () =>
+              void runOpen(async () => {
+                await api.appLaunch(
+                  a.id,
+                  privateNamed && browser ? { private: true, browser } : undefined,
+                );
+                return true;
+              }, `Opened ${a.name}`),
           });
           appsGrouped = true;
           if (browser && !privateNamed && !privateBrowsers.has(browser)) {
@@ -531,7 +566,11 @@ export function AskPanel() {
               icon: <span className="text-[11px] font-bold text-white">{label.slice(0, 1).toUpperCase()}</span>,
               label,
               hint: "Private window",
-              run: () => void api.appLaunch(a.id, { private: true, browser }),
+              run: () =>
+                void runOpen(async () => {
+                  await api.appLaunch(a.id, { private: true, browser });
+                  return true;
+                }, `Opened ${label}`),
             });
           }
         }
@@ -549,7 +588,11 @@ export function AskPanel() {
               label: p.name,
               hint: "Editor and terminal",
               icon: "folder" as const,
-              run: () => void api.projectLaunch(p.path),
+              run: () =>
+                void runOpen(async () => {
+                  await api.projectLaunch(p.path);
+                  return true;
+                }, `Opened ${p.name}`),
             })),
         );
         for (const [n, f] of instant.files.entries()) {
@@ -585,7 +628,11 @@ export function AskPanel() {
               label: `${p.label} settings`,
               hint: "Windows Settings",
               icon: "settings" as const,
-              run: () => void api.windowsSettingsOpen(p.page),
+              run: () =>
+                void runOpen(async () => {
+                  await api.windowsSettingsOpen(p.page);
+                  return true;
+                }, `Opened ${p.label} settings`),
             };
             const name = p.switch;
             if (!name) return [open];
@@ -762,7 +809,7 @@ export function AskPanel() {
       setText("");
     } else if (showHits && hits) {
       const h = hits.items[i];
-      if (h) void api.openReference(h.source, h.reference);
+      if (h) openHit(h.source, h.reference, h.title);
     }
   };
 
@@ -771,7 +818,7 @@ export function AskPanel() {
       // Esc interrupts the agent that is working; otherwise it closes Ask.
       const { sessions, current } = useAgents.getState();
       const s = sessions.find((x) => x.id === current);
-      if (s && (s.status === "working" || s.status === "waiting")) void api.agentStop(s.id);
+      if (s && (s.status === "working" || s.status === "waiting")) interruptSession(s.id);
       else void api.askClose();
       return;
     }
@@ -1113,6 +1160,7 @@ export function AskPanel() {
             items={hits.items}
             active={Math.min(pick, hits.items.length - 1)}
             onHover={setPick}
+            onOpen={(h) => openHit(h.source, h.reference, h.title)}
           />
         </div>
       ) : showChat && !(asking && rows > 0 && !inChat) ? (
@@ -1129,7 +1177,7 @@ export function AskPanel() {
             style={{ maxHeight: scrollMax }}
           >
             {items.map((it, i) => (
-              <li key={it.id}>
+              <li key={it.id} ref={scrollIfActive(active === i)}>
                 {it.group && <p className="ak-group">{it.group}</p>}
                 <button
                   type="button"

@@ -425,6 +425,7 @@ fn show(app: &AppHandle, proposal: Proposal) {
         title: proposal.title.clone(),
         detail: proposal.detail.clone(),
         options: proposal.options.iter().map(|o| o.label.clone()).collect(),
+        actions: proposal.options.iter().map(|o| o.action.clone()).collect(),
         always: proposal
             .options
             .iter()
@@ -813,7 +814,7 @@ async fn execute(
                 path: Some(path),
             });
         }
-        "routine_open_all" | "routine_open" | "routine_skip" | "routine_auto" => {
+        "routine_open_all" | "routine_open" | "routine_skip" | "routine_auto" | "routine_off" => {
             let message = match option.action.as_str() {
                 "routine_open_all" => crate::routines::open_all(app, true).await?,
                 "routine_open" => {
@@ -821,6 +822,7 @@ async fn execute(
                     crate::routines::open_one(app, n).await?
                 }
                 "routine_skip" => crate::routines::skip_today(app),
+                "routine_off" => crate::routines::set_off(app)?,
                 _ => crate::routines::set_auto(app, arg("on") == Some("true"))?,
             };
             return Ok(sidekick_actions::Outcome {

@@ -304,6 +304,8 @@ export type SelectOption =
       /** Full text for the native tooltip (e.g. a complete path). */
       title?: string;
       icon?: string;
+      /** Picture instead of the letter icon (e.g. Claude Code's Clawd). */
+      image?: string;
       color?: string;
       sepBefore?: boolean;
     };
@@ -314,6 +316,7 @@ interface Row {
   sub?: string;
   title?: string;
   icon?: string;
+  image?: string;
   color?: string;
   sepBefore?: boolean;
 }
@@ -379,7 +382,7 @@ export function Select({
   const menu = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const listId = useId();
-  const rich = list.some((r) => r.sub || r.icon);
+  const rich = list.some((r) => r.sub || r.icon || r.image);
   // Opens upward when the panel has no room below the chip.
   const [up, setUp] = useState(false);
   const [float, setFloat] = useState<{ left: number; top: number; width: number; above: boolean } | null>(null);
@@ -558,17 +561,23 @@ export function Select({
                 if (e.key === "Enter" || e.key === " ") pick(r.value);
               }}
               className={`grid w-full cursor-default items-center gap-2.5 rounded-[9px] px-[9px] py-1.5 text-left text-[13px] transition-colors duration-100 ${
-                r.icon ? "grid-cols-[24px_1fr_auto]" : "grid-cols-[1fr_auto]"
+                r.icon || r.image ? "grid-cols-[24px_1fr_auto]" : "grid-cols-[1fr_auto]"
               } ${i === active ? "bg-white/[0.12] text-white" : "text-white/85 hover:bg-white/[0.06]"}`}
             >
-              {r.icon && (
-                <span
-                  className="grid size-6 place-items-center rounded-[7px] text-[10.5px] font-bold text-white shadow-[inset_0_0_0_0.5px_rgb(255_255_255/0.12)]"
-                  style={{ background: r.color ?? "#2b2b30" }}
-                  aria-hidden="true"
-                >
-                  {r.icon}
+              {r.image ? (
+                <span className="grid size-6 place-items-center overflow-hidden rounded-[7px]" aria-hidden="true">
+                  <img src={r.image} alt="" className="size-5 object-contain" draggable={false} />
                 </span>
+              ) : (
+                r.icon && (
+                  <span
+                    className="grid size-6 place-items-center rounded-[7px] text-[10.5px] font-bold text-white shadow-[inset_0_0_0_0.5px_rgb(255_255_255/0.12)]"
+                    style={{ background: r.color ?? "#2b2b30" }}
+                    aria-hidden="true"
+                  >
+                    {r.icon}
+                  </span>
+                )
               )}
               <span className="grid min-w-0">
                 <span className={`truncate ${r.sub ? "font-medium" : ""}`}>{r.label}</span>

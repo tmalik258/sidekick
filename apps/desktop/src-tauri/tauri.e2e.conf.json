@@ -6,7 +6,7 @@
         "url": "island/",
         "title": "Sidekick",
         "width": 600,
-        "height": 560,
+        "height": 640,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,

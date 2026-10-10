@@ -332,6 +332,7 @@ pub const ACTIONS: &[&str] = &[
     "routine_open",
     "routine_skip",
     "routine_auto",
+    "routine_off",
     "noop",
 ];
 

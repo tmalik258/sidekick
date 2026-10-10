@@ -258,9 +258,39 @@ async fn call(c: &ComposioSettings, tool: &str, args: Value) -> Result<Value, St
 }
 
 /// Runs one app tool for Sidekick itself (calendar, brief, notes).
+/// When several accounts are connected, fans out with `account` and merges lists.
 pub async fn run_tool(c: &ComposioSettings, tool: &str, args: Value) -> Result<Value, String> {
-    let v = call(c, api::EXECUTE_TOOL, api::execute_args(tool, args)).await?;
-    api::first_result(&v).map_err(|e| format!("{tool}: {e}"))
+    async fn once(c: &ComposioSettings, tool: &str, args: Value) -> Result<Value, String> {
+        let v = call(c, api::EXECUTE_TOOL, api::execute_args(tool, args)).await?;
+        api::first_result(&v).map_err(|e| format!("{tool}: {e}"))
+    }
+    if args.get("account").is_some() {
+        return once(c, tool, args).await;
+    }
+    match once(c, tool, args.clone()).await {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            let ids = api::multi_account_ids(&e);
+            if ids.is_empty() {
+                return Err(e);
+            }
+            let mut parts = Vec::new();
+            for id in ids {
+                let mut a = args.clone();
+                if let Some(obj) = a.as_object_mut() {
+                    obj.insert("account".into(), Value::String(id.clone()));
+                }
+                match once(c, tool, a).await {
+                    Ok(v) => parts.push(v),
+                    Err(err) => log::warn!("{tool} account {id}: {err}"),
+                }
+            }
+            if parts.is_empty() {
+                return Err(e);
+            }
+            Ok(api::merge_tool_data(&parts))
+        }
+    }
 }
 
 /// A link given by hand (or copied from Claude Code) with its headers.

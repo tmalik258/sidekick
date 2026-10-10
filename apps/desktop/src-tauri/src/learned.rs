@@ -78,9 +78,10 @@ pub fn list(app: &AppHandle) -> Vec<Learned> {
     }
     drop(storage);
     for item in crate::routines::today(app) {
+        let label = crate::routines::strip_electron_root(&item.label);
         out.push(Learned {
             kind: "routine".into(),
-            text: format!("You open {} as part of your day", item.label),
+            text: format!("You open {label} as part of your day"),
             why: format!("On {} of the last days", item.days),
             key: item.key,
             label: item.kind,

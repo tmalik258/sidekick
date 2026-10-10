@@ -23,6 +23,7 @@ const ISLAND_KEYS: [string, string][] = [
   ["Ignore a suggestion", "Alt 0"],
   ["Switch tab", "Ctrl Tab"],
   ["Previous tab", "Ctrl Shift Tab"],
+  ["New agent session", "Ctrl N"],
 ];
 
 export function ShortcutsTab({ onError }: { onError: (e: string) => void }) {
@@ -33,7 +34,7 @@ export function ShortcutsTab({ onError }: { onError: (e: string) => void }) {
       <Section
         title="Anywhere"
         hint="Click one, then press the keys."
-        keywords="hotkey keyboard keys talk accept dismiss screen clipboard pause focus"
+        keywords="hotkey keyboard keys ask agents talk accept dismiss screen clipboard pause focus"
       >
         <Field label="Ask">
           <ShortcutRecorder

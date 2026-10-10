@@ -101,6 +101,23 @@ pub fn island_ready(app: AppHandle) {
     }
 }
 
+/// Matches OS autostart to the setting (enable when desired but missing).
+pub fn sync_launch_at_login(app: &AppHandle, want: bool) -> Result<(), String> {
+    let autolaunch = app.autolaunch();
+    let on = autolaunch
+        .is_enabled()
+        .map_err(|e| e.to_string())?;
+    if want == on {
+        return Ok(());
+    }
+    if want {
+        autolaunch.enable()
+    } else {
+        autolaunch.disable()
+    }
+    .map_err(|e| e.to_string())
+}
+
 /// The update found by the last check, if any.
 #[tauri::command]
 pub fn update_status() -> Option<crate::updates::Available> {
@@ -317,14 +334,11 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
         crate::ai::close_sessions();
     }
 
-    if next.launch_at_login != previous.launch_at_login {
-        let autolaunch = app.autolaunch();
-        let result = if next.launch_at_login {
-            autolaunch.enable()
-        } else {
-            autolaunch.disable()
-        };
-        result.map_err(|e| format!("could not change launch at login: {e}"))?;
+    if let Err(e) = sync_launch_at_login(app, next.launch_at_login) {
+        if next.launch_at_login != previous.launch_at_login {
+            return Err(format!("could not change launch at login: {e}"));
+        }
+        log::warn!("could not sync launch at login: {e}");
     }
 
     if let Some(bad) = next

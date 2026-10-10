@@ -22,6 +22,7 @@ import {
   dismissCompact,
   type Entry,
   handOffSession,
+  interruptSession,
   messageIndex,
   renameSession,
   resumeSession,
@@ -64,6 +65,14 @@ export const AGENT_MARKS: Record<string, [string, string]> = {
   local: ["L", "#5e9cff"],
 };
 
+/** Picture marks when the letter chip is not enough. */
+export const AGENT_IMAGES: Record<string, string> = {
+  claude_code: "/agents/claude-code.png",
+  codex: "/agents/codex.svg",
+  cursor: "/agents/cursor.png",
+  local: "/agents/ollama.png",
+};
+
 const MARK_BY_NAME: Record<string, string> = {
   "Claude Code": "claude_code",
   Codex: "codex",
@@ -72,8 +81,43 @@ const MARK_BY_NAME: Record<string, string> = {
   Local: "local",
 };
 
+/** Normalize a display name or id to the AGENT_MARKS key. */
+export function agentMarkId(agent: string): string {
+  return MARK_BY_NAME[agent] ?? agent.toLowerCase().replace(/\s+/g, "_");
+}
+
 /** Letter and colour from a session's agent display name. */
-export const markFor = (agent: string): [string, string] => AGENT_MARKS[MARK_BY_NAME[agent] ?? ""] ?? ["L", "#8e8e93"];
+export const markFor = (agent: string): [string, string] =>
+  AGENT_MARKS[agentMarkId(agent)] ?? ["L", "#8e8e93"];
+
+/** Agent chip: Clawd / Codex art when we have it, else letter + colour. */
+export function AgentMark({
+  agent,
+  sm,
+  className = "",
+}: {
+  agent: string;
+  sm?: boolean;
+  className?: string;
+}) {
+  const id = agentMarkId(agent);
+  const image = AGENT_IMAGES[id];
+  const [letter, color] = markFor(agent);
+  const cls = `ak-mark${sm ? " sm" : ""}${image ? " ak-mark-pic" : ""} ${className}`.trim();
+  if (image) {
+    return (
+      <span className={cls} aria-hidden="true">
+        {/* public/ asset; Next Image is unnecessary for a tiny mark */}
+        <img src={image} alt="" draggable={false} />
+      </span>
+    );
+  }
+  return (
+    <span className={cls} style={{ background: color }} aria-hidden="true">
+      {letter}
+    </span>
+  );
+}
 
 /** Chats started in Cursor, refreshed while Agents is open. */
 function useCursorChats(): CursorChat[] {
@@ -103,7 +147,7 @@ export function AgentsTab({ keys, maxHeight }: { keys: boolean; maxHeight: numbe
   const layout = useAgents((s) => s.layout);
   const cursor = useCursorChats();
   const session = sessions.find((s) => s.id === current) ?? null;
-  if (layout === "board") return <Board sessions={sessions} keys={keys} />;
+  if (layout === "board") return <Board sessions={sessions} keys={keys} maxHeight={maxHeight} />;
   const watched = current?.startsWith(CURSOR) ? cursor.find((c) => CURSOR + c.id === current) : undefined;
   if (watched) return <CursorView chat={watched} sessions={sessions} cursor={cursor} />;
   return session ? (
@@ -150,7 +194,7 @@ function CursorView({ chat, sessions, cursor }: { chat: CursorChat; sessions: Se
   );
 }
 
-/** Every session as a chip, then Cursor's own chats; + New only when viewing one (to leave it). */
+/** Session chips with + New first when viewing one (to leave it), then Cursor chats. */
 function SessionChips({
   sessions,
   current,
@@ -160,9 +204,18 @@ function SessionChips({
   current: string | null;
   cursor?: CursorChat[];
 }) {
-  if (sessions.length === 0 && cursor.length === 0) return null;
+  if (sessions.length === 0 && cursor.length === 0 && current === null) return null;
   return (
     <div className="ak-sess">
+      {current !== null && (
+        <button
+          type="button"
+          onClick={() => useAgents.setState({ current: null })}
+          className="ak-sp chip text-[rgb(235_235_245/0.45)]"
+        >
+          + New
+        </button>
+      )}
       {sessions.map((s) => {
         const color = markFor(s.agent)[1];
         return (
@@ -177,8 +230,8 @@ function SessionChips({
             <span className="ak-sd" data-s={s.status} role="img" aria-label={s.status} />
             <span className="truncate">{s.title}</span>
             <em>
-              {s.project}
-              {s.agent === "Codex" ? " · Codex" : ""}
+              {s.agent}
+              {s.project ? ` · ${s.project}` : ""}
             </em>
           </button>
         );
@@ -200,15 +253,6 @@ function SessionChips({
           </button>
         );
       })}
-      {current !== null && (
-        <button
-          type="button"
-          onClick={() => useAgents.setState({ current: null })}
-          className="ak-sp chip text-[rgb(235_235_245/0.45)]"
-        >
-          + New
-        </button>
-      )}
     </div>
   );
 }
@@ -285,13 +329,14 @@ function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorC
                   label="Agent"
                   value={pickedAgent}
                   onChange={setAgent}
-                  options={[...choices, ...missing].map((c) => ({
-                    value: c.id,
-                    label: c.name,
-                    sub: pickerNote(c),
-                    icon: AGENT_MARKS[c.id]?.[0] ?? "C",
-                    color: AGENT_MARKS[c.id]?.[1] ?? "#d97757",
-                  }))}
+                    options={[...choices, ...missing].map((c) => ({
+                      value: c.id,
+                      label: c.name,
+                      sub: pickerNote(c),
+                      icon: AGENT_MARKS[c.id]?.[0] ?? "C",
+                      color: AGENT_MARKS[c.id]?.[1] ?? "#d97757",
+                      image: AGENT_IMAGES[c.id],
+                    }))}
                 />
               </span>
             ) : (
@@ -324,9 +369,9 @@ function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorC
           </div>
           {picked && !ready(picked) && <FixLine agent={picked} />}
           {picked?.local && ready(picked) && (
-            <p className="ak-note">
-              <b className="font-medium text-white">On this PC.</b> Nothing leaves it. Slower; best for small, clear
-              changes. Every edit waits in Review.
+            <p className="ak-local">
+              <strong>On this PC.</strong> Nothing leaves it. Slower; best for small, clear changes. Every edit waits in
+              Review.
             </p>
           )}
           <div className="ak-composer ak-two">
@@ -413,7 +458,7 @@ function NewSessionLoading() {
 }
 
 /** Repo folder plus its two parents, so same-named projects stay distinct. */
-function projectPlace(path: string): string {
+export function projectPlace(path: string): string {
   const home = path
     .replace(/^[A-Za-z]:[\\/]Users[\\/][^\\/]+/, "~")
     .replace(/^\/Users\/[^/]+/, "~")
@@ -666,7 +711,7 @@ function SessionView({
       <div className="ak-head">
         <NameField id={s.id} title={s.title} />
         {working ? (
-          <button type="button" onClick={() => void api.agentStop(s.id)} className="ak-stop chip">
+          <button type="button" onClick={() => interruptSession(s.id)} className="ak-stop chip">
             Stop <kbd>Esc</kbd>
           </button>
         ) : (
@@ -931,7 +976,9 @@ function EntryRow({ entry: e, onRewind }: { entry: Entry; onRewind?: () => void 
     <>
       <div className="ak-tg ak-in" data-s={st.state}>
         <span className="ak-k mono">{STEP_TAG[st.tool] ?? st.tool.slice(0, 5)}</span>
-        <span className={`shrink-0 ${st.state === "running" ? "text-white" : ""}`}>{st.label}</span>
+        <span className={`shrink-0 ${st.state === "running" ? "text-white" : st.state === "cancelled" ? "text-[var(--i3)]" : ""}`}>
+          {st.label}
+        </span>
         {st.detail && <span className="d mono">{st.detail}</span>}
       </div>
       {st.output && STEP_TAG[st.tool] === "Run" && <Output step={st} />}
@@ -941,7 +988,7 @@ function EntryRow({ entry: e, onRewind }: { entry: Entry; onRewind?: () => void 
 
 /** A command's output, folded to its last lines; click for the rest. */
 function Output({ step }: { step: Step }) {
-  const [open, setOpen] = useState(step.state === "failed");
+  const [open, setOpen] = useState(false);
   const lines = (step.output ?? "").split("\n");
   // Folded: the last three lines that say something.
   const shown = open ? lines : lines.filter((l) => l.trim()).slice(-3);

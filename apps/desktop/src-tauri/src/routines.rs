@@ -74,12 +74,22 @@ pub fn is_browser(exe: &str) -> bool {
 /// The browser id `open_url` knows, from the name the extension reports.
 fn browser_id(name: &str) -> String {
     let lower = name.to_ascii_lowercase();
+    if lower.contains("zen") {
+        return "zen".to_owned();
+    }
     BROWSERS
         .iter()
         .map(|(_, id)| *id)
         .find(|id| lower.contains(id))
         .unwrap_or_default()
         .to_owned()
+}
+
+/// Zen is Firefox under the hood; sites often report "Firefox" when opened in Zen.
+fn same_browser_family(app_id: &str, site_id: &str) -> bool {
+    app_id == site_id
+        || (app_id == "zen" && site_id == "firefox")
+        || (app_id == "firefox" && site_id == "zen")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -195,9 +205,9 @@ pub fn learn(rows: &[RoutineOpen], weekday: u32, skips: &BTreeMap<String, u32>) 
     if !site_browsers.is_empty() {
         items.retain(|i| {
             i.kind != "app"
-                || !BROWSERS
-                    .iter()
-                    .any(|(exe, id)| *exe == i.key && site_browsers.iter().any(|b| b == id))
+                || !BROWSERS.iter().any(|(exe, id)| {
+                    *exe == i.key && site_browsers.iter().any(|b| same_browser_family(id, b))
+                })
         });
     }
     items.truncate(MAX_ITEMS);
@@ -224,6 +234,9 @@ pub fn today(app: &AppHandle) -> Vec<Item> {
     );
     // An app and a site can share a name (Zen the browser, zen.com): one
     // button each is enough.
+    for item in &mut items {
+        item.label = strip_electron_root(&item.label);
+    }
     let mut seen = std::collections::HashSet::new();
     items.retain(|i| seen.insert(i.label.to_lowercase()));
     items
@@ -290,6 +303,19 @@ fn in_first_hour(slot: &mut Option<Today>, now: DateTime<Local>) -> Option<(Stri
     Some((day, t.seq))
 }
 
+/// Electron apps often expose the main window as `AppName.Root`.
+pub fn strip_electron_root(label: &str) -> String {
+    let trimmed = label.trim();
+    let Some((base, suffix)) = trimmed.rsplit_once('.') else {
+        return trimmed.to_owned();
+    };
+    if suffix.eq_ignore_ascii_case("root") && !base.is_empty() {
+        base.to_owned()
+    } else {
+        trimmed.to_owned()
+    }
+}
+
 /// What a window or page event says was opened: (kind, key, label, target,
 /// browser).
 fn opened(event: &Event) -> Option<(String, String, String, String, String)> {
@@ -305,7 +331,7 @@ fn opened(event: &Event) -> Option<(String, String, String, String, String)> {
             let label = if label.is_empty() {
                 exe.trim_end_matches(".exe").to_owned()
             } else {
-                label
+                strip_electron_root(&label)
             };
             Some(("app".into(), exe, label, s("path"), String::new()))
         }
@@ -471,10 +497,19 @@ pub fn set_auto(app: &AppHandle, on: bool) -> Result<String, String> {
     next.routines_auto = on;
     crate::commands::apply_settings(app, next)?;
     Ok(if on {
-        "Your usual setup opens by itself each morning. Turn off in Settings > Privacy.".into()
+        "Your usual setup opens by itself each morning. Turn off in Settings > Skills.".into()
     } else {
         "Back to asking first".into()
     })
+}
+
+/// Turns off the morning apps offer (same as Morning setup → Off).
+pub fn set_off(app: &AppHandle) -> Result<String, String> {
+    let mut next = lock(&app.state::<AppState>().settings).clone();
+    next.routines = false;
+    next.routines_auto = false;
+    crate::commands::apply_settings(app, next)?;
+    Ok("Won't ask about usual apps. Turn back on in Settings > Skills.".into())
 }
 
 /// Forgets every routine (Settings > Privacy).
@@ -581,6 +616,15 @@ mod tests {
     }
 
     #[test]
+    fn strips_electron_root_suffix() {
+        assert_eq!(strip_electron_root("WhatsApp.Root"), "WhatsApp");
+        assert_eq!(strip_electron_root("whatsapp.root"), "whatsapp");
+        assert_eq!(strip_electron_root("Slack"), "Slack");
+        assert_eq!(strip_electron_root("My.App.Root"), "My.App");
+        assert_eq!(strip_electron_root(".Root"), ".Root");
+    }
+
+    #[test]
     fn reads_opens_from_events() {
         let w = Event::new(
             "window.focused",
@@ -592,6 +636,13 @@ mod tests {
             (kind.as_str(), key.as_str(), label.as_str(), target.as_str()),
             ("app", "code.exe", "Visual Studio Code", "C:/code.exe")
         );
+        let electron = Event::new(
+            "window.focused",
+            "window",
+            serde_json::json!({ "app": "WhatsApp.Root", "exe": "WhatsApp.exe", "path": "C:/WhatsApp.exe" }),
+        );
+        let (_, _, label, _, _) = opened(&electron).unwrap();
+        assert_eq!(label, "WhatsApp");
         let shell = Event::new(
             "window.focused",
             "window",

@@ -82,27 +82,40 @@ function EditorPicker({ onError }: { onError: (e: string) => void }) {
   const choice = useSidekick((s) => s.settings.codeEditor);
   const { data, refresh } = useCached<EditorList>("editors", api.editorsList);
   const editors = data?.editors ?? [];
+  // One editor: no Auto — lock to that id. Two or more: Auto is the default.
+  useEffect(() => {
+    if (!data || editors.length !== 1) return;
+    const sole = editors[0].id;
+    if (choice === sole) return;
+    void updateSettings({ codeEditor: sole })
+      .then(() => refresh())
+      .catch((e: unknown) => onError(String(e)));
+  }, [data, editors, choice, refresh, onError]);
   if (data && editors.length === 0) {
     return <p className="text-[13px] text-(--muted)">No code editor found on this PC.</p>;
   }
-  const value = editors.some((e) => e.id === choice) ? choice : "auto";
-  const options: SelectOption[] = [
-    {
-      value: "auto",
-      label: "Auto",
-      sub: data?.current ? `${data.current} right now · the one you use most` : "The one you use most",
-      icon: "A",
-      color: "linear-gradient(135deg,#3a3a44,#24242b)",
-    },
-    ...editors.map((e, i) => ({
-      value: e.id,
-      label: e.name,
-      sub: capital(hours(e.minutes)),
-      icon: e.name.slice(0, 1).toUpperCase(),
-      color: editorColor(e.id),
-      sepBefore: i === 0,
-    })),
-  ];
+  const multi = editors.length >= 2;
+  const value = editors.some((e) => e.id === choice) ? choice : multi ? "auto" : (editors[0]?.id ?? "auto");
+  const editorRows: SelectOption[] = editors.map((e, i) => ({
+    value: e.id,
+    label: e.name,
+    sub: capital(hours(e.minutes)),
+    icon: e.name.slice(0, 1).toUpperCase(),
+    color: editorColor(e.id),
+    sepBefore: multi && i === 0,
+  }));
+  const options: SelectOption[] = multi
+    ? [
+        {
+          value: "auto",
+          label: "Auto",
+          sub: data?.current ? `${data.current} right now · the one you use most` : "The one you use most",
+          icon: "A",
+          color: "linear-gradient(135deg,#3a3a44,#24242b)",
+        },
+        ...editorRows,
+      ]
+    : editorRows;
   const named = editors.find((e) => e.id === value)?.name;
   return (
     <Field

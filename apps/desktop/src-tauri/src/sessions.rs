@@ -86,6 +86,11 @@ fn emit(app: &AppHandle, session: &str, data: Value) {
     );
 }
 
+/// Marks every in-flight tool step cancelled (Esc / Stop mid-command).
+pub(super) fn cancel_running_steps(app: &AppHandle, id: &str) {
+    emit(app, id, json!({ "kind": "cancel_steps" }));
+}
+
 enum Cmd {
     Send(String),
     Stop,
@@ -95,6 +100,8 @@ enum Cmd {
 
 /// What a quiet restart returns, so it is not reported as the end.
 const RESTARTED: &str = "restarted";
+/// Esc / Stop: the turn was cut off; the session stays open for the next send.
+const INTERRUPTED: &str = "interrupted";
 
 /// The model and thinking picked for one session in its chat box.
 #[derive(Debug, Clone, Default)]
@@ -555,6 +562,14 @@ fn spawn_run(
         if result.as_ref().err().map(String::as_str) == Some(RESTARTED) {
             return;
         }
+        // Esc interrupt: leave the session idle; the next send auto-resumes.
+        if result.as_ref().err().map(String::as_str) == Some(INTERRUPTED) {
+            cancel_running_steps(&app2, &id2);
+            let id = id2.clone();
+            tokio::task::spawn_blocking(move || turn_ended(&id));
+            emit(&app2, &id2, json!({ "kind": "turn" }));
+            return;
+        }
         let changes = review_count(&id2);
         emit(
             &app2,
@@ -674,6 +689,11 @@ fn review_count(id: &str) -> usize {
 pub fn send(app: &AppHandle, id: &str, text: &str) -> Result<(), String> {
     if tuned(id).restart {
         restart(app, id)?;
+    }
+    // After Esc interrupt the CLI is gone; bring it back without a Resume click.
+    let running = with(&SESSIONS, |s| s.get(id).is_some_and(|h| !h.tx.is_closed()));
+    if !running {
+        resume(app, id)?;
     }
     send_text(id, text)
 }
@@ -1195,7 +1215,11 @@ async fn run_claude(
                     let _ = child.kill().await;
                     return Err(RESTARTED.into());
                 }
-                Some(Cmd::Stop) | None => {
+                Some(Cmd::Stop) => {
+                    let _ = child.kill().await;
+                    return Err(INTERRUPTED.into());
+                }
+                None => {
                     let _ = child.kill().await;
                     return Ok(());
                 }
@@ -1488,7 +1512,15 @@ async fn run_codex(
                     write_line(&mut stdin, msg).await?;
                     emit(app, id, json!({ "kind": "working" }));
                 }
-                Some(Cmd::Stop | Cmd::Restart) | None => {
+                Some(Cmd::Restart) => {
+                    let _ = child.kill().await;
+                    return Err(RESTARTED.into());
+                }
+                Some(Cmd::Stop) => {
+                    let _ = child.kill().await;
+                    return Err(INTERRUPTED.into());
+                }
+                None => {
                     let _ = child.kill().await;
                     return Ok(());
                 }
@@ -1608,7 +1640,9 @@ async fn run_plain(
             Some(t) => t,
             None => match rx.recv().await {
                 Some(Cmd::Send(t)) => t,
-                Some(Cmd::Stop | Cmd::Restart) | None => return Ok(()),
+                // Already idle: Esc is a no-op; keep waiting for a message.
+                Some(Cmd::Stop) => continue,
+                Some(Cmd::Restart) | None => return Ok(()),
             },
         };
         emit(app, id, json!({ "kind": "working" }));
@@ -1632,6 +1666,7 @@ async fn run_plain(
             with(&PIDS, |p| p.insert(id.to_owned(), pid));
         }
         let mut lines = BufReader::new(child.stdout.take().ok_or("no stdout")?).lines();
+        let mut stopped = false;
         loop {
             tokio::select! {
                 line = lines.next_line() => match line {
@@ -1649,18 +1684,26 @@ async fn run_plain(
                 },
                 cmd = rx.recv() => match cmd {
                     Some(Cmd::Send(more)) => queued.push_back(more),
-                    Some(Cmd::Stop | Cmd::Restart) | None => {
+                    Some(Cmd::Stop) => {
+                        let _ = child.kill().await;
+                        stopped = true;
+                        break;
+                    }
+                    Some(Cmd::Restart) | None => {
                         let _ = child.kill().await;
                         return Ok(());
                     }
                 },
             }
         }
-        let ok = child.wait().await.is_ok_and(|s| s.success());
-        let error = (!ok).then(|| why_stopped(agent.name(), &lock(&stderr)));
+        let ok = !stopped && child.wait().await.is_ok_and(|s| s.success());
+        let error = (!stopped && !ok).then(|| why_stopped(agent.name(), &lock(&stderr)));
+        if stopped {
+            cancel_running_steps(app, id);
+        }
         emit(app, id, json!({ "kind": "turn", "error": error }));
-        let id = id.to_owned();
-        tokio::task::spawn_blocking(move || turn_ended(&id));
+        let sid = id.to_owned();
+        tokio::task::spawn_blocking(move || turn_ended(&sid));
     }
 }
 

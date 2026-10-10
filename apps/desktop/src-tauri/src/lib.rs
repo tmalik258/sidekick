@@ -380,8 +380,12 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     if !settings_onboarded(app) && !voice::voice_ready(app) {
         voice::prepare_then_welcome(app);
     }
-    if settings_onboarded(app) {
-        start_features(app);
+    // Features wait for island_ready so first paint is not blocked.
+    // Sync OS startup entry: defaults to on, but enable() never ran unless
+    // the toggle flipped.
+    let want_login = state::lock(&app.state::<AppState>().settings).launch_at_login;
+    if let Err(e) = commands::sync_launch_at_login(app, want_login) {
+        log::warn!("could not sync launch at login: {e}");
     }
     net::start(app);
     git_watch::start(app);

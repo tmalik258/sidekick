@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use tauri::AppHandle;
 use tokio::sync::mpsc;
 
-use super::{Answer, Cmd, Mode, ask, emit, turn_ended};
+use super::{Answer, Cmd, Mode, ask, cancel_running_steps, emit, turn_ended};
 
 /// Tool rounds in one turn before it counts as stuck.
 const MAX_ROUNDS: usize = 16;
@@ -260,7 +260,12 @@ pub async fn run(
     let mut always = false;
     let mut step = 0usize;
     while let Some(cmd) = rx.recv().await {
-        let Cmd::Send(text) = cmd else { return Ok(()) };
+        let text = match cmd {
+            Cmd::Send(t) => t,
+            // Already idle: Esc is a no-op.
+            Cmd::Stop => continue,
+            Cmd::Restart => return Ok(()),
+        };
         emit(app, id, json!({"kind":"working"}));
         let m = match &model {
             Some(m) => m.clone(),
@@ -279,6 +284,7 @@ pub async fn run(
         messages.push(json!({"role":"user","content":text}));
         let mut error = None;
         let mut done = false;
+        let mut stopped = false;
         for _ in 0..MAX_ROUNDS {
             let req = http
                 .post(format!("{root}/api/chat"))
@@ -293,7 +299,11 @@ pub async fn run(
                     Err(e) => { error = Some(e.to_string()); break; }
                 },
                 c = rx.recv() => match c {
-                    Some(Cmd::Stop | Cmd::Restart) | None => return Ok(()),
+                    Some(Cmd::Stop) => {
+                        stopped = true;
+                        break;
+                    }
+                    Some(Cmd::Restart) | None => return Ok(()),
                     // A message mid-turn waits for the next turn.
                     Some(Cmd::Send(_)) => continue,
                 },
@@ -369,12 +379,15 @@ pub async fn run(
                 messages.push(json!({"role":"tool","content":result}));
             }
         }
-        if !done && error.is_none() {
+        if !stopped && !done && error.is_none() {
             emit(app, id, json!({"kind":"stuck"}));
         }
+        if stopped {
+            cancel_running_steps(app, id);
+        }
         emit(app, id, json!({"kind":"turn","error":error}));
-        let id = id.to_owned();
-        tokio::task::spawn_blocking(move || turn_ended(&id));
+        let sid = id.to_owned();
+        tokio::task::spawn_blocking(move || turn_ended(&sid));
     }
     Ok(())
 }

@@ -31,6 +31,7 @@ impl Pause {
 
 /// Shortcuts besides Ask, with their defaults.
 pub const SHORTCUTS: &[(&str, &str)] = &[
+    ("agents", "Ctrl+Shift+Space"),
     ("talk", "Ctrl+Alt+Space"),
     ("accept", "Ctrl+Alt+Enter"),
     ("dismiss", "Ctrl+Alt+Backspace"),

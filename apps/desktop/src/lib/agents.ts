@@ -12,7 +12,7 @@ export interface Step {
   tool: string;
   label: string;
   detail: string;
-  state: "running" | "done" | "failed";
+  state: "running" | "done" | "failed" | "cancelled";
   /** The end of a command's output, folded under the step. */
   output?: string;
 }
@@ -314,6 +314,14 @@ export function activeCount(sessions: Session[]): number {
   return sessions.filter((s) => s.status === "working" || s.status === "waiting").length;
 }
 
+function entriesCancelRunning(entries: Entry[]): Entry[] {
+  return entries.map((e) =>
+    e.kind === "step" && e.step.state === "running"
+      ? { kind: "step", step: { ...e.step, state: "cancelled" } }
+      : e,
+  );
+}
+
 function onEvent(e: { session: string; kind: string } & Record<string, unknown>) {
   const id = e.session;
   switch (e.kind) {
@@ -329,6 +337,8 @@ function onEvent(e: { session: string; kind: string } & Record<string, unknown>)
             : [...s.entries, { kind: "text", text: mask(text) }];
         return { ...s, entries };
       });
+    case "cancel_steps":
+      return update(id, (s) => ({ ...s, entries: entriesCancelRunning(s.entries) }));
     case "step":
       return update(id, (s) => {
         const at = s.entries.findIndex((x) => x.kind === "step" && x.step.id === e.id);
@@ -427,7 +437,7 @@ export function listenToAgents() {
   void listen(EVENTS.agentEvent, onEvent);
 }
 
-/** The last plan usage an agent reported, kept so the picker can show it. */
+/** One plan-limit window an agent reported, kept so the picker and usage pop can show it. */
 export interface SeenUsage {
   used: number;
   window: string;
@@ -437,35 +447,89 @@ export interface SeenUsage {
 
 const USAGE_KEY = "sidekick.agentUsage";
 
-function seenAll(): Record<string, SeenUsage> {
+/** Per agent, each rate-limit window (5-hour, weekly, …). */
+type SeenByAgent = Record<string, Record<string, SeenUsage>>;
+
+function isSeenUsage(v: unknown): v is SeenUsage {
+  return !!v && typeof v === "object" && "used" in v && "window" in v && "at" in v;
+}
+
+/** Older stores kept one SeenUsage per agent; lift those into a window map. */
+function seenAll(): SeenByAgent {
   try {
-    return JSON.parse(localStorage.getItem(USAGE_KEY) ?? "{}") as Record<string, SeenUsage>;
+    const raw = JSON.parse(localStorage.getItem(USAGE_KEY) ?? "{}") as Record<string, unknown>;
+    const out: SeenByAgent = {};
+    for (const [agent, v] of Object.entries(raw)) {
+      if (isSeenUsage(v)) {
+        out[agent] = { [v.window || "plan"]: v };
+      } else if (v && typeof v === "object") {
+        const windows: Record<string, SeenUsage> = {};
+        for (const [w, u] of Object.entries(v as Record<string, unknown>)) {
+          if (isSeenUsage(u)) windows[w] = u;
+        }
+        if (Object.keys(windows).length) out[agent] = windows;
+      }
+    }
+    return out;
   } catch {
     return {};
   }
 }
 
 function noteUsage(agent: string, u: SeenUsage) {
+  const key = u.window || "plan";
   try {
-    localStorage.setItem(USAGE_KEY, JSON.stringify({ ...seenAll(), [agent]: u }));
+    const all = seenAll();
+    localStorage.setItem(
+      USAGE_KEY,
+      JSON.stringify({ ...all, [agent]: { ...all[agent], [key]: u } }),
+    );
   } catch {
     // Not kept: the picker just shows nothing for this agent.
   }
 }
 
-/** The last plan usage Sidekick saw for an agent, if any. */
-export function seenUsage(agent: string): SeenUsage | null {
-  return seenAll()[agent] ?? null;
+/** Every plan window Sidekick has seen for an agent (5-hour, weekly, …). */
+export function seenWindows(agent: string): SeenUsage[] {
+  const map = seenAll()[agent];
+  if (!map) return [];
+  return Object.values(map);
 }
 
-/** "85% of 5-hour, 20 min ago"; "ready" once that window has reset; null when never seen. */
+/** The busiest live window, for a one-line chip; null when never seen. */
+export function seenUsage(agent: string): SeenUsage | null {
+  const now = Date.now();
+  const live = seenWindows(agent).filter((u) => !(u.resetsAt !== null && u.resetsAt * 1000 <= now));
+  if (live.length === 0) return null;
+  return live.reduce((a, b) => (pct(b) > pct(a) ? b : a));
+}
+
+function pct(u: SeenUsage): number {
+  return Math.round(u.used <= 1 ? u.used * 100 : u.used);
+}
+
+/** "85% of 5-hour, 20 min ago"; "ready" once every window has reset; null when never seen. */
 export function usageLine(agent: string, now = Date.now()): string | null {
-  const u = seenAll()[agent];
-  if (!u) return null;
-  if (u.resetsAt !== null && u.resetsAt * 1000 <= now) return "ready";
-  const pct = Math.round(u.used <= 1 ? u.used * 100 : u.used);
+  const all = seenWindows(agent);
+  if (all.length === 0) return null;
+  const live = all.filter((u) => !(u.resetsAt !== null && u.resetsAt * 1000 <= now));
+  if (live.length === 0) return "ready";
+  const u = live.reduce((a, b) => (pct(b) > pct(a) ? b : a));
   const span = u.window === "five_hour" ? "5-hour" : u.window.startsWith("seven_day") ? "week" : "plan";
   const mins = Math.round((now - u.at) / 60_000);
   const ago = mins < 1 ? "just now" : mins < 60 ? `${mins} min ago` : `${Math.round(mins / 60)} h ago`;
-  return `${pct}% of ${span}, ${ago}`;
+  return `${pct(u)}% of ${span}, ${ago}`;
+}
+
+/** Esc / Stop: leave the session idle right away; Rust keeps it resumable on the next send. */
+export function interruptSession(id: string) {
+  update(id, (s) => ({
+    ...s,
+    status: "idle",
+    question: null,
+    tookMs: s.tookMs ?? Date.now() - s.turnAt,
+    error: null,
+    entries: entriesCancelRunning(s.entries),
+  }));
+  void api.agentStop(id);
 }

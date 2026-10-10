@@ -127,6 +127,8 @@ pub struct Suggestion {
     pub title: String,
     pub detail: String,
     pub options: Vec<String>,
+    /// Action id per option (parallel to `options`), for Opening… feedback.
+    pub actions: Vec<String>,
     /// Which options can become "Always do this": safe to run on their own.
     pub always: Vec<bool>,
     /// Why this showed, from how often you took this kind before. Empty

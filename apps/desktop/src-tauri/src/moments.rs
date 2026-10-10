@@ -38,7 +38,12 @@ static WINDOWS: LazyLock<Mutex<VecDeque<(String, String)>>> =
 pub fn on_window(payload: &Value) {
     let app = payload["app"].as_str().unwrap_or_default().trim();
     let title = payload["title"].as_str().unwrap_or_default().trim();
+    let exe = payload["exe"].as_str().unwrap_or_default();
     if app.is_empty() || title.is_empty() {
+        return;
+    }
+    // Lock screen is not somewhere you were working.
+    if sidekick_sensors::is_lock_ui(exe) || sidekick_sensors::is_lock_ui(app) {
         return;
     }
     if let Ok(mut w) = WINDOWS.lock() {

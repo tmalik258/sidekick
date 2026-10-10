@@ -21,11 +21,14 @@ import {
   type InboxStatus,
   MASCOT_STATES,
   type NotifyLevel,
+  type SkillInfo,
   type StoredEvent,
 } from "@/lib/types";
 import { SetupChecklist, usePendingByTab } from "../SetupChecklist";
 import { Tip } from "../Tip";
 import { Button, ChipList, Field, FolderPicker, Section, Select, Slider, Toggle } from "./ui";
+
+const DAY_SUMMARY_SKILL = "system.day-summary";
 
 const SOUND_KITS: [string, string][] = [
   [SYNTH_KIT, "Sidekick"],
@@ -71,6 +74,7 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
       >
         <CodeFolders chosen={settings.codeFolders} onChange={(codeFolders) => save({ codeFolders })} />
         <CloneRules rules={settings.cloneRules ?? {}} onChange={(cloneRules) => save({ cloneRules })} />
+        <DaySummaryToggle onError={onError} />
         <Field label="My day ends at">
           <Select
             label="My day ends at"
@@ -192,6 +196,32 @@ export function HomeTab({ onError, onOpenTab }: { onError: (e: string) => void; 
 }
 
 const TAB_NAMES: Record<string, string> = { ai: "AI", connections: "Apps", privacy: "Privacy" };
+
+/** Opt-in standup / timesheet card after the day ends. Off by default. */
+function DaySummaryToggle({ onError }: { onError: (e: string) => void }) {
+  const [skill, setSkill] = useState<SkillInfo | null>(null);
+  useEffect(() => {
+    void api
+      .skillsList()
+      .then((list) => setSkill(list.find((s) => s.id === DAY_SUMMARY_SKILL) ?? null))
+      .catch((e: unknown) => onError(String(e)));
+  }, [onError]);
+  if (!skill) return null;
+  return (
+    <Toggle
+      label="End of day summary"
+      hint="Standup / timesheet card after your day ends. Off until you turn it on."
+      checked={skill.enabled}
+      onChange={(enabled) => {
+        setSkill({ ...skill, enabled });
+        void api.skillSet(DAY_SUMMARY_SKILL, enabled, false).catch((e: unknown) => {
+          onError(String(e));
+          setSkill({ ...skill, enabled: skill.enabled });
+        });
+      }}
+    />
+  );
+}
 
 /** Steps left on other tabs, as one tap each, so Home never repeats them. */
 function LeftElsewhere({ onOpenTab }: { onOpenTab: (tab: string) => void }) {

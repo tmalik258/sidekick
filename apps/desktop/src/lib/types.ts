@@ -276,6 +276,10 @@ export interface AskOpen {
   settingsTab?: string | null;
   /** Opens Agents with a new session in this project. */
   project?: string | null;
+  /** Ask panel tab to show. */
+  tab?: "ask" | "agents" | null;
+  /** Rust open generation; stale opens after a close are ignored. */
+  panelGen?: number;
 }
 
 /** One measured moment, for the timings overlay. */
@@ -326,6 +330,8 @@ export interface Suggestion {
   title: string;
   detail: string;
   options: string[];
+  /** Action id per option (parallel to options), for Opening… feedback. */
+  actions: string[];
   /** Which options can become "Always do this". */
   always?: boolean[];
   /** Why this showed, from how often you took this kind before. */
@@ -376,6 +382,7 @@ export const DEFAULT_SETTINGS: Settings = {
   soundKit: "sidekick",
   paletteHotkey: "Ctrl+Space",
   shortcuts: {
+    agents: "Ctrl+Shift+Space",
     talk: "Ctrl+Alt+Space",
     accept: "Ctrl+Alt+Enter",
     dismiss: "Ctrl+Alt+Backspace",
@@ -662,6 +669,7 @@ export interface ChatSummary {
 
 /** Shortcut actions besides Ask, in the order Settings shows them. */
 export const SHORTCUT_ACTIONS: { id: string; label: string }[] = [
+  { id: "agents", label: "Agents" },
   { id: "talk", label: "Talk" },
   { id: "accept", label: "Accept the suggestion" },
   { id: "dismiss", label: "Stop or Not now" },

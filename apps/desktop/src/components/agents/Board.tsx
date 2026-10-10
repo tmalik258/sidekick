@@ -19,8 +19,10 @@ import {
 } from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
+import { useSidekick } from "@/lib/store";
 import type { Agents } from "@/lib/types";
-import { AGENT_MARKS, markFor, NameField, STEP_TAG } from "./AgentsTab";
+import { Select } from "../settings/ui";
+import { AgentMark, agentMarkId, NameField, projectPlace, STEP_TAG } from "./AgentsTab";
 import { ChatControls } from "./Controls";
 
 function state(s: Session): [string, string] {
@@ -59,7 +61,6 @@ function lastSay(s: Session): string | null {
 
 function Tile({ s, n, focused }: { s: Session; n: number; focused: boolean }) {
   const [st, label] = state(s);
-  const mark = markFor(s.agent);
   const planDone = s.plan.filter((p) => p.status === "completed").length;
   const ctx = s.usage ? Math.round(Math.min(1, s.usage.used / s.usage.window) * 100) : null;
   const [note, setNote] = useState<string | null>(null);
@@ -83,26 +84,20 @@ function Tile({ s, n, focused }: { s: Session; n: number; focused: boolean }) {
       tabIndex={0}
       className="ak-tile"
       data-s={st}
+      data-agent={agentMarkId(s.agent)}
       data-focus={focused}
       onClick={() => useAgents.setState({ focus: s.id })}
       onDoubleClick={(e) => !(e.target as HTMLElement).closest("button, input") && open()}
       onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && open()}
     >
       <div className="ak-th">
-        <span className="ak-mark" style={{ background: mark[1] }} aria-hidden="true">
-          {mark[0]}
-        </span>
+        <AgentMark agent={s.agent} />
         <span className="min-w-0">
           <NameField id={s.id} title={s.title} />
           <span className="ak-tm">
-            {s.project}
-            {s.agent === "Local"
-              ? " · on this PC"
-              : s.worktree
-                ? ` · ⎇ ${s.worktree}`
-                : s.branch
-                  ? ` · ⎇ ${s.branch}`
-                  : ""}
+            {s.agent}
+            {s.project ? ` · ${s.project}` : ""}
+            {s.worktree ? ` · ⎇ ${s.worktree}` : s.branch ? ` · ⎇ ${s.branch}` : ""}
           </span>
         </span>
         <span className="ak-pill" data-s={st}>
@@ -204,84 +199,270 @@ function ago(t: number): string {
   return h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
 }
 
-function EmptySlot({ recent, n }: { recent: Session[]; n: number }) {
+const PICK_NOTE: Record<string, string> = {
+  claude_code: "Cloud",
+  codex: "Cloud",
+  local: "This PC",
+};
+
+function EmptySlot({
+  recent,
+  openSignal = 0,
+  onDismiss,
+}: {
+  recent: Session[];
+  /** Parent bumps this (Ctrl N) to open the new-session picker. */
+  openSignal?: number;
+  /** After the picker closes — put focus back on the board composer. */
+  onDismiss?: () => void;
+}) {
   const { data: agents } = useCached<Agents>("agents", api.agentsStatus);
   const { data: projects } = useCached<{ name: string; path: string }[]>("projects", api.projectsList);
+  const draftPath = useAgents((s) => s.draftPath);
   const [picking, setPicking] = useState(false);
   const [agent, setAgent] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
-  const path = projects?.[0]?.path ?? "";
+  const [path, setPath] = useState(draftPath ?? "");
+  const [highlight, setHighlight] = useState(0);
+  const pickRoot = useRef<HTMLDivElement>(null);
+  const list = projects ?? [];
+  const pickedPath = (path && list.some((p) => p.path === path) ? path : null) || list[0]?.path || "";
+  const project = list.find((p) => p.path === pickedPath);
+  const choosePath = (next: string) => {
+    setPath(next);
+    useAgents.setState({ draftPath: next });
+  };
+  const closePick = () => {
+    setAgent(null);
+    setPicking(false);
+    setPrompt("");
+    setHighlight(0);
+    onDismiss?.();
+  };
+  // Keep the picker on a real project when the list loads or draft goes stale.
+  useEffect(() => {
+    if (!list.length) return;
+    if (pickedPath && pickedPath !== path) setPath(pickedPath);
+  }, [list, pickedPath, path]);
+  // Ctrl N (from Board) opens this picker.
+  useEffect(() => {
+    if (openSignal === 0) return;
+    setAgent(null);
+    setPrompt("");
+    setHighlight(0);
+    setPicking(true);
+    // Drop composer focus so 1–3 / arrows land on the picker, not the chat box.
+    requestAnimationFrame(() => {
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      pickRoot.current?.focus({ preventScroll: true });
+    });
+  }, [openSignal]);
+  // Esc closes the picker (or steps back), not the island — AskPanel also
+  // listens for Esc on window; capture + preventDefault wins that race.
+  useEffect(() => {
+    if (!picking) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.repeat) return;
+      // Project menu is open: let Select take Esc first.
+      if (useSidekick.getState().overlayHit) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (agent) {
+        setAgent(null);
+        setPrompt("");
+      } else closePick();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [picking, agent]);
   const kinds: [string, string, boolean][] = [
     ["claude_code", "Claude Code", !!agents?.claudeCode],
     ["codex", "Codex", !!agents?.codex],
     ["local", "Local", true],
   ];
+  const ready = kinds.filter((k) => k[2]);
+  const picked = ready.find(([id]) => id === agent);
+  // While choosing an agent: 1–9 / arrows pick, [ ] cycle project.
+  useEffect(() => {
+    if (!picking || agent) return;
+    const moveProject = (dir: 1 | -1) => {
+      if (list.length === 0) return;
+      const i = Math.max(
+        0,
+        list.findIndex((p) => p.path === pickedPath),
+      );
+      const next = list[(i + dir + list.length) % list.length];
+      setPath(next.path);
+      useAgents.setState({ draftPath: next.path });
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "[" || e.key === "ArrowUp") {
+        e.preventDefault();
+        moveProject(-1);
+        return;
+      }
+      if (e.key === "]" || e.key === "ArrowDown") {
+        e.preventDefault();
+        moveProject(1);
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setHighlight((h) => (h + ready.length - 1) % Math.max(ready.length, 1));
+        return;
+      }
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setHighlight((h) => (h + 1) % Math.max(ready.length, 1));
+        return;
+      }
+      if (e.key === "Enter") {
+        const id = ready[highlight]?.[0];
+        if (!id || !pickedPath) return;
+        e.preventDefault();
+        setAgent(id);
+        return;
+      }
+      const num = Number(e.key);
+      if (num >= 1 && num <= ready.length) {
+        e.preventDefault();
+        if (pickedPath) setAgent(ready[num - 1][0]);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [picking, agent, ready, pickedPath, highlight, list]);
+  const projectPicker =
+    list.length > 0 ? (
+      <span className="ak-pickproj">
+        <span className="ak-pickproj-l">In</span>
+        <Select
+          variant="plain"
+          overlay
+          searchable
+          menuWidth={300}
+          label="Project"
+          value={pickedPath}
+          onChange={choosePath}
+          group="Project"
+          options={list.map((p) => ({
+            value: p.path,
+            label: p.name,
+            sub: projectPlace(p.path),
+            title: p.path,
+          }))}
+        />
+      </span>
+    ) : (
+      <span className="ak-tm">Add a project in Settings</span>
+    );
+
   if (!picking && !agent) {
     return (
       <button type="button" className="ak-tile ak-empty" onClick={() => setPicking(true)}>
         <span className="ak-plus" aria-hidden="true">
           +
         </span>
-        Start or bring back a session
-        {n <= 9 && <span className="ak-tkey">Ctrl {n}</span>}
+        <span className="ak-empty-t">Start or bring back</span>
+        {recent.length > 0 ? (
+          <span className="ak-empty-s">{recent.length} paused · {ready.length} ready</span>
+        ) : (
+          <span className="ak-empty-s">{ready.map(([, name]) => name).join(" · ")}</span>
+        )}
+        <span className="ak-tkey">Ctrl N</span>
       </button>
     );
   }
+
   return (
-    <div className="ak-tile ak-pickslot">
-      {agent ? (
-        <input
-          // biome-ignore lint/a11y/noAutofocus: picked a moment ago
-          autoFocus
-          value={prompt}
-          placeholder="What should it do?"
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setAgent(null);
-            if (e.key === "Enter" && prompt.trim() && path)
-              void startSession(agent, path, prompt.trim(), "edit").then(() => {
-                useAgents.setState({ layout: "board" });
-                setAgent(null);
-                setPicking(false);
-                setPrompt("");
-              });
-          }}
-        />
+    <div ref={pickRoot} className="ak-tile ak-pickslot" tabIndex={-1}>
+      {agent && picked ? (
+        <>
+          <div className="ak-pickhead">
+            <AgentMark agent={agent} />
+            <span className="min-w-0">
+              <b>{picked[1]}</b>
+              {projectPicker}
+            </span>
+            <button type="button" className="ak-pickback" onClick={() => setAgent(null)}>
+              Back
+            </button>
+          </div>
+          <input
+            // biome-ignore lint/a11y/noAutofocus: picked a moment ago
+            autoFocus
+            className="ak-pickq"
+            value={prompt}
+            placeholder="What should it do?"
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && prompt.trim() && pickedPath)
+                void startSession(agent, pickedPath, prompt.trim(), "edit").then(() => {
+                  useAgents.setState({ layout: "board", draftPath: pickedPath });
+                  closePick();
+                });
+            }}
+          />
+          <p className="ak-pickhint">
+            {pickedPath
+              ? `Enter to start in ${project?.name ?? "project"} · Esc back`
+              : "Add a project in Settings first"}
+          </p>
+        </>
       ) : (
         <>
-          <p className="ak-tlab">New</p>
-          <div className="ak-tpick">
-            {kinds
-              .filter((k) => k[2])
-              .map(([id, name]) => (
-                <button key={id} type="button" onClick={() => setAgent(id)}>
-                  <span className="ak-mark sm" style={{ background: AGENT_MARKS[id]?.[1] }} aria-hidden="true">
-                    {AGENT_MARKS[id]?.[0]}
-                  </span>
-                  {name}
+          <div className="ak-pickhead">
+            <span className="min-w-0">
+              <b>New session</b>
+              {projectPicker}
+            </span>
+            <button type="button" className="ak-pickback" onClick={closePick}>
+              Close
+            </button>
+          </div>
+          <div className="ak-tpick" data-n={ready.length}>
+            {ready.map(([id, name], i) => (
+              <button
+                key={id}
+                type="button"
+                data-agent={id}
+                data-focus={i === highlight}
+                onMouseEnter={() => setHighlight(i)}
+                onClick={() => setAgent(id)}
+                disabled={!pickedPath}
+              >
+                <span className="ak-tpick-mark">
+                  <AgentMark agent={id} />
+                </span>
+                <span className="ak-tpick-copy">
+                  <strong>{name === "Claude Code" ? "Claude" : name}</strong>
+                  <em>{PICK_NOTE[id] ?? ""}</em>
+                </span>
+                <span className="ak-tpick-key">{i + 1}</span>
+              </button>
+            ))}
+          </div>
+          <p className="ak-pickhint">
+            {pickedPath
+              ? "1–3 agent · [ ] project · Enter · Esc"
+              : "Add a project in Settings first"}
+          </p>
+          {recent.length > 0 && (
+            <div className="ak-trec">
+              <p className="ak-tlab">Bring back</p>
+              {recent.slice(0, 2).map((r) => (
+                <button key={r.id} type="button" onClick={() => void resumeSession(r.id)}>
+                  <AgentMark agent={r.agent} sm />
+                  <span className="truncate">{r.title}</span>
+                  <small>
+                    {r.agent} · {ago(r.startedAt)}
+                  </small>
                 </button>
               ))}
-          </div>
-          {recent.length > 0 && (
-            <>
-              <p className="ak-tlab">Bring back</p>
-              <div className="ak-trec">
-                {recent.slice(0, 3).map((r) => {
-                  const m = markFor(r.agent);
-                  return (
-                    <button key={r.id} type="button" onClick={() => void resumeSession(r.id)}>
-                      <span className="ak-mark sm" style={{ background: m[1] }} aria-hidden="true">
-                        {m[0]}
-                      </span>
-                      <span className="truncate">{r.title}</span>
-                      <small>
-                        {r.project} · {ago(r.startedAt)}
-                      </small>
-                    </button>
-                  );
-                })}
-              </div>
-            </>
+            </div>
           )}
         </>
       )}
@@ -300,7 +481,7 @@ function plain(md: string): string {
     .trim();
 }
 
-export function Board({ sessions }: { sessions: Session[]; keys?: boolean }) {
+export function Board({ sessions, maxHeight }: { sessions: Session[]; keys?: boolean; maxHeight: number }) {
   const focus = useAgents((s) => s.focus);
   const live = sessions.filter((s) => !s.restored || s.status !== "ended");
   const paused = sessions.filter((s) => s.restored && s.status === "ended");
@@ -308,20 +489,29 @@ export function Board({ sessions }: { sessions: Session[]; keys?: boolean }) {
   const [text, setText] = useState("");
   const grid = useRef<HTMLDivElement>(null);
   const [below, setBelow] = useState(0);
+  const [openNew, setOpenNew] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const targetId = target?.id;
+  const focusComposer = () => {
+    requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
+  };
   // Ready to type on open, and again when Ctrl 1-9 picks another tile.
   // biome-ignore lint/correctness/useExhaustiveDependencies: focus again when the target changes
   useEffect(() => {
-    requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
+    focusComposer();
   }, [targetId]);
 
-  // Ctrl 1-9 puts a tile in focus.
+  // Ctrl N: new session. Ctrl 1–9: focus a live session tile.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!e.ctrlKey || e.altKey || e.metaKey) return;
+      if (!e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+      if (e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        setOpenNew((t) => t + 1);
+        return;
+      }
       const n = Number(e.key);
-      if (!n || n > live.length) return;
+      if (!n || n > 9 || n > live.length) return;
       e.preventDefault();
       useAgents.setState({ focus: live[n - 1].id });
       grid.current?.children[n - 1]?.scrollIntoView({ block: "nearest" });
@@ -351,8 +541,8 @@ export function Board({ sessions }: { sessions: Session[]; keys?: boolean }) {
   if (live.length === 0 && paused.length === 0) {
     return (
       <div className="ak-board">
-        <div className="ak-grid">
-          <EmptySlot recent={[]} n={1} />
+        <div className="ak-grid" style={{ maxHeight }}>
+          <EmptySlot recent={[]} openSignal={openNew} />
         </div>
         <button type="button" className="chip self-start" onClick={() => setLayout("one")}>
           Back to one session
@@ -386,24 +576,26 @@ export function Board({ sessions }: { sessions: Session[]; keys?: boolean }) {
             </span>
           )}
         </span>
-        {limits.map(([a, line]) => {
-          const m = markFor(a);
-          return (
-            <span key={a} className="ak-blim">
-              <span className="ak-mark sm" style={{ background: m[1] }} aria-hidden="true">
-                {m[0]}
-              </span>
-              {line.split(",")[0]}
-            </span>
-          );
-        })}
+        {limits.map(([a, line]) => (
+          <span key={a} className="ak-blim">
+            <AgentMark agent={a} sm />
+            {line.split(",")[0]}
+          </span>
+        ))}
       </div>
       <div className="relative">
-        <div ref={grid} className="ak-grid" data-wide={wideScreen()} data-more={below > 0} onScroll={measure}>
+        <div
+          ref={grid}
+          className="ak-grid"
+          data-wide={wideScreen()}
+          data-more={below > 0}
+          style={{ maxHeight }}
+          onScroll={measure}
+        >
           {live.map((s, i) => (
             <Tile key={s.id} s={s} n={i + 1} focused={s.id === target?.id} />
           ))}
-          <EmptySlot recent={paused} n={live.length + 1} />
+          <EmptySlot recent={paused} openSignal={openNew} onDismiss={focusComposer} />
         </div>
         {below > 0 && <p className="ak-below">{below} more below</p>}
       </div>
@@ -411,11 +603,11 @@ export function Board({ sessions }: { sessions: Session[]; keys?: boolean }) {
         <div className="ak-composer ak-two">
           <div className="ak-to">
             To
-            <span className="ak-mark sm" style={{ background: markFor(target.agent)[1] }} aria-hidden="true">
-              {markFor(target.agent)[0]}
-            </span>
-            <b className="truncate">{target.title}</b>
-            {live.length > 1 && <span>· Ctrl 1 to {Math.min(9, live.length)} to switch</span>}
+            <AgentMark agent={target.agent} sm />
+            <b className="truncate">
+              {target.agent}
+              {target.title ? ` · ${target.title}` : ""}
+            </b>
           </div>
           <div className="ak-row">
             <input
