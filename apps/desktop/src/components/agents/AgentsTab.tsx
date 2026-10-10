@@ -124,13 +124,22 @@ function useCursorChats(): CursorChat[] {
   const [chats, setChats] = useState<CursorChat[]>([]);
   useEffect(() => {
     let live = true;
-    const load = () =>
+    let busy = false;
+    const load = () => {
+      if (busy) return;
+      busy = true;
       void api
         .cursorChats()
-        .then((c) => live && setChats(c))
-        .catch(() => {});
+        .then((c) => {
+          if (live) setChats(c);
+        })
+        .catch(() => {})
+        .finally(() => {
+          busy = false;
+        });
+    };
     load();
-    const t = setInterval(load, 15_000);
+    const t = setInterval(load, 30_000);
     return () => {
       live = false;
       clearInterval(t);
@@ -170,7 +179,7 @@ function CursorView({ chat, sessions, cursor }: { chat: CursorChat; sessions: Se
       <div className="ak-meta">
         <span className="ak-mi b">Cursor</span>
         {chat.project && <span className="ak-mi">{chat.project}</span>}
-        <span className="ak-mi">{chat.status === "working" ? "Working" : "Done"}</span>
+        <span className="ak-mi">{chat.status === "working" ? "Working" : "Idle"}</span>
       </div>
       {chat.lastReply ? (
         <div className="ak-in text-[13px]">

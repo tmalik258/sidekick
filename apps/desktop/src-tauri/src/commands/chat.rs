@@ -604,7 +604,7 @@ pub async fn agent_finish(id: String) -> CmdResult<String> {
 /// Chats started in Cursor, for the Agents list.
 #[tauri::command]
 pub async fn cursor_chats() -> Vec<crate::cursor_chats::CursorChat> {
-    tauri::async_runtime::spawn_blocking(|| crate::cursor_chats::list(20))
+    tauri::async_runtime::spawn_blocking(|| crate::cursor_chats::list(10))
         .await
         .unwrap_or_default()
 }

@@ -4,10 +4,16 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
 use serde_json::Value;
+
+/// Reuse a scan: Cursor's store is huge, and Agents polls often.
+const CACHE_FOR: Duration = Duration::from_secs(30);
+static CACHE: Mutex<Option<(Instant, Vec<CursorChat>)>> = Mutex::new(None);
 
 /// One Cursor chat, as Agents lists it.
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -178,6 +184,12 @@ pub fn parse(v: &Value, path: Option<String>, reply: String) -> Option<CursorCha
 
 /// Recent Cursor chats, newest first. Empty when Cursor is not installed.
 pub fn list(limit: usize) -> Vec<CursorChat> {
+    if let Ok(guard) = CACHE.lock()
+        && let Some((at, cached)) = guard.as_ref()
+        && at.elapsed() < CACHE_FOR
+    {
+        return cached.iter().take(limit).cloned().collect();
+    }
     let Some(user) = user_dir() else {
         return Vec::new();
     };
@@ -210,15 +222,21 @@ pub fn list(limit: usize) -> Vec<CursorChat> {
         })
         .collect();
     chats.sort_by_key(|c| std::cmp::Reverse(c.1));
-    chats
+    // Keep a few more than asked so a later smaller limit is a cache hit.
+    let want = limit.max(10);
+    let out: Vec<CursorChat> = chats
         .into_iter()
-        .take(limit)
+        .take(want)
         .filter_map(|(v, _)| {
             let id = v["composerId"].as_str()?.to_owned();
             let reply = last_reply(&conn, &id, &v);
             parse(&v, projects.get(&id).cloned(), reply)
         })
-        .collect()
+        .collect();
+    if let Ok(mut guard) = CACHE.lock() {
+        *guard = Some((Instant::now(), out.clone()));
+    }
+    out.into_iter().take(limit).collect()
 }
 
 #[cfg(test)]
