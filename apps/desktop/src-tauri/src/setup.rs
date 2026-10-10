@@ -1260,8 +1260,14 @@ mod tests {
         assert_eq!(chat_model_for(12 * GB, 32 * GB).model, "qwen3:8b");
         assert_eq!(chat_model_for(6 * GB, 8 * GB).model, "qwen3:4b");
         assert_eq!(chat_model_for(512 << 20, 16 * GB).model, "qwen3:4b");
-        assert_eq!(chat_model_for(4 * GB, 8 * GB).model, "qwen2.5:3b-instruct-q4_K_M");
-        assert_eq!(chat_model_for(0, 8 * GB).model, "qwen2.5:3b-instruct-q4_K_M");
+        assert_eq!(
+            chat_model_for(4 * GB, 8 * GB).model,
+            "qwen2.5:3b-instruct-q4_K_M"
+        );
+        assert_eq!(
+            chat_model_for(0, 8 * GB).model,
+            "qwen2.5:3b-instruct-q4_K_M"
+        );
     }
 
     #[test]
