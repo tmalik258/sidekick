@@ -1,6 +1,6 @@
 id: recipes.offer
 name: Save a repeated task
-description: When you ask Sidekick the same thing three times, offer to save it as a recipe you can run by name or on a schedule.
+description: When you ask Duskie the same thing three times, offer to save it as a recipe you can run by name or on a schedule.
 priority: 30
 dedupe: "{{prompt}}"
 trigger:

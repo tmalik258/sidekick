@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { handOff } from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
-import { askWhenOnline, retryLast, setAsk, setAskModel, useSidekick } from "@/lib/store";
+import { askWhenOnline, retryLast, setAsk, setAskModel, useDuskie } from "@/lib/store";
 import type { SetupItem, SetupStatus, Turn } from "@/lib/types";
 import { AGENT_IMAGES } from "../agents/AgentsTab";
 import { useAgentName } from "./Chat";
@@ -15,7 +15,7 @@ import { useAgentName } from "./Chat";
 interface Failure {
   title: string;
   detail: string;
-  /** The fix, when there is one Sidekick can do. */
+  /** The fix, when there is one Duskie can do. */
   fix?: { label: string; run: () => Promise<void> };
 }
 
@@ -53,13 +53,13 @@ export function explain(error: string, provider: string | null | undefined): Fai
     const codex = provider === "codex" || /codex/.test(e);
     return {
       title: `${codex ? "Codex" : "Claude Code"} needs an update`,
-      detail: `This version is too old for Sidekick. Run ${codex ? "npm install -g @openai/codex@latest" : "claude update"} in a terminal, then retry.`,
+      detail: `This version is too old for Duskie. Run ${codex ? "npm install -g @openai/codex@latest" : "claude update"} in a terminal, then retry.`,
     };
   }
   if (/no model found|pull a model|ollama pull/.test(e)) {
     return {
       title: "No local model downloaded yet",
-      detail: "Ollama is running but has no chat model yet. Sidekick downloads one that suits this PC.",
+      detail: "Ollama is running but has no chat model yet. Duskie downloads one that suits this PC.",
       fix: { label: "Download it", run: () => api.setupRun("ollama_chat") },
     };
   }
@@ -76,13 +76,13 @@ export function explain(error: string, provider: string | null | undefined): Fai
   if (/did not answer in|took over \d+ minutes/.test(e)) {
     return {
       title: "That model got stuck",
-      detail: "Sidekick stopped it and tried the others. Try again, or pick a different model.",
+      detail: "Duskie stopped it and tried the others. Try again, or pick a different model.",
     };
   }
   if (/claude code usage limit/.test(e)) {
     return {
       title: "Claude Code's usage is used up",
-      detail: "Sidekick tried your other models too. Ask the model on this PC, or try again once it resets.",
+      detail: "Duskie tried your other models too. Ask the model on this PC, or try again once it resets.",
       fix: {
         label: "Ask the local model",
         run: async () => {
@@ -106,12 +106,12 @@ export function explain(error: string, provider: string | null | undefined): Fai
     };
   }
   if (/no ai provider|no ai set up/.test(e)) {
-    return { title: "No AI is set up yet", detail: "Pick how Sidekick answers below." };
+    return { title: "No AI is set up yet", detail: "Pick how Duskie answers below." };
   }
   if (/timed out|dns|network|offline|internet/.test(e)) {
     return {
       title: "The internet is not reachable",
-      detail: "The answer needs the web. Sidekick can ask again when you are back online.",
+      detail: "The answer needs the web. Duskie can ask again when you are back online.",
       fix: { label: "Ask when I'm back online", run: async () => askWhenOnline() },
     };
   }
@@ -258,7 +258,7 @@ export function FirstRun() {
   return (
     <div className="ak-body ak-in">
       <div className="grid gap-1 px-1">
-        <p className="text-[14.5px] font-semibold">Choose how Sidekick answers</p>
+        <p className="text-[14.5px] font-semibold">Choose how Duskie answers</p>
         <p className="text-[13px] text-[rgb(235_235_245/0.6)]">
           Apps, files and commands work already. Pick one to answer questions too; you can add more later.
         </p>
@@ -294,5 +294,5 @@ export function FirstRun() {
 
 /** "Offline" at the start of the context line while the internet is gone. */
 export function useOffline(): boolean {
-  return !useSidekick((s) => s.online);
+  return !useDuskie((s) => s.online);
 }

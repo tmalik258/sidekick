@@ -1,13 +1,13 @@
 "use client";
 
-// Privacy and data: pause, what Sidekick notices, what it ignores, and what
+// Privacy and data: pause, what Duskie notices, what it ignores, and what
 // it can search. Apps and folders are picked from what is on this PC.
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
 import { useNow } from "@/lib/hooks";
-import { updateSettings, useSidekick } from "@/lib/store";
+import { updateSettings, useDuskie } from "@/lib/store";
 import {
   type CapabilityInfo,
   type Folder,
@@ -20,7 +20,7 @@ import {
 import { appName, Button, ChipList, Field, FolderPicker, Section, Select, Toggle } from "./ui";
 
 export function PrivacyTab({ onError }: { onError: (e: string) => void }) {
-  const settings = useSidekick((s) => s.settings);
+  const settings = useDuskie((s) => s.settings);
   const save = (patch: Parameters<typeof updateSettings>[0]) =>
     updateSettings(patch).catch((e: unknown) => onError(String(e)));
   const run = (p: Promise<unknown>) => void p.catch((e: unknown) => onError(String(e)));
@@ -77,7 +77,7 @@ export function PrivacyTab({ onError }: { onError: (e: string) => void }) {
       >
         <SearchSettings onError={onError} />
       </Section>
-      <Section collapsible summary="Switch each one on or off" title="What Sidekick notices" keywords="sensors">
+      <Section collapsible summary="Switch each one on or off" title="What Duskie notices" keywords="sensors">
         {SENSOR_IDS.map(({ id, label, hint }) => (
           <Toggle
             key={id}
@@ -102,7 +102,7 @@ export function PrivacyTab({ onError }: { onError: (e: string) => void }) {
 
 function PauseStatus({ pause }: { pause: Pause }) {
   const now = useNow(10_000);
-  let text = "Sidekick is noticing things.";
+  let text = "Duskie is noticing things.";
   if (pause.kind === "indefinite") text = "Paused until you resume.";
   if (pause.kind === "until" && isPaused(pause, now)) {
     const minutes = Math.max(1, Math.round((Date.parse(pause.until) - now) / 60_000));
@@ -112,8 +112,8 @@ function PauseStatus({ pause }: { pause: Pause }) {
 }
 
 function SearchSettings({ onError }: { onError: (e: string) => void }) {
-  const folders = useSidekick((s) => s.settings.indexFolders);
-  const semantic = useSidekick((s) => s.settings.semanticSearch);
+  const folders = useDuskie((s) => s.settings.indexFolders);
+  const semantic = useDuskie((s) => s.settings.semanticSearch);
   const { data: detected } = useCached<Found>("setup-detect", api.setupDetect);
   const found: Folder[] = detected?.searchFolders ?? [];
   const { data: models } = useCached<LocalModels>("local-models", api.localModels);
@@ -260,7 +260,7 @@ function Capabilities({ onError }: { onError: (e: string) => void }) {
 
 /** Facts about the user, given to every model, plus learned paths. */
 export function Memory({ onError }: { onError: (e: string) => void }) {
-  const memory = useSidekick((s) => s.settings.memory);
+  const memory = useDuskie((s) => s.settings.memory);
   const [draft, setDraft] = useState("");
   const [cleared, setCleared] = useState(false);
   const save = (next: string[]) => void updateSettings({ memory: next }).catch((e: unknown) => onError(String(e)));
@@ -304,7 +304,7 @@ export function Memory({ onError }: { onError: (e: string) => void }) {
         </Button>
       </form>
       <div className="flex items-center gap-2 text-[12px] text-(--muted)">
-        <span className="flex-1">Sidekick also remembers which buttons worked in each app and site.</span>
+        <span className="flex-1">Duskie also remembers which buttons worked in each app and site.</span>
         <Button
           small
           onClick={() =>

@@ -8,9 +8,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
+use duskie_core::{Event, EventBus, Sensitivity};
 use serde::Serialize;
 use serde_json::Value;
-use sidekick_core::{Event, EventBus, Sensitivity};
 use tokio::task::JoinHandle;
 
 use crate::{Sensor, SensorGate};
@@ -239,7 +239,7 @@ pub fn from_google(e: &Value) -> Option<Meeting> {
     })
 }
 
-/// Outlook times come as `{dateTime, timeZone}`; Sidekick asks for UTC.
+/// Outlook times come as `{dateTime, timeZone}`; Duskie asks for UTC.
 fn outlook_time(v: &Value) -> Option<DateTime<Utc>> {
     let s = v["dateTime"].as_str()?;
     if let Ok(t) = DateTime::parse_from_rfc3339(s) {

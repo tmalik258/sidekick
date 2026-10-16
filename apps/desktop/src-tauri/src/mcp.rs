@@ -1,4 +1,4 @@
-//! Sidekick as an MCP server for Claude Code, over
+//! Duskie as an MCP server for Claude Code, over
 //! Streamable HTTP on 127.0.0.1. Claude Code can search your history,
 //! show a note on the island, open a link, and read today's time.
 //!
@@ -6,9 +6,9 @@
 //! web page makes (they carry its http(s) origin) are refused. Every tool
 //! call is logged.
 
+use duskie_sensors::http;
+use duskie_skills::{Proposal, ProposedOption, Trust};
 use serde_json::{Value, json};
-use sidekick_sensors::http;
-use sidekick_skills::{Proposal, ProposedOption, Trust};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -19,15 +19,15 @@ pub const PORT: u16 = 47823;
 const PATH: &str = "/mcp";
 const VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
 
-/// Config Ask-mode chats pass to Claude Code, so it can use Sidekick's
+/// Config Ask-mode chats pass to Claude Code, so it can use Duskie's
 /// tools too. Lives in the AI workdir, next to nothing else.
-pub const CONFIG_FILE: &str = "sidekick-mcp.json";
+pub const CONFIG_FILE: &str = "duskie-mcp.json";
 
 fn write_client_config(app: &AppHandle, token: &str) {
     let dir = app.state::<AppState>().ai_workdir.clone();
     let config = serde_json::json!({
         "mcpServers": {
-            "sidekick": {
+            "duskie": {
                 "type": "http",
                 "url": format!("http://127.0.0.1:{PORT}/mcp"),
                 "headers": { "Authorization": format!("Bearer {token}") }
@@ -135,7 +135,7 @@ fn tool_error(t: impl Into<String>) -> Value {
 
 /// Ask mode's tools, offered to every model the same way: the local model
 /// calls them directly, Claude Code and Codex through this server with a
-/// `sidekick_` prefix. Search and today keep their own versions below.
+/// `duskie_` prefix. Search and today keep their own versions below.
 const SHARED: &[&str] = &[
     "find_files",
     "web_search",
@@ -167,7 +167,7 @@ pub fn tools() -> Value {
             .filter(|d| SHARED.contains(&d.name.as_str()))
         {
             arr.push(json!({
-                "name": format!("sidekick_{}", d.name),
+                "name": format!("duskie_{}", d.name),
                 "description": d.description,
                 "inputSchema": d.parameters,
             }));
@@ -179,7 +179,7 @@ pub fn tools() -> Value {
 fn own_tools() -> Value {
     json!([
         {
-            "name": "sidekick_search",
+            "name": "duskie_search",
             "description": "Search the user's local history on this PC: text files in folders they chose, downloads, screenshots, actions they took, past Ask answers, and Claude Code sessions. Returns paths and matching snippets.",
             "inputSchema": {
                 "type": "object",
@@ -191,8 +191,8 @@ fn own_tools() -> Value {
             }
         },
         {
-            "name": "sidekick_notify",
-            "description": "Show a short note to the user on the Sidekick island at the top of their screen, for example when a long task finishes.",
+            "name": "duskie_notify",
+            "description": "Show a short note to the user on the Duskie island at the top of their screen, for example when a long task finishes.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -203,7 +203,7 @@ fn own_tools() -> Value {
             }
         },
         {
-            "name": "sidekick_open_url",
+            "name": "duskie_open_url",
             "description": "Open a web link (http or https) in the user's browser, optionally a specific one (chrome, edge, firefox, zen, brave) or a private window.",
             "inputSchema": {
                 "type": "object",
@@ -216,8 +216,8 @@ fn own_tools() -> Value {
             }
         },
         {
-            "name": "sidekick_permission",
-            "description": "Used by Claude Code itself to ask the user before a step in a Sidekick session. Never call it yourself.",
+            "name": "duskie_permission",
+            "description": "Used by Claude Code itself to ask the user before a step in a Duskie session. Never call it yourself.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -229,7 +229,7 @@ fn own_tools() -> Value {
             }
         },
         {
-            "name": "sidekick_time_today",
+            "name": "duskie_time_today",
             "description": "How the user's time at the computer was spent today, per app and project.",
             "inputSchema": { "type": "object", "properties": {} }
         }
@@ -254,8 +254,8 @@ async fn handle(app: &AppHandle, msg: &Value) -> Option<Value> {
                 json!({
                     "protocolVersion": version,
                     "capabilities": { "tools": {} },
-                    "serverInfo": { "name": "sidekick", "version": app.package_info().version.to_string() },
-                    "instructions": "Sidekick is the user's desktop assistant on their Windows PC. Use these tools instead of a shell: sidekick_find_files to find files and folders by name, sidekick_search for their history and file contents, sidekick_open and sidekick_show_in_folder to open things, sidekick_screen_text for what is on screen, sidekick_propose to offer a change as a button, sidekick_notify to tell them something finished."
+                    "serverInfo": { "name": "duskie", "version": app.package_info().version.to_string() },
+                    "instructions": "Duskie is the user's desktop assistant on their Windows PC. Use these tools instead of a shell: duskie_find_files to find files and folders by name, duskie_search for their history and file contents, duskie_open and duskie_show_in_folder to open things, duskie_screen_text for what is on screen, duskie_propose to offer a change as a button, duskie_notify to tell them something finished."
                 }),
             )
         }
@@ -281,10 +281,12 @@ pub async fn call_text(app: &AppHandle, name: &str, args: &Value) -> String {
 }
 
 async fn call(app: &AppHandle, name: &str, args: &Value) -> Value {
-    if let Some(shared) = name
+    // Clients set up before the rename still call the old names.
+    let renamed = name
         .strip_prefix("sidekick_")
-        .filter(|n| SHARED.contains(n))
-    {
+        .map(|n| format!("duskie_{n}"));
+    let name = renamed.as_deref().unwrap_or(name);
+    if let Some(shared) = name.strip_prefix("duskie_").filter(|n| SHARED.contains(n)) {
         let chat = crate::ask_tools::current_chat();
         // Claude Code and Codex steps show in Ask like the local model's.
         if !chat.is_empty() {
@@ -305,8 +307,8 @@ async fn call(app: &AppHandle, name: &str, args: &Value) -> Value {
         };
     }
     match name {
-        "sidekick_permission" => text(crate::sessions::claude_permission(app, args).await),
-        "sidekick_search" => {
+        "duskie_permission" => text(crate::sessions::claude_permission(app, args).await),
+        "duskie_search" => {
             let query = args["query"].as_str().unwrap_or_default();
             let limit = args["limit"].as_u64().unwrap_or(8).clamp(1, 20) as u32;
             let hits = crate::search::hybrid(app, query, SHAREABLE, limit).await;
@@ -329,7 +331,7 @@ async fn call(app: &AppHandle, name: &str, args: &Value) -> Value {
                 .collect();
             text(lines.join("\n"))
         }
-        "sidekick_notify" => {
+        "duskie_notify" => {
             let title: String = args["title"]
                 .as_str()
                 .unwrap_or("Claude Code")
@@ -362,7 +364,7 @@ async fn call(app: &AppHandle, name: &str, args: &Value) -> Value {
             );
             text("Shown on the island.")
         }
-        "sidekick_open_url" => {
+        "duskie_open_url" => {
             let exec = executor(&app.state::<AppState>());
             let mut a = json!({ "url": args["url"].as_str().unwrap_or_default() });
             if let Some(b) = args["browser"].as_str() {
@@ -376,7 +378,7 @@ async fn call(app: &AppHandle, name: &str, args: &Value) -> Value {
                 Err(e) => tool_error(e.to_string()),
             }
         }
-        "sidekick_time_today" => {
+        "duskie_time_today" => {
             let day = chrono::Local::now().format("%Y-%m-%d").to_string();
             let rows = lock(&app.state::<AppState>().storage)
                 .time_for_day(&day)
@@ -427,31 +429,31 @@ mod tests {
         assert_eq!(
             names,
             [
-                "sidekick_search",
-                "sidekick_notify",
-                "sidekick_open_url",
-                "sidekick_permission",
-                "sidekick_time_today",
-                "sidekick_find_files",
-                "sidekick_show_in_folder",
-                "sidekick_recent",
-                "sidekick_screen_text",
-                "sidekick_propose",
-                "sidekick_web_search",
-                "sidekick_read_page",
-                "sidekick_browser",
-                "sidekick_app_action",
-                "sidekick_desktop",
-                "sidekick_apps",
-                "sidekick_office",
-                "sidekick_recipes",
-                "sidekick_remember",
-                "sidekick_notifications",
-                "sidekick_pc_status",
-                "sidekick_storage",
-                "sidekick_pc_control",
-                "sidekick_windows",
-                "sidekick_open",
+                "duskie_search",
+                "duskie_notify",
+                "duskie_open_url",
+                "duskie_permission",
+                "duskie_time_today",
+                "duskie_find_files",
+                "duskie_show_in_folder",
+                "duskie_recent",
+                "duskie_screen_text",
+                "duskie_propose",
+                "duskie_web_search",
+                "duskie_read_page",
+                "duskie_browser",
+                "duskie_app_action",
+                "duskie_desktop",
+                "duskie_apps",
+                "duskie_office",
+                "duskie_recipes",
+                "duskie_remember",
+                "duskie_notifications",
+                "duskie_pc_status",
+                "duskie_storage",
+                "duskie_pc_control",
+                "duskie_windows",
+                "duskie_open",
             ]
         );
         assert!(

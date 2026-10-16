@@ -1,13 +1,13 @@
 id: system.update
 name: Updates
-description: When a new Sidekick release is out, say so once. Install downloads it, checks its checksum and opens the installer; nothing installs on its own.
+description: When a new Duskie release is out, say so once. Install downloads it, checks its checksum and opens the installer; nothing installs on its own.
 priority: 20
 cooldown_secs: 86400
 dedupe: "{{version}}"
 trigger:
   event: app.update_available
 suggestion:
-  title: "Sidekick {{version}} is out"
+  title: "Duskie {{version}} is out"
   detail: "You have {{current}}."
   options:
     - { label: Install, action: install_update, args: {} }

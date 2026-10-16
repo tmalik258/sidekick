@@ -12,7 +12,7 @@ use crate::{
 };
 
 /// Chat through the user's own Codex CLI (`codex exec`), so answers come from
-/// their ChatGPT plan or OpenAI key. Like Claude Code, Sidekick never reads
+/// their ChatGPT plan or OpenAI key. Like Claude Code, Duskie never reads
 /// Codex's credentials; it only runs the CLI the user already signed in to.
 /// It runs read-only in an empty folder, so it cannot change anything.
 /// A `codex app-server` session per chat is kept warm; older CLIs without
@@ -24,14 +24,14 @@ pub struct Codex {
     pub model: Option<String>,
     /// Folder the CLI runs in. Kept empty so it has no project to touch.
     pub workdir: PathBuf,
-    /// Sidekick's own MCP server (link and token) for search and notes.
+    /// Duskie's own MCP server (link and token) for search and notes.
     pub mcp: Option<(String, String)>,
 }
 
 const SCREENSHOT: &str = "screen.png";
-/// Codex reads the token for Sidekick's server from this variable, so it
+/// Codex reads the token for Duskie's server from this variable, so it
 /// never appears on a command line.
-const TOKEN_VAR: &str = "SIDEKICK_MCP_TOKEN";
+const TOKEN_VAR: &str = "DUSKIE_MCP_TOKEN";
 
 impl Codex {
     pub fn resolve(&self) -> Option<PathBuf> {
@@ -67,7 +67,7 @@ impl Codex {
         args
     }
 
-    /// `-c` settings that add Sidekick's MCP server.
+    /// `-c` settings that add Duskie's MCP server.
     fn mcp_args(&self) -> Vec<String> {
         let mut args = Vec::new();
         if let Some((url, _)) = self
@@ -82,7 +82,7 @@ impl Codex {
                 "mcp_servers.sidekick.bearer_token_env_var=\"{TOKEN_VAR}\""
             ));
             // `codex exec` never asks, so a tool that needs approval is
-            // refused. Sidekick's tools are safe (changes wait for a tap).
+            // refused. Duskie's tools are safe (changes wait for a tap).
             args.push("-c".into());
             args.push("mcp_servers.sidekick.default_tools_approval_mode=\"approve\"".into());
         }
@@ -313,7 +313,7 @@ impl Session {
     }
 
     async fn decline(&mut self, id: Value) -> Result<(), AiError> {
-        self.send(&json!({ "id": id, "error": { "code": -32601, "message": "Sidekick runs Codex read-only" } }))
+        self.send(&json!({ "id": id, "error": { "code": -32601, "message": "Duskie runs Codex read-only" } }))
             .await
     }
 

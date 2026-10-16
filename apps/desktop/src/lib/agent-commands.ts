@@ -28,7 +28,7 @@ const controls: [string, string][] = [
 export const CONTROL_COMMANDS: AgentCommand[] = controls.map(([name, description]) => ({
   name: `/${name}`,
   description,
-  group: "Sidekick",
+  group: "Duskie",
   execution: "control",
 }));
 export const TERMINAL_COMMANDS: AgentCommand[] = [

@@ -1,5 +1,5 @@
 //! Installing the browser extension. Browsers do not let apps add
-//! extensions on their own, so Sidekick does everything around the one
+//! extensions on their own, so Duskie does everything around the one
 //! step the browser keeps for the user: it puts the extension in a fixed
 //! folder, copies that folder's path, and opens the browser's extensions
 //! page. Once loaded, the extension asks to connect by itself.
@@ -38,9 +38,9 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// A folder that stays put across Sidekick updates, so the browser keeps
+/// A folder that stays put across Duskie updates, so the browser keeps
 /// finding the extension. Under this build's own local data (dev and the
-/// installed app each have theirs). Refreshed when Sidekick ships a newer one.
+/// installed app each have theirs). Refreshed when Duskie ships a newer one.
 pub fn folder(app: &AppHandle) -> Result<PathBuf, String> {
     let from = shipped(app).ok_or("The extension is missing from this install")?;
     let to = app
@@ -121,10 +121,10 @@ pub struct Guide {
 pub fn steps(firefox: bool) -> Vec<String> {
     if firefox {
         vec![
-            "Sidekick opened the Temporary Extensions page.".into(),
+            "Duskie opened the Temporary Extensions page.".into(),
             "Click Load Temporary Add-on.".into(),
             "Paste the file path (Ctrl+V) into the file box and press Enter — it is copied.".into(),
-            "Press Allow on Sidekick's island when it asks.".into(),
+            "Press Allow on Duskie's island when it asks.".into(),
             "Firefox forgets temporary add-ons when it restarts; do this again then, or use a signed build.".into(),
         ]
     } else {
@@ -133,7 +133,7 @@ pub fn steps(firefox: bool) -> Vec<String> {
             open.into(),
             "Turn on Developer mode (top right), then click Load unpacked.".into(),
             "Copy folder path below (or its Alt key), paste it into the folder box and press Enter, then Select Folder.".into(),
-            "Press Allow on Sidekick's island when it asks.".into(),
+            "Press Allow on Duskie's island when it asks.".into(),
         ]
     }
 }

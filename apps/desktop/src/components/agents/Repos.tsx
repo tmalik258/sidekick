@@ -2,7 +2,8 @@
 
 // The Repos tab: every repo with its branch, and only what needs you
 // coloured (behind, failing checks, reviews). A row opens to its actions:
-// a failed check says what failed and offers the fix right there.
+// a failed check says what failed and offers the fix right there. Changes
+// opens the Git dock for that repo (stage, commit, amend).
 
 import { useEffect, useState } from "react";
 import { setTab, startHere, startSession } from "@/lib/agents";
@@ -11,6 +12,7 @@ import { useCached } from "@/lib/cache";
 import { useNow } from "@/lib/hooks";
 import type { RepoRow, ReposOverview } from "@/lib/types";
 import { Tip } from "../Tip";
+import { GitDock } from "./GitDock";
 
 const CI_COLOR = { pass: "#30d158", fail: "#ff453a", pending: "#ff9f0a", none: "rgb(255 255 255 / 0.25)" } as const;
 const CI_LABEL = { pass: "Checks pass", fail: "Checks failing", pending: "Checks running", none: "No checks" } as const;
@@ -93,6 +95,7 @@ export function Repos({ maxHeight }: { maxHeight?: number }) {
   const [checked, setChecked] = useState(() => Date.now());
   const now = useNow(10_000);
   const [open, setOpen] = useState<string | null>(null);
+  const [gitPath, setGitPath] = useState<string | null>(null);
   const [note, setNote] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
@@ -109,6 +112,13 @@ export function Repos({ maxHeight }: { maxHeight?: number }) {
   };
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new answer means a fresh check
   useEffect(() => setChecked(Date.now()), [data]);
+  if (gitPath) {
+    return (
+      <div className="ak-repos flex min-h-0 flex-col gap-2">
+        <GitDock path={gitPath} onClose={() => setGitPath(null)} />
+      </div>
+    );
+  }
   if (!data) return <ReposLoading />;
   if (data.repos.length === 0) {
     return (
@@ -235,6 +245,9 @@ export function Repos({ maxHeight }: { maxHeight?: number }) {
                       </button>
                     ))}
                   <div className="ak-rbtns">
+                    <button type="button" className="ak-chip primary chip" onClick={() => setGitPath(r.path)}>
+                      Changes
+                    </button>
                     {r.behind > 0 && (
                       <button type="button" className="ak-chip chip" onClick={() => pull(r, r.changed > 0)}>
                         {r.changed > 0 ? "Stash, pull, put back" : "Pull"}

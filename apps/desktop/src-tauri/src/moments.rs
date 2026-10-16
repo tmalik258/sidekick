@@ -8,8 +8,8 @@ use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 
 use chrono::{Datelike, Local, NaiveDate, Timelike, Weekday};
+use duskie_core::{AppTime, Event};
 use serde_json::Value;
-use sidekick_core::{AppTime, Event};
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, lock};
@@ -43,7 +43,7 @@ pub fn on_window(payload: &Value) {
         return;
     }
     // Lock screen is not somewhere you were working.
-    if sidekick_sensors::is_lock_ui(exe) || sidekick_sensors::is_lock_ui(app) {
+    if duskie_sensors::is_lock_ui(exe) || duskie_sensors::is_lock_ui(app) {
         return;
     }
     if let Ok(mut w) = WINDOWS.lock() {
@@ -75,7 +75,7 @@ pub fn back_event(
     }
     let chat = chat.unwrap_or_default();
     if !chat.is_empty() {
-        recap.push(format!("Last Sidekick chat: {chat}"));
+        recap.push(format!("Last Duskie chat: {chat}"));
     }
     let short: String = title.chars().take(70).collect();
     Some(Event::new(
@@ -221,7 +221,7 @@ pub fn start(app: &AppHandle) {
                 late_on = Some(night);
                 // Only offer what is not on already (night light on a
                 // schedule reads as on at this hour).
-                let pc = tokio::task::spawn_blocking(sidekick_actions::pc::read_state)
+                let pc = tokio::task::spawn_blocking(duskie_actions::pc::read_state)
                     .await
                     .unwrap_or_default();
                 state.bus.publish(Event::new(
@@ -258,10 +258,10 @@ pub fn start(app: &AppHandle) {
 }
 
 fn worklog_path() -> Option<PathBuf> {
-    dirs::document_dir().map(|d| d.join("Sidekick").join("worklog.md"))
+    dirs::document_dir().map(|d| d.join("Duskie").join("worklog.md"))
 }
 
-/// Appends a dated entry to Documents\Sidekick\worklog.md.
+/// Appends a dated entry to Documents\Duskie\worklog.md.
 pub fn save_log(text: &str) -> Result<(String, String), String> {
     let path = worklog_path().ok_or("No Documents folder")?;
     if let Some(dir) = path.parent() {
@@ -304,7 +304,7 @@ mod tests {
         assert_eq!(e.payload["app"], "Chrome");
         let recap = e.payload["recap"].as_str().unwrap();
         assert!(recap.contains("- Code: main.rs - sidekick"));
-        assert!(recap.contains("Last Sidekick chat: Fix port 3000"));
+        assert!(recap.contains("Last Duskie chat: Fix port 3000"));
     }
 
     #[test]

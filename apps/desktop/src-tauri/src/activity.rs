@@ -57,7 +57,7 @@ fn normalize(path: &str) -> String {
     path.replace('\\', "/").to_lowercase()
 }
 
-pub fn exclude_download(app: &AppHandle, event: &sidekick_core::Event) {
+pub fn exclude_download(app: &AppHandle, event: &duskie_core::Event) {
     if event.kind != "browser.download" {
         return;
     }
@@ -87,7 +87,7 @@ pub fn exclude_download(app: &AppHandle, event: &sidekick_core::Event) {
     let _ = app.emit("activity://changed", value);
 }
 
-pub fn download_excluded(event: &sidekick_core::Event) -> bool {
+pub fn download_excluded(event: &duskie_core::Event) -> bool {
     if !matches!(
         event.kind.as_str(),
         "file.download_progress" | "file.download_completed"
@@ -121,11 +121,11 @@ pub fn activity_reconcile(app: AppHandle) -> bool {
         matches!(a.source.as_str(), "action" | "open" | "chat" | "agent")
             && !matches!(a.phase, Phase::Completed | Phase::Failed)
     }) || !lock(&app.state::<crate::state::AppState>().chats).is_empty()
-        || crate::mascot::current(&app) != sidekick_core::MascotState::Working
+        || crate::mascot::current(&app) != duskie_core::MascotState::Working
     {
         return false;
     }
-    crate::mascot::force(&app, sidekick_core::MascotState::Idle);
+    crate::mascot::force(&app, duskie_core::MascotState::Idle);
     drop(registry);
     crate::suggestions::resume(&app);
     true
@@ -370,7 +370,7 @@ impl Drop for Guard {
     }
 }
 
-pub fn observe(app: &AppHandle, event: &sidekick_core::Event) {
+pub fn observe(app: &AppHandle, event: &duskie_core::Event) {
     let p = &event.payload;
     if event.kind == "browser.download" {
         if let Some(path) = p["filename"].as_str() {
@@ -675,13 +675,13 @@ mod tests {
         let key = normalize(path);
         lock(&EXCLUDED_DOWNLOADS)
             .insert(key.clone(), chrono::Utc::now().timestamp_millis() + 120_000);
-        let event = sidekick_core::Event::new(
+        let event = duskie_core::Event::new(
             "file.download_progress",
             "downloads",
             serde_json::json!({"destination": "c:\\downloads\\private-activity-test.zip"}),
         );
         assert!(download_excluded(&event));
-        let other = sidekick_core::Event::new(
+        let other = duskie_core::Event::new(
             "file.download_progress",
             "downloads",
             serde_json::json!({"destination": "C:/Downloads/unrelated.zip"}),

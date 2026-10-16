@@ -20,8 +20,8 @@ pub struct SystemLook {
 pub async fn system_look() -> SystemLook {
     // Registry and power status: off the UI thread.
     tauri::async_runtime::spawn_blocking(|| SystemLook {
-        transparency: sidekick_sensors::transparency_effects(),
-        battery_saver: sidekick_sensors::battery_saver(),
+        transparency: duskie_sensors::transparency_effects(),
+        battery_saver: duskie_sensors::battery_saver(),
     })
     .await
     .unwrap_or_default()
@@ -34,7 +34,7 @@ const LOG_LINES: usize = 60;
 /// Nothing personal: secrets masked, the user's home folder (and so their
 /// name) replaced by `~`.
 pub fn scrub(text: &str) -> String {
-    let masked = sidekick_sensors::classify::mask(text).into_owned();
+    let masked = duskie_sensors::classify::mask(text).into_owned();
     match dirs::home_dir() {
         Some(home) => {
             let home = home.display().to_string();
@@ -73,7 +73,7 @@ pub async fn diagnostics(app: AppHandle) -> String {
         (lock(&state.settings).clone(), state.data_dir.clone())
     };
     let mut out = format!(
-        "Sidekick {}\n{}\nMemory: {} GB\n",
+        "Duskie {}\n{}\nMemory: {} GB\n",
         app.package_info().version,
         sysinfo::System::long_os_version().unwrap_or_else(|| "Unknown OS".into()),
         sysinfo::System::new_with_specifics(
@@ -91,8 +91,8 @@ pub async fn diagnostics(app: AppHandle) -> String {
         "Voice: {}, Island: {}, Transparency effects: {}, Battery saver: {}\n",
         if settings.voice.enabled { "on" } else { "off" },
         settings.island_color,
-        sidekick_sensors::transparency_effects(),
-        sidekick_sensors::battery_saver(),
+        duskie_sensors::transparency_effects(),
+        duskie_sensors::battery_saver(),
     ));
     let timings = crate::timings::recent(&app, 6);
     if !timings.is_empty() {
@@ -151,7 +151,7 @@ pub async fn report_save(app: AppHandle) -> CmdResult<String> {
             ));
         }
         let name = format!(
-            "Sidekick report {}.txt",
+            "Duskie report {}.txt",
             chrono::Local::now().format("%Y-%m-%d %H%M")
         );
         let path = dir.join(name);

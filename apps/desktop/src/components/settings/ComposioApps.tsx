@@ -1,12 +1,12 @@
 "use client";
 
 // The apps in a signed-in Composio account: connected ones as chips, and the
-// ones Sidekick can use with an Add each. Settings > Apps and the welcome's
+// ones Duskie can use with an Add each. Settings > Apps and the welcome's
 // Composio row both show this.
 
 import { useEffect, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
-import { startWaiting, useSidekick } from "@/lib/store";
+import { startWaiting, useDuskie } from "@/lib/store";
 import type { ComposioStatus } from "@/lib/types";
 import { Tip } from "../Tip";
 import { Button } from "./ui";
@@ -21,7 +21,7 @@ export function ComposioApps({
   /** Where the island returns once an app finishes connecting. */
   resumeTab: string;
 }) {
-  const justDone = useSidekick((s) => s.justDone);
+  const justDone = useDuskie((s) => s.justDone);
   const [connecting, setConnecting] = useState<string | null>(null);
   useEffect(() => {
     const off = listen(EVENTS.composioChanged, () => setConnecting(null));
@@ -67,7 +67,7 @@ export function ComposioApps({
       )}
       {missing.length > 0 && (
         <div className="flex flex-col gap-1.5 text-[12.5px]">
-          <p className="px-0.5 text-[12px] text-(--muted)">Sidekick can also use</p>
+          <p className="px-0.5 text-[12px] text-(--muted)">Duskie can also use</p>
           <ul className="flex flex-col gap-1.5">
             {missing.map((a) => (
               <li key={a.slug} className="flex items-center gap-2.5 rounded-xl border border-(--border) px-2.5 py-2">

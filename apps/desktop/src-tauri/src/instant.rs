@@ -78,7 +78,7 @@ pub fn refresh(app: &AppHandle) {
         .is_none_or(|(at, _)| at.elapsed() > APPS_FRESH);
     if stale && !APPS_BUSY.swap(true, Ordering::SeqCst) {
         std::thread::spawn(|| {
-            if let Ok(list) = sidekick_actions::pc::installed_apps() {
+            if let Ok(list) = duskie_actions::pc::installed_apps() {
                 *lock(&APPS) = Some((Instant::now(), list));
             }
             APPS_BUSY.store(false, Ordering::SeqCst);
@@ -118,9 +118,9 @@ pub fn find(app: &AppHandle, query: &str) -> Results {
     if query.chars().count() < 2 {
         return Results::default();
     }
-    if let Some(answer) = sidekick_calc::calculate(query) {
+    if let Some(answer) = duskie_calc::calculate(query) {
         return Results {
-            calc: Some(sidekick_calc::format(answer)),
+            calc: Some(duskie_calc::format(answer)),
             ..Results::default()
         };
     }
@@ -163,11 +163,11 @@ pub fn rank_apps(list: &[(String, String)], query: &str, usage: &[(String, i64)]
             .unwrap_or(0)
             / 60
     };
-    let mut hits: Vec<AppHit> = sidekick_actions::pc::match_apps(list, query)
+    let mut hits: Vec<AppHit> = duskie_actions::pc::match_apps(list, query)
         .into_iter()
         .take(8)
         .map(|(name, id)| AppHit {
-            browser: sidekick_actions::browser_for_app(name, id).map(str::to_owned),
+            browser: duskie_actions::browser_for_app(name, id).map(str::to_owned),
             name: name.clone(),
             id: id.clone(),
             minutes: minutes(name),
@@ -200,7 +200,7 @@ fn file_roots(app: &AppHandle) -> Vec<PathBuf> {
         .map(PathBuf::from)
         .collect();
     let code = if configured.is_empty() {
-        sidekick_sensors::repos::ReposSensor::default_roots()
+        duskie_sensors::repos::ReposSensor::default_roots()
     } else {
         configured
     };

@@ -1,9 +1,9 @@
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
-use sidekick_core::{
+use duskie_core::{
     ActionRecord, Event, MascotEvent, MascotState, Pause, Settings, SkillPref, StoredEvent,
 };
-use sidekick_skills::Trust;
+use duskie_skills::Trust;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
 
@@ -17,18 +17,26 @@ use crate::state::{AppState, HitRect, Suggestion, executor, gate_state, lock};
 use crate::suggestions;
 use crate::windows;
 
+mod attention;
 mod chat;
 mod cloud;
 mod data;
 mod diag;
+mod gitdock;
+mod mcp;
 mod notify;
+mod servers;
 mod setup;
 mod voice;
+pub use attention::*;
 pub use chat::*;
 pub use cloud::*;
 pub use data::*;
 pub use diag::*;
+pub use gitdock::*;
+pub use mcp::*;
 pub use notify::*;
+pub use servers::*;
 pub use setup::*;
 pub use voice::*;
 
@@ -272,19 +280,19 @@ pub struct CapabilityInfo {
     skill_errors: Vec<String>,
 }
 
-/// What browsers and tools Sidekick found, optionally scanning again.
+/// What browsers and tools Duskie found, optionally scanning again.
 #[tauri::command]
 pub async fn capabilities_get(app: AppHandle, rescan: bool) -> CmdResult<CapabilityInfo> {
     let state = app.state::<AppState>();
     if rescan {
-        let caps = tauri::async_runtime::spawn_blocking(sidekick_actions::Capabilities::detect)
+        let caps = tauri::async_runtime::spawn_blocking(duskie_actions::Capabilities::detect)
             .await
             .map_err(|e| e.to_string())?;
         *state
             .executor
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner) =
-            std::sync::Arc::new(sidekick_actions::Executor::new(caps));
+            std::sync::Arc::new(duskie_actions::Executor::new(caps));
     }
     let exec = executor(&state);
     Ok(CapabilityInfo {
@@ -426,12 +434,12 @@ pub fn apply_settings(app: &AppHandle, next: Settings) -> CmdResult<Settings> {
 /// reloads all skills. Returns the skill's name.
 #[tauri::command]
 pub fn skill_install(state: State<'_, AppState>, yaml: String) -> CmdResult<String> {
-    let skill = sidekick_skills::validate_new(&yaml)?;
+    let skill = duskie_skills::validate_new(&yaml)?;
     std::fs::create_dir_all(&state.skills_dir).map_err(|e| e.to_string())?;
     let path = state.skills_dir.join(format!("{}.yaml", skill.id));
     std::fs::write(&path, yaml).map_err(|e| format!("could not save the skill: {e}"))?;
-    let (skills, errors) = sidekick_skills::load_all(&state.skills_dir);
-    *lock(&state.engine) = sidekick_skills::Engine::new(skills);
+    let (skills, errors) = duskie_skills::load_all(&state.skills_dir);
+    *lock(&state.engine) = duskie_skills::Engine::new(skills);
     *lock(&state.skill_errors) = errors;
     log::info!("installed skill {} at {}", skill.id, path.display());
     Ok(skill.name)

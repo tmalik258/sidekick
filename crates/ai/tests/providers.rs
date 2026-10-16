@@ -1,7 +1,7 @@
 //! Providers against stand-ins: a fake `claude` script and a tiny local
 //! server that speaks the OpenAI streaming format.
 
-use sidekick_ai::{AiProvider, CancellationToken, ChatRequest, Message, OpenAiCompat, Sink};
+use duskie_ai::{AiProvider, CancellationToken, ChatRequest, Message, OpenAiCompat, Sink};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 
@@ -30,7 +30,7 @@ async fn run(p: &dyn AiProvider, prompt: &str) -> (Result<String, String>, Strin
 #[tokio::test]
 async fn claude_code_streams_and_keeps_the_session() {
     use std::os::unix::fs::PermissionsExt;
-    let dir = std::env::temp_dir().join(format!("sidekick-ai-test-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("duskie-ai-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let script = dir.join("claude");
     // Like `claude -p --input-format stream-json`: one message per line on
@@ -53,7 +53,7 @@ done
     .unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
 
-    let p = sidekick_ai::ClaudeCode {
+    let p = duskie_ai::ClaudeCode {
         mcp_config: None,
         path: Some(script),
         model: None,
@@ -72,7 +72,7 @@ done
         messages: vec![
             Message::user("hello; $(whoami)"),
             Message {
-                role: sidekick_ai::Role::Assistant,
+                role: duskie_ai::Role::Assistant,
                 content: first,
             },
             Message::user("and again"),
@@ -85,7 +85,7 @@ done
         .await
         .unwrap();
     assert_eq!(second, "2 you said: and again");
-    sidekick_ai::close_claude_sessions();
+    duskie_ai::close_claude_sessions();
     let _ = std::fs::remove_dir_all(dir);
 }
 

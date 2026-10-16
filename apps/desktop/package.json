@@ -15,7 +15,9 @@
     "speed": "node scripts/speed.mjs",
     "e2e": "node scripts/e2e.mjs",
     "ask-eval": "node scripts/ask-eval.mjs",
-    "ask-check": "node scripts/ask-check.mjs"
+    "ask-check": "node scripts/ask-check.mjs",
+    "test": "vitest run",
+    "check:name": "node scripts/check-name.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.1",
@@ -34,6 +36,7 @@
     "@types/react-dom": "^19",
     "playwright": "1.56.1",
     "tailwindcss": "^4.3.3",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^3.2.7"
   }
 }

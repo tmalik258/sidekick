@@ -11,9 +11,9 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use duskie_core::Event;
+use duskie_sensors::ReposSensor;
 use serde_json::{Value, json};
-use sidekick_core::Event;
-use sidekick_sensors::ReposSensor;
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, lock};
@@ -195,7 +195,7 @@ pub fn incoming(repo: &Path) -> Option<Value> {
 
 /// What the main branch gained while you work on a feature branch.
 pub fn base_moved(repo: &Path) -> Option<Value> {
-    let base = sidekick_actions::dev::main_branch(repo);
+    let base = duskie_actions::dev::main_branch(repo);
     let branch = git(repo, &["rev-parse", "--abbrev-ref", "HEAD"])?;
     if branch == base || branch == "HEAD" {
         return None;
@@ -232,7 +232,7 @@ pub fn base_moved(repo: &Path) -> Option<Value> {
 
 /// Fetches one repo and says so when it has new commits not told about yet.
 pub fn fetch_and_tell(app: &AppHandle, repo: &Path) {
-    sidekick_sensors::repos::fetch(repo, FETCH_TIMEOUT);
+    duskie_sensors::repos::fetch(repo, FETCH_TIMEOUT);
     with(|w| w.fetched.insert(repo.to_owned(), Instant::now()));
     if let Some(payload) = base_moved(repo) {
         // Told once per new main commit, under its own key.
@@ -289,7 +289,7 @@ fn gh_token() -> Option<String> {
 /// Asks GitHub whether the active repo's branch moved. A "not modified"
 /// answer does not count against the rate limit.
 async fn github_moved(http: &reqwest::Client, repo: &Path, token: &str) -> bool {
-    let Some(url) = sidekick_sensors::repos::github_url(repo) else {
+    let Some(url) = duskie_sensors::repos::github_url(repo) else {
         return false;
     };
     let slug = url.trim_start_matches("https://github.com/").to_owned();
@@ -310,7 +310,7 @@ async fn github_moved(http: &reqwest::Client, repo: &Path, token: &str) -> bool 
             "https://api.github.com/repos/{slug}/commits/{branch}"
         ))
         .header("Accept", "application/vnd.github.sha")
-        .header("User-Agent", "Sidekick")
+        .header("User-Agent", "Duskie")
         .bearer_auth(token);
     if let Some(tag) = with(|w| w.etags.get(&key).cloned()) {
         req = req.header("If-None-Match", tag);
@@ -476,7 +476,7 @@ mod tests {
         std::fs::write(a.join("f"), "2").unwrap();
         run(&a, &["commit", "-qam", "fix login"]);
         run(&a, &["push", "-q", "origin", "HEAD:main"]);
-        sidekick_sensors::repos::fetch(&b, FETCH_TIMEOUT);
+        duskie_sensors::repos::fetch(&b, FETCH_TIMEOUT);
         let v = incoming(&b).unwrap();
         assert_eq!(v["behind"], 1);
         assert_eq!(v["commits"], "Ana: fix login");
@@ -489,7 +489,7 @@ mod tests {
         std::fs::write(a.join("f"), "3").unwrap();
         run(&a, &["commit", "-qam", "tidy"]);
         run(&a, &["push", "-q", "origin", "HEAD:main"]);
-        sidekick_sensors::repos::fetch(&b, FETCH_TIMEOUT);
+        duskie_sensors::repos::fetch(&b, FETCH_TIMEOUT);
         let m = base_moved(&b).unwrap();
         assert_eq!(m["base"], "main");
         assert_eq!(m["behind"], 1);

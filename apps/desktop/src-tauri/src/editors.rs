@@ -42,7 +42,7 @@ pub fn refresh(app: &AppHandle) {
         .executor
         .write()
         .unwrap_or_else(std::sync::PoisonError::into_inner) =
-        std::sync::Arc::new(sidekick_actions::Executor::new(caps));
+        std::sync::Arc::new(duskie_actions::Executor::new(caps));
 }
 
 /// Picks the editor now and again every half hour.

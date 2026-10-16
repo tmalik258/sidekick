@@ -365,7 +365,7 @@ pub fn read_state() -> PcState {
     state
 }
 
-/// Forgets the last reading (Sidekick just changed something).
+/// Forgets the last reading (Duskie just changed something).
 fn state_changed() {
     if let Ok(mut cache) = STATE_CACHE.lock() {
         *cache = None;
@@ -612,8 +612,8 @@ pub fn control(what: &str, value: Option<u8>, page: Option<&str>) -> Result<Outc
             let v = level(value)?.to_string();
             let out = powershell(
                 "$m=Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBrightnessMethods -ErrorAction SilentlyContinue; \
-                 if($m){$m | Invoke-CimMethod -MethodName WmiSetBrightness -Arguments @{Timeout=1;Brightness=[byte]$env:SIDEKICK_LEVEL} | Out-Null; 'ok'}",
-                &[("SIDEKICK_LEVEL", &v)],
+                 if($m){$m | Invoke-CimMethod -MethodName WmiSetBrightness -Arguments @{Timeout=1;Brightness=[byte]$env:DUSKIE_LEVEL} | Out-Null; 'ok'}",
+                &[("DUSKIE_LEVEL", &v)],
             )?;
             if out.trim() != "ok" {
                 return Err(ActionError::Failed(
@@ -627,9 +627,9 @@ pub fn control(what: &str, value: Option<u8>, page: Option<&str>) -> Result<Outc
             let light = if what == "dark_mode_on" { "0" } else { "1" };
             powershell(
                 "$p='HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize'; \
-                 Set-ItemProperty $p AppsUseLightTheme ([int]$env:SIDEKICK_LIGHT); \
-                 Set-ItemProperty $p SystemUsesLightTheme ([int]$env:SIDEKICK_LIGHT)",
-                &[("SIDEKICK_LIGHT", light)],
+                 Set-ItemProperty $p AppsUseLightTheme ([int]$env:DUSKIE_LIGHT); \
+                 Set-ItemProperty $p SystemUsesLightTheme ([int]$env:DUSKIE_LIGHT)",
+                &[("DUSKIE_LIGHT", light)],
             )?;
             msg(if light == "0" {
                 "Dark mode on"
@@ -772,7 +772,7 @@ pub fn windows() -> Result<Vec<Window>, ActionError> {
 
 /// Finds the first window whose app or title has the query in it, as `$p`.
 fn match_window(then: &str) -> String {
-    format!("{FIND_APP}$p=Find-App $env:SIDEKICK_QUERY\n{then}")
+    format!("{FIND_APP}$p=Find-App $env:DUSKIE_QUERY\n{then}")
 }
 
 fn query(q: &str) -> Result<String, ActionError> {
@@ -791,7 +791,7 @@ pub fn focus_window(q: &str) -> Result<Outcome, ActionError> {
         &match_window(
             "if($p){ (New-Object -ComObject WScript.Shell).AppActivate($p.Id) | Out-Null; if($p.MainWindowTitle){ $p.MainWindowTitle } else { $p.ProcessName } }",
         ),
-        &[("SIDEKICK_QUERY", &q)],
+        &[("DUSKIE_QUERY", &q)],
     )?;
     match out.trim() {
         "" => Err(ActionError::Failed(format!("no open window matches {q}"))),
@@ -807,7 +807,7 @@ pub fn close_window(q: &str) -> Result<Outcome, ActionError> {
         &match_window(
             "if($p){ $t= if($p.MainWindowTitle){ $p.MainWindowTitle } else { $p.ProcessName }; $p.CloseMainWindow() | Out-Null; $t }",
         ),
-        &[("SIDEKICK_QUERY", &q)],
+        &[("DUSKIE_QUERY", &q)],
     )?;
     match out.trim() {
         "" => Err(ActionError::Failed(format!("no open window matches {q}"))),
@@ -827,8 +827,8 @@ pub fn launch_app_id(id: &str) -> Result<Outcome, ActionError> {
         return Err(ActionError::Invalid("not an app id".into()));
     }
     powershell(
-        "Start-Process \"shell:AppsFolder\\$env:SIDEKICK_APP_ID\"",
-        &[("SIDEKICK_APP_ID", id)],
+        "Start-Process \"shell:AppsFolder\\$env:DUSKIE_APP_ID\"",
+        &[("DUSKIE_APP_ID", id)],
     )?;
     Ok(Outcome::msg("Opened"))
 }
@@ -973,8 +973,8 @@ pub fn launch_app(q: &str) -> Result<Outcome, ActionError> {
         }));
     };
     powershell(
-        "Start-Process \"shell:AppsFolder\\$env:SIDEKICK_APP_ID\"",
-        &[("SIDEKICK_APP_ID", &id)],
+        "Start-Process \"shell:AppsFolder\\$env:DUSKIE_APP_ID\"",
+        &[("DUSKIE_APP_ID", &id)],
     )?;
     Ok(Outcome::msg(format!("Opened {name}")))
 }

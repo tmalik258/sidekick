@@ -1501,6 +1501,168 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
+name = "duskie-actions"
+version = "0.2.2"
+dependencies = [
+ "arboard",
+ "clipboard-win",
+ "dirs 7.0.0",
+ "duskie-sensors",
+ "listeners",
+ "log",
+ "open",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "thiserror 2.0.21",
+ "tokio",
+ "trash",
+ "ulid",
+ "which 8.0.6",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "duskie-ai"
+version = "0.2.2"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "futures-util",
+ "log",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "which 8.0.6",
+]
+
+[[package]]
+name = "duskie-calc"
+version = "0.2.2"
+
+[[package]]
+name = "duskie-core"
+version = "0.2.2"
+dependencies = [
+ "chrono",
+ "log",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "ulid",
+]
+
+[[package]]
+name = "duskie-desktop"
+version = "0.2.2"
+dependencies = [
+ "arboard",
+ "async-trait",
+ "chrono",
+ "dirs 7.0.0",
+ "duskie-actions",
+ "duskie-ai",
+ "duskie-calc",
+ "duskie-core",
+ "duskie-layout",
+ "duskie-sensors",
+ "duskie-skills",
+ "duskie-voice",
+ "getrandom 0.3.4",
+ "keyring",
+ "log",
+ "regex",
+ "reqwest 0.12.28",
+ "rfd",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sysinfo",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-log",
+ "tauri-plugin-single-instance",
+ "tokio",
+ "tokio-rustls",
+ "trash",
+ "ulid",
+ "webpki-roots 0.26.11",
+ "which 8.0.6",
+ "windows-sys 0.61.2",
+ "xcap",
+]
+
+[[package]]
+name = "duskie-layout"
+version = "0.2.2"
+dependencies = [
+ "serde",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "duskie-sensors"
+version = "0.2.2"
+dependencies = [
+ "active-win-pos-rs",
+ "arboard",
+ "chrono",
+ "chrono-tz",
+ "dirs 7.0.0",
+ "duskie-core",
+ "listeners",
+ "log",
+ "notify",
+ "regex",
+ "reqwest 0.12.28",
+ "rrule",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sysinfo",
+ "tokio",
+ "ulid",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "duskie-skills"
+version = "0.2.2"
+dependencies = [
+ "duskie-core",
+ "log",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "duskie-voice"
+version = "0.2.2"
+dependencies = [
+ "bzip2 0.4.4",
+ "cpal",
+ "log",
+ "reqwest 0.12.28",
+ "serde_json",
+ "sha2",
+ "sherpa-onnx",
+ "tar",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5187,166 +5349,6 @@ name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
-
-[[package]]
-name = "sidekick-actions"
-version = "0.2.2"
-dependencies = [
- "arboard",
- "clipboard-win",
- "dirs 7.0.0",
- "listeners",
- "log",
- "open",
- "serde",
- "serde_json",
- "sidekick-sensors",
- "sysinfo",
- "thiserror 2.0.21",
- "tokio",
- "trash",
- "ulid",
- "which 8.0.6",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "sidekick-ai"
-version = "0.2.2"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "futures-util",
- "log",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "tokio-util",
- "which 8.0.6",
-]
-
-[[package]]
-name = "sidekick-calc"
-version = "0.2.2"
-
-[[package]]
-name = "sidekick-core"
-version = "0.2.2"
-dependencies = [
- "chrono",
- "log",
- "rusqlite",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tokio",
- "ulid",
-]
-
-[[package]]
-name = "sidekick-desktop"
-version = "0.2.2"
-dependencies = [
- "arboard",
- "async-trait",
- "chrono",
- "dirs 7.0.0",
- "getrandom 0.3.4",
- "keyring",
- "log",
- "regex",
- "reqwest 0.12.28",
- "rfd",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "sidekick-actions",
- "sidekick-ai",
- "sidekick-calc",
- "sidekick-core",
- "sidekick-layout",
- "sidekick-sensors",
- "sidekick-skills",
- "sidekick-voice",
- "sysinfo",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-log",
- "tauri-plugin-single-instance",
- "tokio",
- "trash",
- "ulid",
- "which 8.0.6",
- "windows-sys 0.61.2",
- "xcap",
-]
-
-[[package]]
-name = "sidekick-layout"
-version = "0.2.2"
-dependencies = [
- "serde",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "sidekick-sensors"
-version = "0.2.2"
-dependencies = [
- "active-win-pos-rs",
- "arboard",
- "chrono",
- "chrono-tz",
- "dirs 7.0.0",
- "listeners",
- "log",
- "notify",
- "regex",
- "reqwest 0.12.28",
- "rrule",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "sidekick-core",
- "sysinfo",
- "tokio",
- "ulid",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "sidekick-skills"
-version = "0.2.2"
-dependencies = [
- "log",
- "regex",
- "serde",
- "serde_json",
- "serde_yaml",
- "sidekick-core",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "sidekick-voice"
-version = "0.2.2"
-dependencies = [
- "bzip2 0.4.4",
- "cpal",
- "log",
- "reqwest 0.12.28",
- "serde_json",
- "sha2",
- "sherpa-onnx",
- "tar",
- "thiserror 2.0.21",
-]
 
 [[package]]
 name = "signal-hook-registry"

@@ -340,6 +340,148 @@ pub fn commit(path: &Path, message: &str) -> Result<Outcome, ActionError> {
     Ok(Outcome::msg(format!("Committed: {first}")))
 }
 
+// ---- Staging -------------------------------------------------------------------
+
+/// One changed file as the Git dock lists it. A file can be staged and have
+/// further changes that are not (both flags set).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct FileChange {
+    pub path: String,
+    /// `M` changed, `A` added, `D` deleted, `R` renamed, `?` new and untracked, `U` conflict.
+    pub kind: char,
+    pub staged: bool,
+    pub unstaged: bool,
+}
+
+/// Reads `git status --porcelain=v1` lines.
+pub fn parse_status(text: &str) -> Vec<FileChange> {
+    text.lines()
+        .filter_map(|line| {
+            let mut chars = line.chars();
+            let (x, y) = (chars.next()?, chars.next()?);
+            let rest = line.get(3..)?;
+            // A rename reads "old -> new": the new name is the file.
+            let path = rest.rsplit(" -> ").next()?.trim_matches('"').to_owned();
+            if x == '?' && y == '?' {
+                return Some(FileChange {
+                    path,
+                    kind: '?',
+                    staged: false,
+                    unstaged: true,
+                });
+            }
+            let conflict = x == 'U' || y == 'U' || (x == 'A' && y == 'A') || (x == 'D' && y == 'D');
+            let kind = if conflict {
+                'U'
+            } else if x != ' ' {
+                x
+            } else {
+                y
+            };
+            Some(FileChange {
+                path,
+                kind,
+                staged: x != ' ' && !conflict,
+                unstaged: y != ' ',
+            })
+        })
+        .collect()
+}
+
+/// Every changed file, for the Changes list.
+pub fn status(path: &Path) -> Result<Vec<FileChange>, ActionError> {
+    repo(path)?;
+    Ok(parse_status(&git(path, &["status", "--porcelain=v1"])?))
+}
+
+/// A file name that is safe to hand to git: no option look-alikes, no
+/// parent-folder escapes.
+fn safe_file(name: &str) -> Result<&str, ActionError> {
+    if name.is_empty() || name.starts_with('-') || name.split(['/', '\\']).any(|p| p == "..") {
+        return Err(ActionError::Invalid(format!(
+            "not a file in this repository: {name}"
+        )));
+    }
+    Ok(name)
+}
+
+/// Stages `files`, or everything when the list is empty.
+pub fn stage(path: &Path, files: &[String]) -> Result<Outcome, ActionError> {
+    repo(path)?;
+    if files.is_empty() {
+        git(path, &["add", "-A"])?;
+        return Ok(Outcome::msg("Staged everything"));
+    }
+    let mut args = vec!["add", "--"];
+    for f in files {
+        args.push(safe_file(f)?);
+    }
+    git(path, &args)?;
+    Ok(Outcome::msg(format!("Staged {} file(s)", files.len())))
+}
+
+/// Unstages `files`, or everything when the list is empty. Work in the
+/// files is never touched.
+pub fn unstage(path: &Path, files: &[String]) -> Result<Outcome, ActionError> {
+    repo(path)?;
+    let mut args = vec!["reset", "-q", "--"];
+    for f in files {
+        args.push(safe_file(f)?);
+    }
+    git(path, &args)?;
+    Ok(Outcome::msg(if files.is_empty() {
+        "Unstaged everything".to_owned()
+    } else {
+        format!("Unstaged {} file(s)", files.len())
+    }))
+}
+
+/// Replaces the last commit with what is staged now. A new message is
+/// optional; without one the old message stays. The caller warns before a
+/// force push is needed (the commit was already pushed).
+pub fn amend(path: &Path, message: Option<&str>) -> Result<Outcome, ActionError> {
+    repo(path)?;
+    match message.map(str::trim).filter(|m| !m.is_empty()) {
+        Some(m) => git(path, &["commit", "--amend", "-m", m])?,
+        None => git(path, &["commit", "--amend", "--no-edit"])?,
+    };
+    Ok(Outcome::msg("Amended the last commit"))
+}
+
+/// Whether the last commit is already on a remote branch, so amending it
+/// would need a force push.
+pub fn last_commit_pushed(path: &Path) -> bool {
+    git(path, &["branch", "-r", "--contains", "HEAD"])
+        .map(|o| !o.trim().is_empty())
+        .unwrap_or(false)
+}
+
+/// What a model reads to write a commit message: the staged diff when there
+/// is one (else every tracked change), cut to `cap` characters, with how
+/// many files exist and how many the text still covers.
+pub fn diff_for_message(path: &Path, cap: usize) -> Result<(String, usize, usize), ActionError> {
+    repo(path)?;
+    let staged = !git(path, &["diff", "--cached", "--name-only"])?
+        .trim()
+        .is_empty();
+    let args: &[&str] = if staged {
+        &["diff", "--cached"]
+    } else {
+        &["diff", "HEAD"]
+    };
+    let full = git(path, args)?;
+    let total = full
+        .lines()
+        .filter(|l| l.starts_with("diff --git "))
+        .count();
+    let text = cut(&full, cap);
+    let covered = text
+        .lines()
+        .filter(|l| l.starts_with("diff --git "))
+        .count();
+    Ok((text, covered, total))
+}
+
 /// Deletes merged branches (`git branch -d`, which refuses unmerged ones).
 pub fn delete_branches(path: &Path, branches: &[String]) -> Result<Outcome, ActionError> {
     repo(path)?;
@@ -406,6 +548,106 @@ mod tests {
         delete_branches(&dir, &["done-feature".into(), "open-feature".into()]).unwrap();
         let left = git(&dir, &["branch", "--format=%(refname:short)"]).unwrap();
         assert!(left.contains("open-feature") && !left.contains("done-feature"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn fresh(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("duskie-stage-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        run(&dir, &["init", "-q", "-b", "main"]);
+        run(&dir, &["config", "user.email", "t@example.com"]);
+        run(&dir, &["config", "user.name", "T"]);
+        std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+        run(&dir, &["add", "."]);
+        run(&dir, &["commit", "-q", "-m", "first"]);
+        dir
+    }
+
+    #[test]
+    fn status_lines_become_changes() {
+        let list = parse_status(
+            " M a.txt\nM  b.txt\nMM c.txt\n?? d.txt\nR  old.txt -> new.txt\nUU e.txt\n",
+        );
+        let by = |p: &str| list.iter().find(|f| f.path == p).unwrap().clone();
+        assert_eq!((by("a.txt").staged, by("a.txt").unstaged), (false, true));
+        assert_eq!((by("b.txt").staged, by("b.txt").unstaged), (true, false));
+        assert_eq!((by("c.txt").staged, by("c.txt").unstaged), (true, true));
+        assert_eq!(by("d.txt").kind, '?');
+        assert_eq!(by("new.txt").kind, 'R');
+        assert_eq!(by("e.txt").kind, 'U');
+        assert!(!by("e.txt").staged);
+    }
+
+    #[test]
+    fn stage_unstage_and_commit_only_what_is_staged() {
+        let dir = fresh("flow");
+        std::fs::write(dir.join("a.txt"), "two\n").unwrap();
+        std::fs::write(dir.join("b.txt"), "new\n").unwrap();
+        stage(&dir, &["a.txt".into()]).unwrap();
+        let st = status(&dir).unwrap();
+        assert!(st.iter().find(|f| f.path == "a.txt").unwrap().staged);
+        assert!(!st.iter().find(|f| f.path == "b.txt").unwrap().staged);
+        // Unstaging leaves the edit in the file.
+        unstage(&dir, &["a.txt".into()]).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "two\n");
+        assert!(status(&dir).unwrap().iter().all(|f| !f.staged));
+        stage(&dir, &[]).unwrap();
+        assert!(status(&dir).unwrap().iter().all(|f| f.staged));
+        unstage(&dir, &[]).unwrap();
+        stage(&dir, &["a.txt".into()]).unwrap();
+        commit(&dir, "Change a").unwrap();
+        // b.txt was never staged, so it is still waiting.
+        let left = status(&dir).unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].path, "b.txt");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn amend_folds_staged_work_into_the_last_commit() {
+        let dir = fresh("amend");
+        std::fs::write(dir.join("a.txt"), "two\n").unwrap();
+        stage(&dir, &[]).unwrap();
+        amend(&dir, None).unwrap();
+        let count = git(&dir, &["rev-list", "--count", "HEAD"]).unwrap();
+        assert_eq!(count.trim(), "1", "amend does not add a commit");
+        assert_eq!(
+            git(&dir, &["log", "-1", "--format=%s"]).unwrap().trim(),
+            "first"
+        );
+        amend(&dir, Some("Better message")).unwrap();
+        assert_eq!(
+            git(&dir, &["log", "-1", "--format=%s"]).unwrap().trim(),
+            "Better message"
+        );
+        assert!(
+            !last_commit_pushed(&dir),
+            "no remote, so nothing was pushed"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn odd_file_names_are_refused() {
+        let dir = fresh("names");
+        for bad in ["--all", "../x", "a/../../x", ""] {
+            assert!(stage(&dir, &[bad.into()]).is_err(), "{bad}");
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_message_diff_is_capped_and_says_how_much_it_covers() {
+        let dir = fresh("cap");
+        for n in 0..5 {
+            std::fs::write(dir.join(format!("f{n}.txt")), "x".repeat(400)).unwrap();
+        }
+        stage(&dir, &[]).unwrap();
+        let (text, covered, total) = diff_for_message(&dir, 700).unwrap();
+        assert_eq!(total, 5);
+        assert!(covered < total && covered >= 1, "covered {covered}");
+        assert!(text.len() < 900);
         let _ = std::fs::remove_dir_all(dir);
     }
 

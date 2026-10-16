@@ -116,3 +116,9 @@ pub async fn voice_test(app: AppHandle) -> CmdResult<()> {
         .await
         .map_err(|e| e.to_string())?
 }
+
+/// A key was pressed in Ask; keeps the mic closed while the user types.
+#[tauri::command]
+pub fn voice_typing(app: AppHandle, has_text: bool) {
+    crate::voice::note_typing(&app, has_text);
+}

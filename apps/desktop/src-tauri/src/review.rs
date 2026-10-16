@@ -4,7 +4,7 @@
 //! hunk, and each hunk, file or the whole lot can be put back.
 //!
 //! A project that is not a git repository gets a private one instead, kept
-//! in Sidekick's data folder (`--git-dir` with the project as work tree), so
+//! in Duskie's data folder (`--git-dir` with the project as work tree), so
 //! the same review, undo and rewind work and the project itself is never
 //! touched.
 
@@ -118,13 +118,13 @@ pub fn capture(dir: &Path, shadow_root: Option<&Path>) -> Option<Baseline> {
         let tree = run_index(&["write-tree"])?;
         run_index(&[
             "-c",
-            "user.name=Sidekick",
+            "user.name=Duskie",
             "-c",
             "user.email=sidekick@localhost",
             "commit-tree",
             &tree,
             "-m",
-            "Sidekick review snapshot",
+            "Duskie review snapshot",
         ])
     })();
     let _ = std::fs::remove_file(&index);
@@ -271,7 +271,7 @@ fn shadow(dir: &Path, shadow_root: &Path) -> Option<Baseline> {
         &b,
         &[
             "-c",
-            "user.name=Sidekick",
+            "user.name=Duskie",
             "-c",
             "user.email=sidekick@localhost",
             "-c",

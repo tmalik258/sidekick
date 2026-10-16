@@ -142,9 +142,9 @@ fn run(app: &AppHandle, action: &str) {
                 .pause
                 .is_active(Utc::now());
             let pause = if paused {
-                sidekick_core::Pause::None
+                duskie_core::Pause::None
             } else {
-                sidekick_core::Pause::for_minutes(60, Utc::now())
+                duskie_core::Pause::for_minutes(60, Utc::now())
             };
             let _ = crate::commands::set_pause(app, pause);
         }

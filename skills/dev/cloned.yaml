@@ -1,6 +1,6 @@
 id: dev.cloned
 name: After a clone
-description: After Sidekick clones a repo, offer to open it, start an agent in it, and install its dependencies when it has a lockfile.
+description: After Duskie clones a repo, offer to open it, start an agent in it, and install its dependencies when it has a lockfile.
 priority: 60
 cooldown_secs: 5
 dedupe: "{{path}}"

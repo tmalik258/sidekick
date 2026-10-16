@@ -5,8 +5,8 @@
 use std::path::PathBuf;
 
 use chrono::{Datelike, Local, NaiveDate, Timelike, Weekday};
+use duskie_skills::{Proposal, ProposedOption, Trust};
 use serde::{Deserialize, Serialize};
-use sidekick_skills::{Proposal, ProposedOption, Trust};
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, lock};

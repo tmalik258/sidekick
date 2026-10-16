@@ -35,7 +35,7 @@ const CUE_SOUND: Record<Cue, SndSound> = {
 /** The kit made of synthesized sounds, see synth.ts. */
 export const SYNTH_KIT = "sidekick";
 
-/** The Sidekick kit's sound for each cue and each SND sound name. */
+/** The Duskie kit's sound for each cue and each SND sound name. */
 const SYNTH_CUE: Record<Cue, SynthSound | null> = {
   chirp: "chirp",
   pop: "pop",
@@ -174,7 +174,7 @@ export function playCue(cue: Cue, volume: number, kitId: string): void {
   playSound(CUE_SOUND[cue], volume, kitId);
 }
 
-/** A mascot sound (hello, sparkle, mwah...): its own voice in the Sidekick
+/** A mascot sound (hello, sparkle, mwah...): its own voice in the Duskie
  * kit, the closest designed sound otherwise. */
 export function playMood(sound: SynthSound, volume: number, kitId: string): void {
   if (volume <= 0 || typeof window === "undefined") return;

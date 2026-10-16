@@ -12,7 +12,7 @@ const BODIES = {
   play: '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="M20.4086 9.35258C22.5305 10.5065 22.5305 13.4935 20.4086 14.6474L7.59662 21.6145C5.53435 22.736 3 21.2763 3 18.9671L3 5.0329C3 2.72368 5.53435 1.26402 7.59661 2.38548L20.4086 9.35258Z"/>',
   close:
     '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M14.5 9.50002L9.5 14.5M9.49998 9.5L14.5 14.5"/></g>',
-  // Drawn for Sidekick (not from Solar), in the same 1.5 stroke style.
+  // Drawn for Duskie (not from Solar), in the same 1.5 stroke style.
   plus: '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="M12 5v14M5 12h14"/>',
   ask: '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></g>',
   focus:
@@ -29,21 +29,24 @@ const BODIES = {
   check:
     '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 12.5 10 17 19 7.5"/>',
   mic: '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><rect x="8.5" y="2.5" width="7" height="12" rx="3.5"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3.5"/></g>',
-  // Drawn for Sidekick (not from Solar), in the same 1.5 stroke style.
+  // Drawn for Duskie (not from Solar), in the same 1.5 stroke style.
   history:
     '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></g>',
-  // Drawn for Sidekick (not from Solar), in the same 1.5 stroke style.
+  // Drawn for Duskie (not from Solar), in the same 1.5 stroke style.
   file: '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M14 2.5H7.5a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7L14 2.5Z"/><path d="M14 2.5V7h4.5M9 12.5h6M9 16h4"/></g>',
   wifi: '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path d="M2 8.8a15 15 0 0 1 20 0"/><path d="M5.3 12.5a10 10 0 0 1 13.4 0"/><path d="M8.6 16.1a5 5 0 0 1 6.8 0"/></g><circle cx="12" cy="19.5" r="1.25" fill="currentColor"/>',
   update:
     '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 16.5v-9M8.5 11 12 7.5l3.5 3.5"/></g>',
-  // Drawn for Sidekick (not from Solar), in the same 1.5 stroke style.
+  // Drawn for Duskie (not from Solar), in the same 1.5 stroke style.
   refresh:
     '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M19.5 12a7.5 7.5 0 0 1-13.2 4.9M4.5 12A7.5 7.5 0 0 1 17.7 7.1"/><path d="M19.5 7.5V12h-4.5M4.5 16.5V12H9"/></g>',
   wifiOff:
     '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path d="M2 8.8a15 15 0 0 1 20 0"/><path d="M5.3 12.5a10 10 0 0 1 13.4 0"/><path d="M8.6 16.1a5 5 0 0 1 6.8 0"/><path d="M3.5 3.5l17 17"/></g><circle cx="12" cy="19.5" r="1.25" fill="currentColor"/>',
-  // Drawn for Sidekick (not from Solar).
+  // Drawn for Duskie (not from Solar).
   lock: '<g fill="currentColor"><rect x="4.5" y="10.5" width="15" height="11" rx="2.5"/><path fill="none" stroke="currentColor" stroke-width="2.2" d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></g>',
+  // Drawn for Duskie (not from Solar), in the same 1.5 stroke style.
+  sparkle:
+    '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M10 3.5 11.8 9l5.5 1.8-5.5 1.8L10 18l-1.8-5.4L2.7 10.8 8.2 9z"/><path d="M18.5 3v4M16.5 5h4M18.5 16v4M16.5 18h4"/></g>',
   terminal:
     '<g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="m5 8 4 4-4 4M12 17h7"/></g>',
 } as const;

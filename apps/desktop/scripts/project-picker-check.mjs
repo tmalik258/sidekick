@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
 
-const base = process.env.SIDEKICK_PREVIEW_URL ?? "http://localhost:3002";
+const base = process.env.DUSKIE_PREVIEW_URL ?? "http://localhost:3002";
 const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
 const errors = [];
 try {
@@ -11,7 +11,7 @@ try {
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(`${base}/island/?onboarded${empty ? "&noprojects" : ""}`);
     await page.mouse.move(380, 25);
-    await page.getByRole("button", { name: /Ask Sidekick/ }).click();
+    await page.getByRole("button", { name: /Ask Duskie/ }).click();
     await page.keyboard.press("Control+Tab");
     const project = page.getByRole("button", { name: "Project", exact: true });
     await project.click();
@@ -32,7 +32,7 @@ try {
     await project.getByText("Other project", { exact: true }).waitFor();
     await page.reload();
     await page.mouse.move(380, 25);
-    await page.getByRole("button", { name: /Ask Sidekick/ }).click();
+    await page.getByRole("button", { name: /Ask Duskie/ }).click();
     await page.keyboard.press("Control+Tab");
     await page.getByRole("button", { name: "One", exact: true }).click();
     await project.click();
@@ -44,7 +44,7 @@ try {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${base}/island/?onboarded&foldercancel`);
   await page.mouse.move(380, 25);
-  await page.getByRole("button", { name: /Ask Sidekick/ }).click();
+  await page.getByRole("button", { name: /Ask Duskie/ }).click();
   await page.keyboard.press("Control+Tab");
   const project = page.getByRole("button", { name: "Project", exact: true });
   await project.getByText("sidekick", { exact: true }).waitFor();
@@ -57,7 +57,7 @@ try {
   const failed = await browser.newPage({ viewport: { width: 760, height: 900 }, reducedMotion: "reduce" });
   await failed.goto(`${base}/island/?onboarded&folderfail`);
   await failed.mouse.move(380, 25);
-  await failed.getByRole("button", { name: /Ask Sidekick/ }).click();
+  await failed.getByRole("button", { name: /Ask Duskie/ }).click();
   await failed.keyboard.press("Control+Tab");
   const failedProject = failed.getByRole("button", { name: "Project", exact: true });
   await failedProject.getByText("sidekick", { exact: true }).waitFor();

@@ -15,11 +15,21 @@ const UNDOABLE: &[&str] = &["convert", "extract_archive", "zip"];
 const MOVE_BACK: &str = "move-back:";
 const WINDOW_HOURS: i64 = 24;
 
+/// Whether an action can be put back once it has run, for showing that
+/// before it does. Mirrors what `undo_path` and the move record allow.
+pub fn undoable(action: &str) -> bool {
+    UNDOABLE.contains(&action)
+        || matches!(
+            action,
+            "move_file" | "git_pull" | "git_update_branch" | "git_clone"
+        )
+}
+
 pub fn undo_path(action: &str, produced: Option<&str>) -> Option<String> {
     // A pull's record resets the repo back to where it was.
     if action == "git_pull" || action == "git_update_branch" {
         return produced
-            .filter(|p| p.starts_with(sidekick_actions::dev::RESET_TO))
+            .filter(|p| p.starts_with(duskie_actions::dev::RESET_TO))
             .map(str::to_owned);
     }
     if action == "git_clone" {
@@ -66,7 +76,7 @@ pub fn undo(app: &AppHandle, id: i64) -> Result<String, String> {
     if Utc::now() - when > chrono::Duration::hours(WINDOW_HOURS) {
         return Err("Undo is only kept for 24 hours".into());
     }
-    if let Some(rest) = path.strip_prefix(sidekick_actions::dev::RESET_TO) {
+    if let Some(rest) = path.strip_prefix(duskie_actions::dev::RESET_TO) {
         let (repo, sha) = rest
             .split_once('\n')
             .ok_or("This action cannot be undone")?;
@@ -117,7 +127,7 @@ pub fn undo(app: &AppHandle, id: i64) -> Result<String, String> {
         return Err("It was already moved or deleted".into());
     }
     if !safe_to_trash(path) {
-        return Err("Sidekick will not remove that path".into());
+        return Err("Duskie will not remove that path".into());
     }
     trash::delete(path).map_err(|e| format!("could not move it to the Recycle Bin: {e}"))?;
     lock(&state.storage)
@@ -132,6 +142,23 @@ pub fn undo(app: &AppHandle, id: i64) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn undoable_matches_what_undo_can_record() {
+        for a in [
+            "convert",
+            "zip",
+            "extract_archive",
+            "move_file",
+            "git_pull",
+            "git_clone",
+        ] {
+            assert!(super::undoable(a), "{a}");
+        }
+        for a in ["open_url", "send_message", "delete_file", "dnd_on"] {
+            assert!(!super::undoable(a), "{a}");
+        }
+    }
+
     use super::*;
 
     #[test]

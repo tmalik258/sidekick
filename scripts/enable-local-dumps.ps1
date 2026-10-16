@@ -1,4 +1,4 @@
-# Enable Windows Error Reporting local full dumps for Sidekick (debug only).
+# Enable Windows Error Reporting local full dumps for Duskie (debug only).
 # Run once in an elevated PowerShell from the repo root:
 #   powershell -ExecutionPolicy Bypass -File .\scripts\enable-local-dumps.ps1
 #
@@ -6,7 +6,7 @@
 # Remove the registry key when finished (see docs/debugging.md).
 
 $ErrorActionPreference = "Stop"
-$exe = "sidekick-desktop.exe"
+$exe = "duskie-desktop.exe"
 $dumpDir = Join-Path $env:USERPROFILE "SidekickDumps"
 New-Item -ItemType Directory -Force -Path $dumpDir | Out-Null
 

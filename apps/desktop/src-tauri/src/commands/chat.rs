@@ -11,7 +11,7 @@ pub async fn ai_status(app: AppHandle) -> Vec<ai::ProviderStatus> {
 pub fn ai_chat(
     app: AppHandle,
     id: String,
-    messages: Vec<sidekick_ai::Message>,
+    messages: Vec<duskie_ai::Message>,
     attach: ai::Attach,
     local_only: bool,
 ) {
@@ -31,7 +31,7 @@ pub async fn editors_list(app: AppHandle) -> crate::editors::Editors {
 fn usual_agent(
     app: &AppHandle,
     key: &str,
-    settings: &sidekick_core::Settings,
+    settings: &duskie_core::Settings,
 ) -> Option<crate::agents::Agent> {
     let counts = lock(&app.state::<AppState>().storage)
         .choice_counts(key)
@@ -106,7 +106,7 @@ pub async fn agent_start(
 #[tauri::command]
 pub async fn agent_handoff(
     app: AppHandle,
-    messages: Vec<sidekick_ai::Message>,
+    messages: Vec<duskie_ai::Message>,
     reason: Option<String>,
 ) -> CmdResult<crate::sessions::Started> {
     let settings = lock(&app.state::<AppState>().settings).clone();
@@ -293,7 +293,7 @@ pub async fn ai_run_proposal(app: AppHandle, id: String) -> CmdResult<crate::ask
 #[tauri::command]
 pub async fn ai_handoff(
     app: AppHandle,
-    messages: Vec<sidekick_ai::Message>,
+    messages: Vec<duskie_ai::Message>,
     reason: Option<String>,
 ) -> CmdResult<String> {
     crate::agents::hand_off(&app, &messages, reason.as_deref()).await
@@ -320,7 +320,7 @@ pub async fn agents_status(app: AppHandle) -> CmdResult<crate::agents::Agents> {
 
 /// Recent Ask conversations, newest first.
 #[tauri::command]
-pub async fn chats_list(app: AppHandle) -> CmdResult<Vec<sidekick_core::ChatSummary>> {
+pub async fn chats_list(app: AppHandle) -> CmdResult<Vec<duskie_core::ChatSummary>> {
     tauri::async_runtime::spawn_blocking(move || {
         lock(&app.state::<AppState>().storage)
             .recent_chats(30)
@@ -348,7 +348,7 @@ pub async fn chat_get(app: AppHandle, id: String) -> CmdResult<serde_json::Value
 fn mask_strings(v: &mut serde_json::Value) {
     match v {
         serde_json::Value::String(s) => {
-            if let std::borrow::Cow::Owned(m) = sidekick_sensors::classify::mask(s) {
+            if let std::borrow::Cow::Owned(m) = duskie_sensors::classify::mask(s) {
                 *s = m;
             }
         }
@@ -367,7 +367,7 @@ pub async fn chat_save(
 ) -> CmdResult<()> {
     // Masking and writing a long chat after every answer: off the UI thread.
     tauri::async_runtime::spawn_blocking(move || {
-        let title: String = sidekick_sensors::classify::mask(title.trim())
+        let title: String = duskie_sensors::classify::mask(title.trim())
             .chars()
             .take(80)
             .collect();
@@ -425,11 +425,11 @@ fn split_local_models(models: Vec<String>, reachable: bool) -> LocalModels {
     let mut vision = Vec::new();
     let mut embed = Vec::new();
     for m in models {
-        if sidekick_ai::is_embedding_model(&m) {
+        if duskie_ai::is_embedding_model(&m) {
             embed.push(m);
-        } else if sidekick_ai::is_vision_model(&m) {
+        } else if duskie_ai::is_vision_model(&m) {
             vision.push(m);
-        } else if sidekick_ai::is_chat_model(&m) {
+        } else if duskie_ai::is_chat_model(&m) {
             chat.push(m);
         }
     }
@@ -487,7 +487,7 @@ pub async fn app_launch(
             .map_err(|e| e.to_string());
     }
     let _ = app;
-    tauri::async_runtime::spawn_blocking(move || sidekick_actions::pc::launch_app_id(&id))
+    tauri::async_runtime::spawn_blocking(move || duskie_actions::pc::launch_app_id(&id))
         .await
         .map_err(|e| e.to_string())?
         .map(|_| ())
@@ -499,7 +499,7 @@ pub async fn app_launch(
 #[tauri::command]
 pub async fn windows_settings_open(page: String) -> CmdResult<()> {
     tauri::async_runtime::spawn_blocking(move || {
-        sidekick_actions::pc::control("open_settings", None, Some(&page))
+        duskie_actions::pc::control("open_settings", None, Some(&page))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -526,7 +526,7 @@ pub async fn pc_switch(name: String, on: bool) -> CmdResult<String> {
         return Err(format!("{name} is not a switch"));
     }
     let what = format!("{name}_{}", if on { "on" } else { "off" });
-    tauri::async_runtime::spawn_blocking(move || sidekick_actions::pc::control(&what, None, None))
+    tauri::async_runtime::spawn_blocking(move || duskie_actions::pc::control(&what, None, None))
         .await
         .map_err(|e| e.to_string())?
         .map(|o| o.message)
@@ -678,7 +678,7 @@ pub async fn repos_overview(app: AppHandle, fresh: bool) -> crate::github::Overv
 #[tauri::command]
 pub async fn repo_pull(path: String, stash: bool) -> CmdResult<String> {
     tauri::async_runtime::spawn_blocking(move || {
-        sidekick_actions::dev::pull(std::path::Path::new(&path), stash)
+        duskie_actions::dev::pull(std::path::Path::new(&path), stash)
             .map(|o| o.message)
             .map_err(|e| e.to_string())
     })
@@ -688,9 +688,9 @@ pub async fn repo_pull(path: String, stash: bool) -> CmdResult<String> {
 
 /// The update the island is walking through: what still clashes.
 #[tauri::command]
-pub async fn merge_state(path: String) -> CmdResult<sidekick_actions::dev::MergeState> {
+pub async fn merge_state(path: String) -> CmdResult<duskie_actions::dev::MergeState> {
     tauri::async_runtime::spawn_blocking(move || {
-        sidekick_actions::dev::merge_state(std::path::Path::new(&path)).map_err(|e| e.to_string())
+        duskie_actions::dev::merge_state(std::path::Path::new(&path)).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -700,7 +700,7 @@ pub async fn merge_state(path: String) -> CmdResult<sidekick_actions::dev::Merge
 #[tauri::command]
 pub async fn merge_keep(path: String, file: String, side: String) -> CmdResult<()> {
     tauri::async_runtime::spawn_blocking(move || {
-        sidekick_actions::dev::merge_keep(std::path::Path::new(&path), &file, &side)
+        duskie_actions::dev::merge_keep(std::path::Path::new(&path), &file, &side)
             .map_err(|e| e.to_string())
     })
     .await
@@ -718,9 +718,9 @@ pub async fn merge_end(
     let out = tauri::async_runtime::spawn_blocking(move || {
         let p = std::path::Path::new(&repo);
         if finish {
-            sidekick_actions::dev::merge_finish(p)
+            duskie_actions::dev::merge_finish(p)
         } else {
-            sidekick_actions::dev::merge_undo(p)
+            duskie_actions::dev::merge_undo(p)
         }
     })
     .await

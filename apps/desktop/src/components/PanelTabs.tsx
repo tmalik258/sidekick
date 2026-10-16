@@ -40,14 +40,14 @@ export function PanelTabs({
 }) {
   const words = (
     [
-      ["ask", "Ask"],
-      ["agents", "Agents"],
-      ["repos", "Repos"],
+      ["ask", "Ask", "sparkle"],
+      ["agents", "Agents", "terminal"],
+      ["repos", "Repos", "folder"],
     ] as const
   ).filter(([id]) => coder || id === "ask");
   return (
     <div className="ak-tabs" role="tablist">
-      {words.map(([id, label]) => (
+      {words.map(([id, label, icon]) => (
         <button
           key={id}
           type="button"
@@ -56,6 +56,9 @@ export function PanelTabs({
           onClick={() => onPick(id)}
           className="ak-tab chip"
         >
+          <span className="ak-tab-ic" aria-hidden>
+            <Icon name={icon} size={13} />
+          </span>
           {label}
           {id === "agents" && working > 0 && <i className="n not-italic">{working}</i>}
         </button>

@@ -9,21 +9,21 @@ license = "MIT"
 repository = "https://github.com/tmalik258/sidekick"
 
 [workspace.dependencies]
-sidekick-core = { path = "crates/core" }
-sidekick-calc = { path = "crates/calc" }
-sidekick-sensors = { path = "crates/sensors" }
-sidekick-skills = { path = "crates/skills" }
-sidekick-actions = { path = "crates/actions" }
-sidekick-ai = { path = "crates/ai" }
-sidekick-voice = { path = "crates/voice" }
-sidekick-layout = { path = "crates/layout" }
+duskie-core = { path = "crates/core" }
+duskie-calc = { path = "crates/calc" }
+duskie-sensors = { path = "crates/sensors" }
+duskie-skills = { path = "crates/skills" }
+duskie-actions = { path = "crates/actions" }
+duskie-ai = { path = "crates/ai" }
+duskie-voice = { path = "crates/voice" }
+duskie-layout = { path = "crates/layout" }
 chrono = { version = "0.4", features = ["serde"] }
 log = "0.4"
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "net"] }
 ulid = { version = "1", features = ["serde"] }
 
 [profile.release]

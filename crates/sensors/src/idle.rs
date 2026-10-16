@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use sidekick_core::{Event, EventBus};
+use duskie_core::{Event, EventBus};
 use tokio::task::JoinHandle;
 
 use crate::{Sensor, SensorGate};

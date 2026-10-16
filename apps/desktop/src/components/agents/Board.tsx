@@ -20,7 +20,7 @@ import {
 } from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
-import { useSidekick } from "@/lib/store";
+import { useDuskie } from "@/lib/store";
 import type { Agents } from "@/lib/types";
 import { AgentMark, agentMarkId, Composer, NameField, STEP_TAG } from "./AgentsTab";
 import { folderName, ProjectPicker } from "./ProjectPicker";
@@ -268,13 +268,13 @@ function EmptySlot({
     const onKey = (e: KeyboardEvent) => {
       if (
         e.defaultPrevented ||
-        useSidekick.getState().overlayHit ||
+        useDuskie.getState().overlayHit ||
         (e.target instanceof Element && e.target.closest("[data-project-picker]"))
       )
         return;
       if (e.key !== "Escape" || e.repeat) return;
       // Project menu is open: let Select take Esc first.
-      if (useSidekick.getState().overlayHit) return;
+      if (useDuskie.getState().overlayHit) return;
       e.preventDefault();
       e.stopPropagation();
       if (agent) {
@@ -308,7 +308,7 @@ function EmptySlot({
     const onKey = (e: KeyboardEvent) => {
       if (
         e.defaultPrevented ||
-        useSidekick.getState().overlayHit ||
+        useDuskie.getState().overlayHit ||
         (e.target instanceof Element && e.target.closest("[data-project-picker]"))
       )
         return;
@@ -535,7 +535,7 @@ export function Board({
     const onKey = (e: KeyboardEvent) => {
       if (
         e.defaultPrevented ||
-        useSidekick.getState().overlayHit ||
+        useDuskie.getState().overlayHit ||
         (e.target instanceof Element && e.target.closest("[data-project-picker]"))
       )
         return;

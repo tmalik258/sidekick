@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use sidekick_core::Event;
+use duskie_core::Event;
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, lock};
@@ -46,7 +46,7 @@ impl Check {
             ),
             Check::Hooks => (
                 "Claude Code hooks were removed",
-                "Sidekick no longer hears when Claude Code finishes or asks for permission.",
+                "Duskie no longer hears when Claude Code finishes or asks for permission.",
             ),
         }
     }

@@ -2,11 +2,13 @@
 
 // What a screen reader hears: state changes (listening, working, done, an
 // agent waiting) and answers a sentence or two at a time as they stream,
-// instead of every token or nothing at all.
+// instead of every token or nothing at all. Redesign path prefers the
+// registry announce string so the island and this stay in sync.
 
 import { useEffect, useRef, useState } from "react";
 import { useAgents } from "@/lib/agents";
-import { useSidekick } from "@/lib/store";
+import { type IslandStateId, stateDef } from "@/lib/island-states";
+import { useDuskie } from "@/lib/store";
 import type { MascotState } from "@/lib/types";
 
 const STATE_WORDS: Partial<Record<MascotState, string>> = {
@@ -14,6 +16,7 @@ const STATE_WORDS: Partial<Record<MascotState, string>> = {
   working: "Working",
   success: "Done",
   error: "Something went wrong",
+  focus: "Focus on",
 };
 
 /** The next part of a streaming answer worth reading out: up to the last
@@ -33,18 +36,23 @@ export function nextChunk(text: string, said: number, done: boolean): [string, n
 /** Markdown marks read as words otherwise ("asterisk asterisk"). */
 const plain = (t: string) => t.replace(/[*_`#>|]+/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
 
-export function Announcer() {
+export function Announcer({ registryId }: { registryId?: IslandStateId | null }) {
   const [line, setLine] = useState("");
   const said = useRef({ id: "", n: 0 });
-  const mascot = useSidekick((s) => s.mascot);
-  const last = useSidekick((s) => s.turns[s.turns.length - 1]);
-  const turns = useSidekick((s) => s.turns.length);
+  const mascot = useDuskie((s) => s.mascot);
+  const last = useDuskie((s) => s.turns[s.turns.length - 1]);
+  const turns = useDuskie((s) => s.turns.length);
   const waiting = useAgents((s) => s.sessions.find((x) => x.question));
 
   useEffect(() => {
+    if (registryId) {
+      const word = stateDef(registryId).announce;
+      if (word) setLine(word);
+      return;
+    }
     const word = STATE_WORDS[mascot];
     if (word) setLine(word);
-  }, [mascot]);
+  }, [mascot, registryId]);
 
   useEffect(() => {
     if (last?.role !== "assistant") return;

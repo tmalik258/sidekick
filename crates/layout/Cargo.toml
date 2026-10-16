@@ -1,5 +1,5 @@
 [package]
-name = "sidekick-layout"
+name = "duskie-layout"
 description = "Save and restore window layouts per monitor setup (Windows)"
 version.workspace = true
 edition.workspace = true

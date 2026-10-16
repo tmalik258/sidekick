@@ -33,12 +33,14 @@ mod freeze;
 mod git_watch;
 mod github;
 mod health;
+mod imap;
 mod inbox;
 mod instant;
 mod island;
 mod layout;
 mod learn;
 mod learned;
+mod mail;
 mod mascot;
 mod mcp;
 mod mcp_oauth;
@@ -53,6 +55,7 @@ mod projects;
 mod promises;
 mod quick;
 mod recipes;
+mod rename;
 mod review;
 mod routines;
 mod screen;
@@ -78,13 +81,13 @@ use std::error::Error;
 use std::sync::{Arc, Mutex, RwLock};
 
 use chrono::Utc;
-use sidekick_actions::{Capabilities, Executor};
-use sidekick_core::{EventBus, MascotEvent, Settings, Storage};
-use sidekick_sensors::{
+use duskie_actions::{Capabilities, Executor};
+use duskie_core::{EventBus, MascotEvent, Settings, Storage};
+use duskie_sensors::{
     BrowserBridge, BrowserSensor, ClaudeCodeSensor, ClipboardSensor, DownloadsSensor, IdleSensor,
     PortsSensor, ReposSensor, Sensor, SensorGate, SystemSensor, WindowSensor,
 };
-use sidekick_skills::Engine;
+use duskie_skills::Engine;
 use tauri::{AppHandle, Manager};
 
 use crate::state::AppState;
@@ -102,6 +105,11 @@ fn log_panics(file: std::path::PathBuf) {
 }
 
 pub fn run() {
+    let context = tauri::generate_context!();
+    rename::move_data(
+        &context.config().identifier,
+        context.config().product_name.as_deref().unwrap_or("Duskie"),
+    );
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Err(err) = windows::open_settings(app) {
@@ -200,6 +208,30 @@ pub fn run() {
             commands::know_how_clear,
             commands::notifications_status,
             commands::notifications_set_level,
+            commands::attention_lessons,
+            commands::attention_acted,
+            commands::attention_show_less,
+            commands::attention_reset,
+            commands::attention_set_profile,
+            commands::mcp_validate_stdio,
+            commands::servers_save,
+            commands::servers_command,
+            commands::servers_confirm,
+            commands::servers_test,
+            commands::servers_allow_write,
+            commands::servers_remove,
+            commands::git_status,
+            commands::git_stage,
+            commands::git_unstage,
+            commands::git_commit,
+            commands::git_amend,
+            commands::git_last_commit_pushed,
+            commands::git_message_diff,
+            commands::git_write_message,
+            commands::mail_status,
+            commands::mail_connect,
+            commands::mail_disconnect,
+            commands::mail_connect_imap,
             commands::dnd_get,
             commands::dnd_set,
             commands::setup_run,
@@ -214,6 +246,7 @@ pub fn run() {
             commands::voice_download,
             commands::voice_cancel_download,
             commands::voice_listen,
+            commands::voice_typing,
             commands::voice_stop,
             commands::voice_test,
             commands::voice_welcome,
@@ -299,8 +332,8 @@ pub fn run() {
             commands::open_reference,
             commands::action_undo,
         ]))
-        .run(tauri::generate_context!())
-        .expect("error while running Sidekick");
+        .run(context)
+        .expect("error while running Duskie");
 }
 
 fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
@@ -310,11 +343,13 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
         .as_deref()
         .ok_or("productName is missing from tauri.conf.json")?;
     secrets::init(product_name);
+    rename::move_secrets(app);
+    rename::move_autostart(app);
     let config_dir = app.path().app_config_dir()?;
     let settings_path = config_dir.join("settings.json");
     let skills_dir = config_dir.join("skills");
     let _ = std::fs::create_dir_all(&skills_dir);
-    let (skills, skill_errors) = sidekick_skills::load_all(&skills_dir);
+    let (skills, skill_errors) = duskie_skills::load_all(&skills_dir);
     for err in &skill_errors {
         log::warn!("skill not loaded: {err}");
     }
@@ -323,7 +358,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     log::info!("found: {}", caps.summary().join(", "));
     let data_dir = app.path().app_data_dir()?;
     log_panics(data_dir.join("last-crash.txt"));
-    let db_path = data_dir.join("sidekick.db");
+    let db_path = data_dir.join(rename::DB);
     let scratch_dir = app.path().app_cache_dir()?;
 
     let settings = Settings::load(&settings_path);
@@ -339,8 +374,8 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     let browser_token = browser::load_or_create_token(&data_dir);
     let mcp_token = browser::load_or_create_secret(&data_dir, "mcp-token");
     let bridge = BrowserBridge::default();
-    let calendar = sidekick_sensors::Calendar::default();
-    let approvals = sidekick_sensors::Approvals::default();
+    let calendar = duskie_sensors::Calendar::default();
+    let approvals = duskie_sensors::Approvals::default();
     commands::sync_calendar(&calendar, &settings);
 
     app.manage(AppState {
@@ -425,11 +460,11 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
                 approvals,
             }),
             Box::new(SystemSensor),
-            Box::new(sidekick_sensors::CalendarSensor { state: calendar }),
+            Box::new(duskie_sensors::CalendarSensor { state: calendar }),
             Box::new(repos),
             Box::new(IdleSensor::default()),
         ];
-        sidekick_sensors::spawn_all(sensors, &bus, &gate);
+        duskie_sensors::spawn_all(sensors, &bus, &gate);
     });
 
     island::setup(app)?;
@@ -440,7 +475,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     if paused {
         mascot::dispatch(app, MascotEvent::Rest);
     }
-    log::info!("Sidekick started");
+    log::info!("Duskie started");
     // App and file lists for instant results, ready before Ask first opens.
     instant::refresh(app);
     freeze::watch(app);
@@ -459,9 +494,9 @@ pub(crate) fn repo_roots(settings: &Settings) -> Vec<std::path::PathBuf> {
     }
 }
 
-/// Starts everything Sidekick does on its own: briefs, moments, search,
+/// Starts everything Duskie does on its own: briefs, moments, search,
 /// updates and the rest. Runs once, at startup when onboarding is already
-/// done, or the moment it finishes; until then Sidekick only onboards.
+/// done, or the moment it finishes; until then Duskie only onboards.
 pub fn start_features(app: &AppHandle) {
     let state = app.state::<AppState>();
     if state
@@ -475,6 +510,7 @@ pub fn start_features(app: &AppHandle) {
     editors::start(app);
     moments::start(app);
     inbox::start(app);
+    mail::start(app);
     recipes::start(app);
     brief::start(app, state.data_dir.join("last-brief"), roots);
     search::reindex_folders(app);
@@ -488,6 +524,9 @@ pub fn start_features(app: &AppHandle) {
     learned::start_weekly(app, state.data_dir.join("last-learned-week"));
     layout::start(app);
     mcp::start(app, state.mcp_token.clone());
+    if let Some(moved) = rename::moved() {
+        rename::fix_integrations(app, moved, &state.mcp_token);
+    }
     meetings::start(app);
     health::start(app);
     log::info!("features started");

@@ -1,7 +1,7 @@
 //! Secrets (the Composio key) live in Windows Credential Manager, never in
 //! the settings file. Elsewhere (development on Linux or macOS) they go in
 //! a file only the user can read. They are stored under the app's product
-//! name, so the dev build ("Sidekick Dev") never reads the installed app's.
+//! name, so the dev build ("Duskie Dev") never reads the installed app's.
 
 use std::sync::OnceLock;
 

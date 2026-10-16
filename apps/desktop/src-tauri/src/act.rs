@@ -1,4 +1,4 @@
-//! Acting outside the PC's own files: on web pages (through the Sidekick
+//! Acting outside the PC's own files: on web pages (through the Duskie
 //! extension, in the user's signed-in browser) and in connected apps
 //! (through Composio).
 //!
@@ -11,9 +11,9 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
+use duskie_actions::Outcome;
 use regex::Regex;
 use serde_json::{Value, json};
-use sidekick_actions::Outcome;
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, lock};
@@ -68,7 +68,7 @@ pub enum Gate {
 
 /// The user's permission for a place (an app name or a site), matching a
 /// site's subdomains too.
-pub fn place_rule(agent: &sidekick_core::AgentSettings, place: &str) -> Option<String> {
+pub fn place_rule(agent: &duskie_core::AgentSettings, place: &str) -> Option<String> {
     let place = place.trim().to_lowercase();
     if place.is_empty() {
         return None;
@@ -85,7 +85,7 @@ pub fn place_rule(agent: &sidekick_core::AgentSettings, place: &str) -> Option<S
 
 /// Runs, waits for a tap, or refuses, from the step's risk and the user's
 /// settings. Paying and deleting always wait.
-pub fn decide(agent: &sidekick_core::AgentSettings, place: &str, risk: Risk) -> Gate {
+pub fn decide(agent: &duskie_core::AgentSettings, place: &str, risk: Risk) -> Gate {
     match place_rule(agent, place).as_deref() {
         Some("never") => return Gate::Refuse,
         Some("allow") => {
@@ -105,11 +105,11 @@ pub fn decide(agent: &sidekick_core::AgentSettings, place: &str, risk: Risk) -> 
     if tap { Gate::Tap } else { Gate::Run }
 }
 
-pub(crate) fn agent_settings(app: &AppHandle) -> sidekick_core::AgentSettings {
+pub(crate) fn agent_settings(app: &AppHandle) -> duskie_core::AgentSettings {
     lock(&app.state::<AppState>().settings).agent.clone()
 }
 
-/// Sites the user keeps Sidekick out of: the ignore list and Never.
+/// Sites the user keeps Duskie out of: the ignore list and Never.
 fn never_sites(app: &AppHandle) -> Vec<String> {
     let state = app.state::<AppState>();
     let s = lock(&state.settings);
@@ -260,7 +260,7 @@ async fn ask(app: &AppHandle, mut cmd: Value) -> Result<Value, String> {
     let bridge = app.state::<AppState>().browser.clone();
     if !bridge.connected() {
         return Err(
-            "the Sidekick browser extension is not connected (Settings > Apps > Browser)".into(),
+            "the Duskie browser extension is not connected (Settings > Apps > Browser)".into(),
         );
     }
     cmd["deny"] = json!(never_sites(app));
@@ -386,9 +386,7 @@ async fn act(app: &AppHandle, chat_id: &str, args: &Value) -> String {
         risk(what, &kind, &label, text),
     );
     if gate == Gate::Refuse {
-        return format!(
-            "Error: the user keeps Sidekick out of {place} (Settings > Skills > Agent)."
-        );
+        return format!("Error: the user keeps Duskie out of {place} (Settings > Skills > Agent).");
     }
     if gate == Gate::Tap {
         let shown = if label.is_empty() {
@@ -426,14 +424,14 @@ async fn act(app: &AppHandle, chat_id: &str, args: &Value) -> String {
     }
 }
 
-/// The app the user was in before Sidekick (or one they named).
-fn desktop_target(app: &AppHandle, args: &Value) -> sidekick_actions::uia::Target {
+/// The app the user was in before Duskie (or one they named).
+fn desktop_target(app: &AppHandle, args: &Value) -> duskie_actions::uia::Target {
     let named = args["app"].as_str().filter(|a| !a.trim().is_empty());
     let pid = lock(&app.state::<AppState>().last_window)
         .as_ref()
         .and_then(|w| w["pid"].as_u64())
         .and_then(|p| u32::try_from(p).ok());
-    sidekick_actions::uia::Target {
+    duskie_actions::uia::Target {
         pid: if named.is_some() { None } else { pid },
         app: named.map(str::to_owned),
     }
@@ -443,7 +441,7 @@ fn desktop_target(app: &AppHandle, args: &Value) -> sidekick_actions::uia::Targe
 static DESKTOP: LazyLock<Mutex<Elements>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub(crate) async fn blocking<T: Send + 'static>(
-    f: impl FnOnce() -> Result<T, sidekick_actions::ActionError> + Send + 'static,
+    f: impl FnOnce() -> Result<T, duskie_actions::ActionError> + Send + 'static,
 ) -> Result<T, String> {
     tokio::task::spawn_blocking(f)
         .await
@@ -453,7 +451,7 @@ pub(crate) async fn blocking<T: Send + 'static>(
 
 /// The `desktop` tool: read and act inside any Windows app.
 pub async fn desktop(app: &AppHandle, chat_id: &str, args: &Value) -> String {
-    use sidekick_actions::uia;
+    use duskie_actions::uia;
     let target = desktop_target(app, args);
     let action = args["action"].as_str().unwrap_or("read");
     let out = match action {
@@ -472,7 +470,7 @@ pub async fn desktop(app: &AppHandle, chat_id: &str, args: &Value) -> String {
                     *w = place.clone();
                 }
                 if place_rule(&agent_settings(app), &place).as_deref() == Some("never") {
-                    return format!("The user keeps Sidekick out of {place}; do not use it.");
+                    return format!("The user keeps Duskie out of {place}; do not use it.");
                 }
                 format!("{}{}", s.describe(), know_how(app, &place))
             })
@@ -507,7 +505,7 @@ pub async fn desktop(app: &AppHandle, chat_id: &str, args: &Value) -> String {
             let gate = decide(&agent_settings(app), &place, risk(&what, &kind, &name, ""));
             if gate == Gate::Refuse {
                 return format!(
-                    "Error: the user keeps Sidekick out of {place} (Settings > Skills > Agent)."
+                    "Error: the user keeps Duskie out of {place} (Settings > Skills > Agent)."
                 );
             }
             if gate == Gate::Tap {
@@ -542,7 +540,7 @@ pub async fn desktop(app: &AppHandle, chat_id: &str, args: &Value) -> String {
             let gate = decide(&agent_settings(app), &place, level);
             if gate == Gate::Refuse {
                 return format!(
-                    "Error: the user keeps Sidekick out of {place} (Settings > Skills > Agent)."
+                    "Error: the user keeps Duskie out of {place} (Settings > Skills > Agent)."
                 );
             }
             if gate == Gate::Tap {
@@ -582,7 +580,7 @@ pub async fn desktop(app: &AppHandle, chat_id: &str, args: &Value) -> String {
             );
             if gate == Gate::Refuse {
                 return format!(
-                    "Error: the user keeps Sidekick out of {place} (Settings > Skills > Agent)."
+                    "Error: the user keeps Duskie out of {place} (Settings > Skills > Agent)."
                 );
             }
             match find_on_screen(app, &want).await {
@@ -662,13 +660,13 @@ async fn find_on_screen(app: &AppHandle, want: &str) -> Result<(i32, i32, &'stat
         });
     }
     let (w, h) = crate::screen::png_size(&png).ok_or("the screenshot is unreadable")?;
-    let model = sidekick_ai::OpenAiCompat::new(Some(ai.base_url), Some(vision));
-    let req = sidekick_ai::ChatRequest {
+    let model = duskie_ai::OpenAiCompat::new(Some(ai.base_url), Some(vision));
+    let req = duskie_ai::ChatRequest {
         system: format!(
             "You locate things in a {w}x{h} screenshot. Answer only JSON: {{\"x\":<int>,\"y\":<int>}} \
              for the center of the thing asked about, in image pixels, or {{\"none\":true}}."
         ),
-        messages: vec![sidekick_ai::Message::user(format!("Where is: {want}"))],
+        messages: vec![duskie_ai::Message::user(format!("Where is: {want}"))],
         image: Some(png),
         think: false,
     };
@@ -693,7 +691,7 @@ fn point_in(answer: &str, w: u32, h: u32) -> Option<(i32, i32)> {
 
 /// The `apps` tool: find and install apps with winget, Wi-Fi networks.
 pub async fn apps(app: &AppHandle, chat_id: &str, args: &Value) -> String {
-    use sidekick_actions::pc;
+    use duskie_actions::pc;
     let name = args["name"].as_str().unwrap_or_default().to_owned();
     let out = match args["action"].as_str().unwrap_or("search") {
         "search" => blocking(move || pc::app_search(&name)).await,
@@ -798,7 +796,7 @@ pub async fn run(app: &AppHandle, action: &str, args: &Value) -> Option<Result<O
             ))
         }),
         "desktop_act" => {
-            let target = sidekick_actions::uia::Target {
+            let target = duskie_actions::uia::Target {
                 pid: args["pid"].as_u64().and_then(|p| u32::try_from(p).ok()),
                 app: args["app"].as_str().map(str::to_owned),
             };
@@ -806,7 +804,7 @@ pub async fn run(app: &AppHandle, action: &str, args: &Value) -> Option<Result<O
             let name = args["name"].as_str().unwrap_or_default().to_owned();
             let what = args["do"].as_str().unwrap_or("click").to_owned();
             let text = args["text"].as_str().unwrap_or_default().to_owned();
-            blocking(move || sidekick_actions::uia::act(&target, n, &name, &what, &text)).await
+            blocking(move || duskie_actions::uia::act(&target, n, &name, &what, &text)).await
         }
         "excel_write" => crate::office::run_write(args).await,
         "screen_click" => {
@@ -822,12 +820,12 @@ pub async fn run(app: &AppHandle, action: &str, args: &Value) -> Option<Result<O
                 .map(|()| msg(format!("Clicked {what}")))
         }
         "desktop_keys" => {
-            let target = sidekick_actions::uia::Target {
+            let target = duskie_actions::uia::Target {
                 pid: args["pid"].as_u64().and_then(|p| u32::try_from(p).ok()),
                 app: args["app"].as_str().map(str::to_owned),
             };
             let keys = args["keys"].as_str().unwrap_or_default().to_owned();
-            blocking(move || sidekick_actions::uia::keys(&target, &keys)).await
+            blocking(move || duskie_actions::uia::keys(&target, &keys)).await
         }
         "app_action" => {
             let tool = args["tool"].as_str().unwrap_or_default();
@@ -884,7 +882,7 @@ mod tests {
 
     #[test]
     fn settings_decide_what_waits() {
-        let mut a = sidekick_core::AgentSettings::default();
+        let mut a = duskie_core::AgentSettings::default();
         assert_eq!(risk("click", "button", "Send", ""), Risk::Outward);
         assert_eq!(
             risk("click", "button", "Place order", ""),

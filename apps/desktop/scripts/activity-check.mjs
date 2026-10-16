@@ -94,7 +94,7 @@ assert.equal(a.visibleActivities([{ ...downloading, dismissed: true }], now).len
 
 let state;
 const outcomes = [];
-const useSidekick = {
+const useDuskie = {
   getState: () => state,
   setState: (patch) => {
     state = { ...state, ...(typeof patch === "function" ? patch(state) : patch) };
@@ -107,7 +107,7 @@ const runSource = source.slice(
 );
 const openContext = {
   ...context,
-  useSidekick,
+  useDuskie,
   beginActivity: a.beginActivity,
   finishActivity: a.finishActivity,
   ownsWorking: a.ownsWorking,
@@ -115,7 +115,7 @@ const openContext = {
   api: { askClose() {}, activityOpenStart: async () => {}, activityOpenFinish: async () => {} },
   showDone(message) {
     outcomes.push(message);
-    useSidekick.setState({ mascot: "success" });
+    useDuskie.setState({ mascot: "success" });
   },
 };
 vm.runInNewContext(

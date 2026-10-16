@@ -2,7 +2,7 @@
 // and numbered lists (one level of nesting), quotes, simple tables, fenced
 // code (with a copy button), inline code, bold, italics and links. No HTML is
 // ever injected; everything renders as React elements. Links to files,
-// folders and pages open through Sidekick, never in this window; files and
+// folders and pages open through Duskie, never in this window; files and
 // folders show as chips.
 //
 // Built for streaming: partial input renders sensibly (an open fence, a list

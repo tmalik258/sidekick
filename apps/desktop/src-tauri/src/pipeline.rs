@@ -4,8 +4,8 @@
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
-use sidekick_core::{Event, MascotEvent, Pause};
-use sidekick_sensors::{DownloadsSensor, IdleSensor, PAIR_REQUEST, PAIRED, WindowSensor};
+use duskie_core::{Event, MascotEvent, Pause};
+use duskie_sensors::{DownloadsSensor, IdleSensor, PAIR_REQUEST, PAIRED, WindowSensor};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::broadcast::error::RecvError;
 
@@ -88,7 +88,7 @@ async fn handle(app: &AppHandle, mut event: Event) {
         let _ = app.emit("browsers://changed", ());
         return;
     }
-    // Before onboarding is done Sidekick only onboards: the island follows
+    // Before onboarding is done Duskie only onboards: the island follows
     // the window, and the extension can pair. Nothing is stored or suggested.
     if !lock(&app.state::<AppState>().settings).onboarded {
         if event.kind == WindowSensor::EVENT_KIND {
@@ -109,7 +109,7 @@ async fn handle(app: &AppHandle, mut event: Event) {
         // Lock screen still emits input; IdleSensor only sends ACTIVE after unlock.
         // If we somehow get ACTIVE while still locked, stay away.
         let away = event.kind == IdleSensor::IDLE
-            || (event.kind == IdleSensor::ACTIVE && sidekick_sensors::session_locked());
+            || (event.kind == IdleSensor::ACTIVE && duskie_sensors::session_locked());
         app.state::<AppState>()
             .away
             .store(away, std::sync::atomic::Ordering::Relaxed);
@@ -131,7 +131,7 @@ async fn handle(app: &AppHandle, mut event: Event) {
         let exe = event.payload["exe"].as_str().unwrap_or_default();
         let app_name = event.payload["app"].as_str().unwrap_or_default();
         // Lock / sign-in UI: pause time and skip "where was I" — IdleSensor owns away.
-        if sidekick_sensors::is_lock_ui(exe) || sidekick_sensors::is_lock_ui(app_name) {
+        if duskie_sensors::is_lock_ui(exe) || duskie_sensors::is_lock_ui(app_name) {
             timetrack::on_away(app);
             return;
         }
@@ -157,7 +157,7 @@ async fn handle(app: &AppHandle, mut event: Event) {
         return;
     }
 
-    if event.kind == sidekick_sensors::calendar::CalendarSensor::SOON {
+    if event.kind == duskie_sensors::calendar::CalendarSensor::SOON {
         crate::moments::enrich_meeting(app, &mut event);
     }
 
@@ -181,7 +181,7 @@ fn propose(app: &AppHandle, event: &Event) {
     }
 }
 
-fn evaluate(app: &AppHandle, event: &Event) -> Option<sidekick_skills::Proposal> {
+fn evaluate(app: &AppHandle, event: &Event) -> Option<duskie_skills::Proposal> {
     let state = app.state::<AppState>();
     let settings = lock(&state.settings).clone();
     let exec = executor(&state);

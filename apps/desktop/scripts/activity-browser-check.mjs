@@ -4,7 +4,7 @@ import { chromium } from "playwright";
 
 const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
 const errors = [];
-const base = process.env.SIDEKICK_PREVIEW_URL ?? "http://localhost:3002";
+const base = process.env.DUSKIE_PREVIEW_URL ?? "http://localhost:3002";
 async function preview(query, test) {
   const page = await browser.newPage({ viewport: { width: 900, height: 800 }, reducedMotion: "reduce" });
   page.on("pageerror", (e) => errors.push(e.message));
@@ -21,8 +21,8 @@ async function details(page) {
 try {
   for (const query of ["orphan", "orphan&activity=download"]) {
     await preview(query, async (page) => {
-      await page.getByRole("img", { name: "Sidekick is idle", exact: true }).waitFor();
-      assert.equal(await page.getByRole("img", { name: "Sidekick is working", exact: true }).count(), 0);
+      await page.getByRole("img", { name: "Duskie is idle", exact: true }).waitFor();
+      assert.equal(await page.getByRole("img", { name: "Duskie is working", exact: true }).count(), 0);
     });
   }
   await preview("activity=action", async (page) => {

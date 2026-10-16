@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping. Sidekick is a Tauri 2 app: Rust crates in `crates/`, the island UI (Next.js static export) in `apps/desktop`, skills in `skills/`.
+Thanks for helping. Duskie is a Tauri 2 app: Rust crates in `crates/`, the island UI (Next.js static export) in `apps/desktop`, skills in `skills/`.
 
 ## Setup
 
@@ -8,8 +8,8 @@ Windows with Rust (stable), Node 22 and pnpm:
 
 ```powershell
 pnpm install
-pnpm dev          # "Sidekick Dev" — separate data from the installed app
-pnpm dev:fresh    # wipe Sidekick Dev data, then start (replay first-run)
+pnpm dev          # "Duskie Dev" — separate data from the installed app
+pnpm dev:fresh    # wipe Duskie Dev data, then start (replay first-run)
 ```
 
 `pnpm web` previews the UI in a browser with a mock backend. Dev vs production data paths are in [README.md](README.md#development).
@@ -27,7 +27,7 @@ pnpm typecheck
 pnpm --filter desktop build
 ```
 
-Voice tests that need the speech models run when `SIDEKICK_VOICE_MODELS` points at a folder holding them.
+Voice tests that need the speech models run when `DUSKIE_VOICE_MODELS` points at a folder holding them.
 
 ### End-to-end tests (Windows)
 
@@ -39,7 +39,7 @@ pnpm tauri build --debug --no-bundle --config src-tauri/tauri.e2e.conf.json
 pnpm e2e
 ```
 
-For the run it starts Sidekick onboarded with voice off; your own `settings.json` is backed up and put back afterwards. Quit Sidekick first.
+For the run it starts Duskie onboarded with voice off; your own `settings.json` is backed up and put back afterwards. Quit Duskie first.
 
 ### Freezes
 
@@ -52,10 +52,10 @@ Most new behavior is a skill: one YAML file that reacts to an event and offers b
 Rules for skills:
 
 - Destructive or outward actions (deleting, installing, sending) can never run at Auto.
-- Use `open_folder`, never `open_path`, for paths that come from outside Sidekick.
+- Use `open_folder`, never `open_path`, for paths that come from outside Duskie.
 - Never build a shell command from event data; actions take argument lists.
 
-You can also ask Sidekick to write one: in Ask mode type what you want and pick "Teach Sidekick a skill".
+You can also ask Duskie to write one: in Ask mode type what you want and pick "Teach Duskie a skill".
 
 ## Security rules
 

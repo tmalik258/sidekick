@@ -14,10 +14,10 @@ async function check(token) {
 const MESSAGES = {
   connected: "Connected.",
   denied: "Not connected: Allow was not pressed. Press Connect to try again.",
-  busy: "Sidekick is already asking. Look at the island at the top of your screen.",
-  offline: "Sidekick is not running on this PC. Start it, then press Connect.",
-  mismatch: "Sidekick is running, but the code does not match.",
-  error: "Sidekick answered unexpectedly. Try again.",
+  busy: "Duskie is already asking. Look at the island at the top of your screen.",
+  offline: "Duskie is not running on this PC. Start it, then press Connect.",
+  mismatch: "Duskie is running, but the code does not match.",
+  error: "Duskie answered unexpectedly. Try again.",
 };
 
 chrome.storage.local.get("token").then(async ({ token }) => {
@@ -26,7 +26,7 @@ chrome.storage.local.get("token").then(async ({ token }) => {
 });
 
 document.getElementById("connect").addEventListener("click", async () => {
-  status.textContent = "Waiting for you to press Allow in Sidekick...";
+  status.textContent = "Waiting for you to press Allow in Duskie...";
   const result = await chrome.runtime.sendMessage({ type: "sidekick-pair" });
   status.textContent = MESSAGES[result] || MESSAGES.error;
 });

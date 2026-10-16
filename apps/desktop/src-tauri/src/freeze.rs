@@ -6,7 +6,7 @@
 //!
 //! The heartbeat uses `run_on_main_thread`. On Windows that path has been
 //! linked to intermittent heap corruption in Tauri/tao when hammered, so the
-//! beat is slow (seconds, not fractions), and `SIDEKICK_NO_FREEZE_WATCH=1`
+//! beat is slow (seconds, not fractions), and `DUSKIE_NO_FREEZE_WATCH=1`
 //! turns it off for A/B. Sync command timing always stays on.
 
 use std::collections::VecDeque;
@@ -34,7 +34,7 @@ pub struct Freeze {
     /// The command that held the thread, or "stall" from the heartbeat.
     pub what: String,
     pub ms: u64,
-    /// Seconds since Sidekick started.
+    /// Seconds since Duskie started.
     pub at: u64,
 }
 
@@ -109,7 +109,10 @@ pub fn timed<R: Runtime>(
 }
 
 fn watch_disabled() -> bool {
-    match std::env::var("SIDEKICK_NO_FREEZE_WATCH") {
+    // The old name still works for one release.
+    match std::env::var("DUSKIE_NO_FREEZE_WATCH")
+        .or_else(|_| std::env::var("SIDEKICK_NO_FREEZE_WATCH"))
+    {
         Ok(v) => {
             let v = v.trim();
             !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false")
@@ -120,11 +123,11 @@ fn watch_disabled() -> bool {
 
 /// Starts the heartbeat: periodically asks the UI thread to answer, and notes
 /// how long it took when that is over [`SLOW`]. No-op when
-/// `SIDEKICK_NO_FREEZE_WATCH` is set (command timing still runs).
+/// `DUSKIE_NO_FREEZE_WATCH` is set (command timing still runs).
 pub fn watch<R: Runtime>(app: &AppHandle<R>) {
     *STARTED.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
     if watch_disabled() {
-        log::info!("freeze heartbeat off (SIDEKICK_NO_FREEZE_WATCH)");
+        log::info!("freeze heartbeat off (DUSKIE_NO_FREEZE_WATCH)");
         return;
     }
     log::info!("freeze heartbeat every {} ms", BEAT.as_millis());

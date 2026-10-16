@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
+use duskie_core::{Event, EventBus};
 use listeners::{Protocol, SocketState};
-use sidekick_core::{Event, EventBus};
 use tokio::task::JoinHandle;
 
 use crate::{Sensor, SensorGate};
@@ -34,8 +34,8 @@ const IGNORED: &[&str] = &[
     "discord.exe",
     "spotify.exe",
     "onedrive.exe",
-    "sidekick-desktop.exe",
-    "sidekick-desktop",
+    "duskie-desktop.exe",
+    "duskie-desktop",
     "systemd",
     "systemd-resolved",
     "sshd",
@@ -80,7 +80,7 @@ impl Sensor for PortsSensor {
 
     fn spawn(self: Box<Self>, bus: EventBus, gate: SensorGate) -> JoinHandle<()> {
         tokio::spawn(async move {
-            // Servers already running when Sidekick starts are not news.
+            // Servers already running when Duskie starts are not news.
             let mut known = tokio::task::spawn_blocking(snapshot)
                 .await
                 .unwrap_or_default();

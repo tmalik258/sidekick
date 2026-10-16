@@ -1,17 +1,17 @@
 "use client";
 
-// The first welcome step: what Sidekick is, in three short points, then
+// The first welcome step: what Duskie is, in three short points, then
 // your name and whether you work with code (which sets the path ahead).
 
 import { type ReactNode, useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
 import { shortcutBinding } from "@/lib/shortcuts";
-import { updateSettings, useAssistantName, useSidekick } from "@/lib/store";
+import { updateSettings, useAssistantName, useDuskie } from "@/lib/store";
 
 export function WelcomeIntro() {
-  const hotkey = shortcutBinding(useSidekick((s) => s.settings.paletteHotkey));
+  const hotkey = shortcutBinding(useDuskie((s) => s.settings.paletteHotkey));
   const name = useAssistantName();
-  const voiceStatus = useSidekick((s) => s.voiceStatus);
+  const voiceStatus = useDuskie((s) => s.voiceStatus);
   const downloading = voiceStatus?.downloading ?? false;
   const missing = (voiceStatus?.missingBytes ?? 0) > 0;
   return (
@@ -43,8 +43,8 @@ export function WelcomeIntro() {
 
 /** Your name (offered from Windows) and "Do you work with code?". */
 function AboutYou() {
-  const userName = useSidekick((s) => s.settings.userName);
-  const codes = useSidekick((s) => s.settings.codes);
+  const userName = useDuskie((s) => s.settings.userName);
+  const codes = useDuskie((s) => s.settings.codes);
   const [draft, setDraft] = useState(userName);
   useEffect(() => {
     if (userName) return setDraft(userName);

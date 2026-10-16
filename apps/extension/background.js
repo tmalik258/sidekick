@@ -1,4 +1,4 @@
-// Sidekick extension, background. Relays page events to the desktop app on
+// Duskie extension, background. Relays page events to the desktop app on
 // 127.0.0.1 and runs the commands it sends back (close duplicate tabs, save
 // the session). Nothing here talks to any other server.
 
@@ -89,7 +89,7 @@ async function token() {
   return token || "";
 }
 
-/** "Chrome", "Edge", "Brave", "Opera", "Firefox": shown on Sidekick's prompt. */
+/** "Chrome", "Edge", "Brave", "Opera", "Firefox": shown on Duskie's prompt. */
 function browserName() {
   const ua = navigator.userAgent;
   if (/Firefox\//.test(ua)) return "Firefox";
@@ -111,7 +111,7 @@ async function call(path, init = {}) {
       ...(init.headers || {}),
     },
   });
-  // Sidekick was reinstalled or reset: pair again.
+  // Duskie was reinstalled or reset: pair again.
   if (res.status === 401) {
     await chrome.storage.local.remove("token");
     pair();
@@ -120,7 +120,7 @@ async function call(path, init = {}) {
 }
 
 /**
- * Asks Sidekick to connect. Sidekick shows Allow or Deny on its island; on
+ * Asks Duskie to connect. Duskie shows Allow or Deny on its island; on
  * Allow it answers with the token. Waits up to 90 seconds for the answer.
  */
 let pairing = null;
@@ -159,11 +159,11 @@ async function report(event) {
     await call("/browser/event", { method: "POST", body: JSON.stringify(event) });
     poll();
   } catch {
-    // Sidekick is not running; nothing to do.
+    // Duskie is not running; nothing to do.
   }
 }
 
-// Commands are picked up with a long poll that keeps going while Sidekick
+// Commands are picked up with a long poll that keeps going while Duskie
 // answers, so a request (read this page, click Send) runs at once. The
 // alarm restarts it if the browser put the worker to sleep.
 let polling = false;
@@ -205,7 +205,7 @@ async function answer(cmd) {
   try {
     await call("/browser/result", { method: "POST", body: JSON.stringify({ id: cmd.id, result }) });
   } catch {
-    // Sidekick went away.
+    // Duskie went away.
   }
 }
 
@@ -330,7 +330,7 @@ async function closeDuplicates() {
 async function saveSession() {
   const tabs = (await chrome.tabs.query({})).filter((t) => (t.url || "").startsWith("http"));
   const stamp = new Date().toLocaleString();
-  const folder = await chrome.bookmarks.create({ title: `Sidekick session ${stamp}` });
+  const folder = await chrome.bookmarks.create({ title: `Duskie session ${stamp}` });
   for (const t of tabs) await chrome.bookmarks.create({ parentId: folder.id, title: t.title || t.url, url: t.url });
 }
 

@@ -98,7 +98,13 @@ pub struct Settings {
     pub calendar: CalendarSettings,
     /// Composio's MCP server, for apps like Jira, Slack and Gmail in chat.
     pub composio: ComposioSettings,
+    /// Apps connected directly over MCP, preferred over Composio.
+    pub direct_servers: Vec<DirectServer>,
     pub semantic_search: SemanticSearch,
+    /// The new island look; off by default.
+    pub redesign: Redesign,
+    /// MCP servers the user connected directly (stdio), preferred over Composio.
+    pub direct_mcp: DirectMcp,
     /// The first-run welcome was finished or skipped.
     pub onboarded: bool,
     /// Step index inside the welcome flow (0-based). Kept so a restart
@@ -106,9 +112,9 @@ pub struct Settings {
     pub welcome_step: u32,
     /// Look for a newer release once a day.
     pub check_updates: bool,
-    /// Programs whose windows and copies Sidekick ignores.
+    /// Programs whose windows and copies Duskie ignores.
     pub deny_apps: Vec<String>,
-    /// Sites (and their subdomains) Sidekick ignores.
+    /// Sites (and their subdomains) Duskie ignores.
     pub deny_sites: Vec<String>,
     /// Learn what you open first each day and offer it as one card.
     pub routines: bool,
@@ -123,15 +129,15 @@ pub struct Settings {
     pub alive: bool,
     /// After a crash, offer a report to send (never sent on its own).
     pub crash_reports: bool,
-    /// The notification inbox: Sidekick reads Windows notifications and only
+    /// The notification inbox: Duskie reads Windows notifications and only
     /// brings up what matters.
     pub notifications: NotificationSettings,
     /// Saved tasks that run again on a trigger (or on request).
     pub recipes: Vec<Recipe>,
-    /// Things Sidekick knows about the user ("My manager is Sara"), given to
+    /// Things Duskie knows about the user ("My manager is Sara"), given to
     /// every model. Edited in Settings or learned when the user says so.
     pub memory: Vec<String>,
-    /// What Sidekick calls the user ("Sam"); empty until they say.
+    /// What Duskie calls the user ("Sam"); empty until they say.
     pub user_name: String,
     /// People the user works with ("Sara, my manager"), one per line.
     pub people: String,
@@ -142,12 +148,12 @@ pub struct Settings {
     /// The user works with code: technical answers and setup. None: not asked.
     pub codes: Option<bool>,
     /// What the assistant is called and answers to ("Hey Orbi"). The app
-    /// itself stays Sidekick.
+    /// itself stays Duskie.
     pub assistant_name: String,
     /// Learn from choices (links, files, suggestions, routines). Off: nothing
     /// new is learned; what is known stays until forgotten.
     pub learning: bool,
-    /// How much Sidekick asks before acting in apps and pages.
+    /// How much Duskie asks before acting in apps and pages.
     pub agent: AgentSettings,
 }
 
@@ -160,7 +166,7 @@ pub struct AgentSettings {
     pub ask: String,
     /// Per app or site ("whatsapp", "mail.google.com"): "allow", "ask" or
     /// "never". Allow skips the tap except for paying and deleting; never
-    /// keeps Sidekick out entirely.
+    /// keeps Duskie out entirely.
     pub places: BTreeMap<String, String>,
 }
 
@@ -223,16 +229,64 @@ pub enum Trigger {
 /// How much a notification interrupts.
 pub const NOTIFY_LEVELS: &[&str] = &["now", "soon", "digest", "never"];
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct NotificationSettings {
     /// Read and sort Windows notifications.
     pub enabled: bool,
     /// The user's level per app ("WhatsApp" -> "soon"), from [`NOTIFY_LEVELS`].
-    /// Missing means Sidekick decides.
+    /// Missing means Duskie decides.
     pub apps: BTreeMap<String, String>,
     /// People whose messages always come through right away.
     pub vip: Vec<String>,
+    /// Normal (soft sound for quieter things) or Calm (sound only for Urgent).
+    pub profile: crate::attention::Profile,
+    /// What Duskie learned from what you act on and ask for less of.
+    pub lessons: crate::attention::Lessons,
+    /// A mail account reached over IMAP (Advanced). The password is in the
+    /// keychain, never here.
+    pub imap: MailAccountSettings,
+}
+
+/// An MCP server the user connected directly. A program on this PC is
+/// arbitrary code, so it only runs after the user confirmed the exact
+/// command. Variable values (tokens) are in the keychain, never here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub struct DirectServer {
+    pub id: String,
+    /// The app it serves, lower case ("github").
+    pub app: String,
+    /// "stdio" runs `command`; "url" connects to `url`.
+    pub kind: String,
+    pub command: String,
+    pub args: Vec<String>,
+    /// Names of the variables it gets. Values are in the keychain.
+    pub env_names: Vec<String>,
+    pub url: String,
+    /// The user confirmed running exactly this command and arguments.
+    pub confirmed: bool,
+    /// Tools the user allowed to change things, by exact name.
+    pub writes_allowed: Vec<String>,
+}
+
+/// Where an IMAP account lives and who signs in. No password.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct MailAccountSettings {
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+}
+
+impl Default for MailAccountSettings {
+    fn default() -> Self {
+        Self {
+            host: String::new(),
+            port: 993,
+            user: String::new(),
+        }
+    }
 }
 
 impl Default for NotificationSettings {
@@ -243,6 +297,9 @@ impl Default for NotificationSettings {
             enabled: true,
             apps: BTreeMap::new(),
             vip: Vec::new(),
+            profile: crate::attention::Profile::Normal,
+            lessons: crate::attention::Lessons::default(),
+            imap: MailAccountSettings::default(),
         }
     }
 }
@@ -261,6 +318,31 @@ pub const DEFAULT_DENY_APPS: &[&str] = &[
     "snippingtool.exe",
     "screenclippinghost.exe",
 ];
+
+/// Switches for the new island look. Off until it is ready for everyone.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Redesign {
+    pub enabled: bool,
+}
+
+/// One MCP server started as a program on this PC (no shell).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DirectMcpServer {
+    pub id: String,
+    pub name: String,
+    /// Program path or name; never a shell command line.
+    pub command: String,
+    pub args: Vec<String>,
+}
+
+/// Direct MCP connections the user added in Settings > Apps.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DirectMcp {
+    pub servers: Vec<DirectMcpServer>,
+}
 
 /// Search by meaning with an embedding model on this PC.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -314,13 +396,13 @@ pub struct ComposioSettings {
 }
 
 /// Voice: on by default. Speech models download on launch when
-/// missing. The microphone is open only while voice is on and Sidekick is not
+/// missing. The microphone is open only while voice is on and Duskie is not
 /// paused.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct VoiceSettings {
     pub enabled: bool,
-    /// Listen for "Hey Sidekick". Off leaves push to talk in Ask mode.
+    /// Listen for "Hey Duskie". Off leaves push to talk in Ask mode.
     pub wake_word: bool,
     /// Read answers aloud when the question was spoken.
     pub speak_answers: bool,
@@ -374,7 +456,7 @@ impl Default for VoiceSettings {
     }
 }
 
-/// AI providers (each can be switched off; Sidekick works without any).
+/// AI providers (each can be switched off; Duskie works without any).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AiSettings {
@@ -673,7 +755,10 @@ impl Default for Settings {
             voice: VoiceSettings::default(),
             calendar: CalendarSettings::default(),
             composio: ComposioSettings::default(),
+            direct_servers: Vec::new(),
             semantic_search: SemanticSearch::default(),
+            redesign: Redesign::default(),
+            direct_mcp: DirectMcp::default(),
             onboarded: false,
             welcome_step: 0,
             check_updates: true,
@@ -693,7 +778,7 @@ impl Default for Settings {
             projects: String::new(),
             answer_style: String::new(),
             codes: None,
-            assistant_name: "Sidekick".into(),
+            assistant_name: "Duskie".into(),
             learning: true,
             agent: AgentSettings::default(),
         }
@@ -770,8 +855,9 @@ impl Settings {
         }
         self.collapse_after_secs = self.collapse_after_secs.clamp(2, 120);
         let name = self.assistant_name.trim();
-        self.assistant_name = if name.is_empty() {
-            "Sidekick".into()
+        // Sidekick was renamed Duskie; a name nobody chose follows it.
+        self.assistant_name = if name.is_empty() || name == "Sidekick" {
+            "Duskie".into()
         } else {
             name.chars().take(24).collect()
         };
@@ -850,6 +936,13 @@ impl Settings {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn redesign_is_off_by_default_and_old_files_still_load() {
+        assert!(!Settings::default().redesign.enabled);
+        let old: Settings = serde_json::from_str("{\"muted\":true}").unwrap();
+        assert!(!old.redesign.enabled);
+    }
+
     use super::*;
 
     #[test]

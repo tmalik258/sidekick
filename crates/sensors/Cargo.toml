@@ -1,6 +1,6 @@
 [package]
-name = "sidekick-sensors"
-description = "Sensors that turn OS signals into Sidekick events"
+name = "duskie-sensors"
+description = "Sensors that turn OS signals into Duskie events"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -23,7 +23,7 @@ ulid.workspace = true
 sysinfo = { version = "0.39", default-features = false, features = ["system", "disk"] }
 serde.workspace = true
 serde_json.workspace = true
-sidekick-core.workspace = true
+duskie-core.workspace = true
 tokio = { workspace = true, features = ["net", "io-util"] }
 
 [target.'cfg(windows)'.dependencies]

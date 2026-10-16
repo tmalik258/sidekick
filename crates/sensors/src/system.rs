@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use sidekick_core::{Event, EventBus};
+use duskie_core::{Event, EventBus};
 use sysinfo::{
     Disks, MemoryRefreshKind, ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System,
 };

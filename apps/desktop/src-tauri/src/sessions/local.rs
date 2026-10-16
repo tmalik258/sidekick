@@ -1,5 +1,5 @@
 //! The local coding agent: a coding model on this PC through Ollama, driven
-//! by Sidekick. It can list, read and search the project and propose edits;
+//! by Duskie. It can list, read and search the project and propose edits;
 //! every edit is asked about, whatever the mode, and nothing is written
 //! without the user's OK. When it goes round in circles it offers a handoff.
 
@@ -41,7 +41,7 @@ fn ram_gb() -> u64 {
 fn root(base_url: &str) -> String {
     let b = base_url.trim().trim_end_matches('/');
     let b = if b.is_empty() {
-        sidekick_ai::OLLAMA_URL
+        duskie_ai::OLLAMA_URL
     } else {
         b
     };

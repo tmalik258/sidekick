@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
+use duskie_core::{Event, EventBus, Sensitivity};
 use notify::event::{ModifyKind, RenameMode};
 use notify::{EventKind, RecursiveMode, Watcher};
-use sidekick_core::{Event, EventBus, Sensitivity};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 

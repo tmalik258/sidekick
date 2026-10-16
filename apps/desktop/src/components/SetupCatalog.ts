@@ -76,8 +76,8 @@ export const SETUP_CATALOG: Array<{
   {
     id: "claude_mcp",
     group: "connect",
-    title: "Sidekick tools in Claude Code",
-    why: "Lets Claude Code use Sidekick's tools.",
+    title: "Duskie tools in Claude Code",
+    why: "Lets Claude Code use Duskie's tools.",
     recommended: false,
   },
   {
@@ -90,8 +90,8 @@ export const SETUP_CATALOG: Array<{
   {
     id: "codex_mcp",
     group: "connect",
-    title: "Sidekick tools in Codex",
-    why: "Lets Codex use Sidekick's tools.",
+    title: "Duskie tools in Codex",
+    why: "Lets Codex use Duskie's tools.",
     recommended: false,
   },
   {
@@ -126,7 +126,7 @@ export const SETUP_CATALOG: Array<{
     id: "voice",
     group: "connect",
     title: "Voice",
-    why: 'Say "Hey Sidekick" and hear answers. About 205 MB, all on this PC.',
+    why: 'Say "Hey Duskie" and hear answers. About 205 MB, all on this PC.',
     recommended: false,
   },
   {

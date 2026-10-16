@@ -5,19 +5,15 @@ import type { PlanDoc, PlanItem } from "./agents";
 
 const BARE_NUM = /^\s*\d+[.)]\s*$/;
 const INLINE_NUM = /^\s*\d+[.)]\s+(.+?)\s*$/;
-const BULLET = /^\s*[-*]\s+(?:\[[ xX]\]\s+)?(?!\s*option:)(.+?)\s*$/i;
 const READY = /\bplan\s+is\s+ready\b/i;
 const SECTION_STOP = /^(assumptions?|notes?|the plan is ready)\b/i;
 const TITLE = /^\s*(?:#{1,3}\s*)?(?:plan\s*[:—-]\s*)(.+?)\s*$/i;
 
 /** Full document parse: title, steps with bodies, assumptions. */
 export function parsePlanDocument(text: string): PlanDoc | null {
+  // Numbered steps only: a plain bullet list is not a plan.
   const items = parseNumbered(text);
-  if (items.length < 2) {
-    const bullets = parseBullets(text);
-    if (bullets.length < 2) return null;
-    return toDoc(text, bullets);
-  }
+  if (items.length < 2) return null;
   return toDoc(text, items);
 }
 
@@ -122,18 +118,6 @@ function parseNumbered(text: string): PlanItem[] {
       continue;
     }
     i++;
-  }
-  return items.length >= 2 ? items : [];
-}
-
-function parseBullets(text: string): PlanItem[] {
-  const items: PlanItem[] = [];
-  const seen = new Set<string>();
-  for (const line of text.split("\n")) {
-    const m = line.match(BULLET);
-    if (!m) continue;
-    const done = /^\s*[-*]\s+\[[xX]\]/.test(line);
-    pushStep(items, seen, m[1] ?? "", done ? "completed" : "pending");
   }
   return items.length >= 2 ? items : [];
 }

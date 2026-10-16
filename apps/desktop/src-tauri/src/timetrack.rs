@@ -8,8 +8,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use chrono::Local;
+use duskie_core::Event;
 use serde_json::Value;
-use sidekick_core::Event;
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, lock};
@@ -159,7 +159,7 @@ pub fn human(secs: i64) -> String {
 }
 
 /// Time per project (or app when there is no project), longest first.
-pub fn by_name(rows: &[sidekick_core::AppTime]) -> Vec<(String, i64)> {
+pub fn by_name(rows: &[duskie_core::AppTime]) -> Vec<(String, i64)> {
     let mut by_name: Vec<(String, i64)> = Vec::new();
     for r in rows {
         let name = if r.project.is_empty() {
@@ -209,7 +209,7 @@ impl Done {
         let (roots, meetings) = {
             let state = app.state::<AppState>();
             let roots = crate::repo_roots(&lock(&state.settings));
-            let meetings = sidekick_sensors::calendar::on_day(
+            let meetings = duskie_sensors::calendar::on_day(
                 &lock(&state.calendar).meetings,
                 Local::now().date_naive(),
             )
@@ -220,9 +220,9 @@ impl Done {
         };
         let commits = roots
             .iter()
-            .flat_map(|r| sidekick_sensors::repos::find_repos(r))
+            .flat_map(|r| duskie_sensors::repos::find_repos(r))
             .filter_map(|repo| {
-                let subjects = sidekick_actions::gitflow::today_commits(&repo);
+                let subjects = duskie_actions::gitflow::today_commits(&repo);
                 let name = repo.file_name()?.to_string_lossy().into_owned();
                 (!subjects.is_empty()).then_some((name, subjects))
             })
@@ -233,7 +233,7 @@ impl Done {
 
 /// The day's summary event: time per project (or app), with a
 /// plain-text version ready to paste into a standup or timesheet.
-pub fn day_summary(rows: &[sidekick_core::AppTime], done: &Done) -> Option<Event> {
+pub fn day_summary(rows: &[duskie_core::AppTime], done: &Done) -> Option<Event> {
     let total: i64 = rows.iter().map(|r| r.secs).sum();
     if total < MIN_SUMMARY_SECS {
         return None;
@@ -382,7 +382,7 @@ pub fn start(app: &AppHandle) {
             }
             if let Some((name, project)) = long_session {
                 let minutes = FOCUS_AFTER.as_secs() / 60;
-                let dnd = tokio::task::spawn_blocking(sidekick_actions::pc::read_state)
+                let dnd = tokio::task::spawn_blocking(duskie_actions::pc::read_state)
                     .await
                     .map(|s| s.do_not_disturb)
                     .unwrap_or_default();
@@ -424,7 +424,7 @@ mod tests {
 
     #[test]
     fn summarizes_the_day_by_project() {
-        let row = |app: &str, project: &str, secs| sidekick_core::AppTime {
+        let row = |app: &str, project: &str, secs| duskie_core::AppTime {
             app: app.into(),
             project: project.into(),
             secs,

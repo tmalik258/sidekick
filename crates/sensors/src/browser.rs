@@ -1,4 +1,4 @@
-//! The browser bridge. The Sidekick extension reports page
+//! The browser bridge. The Duskie extension reports page
 //! events (a long article, an Upwork job, many tabs) and picks
 //! up commands (close duplicate tabs, save session) over a localhost-only
 //! endpoint.
@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use sidekick_core::{Event, EventBus, Sensitivity};
+use duskie_core::{Event, EventBus, Sensitivity};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
@@ -110,7 +110,7 @@ impl BrowserBridge {
                 _ => Ok(v),
             },
             _ => Err(
-                "the browser did not answer. Is the Sidekick extension installed and the browser open?"
+                "the browser did not answer. Is the Duskie extension installed and the browser open?"
                     .into(),
             ),
         }
@@ -441,7 +441,7 @@ fn download_event(v: &serde_json::Value) -> Option<Event> {
             "instance": instance, "id": id, "sequence": sequence, "bytes": bytes, "startedAt": v["startedAt"].as_i64().filter(|t| *t >= 0),
             "state": state, "filename": filename, "url": url, "finalUrl": final_url, "referrer": referrer, "paused": paused,
             "total": total, "error": v["error"].as_str().map(|s| s.chars().take(256).collect::<String>())
-    })).with_sensitivity(sidekick_core::Sensitivity::Personal))
+    })).with_sensitivity(duskie_core::Sensitivity::Personal))
 }
 
 #[cfg(test)]

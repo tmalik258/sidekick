@@ -1,6 +1,6 @@
 //! AI providers. Every AI call goes through [`AiProvider`] and the
 //! [`Router`] picks the first provider that is switched on and reachable,
-//! falling back down the list. Sidekick works fully without any of them.
+//! falling back down the list. Duskie works fully without any of them.
 //!
 //! Decisions (pick one option from a typed list) are a separate, cheaper
 //! interface, [`Decider`], served by SemIf or a local model.
@@ -11,6 +11,7 @@ mod codex;
 mod decide;
 pub mod fit;
 mod mcp;
+pub mod mcp_stdio;
 mod openai;
 mod pool;
 mod router;

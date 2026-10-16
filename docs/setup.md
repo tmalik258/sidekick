@@ -1,30 +1,30 @@
-# Setting up Sidekick
+# Setting up Duskie
 
-Sidekick works on its own after install. Each item below turns on more of it. The same list is in the app. The first-run welcome looks around first (your code folders, including WSL ones from VS Code, your documents, the Ollama models you have, Claude Code) and **Set it all up** applies what you tick. **Settings > Home > Setup** shows what is left, with the exact command for anything missing. **Run** opens a PowerShell window with that command so you can watch it, and **Check again** (or waiting a few seconds) turns finished items green. Sidekick only installs or changes things when you press a button, and backs up Claude Code's settings before it adds anything.
+Duskie works on its own after install. Each item below turns on more of it. The same list is in the app. The first-run welcome looks around first (your code folders, including WSL ones from VS Code, your documents, the Ollama models you have, Claude Code) and **Set it all up** applies what you tick. **Settings > Home > Setup** shows what is left, with the exact command for anything missing. **Run** opens a PowerShell window with that command so you can watch it, and **Check again** (or waiting a few seconds) turns finished items green. Duskie only installs or changes things when you press a button, and backs up Claude Code's settings before it adds anything.
 
 ## 1. AI (pick at least one)
 
 | What | Command | Unlocks |
 | --- | --- | --- |
 | Claude Code | `irm https://claude.ai/install.ps1 \| iex`, then run `claude` once to sign in | Chat, drafts and skills with your Claude plan |
-| Ollama | `winget install -e --id Ollama.Ollama`. **Install** in Sidekick also starts Ollama and downloads the chat model below | Free local AI on this PC |
+| Ollama | `winget install -e --id Ollama.Ollama`. **Install** in Duskie also starts Ollama and downloads the chat model below | Free local AI on this PC |
 | Local chat model | Picked for your PC: `ollama pull qwen3:8b` (5.2 GB) with an 8 GB+ graphics card, `qwen3:4b` (2.5 GB) with a 6 GB+ card or 16 GB of memory, otherwise `qwen2.5:3b-instruct-q4_K_M` (1.9 GB) on a 4 GB card or lighter | Answers that never leave the PC |
 | Search model | `ollama pull nomic-embed-text` (about 270 MB) | Search by meaning, not only exact words |
-| Anthropic API key (optional) | `setx ANTHROPIC_API_KEY "your-key"`, then restart Sidekick | Pay as you go instead of a Claude plan |
+| Anthropic API key (optional) | `setx ANTHROPIC_API_KEY "your-key"`, then restart Duskie | Pay as you go instead of a Claude plan |
 
-Sidekick talks to Ollama at `127.0.0.1:11434`, so "Expose Ollama to the network" can stay off.
+Duskie talks to Ollama at `127.0.0.1:11434`, so "Expose Ollama to the network" can stay off.
 
 ## 2. Connections
 
 | What | Where | Unlocks |
 | --- | --- | --- |
 | Claude Code hooks | Settings > Connections > Claude Code > **Add for me** (merges into `~/.claude/settings.json`, keeps your own hooks, saves a dated backup next to it) | Know when a session finishes or waits; allow or deny its permission requests from the island |
-| Sidekick tools in Claude Code | Settings > Connections > Claude Code > **Add for me** (runs `claude mcp add` with your token) | Claude Code can search your history, notify you and open links |
+| Duskie tools in Claude Code | Settings > Connections > Claude Code > **Add for me** (runs `claude mcp add` with your token) | Claude Code can search your history, notify you and open links |
 | Composio | Settings > Connections > **Connect Composio**. Your browser opens; sign in and press Allow, the same as Claude's Composio connector. Every app already connected in your Composio account (Google Calendar, Gmail, Slack, Jira, Fathom and more) works right away. To add one more, use **Add** under the list, or paste a consumer key (`ck_...`) under Other ways to connect | Meeting reminders, the morning brief, follow-ups from Fathom notes, and reading your apps in Ask mode |
-| Browser extension | Settings > Connections > Browser > **Install** next to your browser. Sidekick copies the extension folder path and opens the browser's extensions page: turn on Developer mode, click Load unpacked, paste. The extension pairs on its own and the island asks you to Allow it | Page summaries, form help, duplicate tabs, saved sessions |
-| Code folders | Settings > Home > Your code: tick the folders Sidekick found | Project status, the project launcher, the end-of-day check |
-| Folders to search | Settings > Privacy and data > Search: tick the folders Sidekick found | Search inside your documents and notes |
-| Voice (optional) | Settings > AI > Voice, about 205 MB once | "Hey Sidekick", spoken answers and follow-ups without the wake word, all on this PC |
+| Browser extension | Settings > Connections > Browser > **Install** next to your browser. Duskie copies the extension folder path and opens the browser's extensions page: turn on Developer mode, click Load unpacked, paste. The extension pairs on its own and the island asks you to Allow it | Page summaries, form help, duplicate tabs, saved sessions |
+| Code folders | Settings > Home > Your code: tick the folders Duskie found | Project status, the project launcher, the end-of-day check |
+| Folders to search | Settings > Privacy and data > Search: tick the folders Duskie found | Search inside your documents and notes |
+| Voice (optional) | Settings > AI > Voice, about 205 MB once | "Hey Duskie", spoken answers and follow-ups without the wake word, all on this PC |
 
 ## 3. Tools
 
@@ -53,7 +53,7 @@ gh auth login
 | Docker Desktop (optional) | `Docker.DockerDesktop` | Start Docker when a project needs it |
 | LibreOffice (optional) | `TheDocumentFoundation.LibreOffice` | Convert Office files to PDF |
 
-Install any of them with `winget install -e --id <package>`. Sidekick picks up new tools without a restart.
+Install any of them with `winget install -e --id <package>`. Duskie picks up new tools without a restart.
 
 ## Composio and the local model
 
@@ -67,15 +67,15 @@ setx OLLAMA_CONTEXT_LENGTH 16384
 
 ## Codex
 
-Sidekick works with OpenAI's Codex CLI the same way as Claude Code, for people who use it instead or as well. Install it from Settings > Home > Setup (`npm install -g @openai/codex`) and run `codex` once to sign in. Then:
+Duskie works with OpenAI's Codex CLI the same way as Claude Code, for people who use it instead or as well. Install it from Settings > Home > Setup (`npm install -g @openai/codex`) and run `codex` once to sign in. Then:
 
 - **Chat**: Codex is in Settings > AI next to Claude Code. It runs read-only in an empty folder.
 - **Continue in...**: Settings > AI > Coding agent picks who gets handoffs from Ask mode. Auto takes Claude Code when it is installed, else Codex.
-- **Notifications and tools**: Settings > Connections > Codex > Add for me adds a `notify` script and Sidekick's MCP server to `~/.codex/config.toml` (backed up first), so the island tells you when a Codex turn is done.
+- **Notifications and tools**: Settings > Connections > Codex > Add for me adds a `notify` script and Duskie's MCP server to `~/.codex/config.toml` (backed up first), so the island tells you when a Codex turn is done.
 
 ## Supported versions
 
-Sidekick checks for these when it starts a session and says so plainly when something is too old.
+Duskie checks for these when it starts a session and says so plainly when something is too old.
 
 | What | Supported | Needs |
 | --- | --- | --- |
@@ -84,4 +84,10 @@ Sidekick checks for these when it starts a session and says so plainly when some
 | Codex | A release with `codex app-server` (`npm install -g @openai/codex@latest`) | The app server's `thread/start`, `thread/resume` and `turn/steer`. Older versions fall back to `codex exec` in Ask; the Agents tab asks you to update. |
 | Ollama | 0.5 or newer | `/api/ps` for the model's context size, and `keep_alive`. |
 | Code editors | Cursor, VS Code, VSCodium, Antigravity, Windsurf, Zed, JetBrains IDEs (2023 or newer) and Visual Studio 2019 or newer | Found from Windows' list of installed apps; projects open with the editor's own command line. |
-| git | 2.30 or newer, for reviewing and undoing agent changes | Projects without git are tracked in a private copy inside Sidekick's data folder, so review and undo work there too. |
+| git | 2.30 or newer, for reviewing and undoing agent changes | Projects without git are tracked in a private copy inside Duskie's data folder, so review and undo work there too. |
+
+## Gmail
+
+Settings > Home > Notifications > Gmail > Connect Gmail opens Google in your browser. Allow read access to mail and come back. New mail is then checked every 20 to 90 seconds while Duskie runs, and only mail that needs you becomes a card. Disconnect signs out and deletes the saved sign-in.
+
+Builds that do not include a Google sign-in show "not set up in this build yet". To try it with your own Google client, set `DUSKIE_GOOGLE_CLIENT_ID` (and `DUSKIE_GOOGLE_CLIENT_SECRET` if the client has one) before starting Duskie.

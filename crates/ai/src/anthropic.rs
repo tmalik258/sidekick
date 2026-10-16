@@ -9,7 +9,7 @@ pub const DEFAULT_MODEL: &str = "claude-haiku-4-5-20251001";
 const URL: &str = "https://api.anthropic.com/v1/messages";
 
 /// Chat with an Anthropic API key, for people without Claude Code. The key is
-/// read from `ANTHROPIC_API_KEY` at call time and never stored by Sidekick.
+/// read from `ANTHROPIC_API_KEY` at call time and never stored by Duskie.
 pub struct Anthropic {
     pub model: String,
     client: reqwest::Client,
@@ -81,7 +81,7 @@ fn usage_of(u: &Value) -> Usage {
 }
 
 /// Dollars per million input and output tokens, by model family; None for a
-/// model whose price Sidekick does not know (the answer then shows no cost).
+/// model whose price Duskie does not know (the answer then shows no cost).
 fn price(model: &str) -> Option<(f64, f64)> {
     let m = model.to_lowercase();
     if m.contains("haiku") {

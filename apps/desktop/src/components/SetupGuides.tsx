@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
-import { startWaiting, updateSettings, useSidekick } from "@/lib/store";
+import { startWaiting, updateSettings, useDuskie } from "@/lib/store";
 import { BrowserInstallPanel } from "./SetupBrowser";
 
 export function ItemGuide({ id, onDone }: { id: string; onDone: () => void }) {
@@ -25,7 +25,7 @@ export function ItemGuide({ id, onDone }: { id: string; onDone: () => void }) {
       return (
         <FoldersGuide
           label="Code folders"
-          hint="Projects Sidekick watches for status and end-of-day."
+          hint="Projects Duskie watches for status and end-of-day."
           valueKey="codeFolders"
           detectKey="codeFolders"
           onDone={onDone}
@@ -35,7 +35,7 @@ export function ItemGuide({ id, onDone }: { id: string; onDone: () => void }) {
       return (
         <FoldersGuide
           label="Folders to search"
-          hint="Documents and notes Sidekick can search from Ask mode."
+          hint="Documents and notes Duskie can search from Ask mode."
           valueKey="indexFolders"
           detectKey="searchFolders"
           onDone={onDone}
@@ -74,7 +74,7 @@ function HooksGuide({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="flex flex-col gap-2 border-t border-white/10 pt-2 text-[12px] text-[rgb(235_235_245/0.7)]">
-      <p>Adds Sidekick&apos;s hooks to Claude Code settings. Your other hooks stay; a backup is written first.</p>
+      <p>Adds Duskie&apos;s hooks to Claude Code settings. Your other hooks stay; a backup is written first.</p>
       <GuideButton primary disabled={busy} onClick={add}>
         {busy ? "Adding..." : "Add for me"}
       </GuideButton>
@@ -102,7 +102,7 @@ function McpGuide({ onDone }: { onDone: () => void }) {
         void api
           .setupRun("claude_mcp")
           .then(() => {
-            setNote("Opened PowerShell to add Sidekick tools.");
+            setNote("Opened PowerShell to add Duskie tools.");
             onDone();
           })
           .catch(() => setError(String(e)));
@@ -112,7 +112,7 @@ function McpGuide({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="flex flex-col gap-2 border-t border-white/10 pt-2 text-[12px] text-[rgb(235_235_245/0.7)]">
-      <p>Registers Sidekick&apos;s MCP server with Claude Code so it can search history and notify you.</p>
+      <p>Registers Duskie&apos;s MCP server with Claude Code so it can search history and notify you.</p>
       <GuideButton primary disabled={busy} onClick={add}>
         {busy ? "Adding..." : "Add for me"}
       </GuideButton>
@@ -135,7 +135,7 @@ function FoldersGuide({
   detectKey: "codeFolders" | "searchFolders";
   onDone: () => void;
 }) {
-  const settings = useSidekick((s) => s.settings);
+  const settings = useDuskie((s) => s.settings);
   const current = settings[valueKey].join("\n");
   const [draft, setDraft] = useState(current);
   const [busy, setBusy] = useState(false);
@@ -184,7 +184,7 @@ function FoldersGuide({
 }
 
 function VoiceGuide({ onDone }: { onDone: () => void }) {
-  const settings = useSidekick((s) => s.settings);
+  const settings = useDuskie((s) => s.settings);
   const enable = () => {
     void updateSettings({ voice: { ...settings.voice, enabled: true } }).then(() => {
       void api.voiceDownload();

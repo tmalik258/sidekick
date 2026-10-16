@@ -62,7 +62,7 @@ function sha256File(path) {
 }
 
 async function download(url, dest) {
-  const res = await fetch(url, { headers: { "User-Agent": "Sidekick" } });
+  const res = await fetch(url, { headers: { "User-Agent": "Duskie" } });
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
   const total = Number(res.headers.get("content-length") ?? 0);
   if (!res.body) throw new Error(`${url}: empty body`);

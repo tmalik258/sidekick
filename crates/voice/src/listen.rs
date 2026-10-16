@@ -1,4 +1,4 @@
-//! The listener: a small keyword model waits for "Hey Sidekick"; then a
+//! The listener: a small keyword model waits for "Hey Duskie"; then a
 //! streaming recognizer transcribes until you stop talking. Partial text
 //! arrives as you speak, so the island can show it live.
 
@@ -40,7 +40,7 @@ pub enum Control {
     ListenNow,
     /// Stop listening and go back to waiting for the wake phrase.
     Cancel,
-    /// Sidekick is speaking (true) or quiet again (false). While muted the
+    /// Duskie is speaking (true) or quiet again (false). While muted the
     /// microphone hears the speakers, so nothing it hears counts.
     Mute(bool),
 }
@@ -48,9 +48,9 @@ pub enum Control {
 #[derive(Debug, Clone)]
 pub struct ListenerConfig {
     pub models: PathBuf,
-    /// Listen for "Hey Sidekick". Off means push to talk only.
+    /// Listen for "Hey Duskie". Off means push to talk only.
     pub wake_word: bool,
-    /// Talking over Sidekick's voice stops it and starts listening.
+    /// Talking over Duskie's voice stops it and starts listening.
     pub interrupt: bool,
 }
 
@@ -67,7 +67,7 @@ const MAX_LISTEN: usize = MIC_RATE as usize * 20;
 /// Words unchanged this long count as a pause (16 kHz samples).
 const PAUSE: usize = MIC_RATE as usize * 35 / 100;
 /// A voice must stay this much louder than the speakers' echo for this
-/// long to count as talking over Sidekick.
+/// long to count as talking over Duskie.
 const BARGE_RATIO: f32 = 3.0;
 const BARGE_MIN_LEVEL: f32 = 0.02;
 const BARGE_LENGTH: usize = MIC_RATE as usize / 5;
@@ -82,7 +82,7 @@ const STALL: Duration = Duration::from_secs(3);
 /// starts it again.
 const DEAD: Duration = Duration::from_secs(10);
 
-/// Hears a voice over Sidekick's own speech: clearly louder than the
+/// Hears a voice over Duskie's own speech: clearly louder than the
 /// loudest recent echo, for long enough to be a voice and not a click. Its
 /// echo of the speakers is learned as they play, so a headset barges in
 /// easily and loud laptop speakers rarely do.
@@ -133,7 +133,7 @@ pub struct Engine {
     heard: usize,
     /// While waiting, the speech model transcribes and wakes on the phrase.
     transcript_wake: bool,
-    /// Sidekick's own voice is playing: audio is dropped, not heard.
+    /// Duskie's own voice is playing: audio is dropped, not heard.
     muted: bool,
     /// Samples since the words last changed, and whether that pause was
     /// already reported.
@@ -174,13 +174,13 @@ const _: () = assert!(MIC_RATE == 16_000);
 
 impl Engine {
     /// With the wake word on, both the keyword model and the transcript
-    /// listen for it: either one wakes Sidekick.
+    /// listen for it: either one wakes Duskie.
     pub fn new(models: &Path, wake_word: bool) -> Result<Self> {
         Self::with_wake(models, wake_word, wake_word)
     }
 
     /// `keyword`: the small keyword model. `transcript`: the speech model
-    /// runs all the time and wakes on "hey Sidekick" in what it hears.
+    /// runs all the time and wakes on "hey Duskie" in what it hears.
     pub fn with_wake(models: &Path, keyword: bool, transcript: bool) -> Result<Self> {
         let wake_word = keyword;
         if !SPEECH.installed(models) || (wake_word && !WAKE.installed(models)) {
@@ -259,7 +259,7 @@ impl Engine {
     }
 
     /// While muted, audio is dropped: the speakers' sound must not wake
-    /// Sidekick, nor be primed into the next question. Muting also ends
+    /// Duskie, nor be primed into the next question. Muting also ends
     /// waiting on anything half heard. A push to talk unmutes.
     pub fn set_muted(&mut self, muted: bool) {
         if muted && !self.muted {

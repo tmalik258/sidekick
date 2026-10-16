@@ -55,7 +55,7 @@ const OFF: &[&str] = &[
 ];
 /// Words that may sit around a command without changing it.
 const FILLER: &[&str] = &[
-    "please", "the", "my", "can", "you", "could", "now", "hey", "sidekick", "for", "me", "and",
+    "please", "the", "my", "can", "you", "could", "now", "hey", "duskie", "for", "me", "and",
     "mode",
 ];
 const QUESTION: &[&str] = &[
@@ -245,7 +245,7 @@ mod tests {
     fn plain_commands_run_without_a_model() {
         assert_eq!(w("turn on hotspot"), Some("hotspot_on"));
         assert_eq!(w("turn on horsepot"), Some("hotspot_on"));
-        assert_eq!(w("Hey Sidekick, hotspot off please"), Some("hotspot_off"));
+        assert_eq!(w("Hey Duskie, hotspot off please"), Some("hotspot_off"));
         assert_eq!(w("wifi off"), Some("wifi_off"));
         assert_eq!(w("turn off the bluetooth"), Some("bluetooth_off"));
         assert_eq!(w("enable dark mode"), Some("dark_mode_on"));
@@ -279,7 +279,7 @@ mod tests {
         };
         assert_eq!(m("focus"), Some(None));
         assert_eq!(m("focus for 45 minutes"), Some(Some(45)));
-        assert_eq!(m("hey sidekick focus for an hour"), Some(Some(60)));
+        assert_eq!(m("hey duskie focus for an hour"), Some(Some(60)));
         assert_eq!(m("focus for half an hour"), Some(Some(30)));
         assert_eq!(m("start focus mode"), Some(None));
         assert_eq!(m("focus for 2 hours"), Some(Some(120)));

@@ -17,7 +17,7 @@ for (const change of ["none", "event", "local"]) {
   let state = { update: null, updateProgress: null };
   const subscriptions = [];
   const deferred = {};
-  const useSidekick = {
+  const useDuskie = {
     subscribe(fn) {
       subscriptions.push(fn);
       return () => {};
@@ -41,14 +41,14 @@ for (const change of ["none", "event", "local"]) {
   );
   const script = init + snapshots + (change === "event" ? "progressRevision++; updateRevision++;" : "");
   vm.runInNewContext(ts.transpileModule(script, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, {
-    useSidekick,
+    useDuskie,
     api,
     EVENTS: {},
     acceptActivities() {},
     listen: () => new Promise(() => {}),
   });
   const live = { phase: "downloading", done: 50, total: 100 };
-  if (change !== "none") useSidekick.setState({ updateProgress: live, update: { version: "new" } });
+  if (change !== "none") useDuskie.setState({ updateProgress: live, update: { version: "new" } });
   deferred.updateProgress(null);
   deferred.updateStatus({ version: "old" });
   await Promise.resolve();
@@ -62,7 +62,7 @@ const confirm = source.slice(
 let state = {};
 const calls = [];
 const context = {
-  useSidekick: {
+  useDuskie: {
     setState(patch) {
       state = { ...state, ...patch };
     },

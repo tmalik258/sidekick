@@ -17,10 +17,12 @@ pub enum MascotState {
     Working,
     Success,
     Error,
+    /// A focus stretch is running: quiet, nothing offered.
+    Focus,
 }
 
 impl MascotState {
-    pub const ALL: [MascotState; 8] = [
+    pub const ALL: [MascotState; 9] = [
         MascotState::Idle,
         MascotState::Sleeping,
         MascotState::Noticing,
@@ -29,12 +31,13 @@ impl MascotState {
         MascotState::Working,
         MascotState::Success,
         MascotState::Error,
+        MascotState::Focus,
     ];
 
     /// The sound cue played when entering this state.
     pub fn cue(self) -> Option<Cue> {
         match self {
-            MascotState::Working => None,
+            MascotState::Working | MascotState::Focus => None,
             MascotState::Idle => Some(Cue::Settle),
             MascotState::Sleeping => Some(Cue::Yawn),
             MascotState::Noticing => Some(Cue::Chirp),
@@ -81,6 +84,9 @@ pub enum MascotEvent {
     SuccessElapsed,
     OfferRetry,
     ErrorDismissed,
+    /// A focus stretch began, or the island is idle while one runs.
+    FocusStart,
+    FocusEnd,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -153,6 +159,13 @@ fn next_state(from: MascotState, event: MascotEvent) -> Option<MascotState> {
         (S::Success, E::SuccessElapsed) => S::Idle,
         (S::Error, E::OfferRetry) => S::Suggesting,
         (S::Error, E::ErrorDismissed) => S::Idle,
+        (
+            S::Idle | S::Sleeping | S::Noticing | S::Suggesting | S::Success | S::Error,
+            E::FocusStart,
+        ) => S::Focus,
+        (S::Focus, E::FocusEnd) => S::Idle,
+        (S::Focus, E::ListenStart) => S::Listening,
+        (S::Focus, E::Rest) => S::Sleeping,
         _ => return None,
     })
 }
@@ -234,6 +247,20 @@ mod tests {
             Some(Cue::Settle)
         );
         assert_eq!(m.dispatch(E::ListenStart).unwrap().cue, Some(Cue::Open));
+    }
+
+    #[test]
+    fn focus_is_quiet_and_ends_to_idle() {
+        let mut m = MascotMachine::default();
+        assert_eq!(m.dispatch(E::FocusStart).unwrap().state, S::Focus);
+        assert!(m.dispatch(E::SkillMatched).is_none());
+        assert_eq!(m.dispatch(E::FocusEnd).unwrap().state, S::Idle);
+        assert!(m.dispatch(E::FocusEnd).is_none());
+    }
+
+    #[test]
+    fn voice_can_interrupt_focus() {
+        assert_eq!(run(&[E::FocusStart, E::ListenStart]), S::Listening);
     }
 
     #[test]

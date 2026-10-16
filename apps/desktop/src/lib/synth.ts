@@ -1,4 +1,4 @@
-// The "Sidekick" sound kit: short, soft tones synthesized on the fly, so the
+// The "Duskie" sound kit: short, soft tones synthesized on the fly, so the
 // mascot has its own voice and nothing needs downloading. Each sound is a
 // couple of sine or triangle notes with a quick fade, kept quiet.
 

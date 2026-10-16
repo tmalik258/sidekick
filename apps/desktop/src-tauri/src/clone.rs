@@ -5,8 +5,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use duskie_core::Event;
 use serde_json::json;
-use sidekick_core::Event;
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, lock};
@@ -260,7 +260,7 @@ pub fn after_clone(app: &AppHandle, url: &str, dir: &str, path: &str, picked: bo
         log::warn!("could not keep the clone rule: {e}");
     }
     let p = Path::new(path);
-    let deps = sidekick_actions::dev::manager(p).is_some();
+    let deps = duskie_actions::dev::manager(p).is_some();
     let name = p
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -280,10 +280,7 @@ pub fn after_clone(app: &AppHandle, url: &str, dir: &str, path: &str, picked: bo
 }
 
 /// "Pick a folder": asks where, then clones there.
-pub async fn pick_and_clone(
-    app: &AppHandle,
-    url: &str,
-) -> Result<sidekick_actions::Outcome, String> {
+pub async fn pick_and_clone(app: &AppHandle, url: &str) -> Result<duskie_actions::Outcome, String> {
     let picked = tauri::async_runtime::spawn_blocking(|| {
         rfd::FileDialog::new()
             .set_title("Clone into which folder?")
@@ -294,7 +291,7 @@ pub async fn pick_and_clone(
     .ok_or("No folder picked")?;
     let (url2, dir2) = (url.to_owned(), picked.clone());
     let out =
-        tauri::async_runtime::spawn_blocking(move || sidekick_actions::dev::clone(&url2, &dir2))
+        tauri::async_runtime::spawn_blocking(move || duskie_actions::dev::clone(&url2, &dir2))
             .await
             .map_err(|e| e.to_string())?
             .map_err(|e| e.to_string())?;

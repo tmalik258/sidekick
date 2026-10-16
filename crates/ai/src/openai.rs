@@ -83,7 +83,7 @@ impl OpenAiCompat {
             // OpenRouter lists apps by these; harmless elsewhere.
             headers.insert(
                 "X-Title",
-                reqwest::header::HeaderValue::from_static("Sidekick"),
+                reqwest::header::HeaderValue::from_static("Duskie"),
             );
             headers.insert(
                 "HTTP-Referer",
@@ -376,7 +376,7 @@ pub fn is_vision_model(name: &str) -> bool {
         || n.contains("vision")
 }
 
-/// A model Sidekick can use for local chat (not search, not vision-only).
+/// A model Duskie can use for local chat (not search, not vision-only).
 pub fn is_chat_model(name: &str) -> bool {
     !is_embedding_model(name) && !is_vision_model(name)
 }

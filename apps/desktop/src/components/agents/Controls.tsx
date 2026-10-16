@@ -8,7 +8,7 @@ import { type CSSProperties, type ReactNode, useEffect, useLayoutEffect, useRef,
 import { createPortal } from "react-dom";
 import { type Session, seenUsage, seenWindows } from "@/lib/agents";
 import { CLAUDE_MODELS, CODEX_MODELS, FAST_CLAUDE_MODEL } from "@/lib/ai-models";
-import { setOverlayHit, useSidekick } from "@/lib/store";
+import { setOverlayHit, useDuskie } from "@/lib/store";
 import { Select, type SelectOption } from "../settings/ui";
 import { AGENT_IMAGES, AGENT_MARKS } from "./AgentsTab";
 
@@ -81,7 +81,7 @@ function Pop({
   }, [requested]);
   const btn = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLDivElement>(null);
-  const islandColor = useSidekick((s) => s.settings.islandColor);
+  const islandColor = useDuskie((s) => s.settings.islandColor);
   const [at, setAt] = useState<{ left: number; bottom: number } | null>(null);
   useEffect(() => {
     if (!open) {
@@ -317,7 +317,7 @@ export function ChatControls({
   const local = idOf(agent) === "local";
   const level = LEVELS.find(([v]) => v === effort);
 
-  // Plan windows: this session's warning plus every window Sidekick has seen.
+  // Plan windows: this session's warning plus every window Duskie has seen.
   const now = Date.now();
   const byWindow = new Map<string, { used: number; window: string; resetsAt: number | null; at: number }>();
   for (const u of seenWindows(agent)) {

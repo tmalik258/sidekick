@@ -166,7 +166,7 @@ impl McpClient {
     }
 }
 
-fn parse_tools(result: &Value) -> Vec<McpTool> {
+pub(crate) fn parse_tools(result: &Value) -> Vec<McpTool> {
     result["tools"]
         .as_array()
         .map(|a| {
@@ -188,7 +188,7 @@ fn parse_tools(result: &Value) -> Vec<McpTool> {
 
 /// The text parts of a tool result, joined. Other content (images,
 /// resources) is noted, not sent to the model.
-fn tool_text(result: &Value) -> String {
+pub(crate) fn tool_text(result: &Value) -> String {
     let mut parts = Vec::new();
     if let Some(items) = result["content"].as_array() {
         for item in items {

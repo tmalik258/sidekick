@@ -1,7 +1,7 @@
 "use client";
 
 // Ask mode: the island itself becomes the place to run a
-// command or ask Sidekick, with the app you were in and the clipboard
+// command or ask Duskie, with the app you were in and the clipboard
 // attachable on request. Rendered inside the island shell; the island owns
 // the morph, this owns the content.
 
@@ -35,7 +35,7 @@ import {
   stopListening,
   updateSettings,
   useAssistantName,
-  useSidekick,
+  useDuskie,
 } from "@/lib/store";
 import {
   type CalendarToday,
@@ -141,13 +141,14 @@ const WINDOWS_PAGES: { page: string; label: string; words: string[]; switch?: st
 ];
 
 export function AskPanel() {
+  const redesignOn = useDuskie((st) => st.settings.redesign.enabled);
   const assistant = useAssistantName();
-  const ask = useSidekick((s) => s.ask);
-  const turns = useSidekick((s) => s.turns);
-  const chatId = useSidekick((s) => s.chatId);
-  const hearing = useSidekick((s) => s.hearing);
-  const voiceReady = useSidekick((s) => s.settings.voice.enabled && (s.voiceStatus?.listening ?? false));
-  const settings = useSidekick((s) => s.settings);
+  const ask = useDuskie((s) => s.ask);
+  const turns = useDuskie((s) => s.turns);
+  const chatId = useDuskie((s) => s.chatId);
+  const hearing = useDuskie((s) => s.hearing);
+  const voiceReady = useDuskie((s) => s.settings.voice.enabled && (s.voiceStatus?.listening ?? false));
+  const settings = useDuskie((s) => s.settings);
   const reducedMotion = useReducedMotion() ?? false;
   const [text, setText] = useState(ask?.prompt ?? "");
   const alt = useAltHeld();
@@ -155,11 +156,11 @@ export function AskPanel() {
   const layout = useAgents((s) => s.layout);
   const working = useAgents((s) => activeCount(s.sessions));
   // "Do you work with code?" No hides Agents and Repos; unanswered counts as yes.
-  const coder = useSidekick((s) => s.settings.codes !== false);
+  const coder = useDuskie((s) => s.settings.codes !== false);
   useEffect(listenToAgents, []);
-  const speak = useSidekick((s) => s.settings.voice.speakAnswers);
+  const speak = useDuskie((s) => s.settings.voice.speakAnswers);
   const toggleSpeak = useCallback(() => {
-    const voice = useSidekick.getState().settings.voice;
+    const voice = useDuskie.getState().settings.voice;
     void updateSettings({ voice: { ...voice, speakAnswers: !voice.speakAnswers } });
   }, []);
   // Alt shortcuts work wherever focus is in Ask. What they act on changes
@@ -233,7 +234,7 @@ export function AskPanel() {
   const [instant, setInstant] = useState<InstantResults>({ apps: [], files: [] });
   useEffect(() => {
     const q = text.trim();
-    if (q.length < 2 || q.startsWith("/") || useSidekick.getState().turns.length > 0) {
+    if (q.length < 2 || q.startsWith("/") || useDuskie.getState().turns.length > 0) {
       setInstant({ apps: [], files: [] });
       return;
     }
@@ -266,7 +267,7 @@ export function AskPanel() {
   // Every open: focus the input and refresh which AI is reachable.
   useEffect(() => {
     if (seq === undefined) return;
-    setText(useSidekick.getState().ask?.prompt ?? "");
+    setText(useDuskie.getState().ask?.prompt ?? "");
     markSeen();
     setSelected(0);
     setClips(null);
@@ -279,7 +280,7 @@ export function AskPanel() {
       .then(setChats)
       .catch(() => setChats([]));
     // A shortcut can open Ask mode straight into a tool.
-    const tool = useSidekick.getState().ask?.tool;
+    const tool = useDuskie.getState().ask?.tool;
     if (tool) setAsk({ tool: null });
     if (tool === "clipboard") void api.clipboardHistory().then(setClips);
     if (tool === "screen") {
@@ -320,10 +321,10 @@ export function AskPanel() {
   }, [chatEl]);
 
   const paused = isPaused(settings.pause);
-  const chatPage = useSidekick((s) => s.chatPage);
+  const chatPage = useDuskie((s) => s.chatPage);
   const { data: calendar } = useCached<CalendarToday>("calendar-today", api.calendarToday);
   const agent = useAgentName();
-  const askModel = useSidekick((s) => s.askModel);
+  const askModel = useDuskie((s) => s.askModel);
   const starters = useMemo(
     () =>
       contextStarters({
@@ -341,7 +342,7 @@ export function AskPanel() {
     [ask?.context, chatPage, calendar, coder],
   );
   const resetChat = useCallback((opts?: { cancel?: boolean }) => {
-    if (useSidekick.getState().hearing !== null) stopListening();
+    if (useDuskie.getState().hearing !== null) stopListening();
     newChat(opts);
     setChatName(null);
     setText("");
@@ -357,14 +358,14 @@ export function AskPanel() {
   askTabRef.current = tab === "ask";
   newChatRef.current = () => {
     if (tab !== "ask") return;
-    const streamingNow = useSidekick.getState().chatId !== null;
+    const streamingNow = useDuskie.getState().chatId !== null;
     resetChat({ cancel: !streamingNow });
   };
 
   const commands = useMemo<Command[]>(() => {
     const all: Command[] = [
       paused
-        ? { id: "resume", label: "Resume Sidekick", icon: "play", run: () => void api.sensorsResume() }
+        ? { id: "resume", label: "Resume Duskie", icon: "play", run: () => void api.sensorsResume() }
         : { id: "pause15", label: "Pause for 15 minutes", icon: "pause", run: () => void api.sensorsPause(15) },
       ...(paused
         ? []
@@ -670,7 +671,7 @@ export function AskPanel() {
               run: () => {
                 const asked = `Turn ${p.label} ${on ? "on" : "off"}`;
                 const say = (content: string, error?: string) =>
-                  useSidekick.setState((st) => ({
+                  useDuskie.setState((st) => ({
                     turns: [...st.turns, { role: "user", content: asked }, { role: "assistant", content, error }],
                   }));
                 void api.pcSwitch(name, on).then(
@@ -728,7 +729,7 @@ export function AskPanel() {
           {
             id: "skill",
             icon: <Icon name="settings" size={12} />,
-            label: "Teach Sidekick a skill",
+            label: "Teach Duskie a skill",
             run: () => {
               startSkill(text.trim());
               setText("");
@@ -856,7 +857,7 @@ export function AskPanel() {
       setText("");
       return;
     }
-    const current = useSidekick.getState();
+    const current = useDuskie.getState();
     // Listening: Esc only stops the mic and leaves the box ready to type in.
     if (current.hearing !== null || current.mascot === "listening") {
       stopListening();
@@ -1086,6 +1087,7 @@ export function AskPanel() {
           value={text}
           onChange={(e) => {
             setText(e.target.value);
+            api.voiceTyping(e.target.value.trim() !== "").catch(() => undefined);
             setOpenWhere(null);
             setSelected(INTENT_PENDING);
             setPick(0);
@@ -1155,6 +1157,7 @@ export function AskPanel() {
     </div>
   );
 
+  const fieldLast = redesignOn && !showChat;
   return (
     <>
       {agentsHost}
@@ -1188,10 +1191,15 @@ export function AskPanel() {
         {/* In a chat the field is a box at the bottom: what goes with the
           question on top, then the field, then the model and voice. The
           same wrapper either way, so the input keeps focus on send. */}
-        <div className={showChat ? "ak-askc" : "contents"}>
-          {field}
-          {!inHistory && <ContextLine keys={alt} />}
-        </div>
+        {/* Redesign, outside a chat: context on top, the field at the bottom. */}
+        {fieldLast ? (
+          !inHistory && <ContextLine keys={alt} />
+        ) : (
+          <div className={showChat ? "ak-askc" : "contents"}>
+            {field}
+            {!inHistory && <ContextLine keys={alt} />}
+          </div>
+        )}
 
         {showClips && clips ? (
           <div key="clips" className="ak-scroll ak-in" style={{ maxHeight: scrollMax }}>
@@ -1238,7 +1246,9 @@ export function AskPanel() {
                   ref={scrollIfActive(active === i)}
                   variants={reducedMotion ? staggerChildReduced : staggerChild}
                 >
-                  {it.group && <p className="ak-group">{it.group}</p>}
+                  {(it.group ?? (fieldLast && !asking && !slash && i === 0 ? "Try" : undefined)) && (
+                    <p className="ak-group">{it.group ?? "Try"}</p>
+                  )}
                   <button
                     type="button"
                     data-sel={active === i}
@@ -1247,8 +1257,17 @@ export function AskPanel() {
                     className="ak-row"
                   >
                     <span className="ak-ico">{it.icon}</span>
-                    <span className="min-w-0 flex-1 truncate">{it.label}</span>
-                    {it.hint && <span className="ak-hint">{it.hint}</span>}
+                    {fieldLast && !asking ? (
+                      <span className="ak-two min-w-0 flex-1">
+                        <span className="block truncate">{it.label}</span>
+                        {it.hint && <span className="ak-sub block truncate">{it.hint}</span>}
+                      </span>
+                    ) : (
+                      <>
+                        <span className="min-w-0 flex-1 truncate">{it.label}</span>
+                        {it.hint && <span className="ak-hint">{it.hint}</span>}
+                      </>
+                    )}
                     {it.key ? (
                       <kbd className="ak-key">{it.key}</kbd>
                     ) : (
@@ -1271,6 +1290,7 @@ export function AskPanel() {
         )}
 
         {handoffError && <p className="ak-err">{handoffError}</p>}
+        {fieldLast && <div className="contents">{field}</div>}
         {footer}
         <Timings />
       </div>

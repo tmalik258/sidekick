@@ -49,7 +49,7 @@ for (let i = 0; i < RUNS; i++) {
   });
   await page.mouse.move(380, 25, { steps: 4 });
   await page.waitForTimeout(900);
-  await page.getByRole("button", { name: /Ask Sidekick/ }).click({ timeout: 4000 });
+  await page.getByRole("button", { name: /Ask Duskie/ }).click({ timeout: 4000 });
   await page.waitForFunction(() => window.__timings?.some((t) => t.name === "open_to_ready"), null, { timeout: 5000 });
   results.open_to_ready.push(await page.evaluate(() => window.__timings.find((t) => t.name === "open_to_ready").ms));
 

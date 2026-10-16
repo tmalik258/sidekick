@@ -15,6 +15,7 @@ import type {
   AppInfo,
   AppTime,
   AskOpen,
+  AttentionProfile,
   BrowserInfo,
   BrowserStatus,
   CalendarToday,
@@ -28,14 +29,18 @@ import type {
   ExtensionGuide,
   FileChange,
   Found,
+  GitFile,
   HitRect,
   InboxStatus,
   InstantResults,
   LaterItem,
   Learned,
+  LessonRow,
   LocalModels,
+  MailStatus,
   MascotState,
   MergeState,
+  MessageDiff,
   NotifyLevel,
   ProviderStatus,
   Recipe,
@@ -123,7 +128,7 @@ export interface EventPayloads {
     cost?: number | null;
   };
   [EVENTS.aiTool]: { id: string; name: string; label?: string };
-  [EVENTS.aiProposal]: { chatId: string; id: string; label: string; step?: boolean };
+  [EVENTS.aiProposal]: { chatId: string; id: string; label: string; step?: boolean; undoable?: boolean };
   [EVENTS.askOpen]: AskOpen;
   [EVENTS.askClose]: { reason: "close" | "defer"; panelGen?: number };
   [EVENTS.actionResult]: ActionResult;
@@ -254,7 +259,7 @@ export const api = {
       speak?: boolean;
       /** Asked by voice: answer in short spoken sentences. */
       voice?: boolean;
-      /** Provider picked in Ask mode; null lets Sidekick choose. */
+      /** Provider picked in Ask mode; null lets Duskie choose. */
       prefer?: string | null;
       /** Started early at a pause in speech: hidden until aiRelease. */
       hold?: boolean;
@@ -356,6 +361,25 @@ export const api = {
   notificationsStatus: () => invoke<InboxStatus>("notifications_status"),
   notificationsSetLevel: (from: string, level: NotifyLevel | "auto") =>
     invoke<string>("notifications_set_level", { from, level }),
+  attentionLessons: () => invoke<LessonRow[]>("attention_lessons"),
+  attentionActed: (key: string) => invoke<void>("attention_acted", { key }),
+  attentionShowLess: (key: string) => invoke<void>("attention_show_less", { key }),
+  mcpValidateStdio: (spec: { command: string; args: string[] }) => invoke<void>("mcp_validate_stdio", { spec }),
+  attentionReset: (scope: string) => invoke<void>("attention_reset", { scope }),
+  gitStatus: (path: string) => invoke<GitFile[]>("git_status", { path }),
+  gitStage: (path: string, files: string[]) => invoke<string>("git_stage", { path, files }),
+  gitUnstage: (path: string, files: string[]) => invoke<string>("git_unstage", { path, files }),
+  gitCommit: (path: string, message: string) => invoke<string>("git_commit", { path, message }),
+  gitWriteMessage: (path: string) => invoke<string>("git_write_message", { path }),
+  gitAmend: (path: string, message?: string) => invoke<string>("git_amend", { path, message }),
+  gitLastCommitPushed: (path: string) => invoke<boolean>("git_last_commit_pushed", { path }),
+  gitMessageDiff: (path: string) => invoke<MessageDiff>("git_message_diff", { path }),
+  mailStatus: () => invoke<MailStatus>("mail_status"),
+  mailConnect: () => invoke<MailStatus>("mail_connect"),
+  mailConnectImap: (host: string, port: number, user: string, password: string) =>
+    invoke<MailStatus>("mail_connect_imap", { host, port, user, password }),
+  mailDisconnect: () => invoke<MailStatus>("mail_disconnect"),
+  attentionSetProfile: (profile: AttentionProfile) => invoke<void>("attention_set_profile", { profile }),
   dndGet: () => invoke<boolean | null>("dnd_get"),
   dndSet: (on: boolean) => invoke<string>("dnd_set", { on }),
   recipeSave: (recipe: Recipe) => invoke<string>("recipe_save", { recipe }),
@@ -390,6 +414,7 @@ export const api = {
   voiceDownload: () => invoke<void>("voice_download"),
   voiceCancelDownload: () => invoke<void>("voice_cancel_download"),
   voiceListen: () => invoke<void>("voice_listen"),
+  voiceTyping: (hasText: boolean) => invoke<void>("voice_typing", { hasText }),
   voiceStop: () => invoke<void>("voice_stop"),
   voiceTest: () => invoke<void>("voice_test"),
   voiceWelcome: () => invoke<WelcomeSpeech>("voice_welcome"),

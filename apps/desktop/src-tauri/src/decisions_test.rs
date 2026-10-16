@@ -1,12 +1,12 @@
-//! Sidekick's everyday decisions against real requests, as tables: what
+//! Duskie's everyday decisions against real requests, as tables: what
 //! counts as a multi-step task, which steps wait for a tap, how a
 //! notification is sorted, what a copied text is, and when a recipe fires.
 //! Each table reports every wrong row at once, so a change in one rule shows
 //! all it affects.
 
 use chrono::NaiveDate;
+use duskie_core::{AgentSettings, NotificationSettings, Trigger};
 use serde_json::json;
-use sidekick_core::{AgentSettings, NotificationSettings, Trigger};
 
 use crate::act::{Gate, Risk, decide, risk};
 use crate::inbox::{Level, sort};
@@ -295,7 +295,7 @@ fn what_copied_text_is() {
     let wrong = rows
         .iter()
         .filter_map(|(text, want)| {
-            let got = sidekick_sensors::entity::detect(text, today);
+            let got = duskie_sensors::entity::detect(text, today);
             let kind = got
                 .as_ref()
                 .and_then(|v| v["entity"].as_str().map(str::to_owned));

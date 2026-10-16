@@ -1,9 +1,9 @@
-// Sidekick extension, page side. Notices a long article or an Upwork job and
+// Duskie extension, page side. Notices a long article or an Upwork job and
 // tells the background, which tells the desktop app. It never reads keystrokes
 // and never types into password fields for agent actions.
 
 (() => {
-  // Loaded once per page, even when Sidekick injects it again.
+  // Loaded once per page, even when Duskie injects it again.
   if (window.__sidekick) return;
   window.__sidekick = true;
   const sent = new Set();
@@ -41,7 +41,7 @@
     if (++looks >= 5) clearInterval(timer);
   }, 2000);
 
-  // Reading and acting on the page for Sidekick (only when you asked it to).
+  // Reading and acting on the page for Duskie (only when you asked it to).
   // Elements get a short number ([12]) so a model can say "click 12".
   const INTERACTIVE =
     'a[href], button, input:not([type="hidden"]), textarea, select, summary, [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="checkbox"], [role="radio"], [role="option"], [role="switch"], [role="combobox"], [role="searchbox"], [role="textbox"], [contenteditable=""], [contenteditable="true"]';
@@ -123,7 +123,7 @@
     return el;
   }
 
-  /** A soft outline on what Sidekick touches, so you see it happen. */
+  /** A soft outline on what Duskie touches, so you see it happen. */
   function flash(el) {
     const old = el.style.outline;
     el.style.outline = "2px solid #0a84ff";
@@ -160,7 +160,7 @@
         el.click();
         return { ok: true, note: `Clicked ${label(el) || k}` };
       case "type":
-        if (k === "password") throw new Error("Sidekick never types into password fields");
+        if (k === "password") throw new Error("Duskie never types into password fields");
         el.focus();
         setValue(el, cmd.text || "");
         return { ok: true, note: `Typed into ${label(el) || k}` };

@@ -1,6 +1,6 @@
-//! "Add for me": puts Sidekick's hooks into `~/.claude/settings.json` and its
+//! "Add for me": puts Duskie's hooks into `~/.claude/settings.json` and its
 //! MCP server into Claude Code, only when the user presses the button. The
-//! settings file is backed up first and only Sidekick's entries are added;
+//! settings file is backed up first and only Duskie's entries are added;
 //! everything else in it is kept as it was.
 
 use std::path::{Path, PathBuf};
@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 
 use crate::setup::CLAUDE_HOOK_URL;
 
-/// Hook events Sidekick listens to, with each one's timeout in seconds.
+/// Hook events Duskie listens to, with each one's timeout in seconds.
 const HOOKS: &[(&str, u32)] = &[("Stop", 5), ("Notification", 5), ("PermissionRequest", 30)];
 
 fn points_here(groups: &Value) -> bool {
@@ -19,7 +19,7 @@ fn points_here(groups: &Value) -> bool {
     })
 }
 
-/// The settings text with Sidekick's hooks added where missing. Errors when
+/// The settings text with Duskie's hooks added where missing. Errors when
 /// the file is not a JSON object, so nothing is overwritten by mistake.
 pub fn merge_hooks(text: &str) -> Result<String, String> {
     let mut v: Value = if text.trim().is_empty() {
@@ -74,21 +74,21 @@ fn add_hooks_at(path: &Path) -> Result<Option<PathBuf>, String> {
         None
     } else {
         let b = path.with_file_name(format!(
-            "settings.json.sidekick-backup-{}",
+            "settings.json.duskie-backup-{}",
             chrono::Local::now().format("%Y%m%d-%H%M%S")
         ));
         std::fs::write(&b, &old).map_err(|e| format!("could not back up the settings: {e}"))?;
         Some(b)
     };
     // Write next to it, then swap, so a crash never leaves half a file.
-    let tmp = path.with_extension("json.sidekick-tmp");
+    let tmp = path.with_extension("json.duskie-tmp");
     std::fs::write(&tmp, new).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, path).map_err(|e| e.to_string())?;
     Ok(backup)
 }
 
-/// Adds Sidekick's MCP server to Claude Code with its own command, so
-/// Sidekick never edits `~/.claude.json`.
+/// Adds Duskie's MCP server to Claude Code with its own command, so
+/// Duskie never edits `~/.claude.json`.
 pub async fn add_mcp(claude: &Path, url: &str, token: &str) -> Result<(), String> {
     let mut cmd = tokio::process::Command::new(claude);
     cmd.args([
@@ -98,7 +98,7 @@ pub async fn add_mcp(claude: &Path, url: &str, token: &str) -> Result<(), String
         "user",
         "--transport",
         "http",
-        "sidekick",
+        "duskie",
         url,
         "--header",
         &format!("Authorization: Bearer {token}"),
@@ -117,6 +117,28 @@ pub async fn add_mcp(claude: &Path, url: &str, token: &str) -> Result<(), String
         Ok(())
     } else {
         Err(format!("claude mcp add failed: {}", text.trim()))
+    }
+}
+
+/// Removes the MCP server Claude Code knew as `name` (the one from before
+/// the rename). Not having it is fine.
+pub async fn remove_mcp(claude: &Path, name: &str) -> Result<(), String> {
+    let mut cmd = tokio::process::Command::new(claude);
+    cmd.args(["mcp", "remove", "--scope", "user", name])
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true);
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    let out = tokio::time::timeout(std::time::Duration::from_secs(30), cmd.output())
+        .await
+        .map_err(|_| "Claude Code did not answer".to_string())?
+        .map_err(|e| format!("could not run Claude Code: {e}"))?;
+    let text =
+        String::from_utf8_lossy(&out.stderr).to_string() + &String::from_utf8_lossy(&out.stdout);
+    if out.status.success() || text.contains("not found") || text.contains("No MCP server") {
+        Ok(())
+    } else {
+        Err(format!("claude mcp remove failed: {}", text.trim()))
     }
 }
 

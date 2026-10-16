@@ -10,7 +10,7 @@ import { useNow } from "@/lib/hooks";
 import { Markdown } from "@/lib/markdown";
 import { extractChoices, splitOptions } from "@/lib/options";
 import { useReveal } from "@/lib/reveal";
-import { askAgain, askWhenOnline, retryLast, setAsk, setAskModel, thinkHarder, useSidekick } from "@/lib/store";
+import { askAgain, askWhenOnline, retryLast, setAsk, setAskModel, thinkHarder, useDuskie } from "@/lib/store";
 import { type Agents, type AiSettings, PROVIDER_LABELS, type ProviderStatus, type Turn } from "@/lib/types";
 import { Tip } from "../Tip";
 import { AnswerOptions, Proposals, pendingCount } from "./Proposals";
@@ -42,8 +42,8 @@ export function AddSkill({ yaml }: { yaml: string }) {
 }
 
 export function Chat({ turns }: { turns: Turn[] }) {
-  const skillMode = useSidekick((s) => s.chatSkill);
-  const ai = useSidekick((s) => s.settings.ai);
+  const skillMode = useDuskie((s) => s.chatSkill);
+  const ai = useDuskie((s) => s.settings.ai);
   const last = turns.at(-1);
   // A reply that is only chips (a weak model copying its instructions) is no answer.
   const blank = (t: Turn) => !t.streaming && !t.error && !extractChoices(t.content).body.trim();
@@ -290,7 +290,7 @@ function AnswerActions({
 }) {
   const [copied, setCopied] = useState(false);
   const [pinned, setPinned] = useState(false);
-  const speaking = useSidekick((s) => s.speaking);
+  const speaking = useDuskie((s) => s.speaking);
   const [loading, setLoading] = useState(false);
   const readGen = useRef(0);
   useEffect(() => {
@@ -469,7 +469,7 @@ export function Retry() {
 export function Handoff({ turns, reason }: { turns: Turn[]; reason: string | null }) {
   const [state, setState] = useState<string>("idle");
   const agent = useAgentName();
-  const local = useSidekick((s) => s.ask?.localOnly ?? false);
+  const local = useDuskie((s) => s.ask?.localOnly ?? false);
   if (!agent) return null;
   const go = () => {
     // Handing off is the opt-in: this chat leaves the PC from here on.
@@ -511,7 +511,7 @@ export function Handoff({ turns, reason }: { turns: Turn[]; reason: string | nul
 function TryAnother({ from }: { from: string }) {
   const [open, setOpen] = useState(false);
   const { data } = useCached<ProviderStatus[]>("ai-status", api.aiStatus);
-  const local = useSidekick((s) => s.ask?.localOnly ?? false);
+  const local = useDuskie((s) => s.ask?.localOnly ?? false);
   const others = (data ?? []).filter((p) => p.available && p.id !== from && p.id !== "semif");
   if (others.length === 0) return null;
   const pick = (p: ProviderStatus) => {
@@ -554,7 +554,7 @@ export function seconds(ms: number): string {
   return ms < 1000 ? `${Math.round(ms / 10) * 10} ms` : `${(ms / 1000).toFixed(1)} s`;
 }
 
-/** Before the first words: one shimmering line saying what Sidekick is
+/** Before the first words: one shimmering line saying what Duskie is
  * doing, with a timer. */
 export function LiveStep({ step, since }: { step: string | null; since?: number }) {
   const now = useNow(100);
@@ -585,8 +585,8 @@ export function Thinking() {
 
 /** Answered offline: ask again once the internet is back. */
 function OfflineChips() {
-  const online = useSidekick((s) => s.online);
-  const waiting = useSidekick((s) => s.askWhenOnline !== null);
+  const online = useDuskie((s) => s.online);
+  const waiting = useDuskie((s) => s.askWhenOnline !== null);
   useEffect(() => {
     if (online || waiting) return;
     const onKey = (e: globalThis.KeyboardEvent) => {
@@ -599,7 +599,7 @@ function OfflineChips() {
     return () => window.removeEventListener("keydown", onKey);
   }, [online, waiting]);
   if (online) return null;
-  if (waiting) return <p className="ak-done">Sidekick asks again as soon as the internet is back.</p>;
+  if (waiting) return <p className="ak-done">Duskie asks again as soon as the internet is back.</p>;
   return (
     <div className="ak-chips">
       <button type="button" onClick={askWhenOnline} className="ak-chip primary chip">

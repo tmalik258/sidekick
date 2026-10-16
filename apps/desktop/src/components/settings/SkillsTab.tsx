@@ -43,7 +43,7 @@ export function SkillsTab({ onError }: { onError: (e: string) => void }) {
       </Section>
       <Section
         title="Agent"
-        hint="When Sidekick acts in apps and on sites for you."
+        hint="When Duskie acts in apps and on sites for you."
         keywords="agent autonomy allow ask never permission trust confirm tap sites apps"
       >
         <Agent onError={onError} />

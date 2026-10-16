@@ -1,4 +1,4 @@
-//! How fast Sidekick feels, measured where it matters: Ask open to ready,
+//! How fast Duskie feels, measured where it matters: Ask open to ready,
 //! Enter to the first word, end of speech to the first sound. Kept in a
 //! small log on this PC (never sent anywhere) and shown in the timings
 //! overlay (Ctrl+Alt+Shift+T in Ask).

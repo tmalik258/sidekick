@@ -51,11 +51,11 @@ pub fn duplicate_of(path: &Path) -> Option<PathBuf> {
 #[cfg(windows)]
 pub fn signature(path: &Path) -> String {
     use std::os::windows::process::CommandExt;
-    const SCRIPT: &str = "$s = Get-AuthenticodeSignature -LiteralPath $env:SIDEKICK_FILE; \
+    const SCRIPT: &str = "$s = Get-AuthenticodeSignature -LiteralPath $env:DUSKIE_FILE; \
         \"$($s.Status)|$($s.SignerCertificate.Subject)\"";
     let out = std::process::Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT])
-        .env("SIDEKICK_FILE", path)
+        .env("DUSKIE_FILE", path)
         .creation_flags(0x0800_0000)
         .output();
     match out {

@@ -1,14 +1,14 @@
 //! Coding agents: Claude Code and OpenAI's Codex CLI. Either one (or both)
-//! can finish what the local model cannot, get Sidekick's tools, and tell
+//! can finish what the local model cannot, get Duskie's tools, and tell
 //! the island when a turn is done. Settings > AI picks which one gets the
 //! handoff; "auto" prefers whichever of Claude Code / Codex appears higher
 //! in the AI provider list and is installed.
 
 use std::path::{Path, PathBuf};
 
+use duskie_core::Settings;
 use serde::Serialize;
 use serde_json::Value;
-use sidekick_core::Settings;
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, lock};
@@ -22,7 +22,7 @@ pub enum Agent {
     Copilot,
     /// Cursor's agent CLI (`cursor-agent`).
     Cursor,
-    /// A coding model on this PC through Ollama, run by Sidekick itself.
+    /// A coding model on this PC through Ollama, run by Duskie itself.
     Local,
 }
 
@@ -172,7 +172,7 @@ impl Agent {
             Agent::Codex => "npm install -g @openai/codex",
             Agent::Copilot => "npm install -g @github/copilot",
             Agent::Cursor => {
-                "Install the agent CLI from cursor.com/cli (Sidekick needs cursor-agent, not only the Cursor app)"
+                "Install the agent CLI from cursor.com/cli (Duskie needs cursor-agent, not only the Cursor app)"
             }
             Agent::Local => "Install Ollama from ollama.com",
         }
@@ -224,7 +224,7 @@ impl Agent {
     fn info(self, s: &Settings) -> AgentInfo {
         let installed = self.resolve(s).is_some();
         let signed_in = if installed { self.signed_in() } else { None };
-        let limited = self == Agent::ClaudeCode && sidekick_ai::claude_code_limited();
+        let limited = self == Agent::ClaudeCode && duskie_ai::claude_code_limited();
         // Cursor the app ≠ cursor-agent. When the IDE is here but the agent
         // CLI is not, say that clearly so the picker does not look wrong.
         let fix = if !installed {
@@ -276,11 +276,11 @@ pub fn status(s: &Settings) -> Agents {
 
 /// Claude Code out of usage counts as missing while Codex can take over.
 fn usable(claude: bool, codex: bool) -> bool {
-    claude && !(codex && sidekick_ai::claude_code_limited())
+    claude && !(codex && duskie_ai::claude_code_limited())
 }
 
 pub const HANDOFF_PROMPT: &str =
-    "Read conversation.md in this folder. It is a conversation from Sidekick; continue it.";
+    "Read conversation.md in this folder. It is a conversation from Duskie; continue it.";
 
 /// Whether Codex already has a Composio server in its own settings.
 fn codex_has_composio() -> bool {
@@ -302,7 +302,7 @@ pub fn codex_composio_args(
     let mut env = Vec::new();
     let mut map = Vec::new();
     for (i, (k, v)) in headers.iter().enumerate() {
-        let var = format!("SIDEKICK_COMPOSIO_HEADER_{i}");
+        let var = format!("DUSKIE_COMPOSIO_HEADER_{i}");
         let key: String = k
             .chars()
             .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
@@ -323,7 +323,7 @@ pub fn codex_composio_args(
 /// Saves the conversation for an agent to pick up; returns its folder.
 pub fn write_handoff(
     app: &AppHandle,
-    messages: &[sidekick_ai::Message],
+    messages: &[duskie_ai::Message],
     reason: Option<&str>,
 ) -> Result<PathBuf, String> {
     let dir = app.state::<AppState>().ai_workdir.join("handoff");
@@ -343,7 +343,7 @@ pub fn write_handoff(
 /// trust it only once. Returns the agent's name.
 pub async fn hand_off(
     app: &AppHandle,
-    messages: &[sidekick_ai::Message],
+    messages: &[duskie_ai::Message],
     reason: Option<&str>,
 ) -> Result<String, String> {
     let state = app.state::<AppState>();
@@ -394,7 +394,7 @@ pub async fn hand_off(
         Agent::Copilot => args.push("-i".into()),
         Agent::Cursor => {}
         // Never picked for handoffs: it cannot finish what the local model could not.
-        Agent::Local => return Err("The local agent runs inside Sidekick.".into()),
+        Agent::Local => return Err("The local agent runs inside Duskie.".into()),
     }
     args.push(HANDOFF_PROMPT.into());
     launch(&dir, &exe, &args, &env)?;
@@ -503,12 +503,12 @@ mod tests {
         );
         let joined = args.join(" ");
         assert!(joined.contains("mcp_servers.composio.url=\"https://connect.composio.dev/mcp\""));
-        assert!(joined.contains("\"authorization\" = \"SIDEKICK_COMPOSIO_HEADER_0\""));
+        assert!(joined.contains("\"authorization\" = \"DUSKIE_COMPOSIO_HEADER_0\""));
         assert!(!joined.contains("secret"));
         assert_eq!(
             env,
             vec![(
-                "SIDEKICK_COMPOSIO_HEADER_0".to_owned(),
+                "DUSKIE_COMPOSIO_HEADER_0".to_owned(),
                 "Bearer secret".to_owned()
             )]
         );

@@ -4,13 +4,13 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
-use sidekick_ai::{
+use duskie_ai::{
     AiProvider, Anthropic, CancellationToken, ChatRequest, ClaudeCode, Codex, Decider,
     LocalDecider, Message, OpenAiCompat, Router, SemIf, Sink, first_chat_model, warm_models,
 };
-use sidekick_core::{AiSettings, Settings};
-use sidekick_sensors::classify::{ClipKind, clip_kind};
+use duskie_core::{AiSettings, Settings};
+use duskie_sensors::classify::{ClipKind, clip_kind};
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::state::{AppState, lock};
@@ -24,7 +24,7 @@ const MAX_CLIP: usize = 8_000;
 const MAX_UIA: usize = 12_000;
 const SEMIF_TIMEOUT: Duration = Duration::from_secs(90);
 
-pub(crate) const SYSTEM: &str = "You are Sidekick, the assistant on the user's Windows PC. You help \
+pub(crate) const SYSTEM: &str = "You are Duskie, the assistant on the user's Windows PC. You help \
 with their own files, apps, day and whatever is on screen right now, and you get small \
 things done. Rules:
 - Lead with the result in the first sentence, then at most one short line of detail. No \
@@ -35,7 +35,7 @@ amounts, names) are **bold**; no headings in short answers; tables only for comp
 - Start working right away: never announce what you are about to do (\"I'll open...\", \"Let me check...\"). \
 The user sees each step as it runs; write only the result.
 - Never introduce yourself or say what you are.
-- Do it yourself with Sidekick's tools (also offered with a sidekick_ prefix): find a file, then open it or show it in its folder; search the \
+- Do it yourself with Duskie's tools (also offered with a duskie_ prefix): find a file, then open it or show it in its folder; search the \
 web and read pages for anything current or not on this PC, and link your sources; change volume, brightness or dark \
 mode, Do Not Disturb, the sound output or the screens; switch to or start an app; draft Outlook \
 emails, read or fill Excel sheets and make Word files or PDFs with office. Check pc_status before suggesting a Windows setting, and never \
@@ -127,7 +127,7 @@ pub(crate) fn local_model(ai: &AiSettings) -> OpenAiCompat {
 }
 
 /// Settings for a cloud model reached with an API key.
-pub(crate) fn cloud_pref<'a>(ai: &'a AiSettings, id: &str) -> Option<&'a sidekick_core::CloudPref> {
+pub(crate) fn cloud_pref<'a>(ai: &'a AiSettings, id: &str) -> Option<&'a duskie_core::CloudPref> {
     match id {
         "gemini" => Some(&ai.gemini),
         "groq" => Some(&ai.groq),
@@ -141,10 +141,10 @@ pub(crate) fn key_name(id: &str) -> String {
     format!("{id}_api_key")
 }
 
-/// Answers through the OpenAI-compatible path, with Sidekick's tools: the
+/// Answers through the OpenAI-compatible path, with Duskie's tools: the
 /// local model and the cloud models with a key.
 pub(crate) fn is_compat(id: &str) -> bool {
-    id == "local" || sidekick_ai::CLOUD.iter().any(|(c, _, _)| *c == id)
+    id == "local" || duskie_ai::CLOUD.iter().any(|(c, _, _)| *c == id)
 }
 
 /// The OpenAI-compatible model for `id`: the local one, or a cloud one with
@@ -158,7 +158,7 @@ pub(crate) fn compat_model(ai: &AiSettings, id: &str) -> Option<OpenAiCompat> {
     OpenAiCompat::cloud(id, &key, Some(pref.model.clone()))
 }
 
-/// The router for one Ask-mode chat: the local model always gets Sidekick's
+/// The router for one Ask-mode chat: the local model always gets Duskie's
 /// own tools, and Composio's when they are set up and the chat may leave
 /// the PC.
 async fn chat_router(
@@ -298,8 +298,8 @@ pub fn warm_up(app: &AppHandle) {
 
 /// Closes warm agent sessions, so changed settings take effect.
 pub fn close_sessions() {
-    sidekick_ai::close_claude_sessions();
-    sidekick_ai::close_codex_sessions();
+    duskie_ai::close_claude_sessions();
+    duskie_ai::close_codex_sessions();
 }
 
 /// The picked provider first; the rest keep the user's order.
@@ -427,7 +427,7 @@ pub struct Attach {
     /// Text of the web page the conversation is about.
     #[serde(default)]
     pub page: Option<String>,
-    /// The user is describing a new skill for Sidekick to learn.
+    /// The user is describing a new skill for Duskie to learn.
     #[serde(default)]
     pub skill: bool,
     /// Send a screenshot of the window the user was in.
@@ -494,7 +494,7 @@ pub fn release(app: &AppHandle, id: &str) {
     }
 }
 
-/// What Sidekick can notice, for AI writing skills. Keep in sync with the
+/// What Duskie can notice, for AI writing skills. Keep in sync with the
 /// sensors.
 const EVENT_CATALOG: &str = "\
 file.download_completed: path, dir, name, ext, kind (image|video|audio|document|archive|installer|code|other), size, size_human, stem, duplicate_of, duplicate_name, signature (installers)
@@ -525,7 +525,7 @@ system.monitor_connected: monitors
 system.battery_low: percent, saver (on or off)
 user.idle / user.active: idle_secs / away_secs";
 
-const SKILL_SYSTEM: &str = "You write skills for Sidekick, a desktop assistant on Windows. \
+const SKILL_SYSTEM: &str = "You write skills for Duskie, a desktop assistant on Windows. \
 A skill is one YAML file that matches an event and offers the user a few one-click options. \
 Reply with one short sentence on what the skill does, then the complete skill in a single \
 ```yaml code block. Use only the events, fields and actions below. Do not set trust: auto. \
@@ -582,7 +582,7 @@ async fn system_prompt(app: &AppHandle, attach: &Attach) -> String {
     if attach.skill {
         return format!(
             "{SKILL_SYSTEM}\n\nEvents and their fields:\n{EVENT_CATALOG}\n\nThe skill format:\n{}",
-            sidekick_skills::FORMAT_GUIDE
+            duskie_skills::FORMAT_GUIDE
         );
     }
     // Fixed rules first and everything that changes (time, memory, context)
@@ -612,7 +612,7 @@ async fn system_prompt(app: &AppHandle, attach: &Attach) -> String {
             ],
         )
     };
-    if assistant != "Sidekick" {
+    if assistant != "Duskie" {
         system.push_str(&format!(
             "\nThe user calls you {assistant}. Use that name for yourself."
         ));
@@ -669,12 +669,12 @@ async fn window_uia(app: &AppHandle) -> Option<String> {
         .as_ref()
         .and_then(|w| w["pid"].as_u64())
         .and_then(|p| u32::try_from(p).ok())?;
-    let target = sidekick_actions::uia::Target {
+    let target = duskie_actions::uia::Target {
         pid: Some(pid),
         app: None,
     };
     tokio::task::spawn_blocking(move || {
-        sidekick_actions::uia::snapshot(&target)
+        duskie_actions::uia::snapshot(&target)
             .ok()
             .map(|s| s.describe().chars().take(MAX_UIA).collect::<String>())
             .filter(|t| !t.trim().is_empty())
@@ -765,7 +765,7 @@ pub fn chat(
     if let Some(last) = messages
         .iter_mut()
         .rev()
-        .find(|m| m.role == sidekick_ai::Role::User)
+        .find(|m| m.role == duskie_ai::Role::User)
     {
         if let Some(prompt) = crate::recipes::expand(app, &last.content) {
             last.content = prompt;
@@ -801,7 +801,7 @@ pub fn chat(
         let question = messages
             .iter()
             .rev()
-            .find(|m| m.role == sidekick_ai::Role::User)
+            .find(|m| m.role == duskie_ai::Role::User)
             .map(|m| m.content.clone());
         if let Some(q) = question.as_deref() {
             log_ask_user(&id, q, &attach, local_only);
@@ -833,12 +833,12 @@ pub fn chat(
         // Not while held: the question may still change.
         // "18% of 2450": worked out here, at once, never by a model.
         if let Some(answer) = (!attach.hold && !attach.screen)
-            .then(|| question.as_deref().and_then(sidekick_calc::calculate))
+            .then(|| question.as_deref().and_then(duskie_calc::calculate))
             .flatten()
         {
             lock(&app.state::<AppState>().chats).remove(&id);
-            let speak = attach.speak && crate::voice::begin_answer(&app, &id);
-            let text = sidekick_calc::format(answer);
+            let speak = attach.speak && crate::voice::begin_answer(&app, &id, attach.voice);
+            let text = duskie_calc::format(answer);
             log_ask_reply(&id, "instant", started, &text, None);
             send_text(&app, &id, text, speak);
             if speak {
@@ -867,7 +867,7 @@ pub fn chat(
                 )),
                 "focus_off" => Ok(crate::focus::stop(&app)),
                 _ => tokio::task::spawn_blocking(move || {
-                    sidekick_actions::pc::control(cmd.what, cmd.level, None)
+                    duskie_actions::pc::control(cmd.what, cmd.level, None)
                         .map(|o| o.message)
                         .map_err(|e| e.to_string())
                 })
@@ -875,7 +875,7 @@ pub fn chat(
                 .unwrap_or_else(|e| Err(e.to_string())),
             };
             lock(&app.state::<AppState>().chats).remove(&id);
-            let speak = attach.speak && crate::voice::begin_answer(&app, &id);
+            let speak = attach.speak && crate::voice::begin_answer(&app, &id, attach.voice);
             let (text, error) = match result {
                 Ok(message) => (message, None),
                 Err(e) => (String::new(), Some(e.to_string())),
@@ -963,7 +963,7 @@ pub fn chat(
                             },
                         }
                     }
-                    let speak = attach.speak && crate::voice::begin_answer(&app, &id);
+                    let speak = attach.speak && crate::voice::begin_answer(&app, &id, attach.voice);
                     for text in kept {
                         send_text(&app, &id, text, speak);
                     }
@@ -972,7 +972,7 @@ pub fn chat(
                     }
                     return Some(speak);
                 }
-                let speak = attach.speak && crate::voice::begin_answer(&app, &id);
+                let speak = attach.speak && crate::voice::begin_answer(&app, &id, attach.voice);
                 while let Some(text) = rx.recv().await {
                     send_text(&app, &id, text, speak);
                 }
@@ -1015,7 +1015,7 @@ pub fn chat(
             }
             Err(err) => {
                 let error = match err {
-                    sidekick_ai::AiError::NoProvider => no_provider_hint(local_only),
+                    duskie_ai::AiError::NoProvider => no_provider_hint(local_only),
                     other => other.to_string(),
                 };
                 let who =
@@ -1040,7 +1040,7 @@ pub fn chat(
     });
 }
 
-/// Captures the window the user was in before Sidekick took focus.
+/// Captures the window the user was in before Duskie took focus.
 pub(crate) async fn screenshot(app: &AppHandle) -> Result<Vec<u8>, String> {
     let pid = lock(&app.state::<AppState>().last_window)
         .as_ref()
@@ -1068,7 +1068,7 @@ pub fn cancel(app: &AppHandle, id: &str) {
 }
 
 fn send_text(app: &AppHandle, id: &str, text: String, speak: bool) {
-    if text == sidekick_ai::CLEAR {
+    if text == duskie_ai::CLEAR {
         let _ = app.emit(DELTA_EVENT, Delta { id, text });
         return;
     }
@@ -1191,7 +1191,7 @@ pub fn watch_readiness(app: &AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
             refresh_readiness(&app).await;
-            sidekick_ai::sweep_sessions();
+            duskie_ai::sweep_sessions();
             tokio::time::sleep(READY_CHECK_EVERY).await;
         }
     });
@@ -1214,7 +1214,7 @@ pub async fn refresh_readiness(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::{ask_warm_models, first_enabled_provider};
-    use sidekick_core::Settings;
+    use duskie_core::Settings;
 
     #[test]
     fn local_first_warms_chat_vision_and_embed() {

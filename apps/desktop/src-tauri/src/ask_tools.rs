@@ -5,13 +5,13 @@
 use serde::Serialize;
 use std::path::Path;
 
+use duskie_ai::ToolDef;
+use duskie_core::ActionRecord;
 use serde_json::{Value, json};
-use sidekick_ai::ToolDef;
-use sidekick_core::ActionRecord;
 use std::collections::HashMap;
 use tauri::{AppHandle, Emitter, Manager};
 
-use sidekick_actions::pc;
+use duskie_actions::pc;
 
 use crate::state::{AppState, executor, lock};
 
@@ -41,7 +41,7 @@ const OFFICE: &str = "office";
 const RECIPES: &str = "recipes";
 const REMEMBER: &str = "remember";
 
-/// The Ask chat answering right now, so tools called through Sidekick's
+/// The Ask chat answering right now, so tools called through Duskie's
 /// MCP server (by Claude Code or Codex) put their buttons in it.
 static CURRENT_CHAT: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 
@@ -108,6 +108,8 @@ struct ProposalNote<'a> {
     label: &'a str,
     /// One step of a task, shown with the others as a plan to run in order.
     step: bool,
+    /// Whether Undo can put this back once it has run.
+    undoable: bool,
 }
 
 /// What a tapped action did, for the answer it belongs to.
@@ -408,7 +410,7 @@ pub fn defs() -> Vec<ToolDef> {
         ToolDef {
             name: DOCTOR.into(),
             description: "Why an app crashes, freezes or will not start: reads the last 14 days \
-                of crash records, names the likely cause and the fix Sidekick can run. Offer \
+                of crash records, names the likely cause and the fix Duskie can run. Offer \
                 fixes with propose, never run them yourself. When no cause is clear, web_search \
                 the exact error code and module with Reddit, PCGamingWiki, Steam forums and the \
                 app's own forums, and say what people found worked. Never suggest crack, repack \
@@ -647,7 +649,7 @@ pub fn reads_only(name: &str) -> bool {
     )
 }
 
-/// One of Sidekick's own tools (not Composio's).
+/// One of Duskie's own tools (not Composio's).
 pub fn is_own(name: &str) -> bool {
     matches!(
         name,
@@ -806,7 +808,7 @@ fn closest(q: &[f32], tools: &[(String, Vec<f32>)], n: usize) -> Vec<String> {
     let mut scored: Vec<(f32, &String)> = tools
         .iter()
         .filter(|(name, _)| !CORE.contains(&name.as_str()))
-        .map(|(name, v)| (sidekick_core::storage::cosine(q, v), name))
+        .map(|(name, v)| (duskie_core::storage::cosine(q, v), name))
         .collect();
     scored.sort_by(|a, b| b.0.total_cmp(&a.0));
     scored.into_iter().take(n).map(|(_, n)| n.clone()).collect()
@@ -959,8 +961,8 @@ fn git_tool(
     action: &str,
     path: Option<&std::path::Path>,
     number: Option<u64>,
-) -> Result<String, sidekick_actions::ActionError> {
-    use sidekick_actions::{ActionError, gitflow};
+) -> Result<String, duskie_actions::ActionError> {
+    use duskie_actions::{ActionError, gitflow};
     let need =
         || path.ok_or_else(|| ActionError::Invalid("no project found; ask which folder".into()));
     match action {
@@ -1000,8 +1002,8 @@ fn git_tool(
 }
 
 /// Crash records with their likely causes and fixes, as text for the model.
-fn doctor_report(app: Option<&str>) -> Result<String, sidekick_actions::ActionError> {
-    use sidekick_actions::doctor;
+fn doctor_report(app: Option<&str>) -> Result<String, duskie_actions::ActionError> {
+    use duskie_actions::doctor;
     let crashes = doctor::crashes(app)?;
     if crashes.is_empty() {
         return Ok(match app {
@@ -1028,7 +1030,7 @@ fn doctor_report(app: Option<&str>) -> Result<String, sidekick_actions::ActionEr
 }
 
 async fn blocking(
-    f: impl FnOnce() -> Result<String, sidekick_actions::ActionError> + Send + 'static,
+    f: impl FnOnce() -> Result<String, duskie_actions::ActionError> + Send + 'static,
 ) -> String {
     match tokio::task::spawn_blocking(f).await {
         Ok(Ok(text)) => text,
@@ -1141,7 +1143,7 @@ fn button_text(action: &str, args: &Value) -> String {
     }
 }
 
-/// A button under the answer that runs `action` when tapped. Sidekick's own
+/// A button under the answer that runs `action` when tapped. Duskie's own
 /// code uses this for steps that need the user's yes (send, post, pay).
 const PROPOSALS_FILE: &str = "ask-buttons.json";
 /// Buttons kept for a tap; older ones are let go.
@@ -1213,6 +1215,7 @@ fn offer_as(
             id: &id,
             label: &label,
             step,
+            undoable: crate::undo::undoable(action),
         },
     );
 }
@@ -1345,7 +1348,7 @@ async fn today(app: &AppHandle) -> String {
         let state = app.state::<AppState>();
         let c = lock(&state.calendar);
         let day = chrono::Local::now().date_naive();
-        sidekick_sensors::calendar::on_day(&c.meetings, day)
+        duskie_sensors::calendar::on_day(&c.meetings, day)
             .iter()
             .map(|m| {
                 format!(
@@ -1357,7 +1360,7 @@ async fn today(app: &AppHandle) -> String {
             })
             .collect::<Vec<_>>()
     };
-    let time = crate::mcp::call_text(app, "sidekick_time_today", &json!({})).await;
+    let time = crate::mcp::call_text(app, "duskie_time_today", &json!({})).await;
     let meetings = if meetings.is_empty() {
         "No meetings today.".to_owned()
     } else {
@@ -1440,7 +1443,7 @@ async fn find(app: &AppHandle, args: &Value) -> String {
         .map(std::path::PathBuf::from)
         .collect();
     let code = if configured.is_empty() {
-        sidekick_sensors::repos::ReposSensor::default_roots()
+        duskie_sensors::repos::ReposSensor::default_roots()
     } else {
         configured
     };

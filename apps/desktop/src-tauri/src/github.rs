@@ -10,10 +10,10 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use duskie_core::Event;
+use duskie_sensors::ReposSensor;
 use serde::Serialize;
 use serde_json::{Value, json};
-use sidekick_core::Event;
-use sidekick_sensors::ReposSensor;
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, lock};
@@ -348,7 +348,7 @@ pub async fn overview(app: &AppHandle, fresh: bool) -> Overview {
                 })
                 .await;
             }
-            let slug = sidekick_sensors::repos::github_url(&path)
+            let slug = duskie_sensors::repos::github_url(&path)
                 .map(|u| u.trim_start_matches("https://github.com/").to_owned());
             let prs = match (&slug, via) {
                 (Some(s), "gh") => {
@@ -454,7 +454,7 @@ pub fn notices(v: &Value) -> Vec<Notice> {
 /// The local clone of a repo, when there is one.
 fn local_path(app: &AppHandle, slug: &str) -> Option<PathBuf> {
     crate::projects::list(app).into_iter().find(|p| {
-        sidekick_sensors::repos::github_url(p).is_some_and(|u| {
+        duskie_sensors::repos::github_url(p).is_some_and(|u| {
             u.trim_start_matches("https://github.com/")
                 .eq_ignore_ascii_case(slug)
         })

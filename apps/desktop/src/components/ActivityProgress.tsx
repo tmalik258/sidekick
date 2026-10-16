@@ -9,13 +9,15 @@ import {
 } from "@/lib/activities";
 import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
+import { useDuskie } from "@/lib/store";
 import { Icon } from "./Icon";
 import { Tip } from "./Tip";
 
 export function ActivityProgress({ sources }: { sources?: string[] } = {}) {
   const state = useActivities();
   const now = useNow(1000);
-  const activities = visibleActivities([...state.activities, ...state.local], now).filter(
+  const keepProblems = useDuskie((s) => s.settings.redesign.enabled);
+  const activities = visibleActivities([...state.activities, ...state.local], now, keepProblems).filter(
     (a) => !sources || sources.includes(a.source),
   );
   if (activities.length === 0) return null;

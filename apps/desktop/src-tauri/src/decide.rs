@@ -12,8 +12,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use sidekick_ai::{Decider, Decision, DecisionOption};
-use sidekick_skills::{Proposal, Trust};
+use duskie_ai::{Decider, Decision, DecisionOption};
+use duskie_skills::{Proposal, Trust};
 use tauri::{AppHandle, Manager};
 
 use crate::ai;
@@ -145,7 +145,7 @@ pub type Cache = HashMap<String, String>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sidekick_skills::ProposedOption;
+    use duskie_skills::ProposedOption;
 
     fn proposal() -> Proposal {
         Proposal {

@@ -33,14 +33,14 @@ with tempfile.TemporaryDirectory(prefix="sidekick-output-test-") as directory:
         )
         assert result.returncode == 0, result.stderr
         output = log.read_text(encoding="utf-8")
-        assert output.startswith("SIDEKICK_START"), output
-        assert output.rstrip().endswith(f"SIDEKICK_RESULT:setup-test:{code}"), output
+        assert output.startswith("DUSKIE_START"), output
+        assert output.rstrip().endswith(f"DUSKIE_RESULT:setup-test:{code}"), output
         if "ordinary warning" in command:
             assert "ordinary warning" in output and "useful progress" in output
         if "digest" in command:
             assert '"completed":10' in output
     log.write_text("", encoding="utf-8")
-    command = "Write-Output 'SIDEKICK_RESULT:0'; Write-Output 'Downloading test bytes'; Start-Sleep -Milliseconds 2500; Write-Output 'Test complete'"
+    command = "Write-Output 'DUSKIE_RESULT:0'; Write-Output 'Downloading test bytes'; Start-Sleep -Milliseconds 2500; Write-Output 'Test complete'"
     script.write_text(template.replace("{quoted_path}", str(log).replace("'", "''")).replace("{command}", command), encoding="utf-8-sig")
     with subprocess.Popen(
         ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
@@ -51,7 +51,7 @@ with tempfile.TemporaryDirectory(prefix="sidekick-output-test-") as directory:
             time.sleep(0.02)
         assert "Downloading test bytes" in log.read_text(encoding="utf-8")
         assert process.poll() is None, "progress must be captured while the command is still running"
-        assert "SIDEKICK_RESULT:setup-test:" not in log.read_text(encoding="utf-8")
+        assert "DUSKIE_RESULT:setup-test:" not in log.read_text(encoding="utf-8")
         process.communicate(timeout=8)
-        assert log.read_text(encoding="utf-8").rstrip().endswith("SIDEKICK_RESULT:setup-test:0")
+        assert log.read_text(encoding="utf-8").rstrip().endswith("DUSKIE_RESULT:setup-test:0")
 print("PASS: setup capture streams progress before completion, preserves warnings, distinguishes errors, and captures pull JSON")

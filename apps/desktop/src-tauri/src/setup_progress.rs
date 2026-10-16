@@ -1,4 +1,4 @@
-//! Captures only output from setup commands Sidekick generated. The terminal
+//! Captures only output from setup commands Duskie generated. The terminal
 //! remains visible; a launched terminal is never reported as an installation.
 use crate::activity::{self, Phase};
 use crate::state::{AppState, lock};
@@ -66,13 +66,13 @@ pub fn prepare(
     let pulls = regex::Regex::new(r"ollama pull ([A-Za-z0-9_.:/-]+)").unwrap();
     let command = pulls.replace_all(command, |captures: &regex::Captures<'_>| {
         let body = serde_json::json!({"model": &captures[1], "stream": true}).to_string();
-        let endpoint = format!("{}/api/pull", sidekick_ai::loopback(base.trim_end_matches('/')));
+        let endpoint = format!("{}/api/pull", duskie_ai::loopback(base.trim_end_matches('/')));
         // Windows PowerShell's native argument passing loses JSON quotes;
         // send the JSON request on stdin instead.
         format!("'{}' | curl.exe --no-buffer --silent --show-error --fail -H 'Content-Type: application/json' --data-binary '@-' '{}'", body.replace('\'', "''"), endpoint.replace('\'', "''"))
     });
     let script = format!(
-        "$sidekickLog='{quoted_path}'; $sidekickExit=0; $sidekickFinished=$false; [IO.File]::AppendAllText($sidekickLog, ('SIDEKICK_START:{id}' + [Environment]::NewLine), [Text.UTF8Encoding]::new($false)); $ErrorActionPreference='Continue'; $global:LASTEXITCODE=0; try {{ & {{ {command} }} 2>&1 | ForEach-Object {{ if ($_ -is [System.Management.Automation.ErrorRecord]) {{ if ($_.FullyQualifiedErrorId -match '^NativeCommandError') {{ $_.Exception.Message }} else {{ $sidekickExit=1; $_ }} }} else {{ $_ }} }} | Out-String -Stream | ForEach-Object {{ [IO.File]::AppendAllText($sidekickLog, ([string]$_ + [Environment]::NewLine), [Text.UTF8Encoding]::new($false)); Write-Host $_ }}; if ($LASTEXITCODE) {{ $sidekickExit=$LASTEXITCODE }}; $sidekickFinished=$true }} catch {{ $sidekickExit=1; [IO.File]::AppendAllText($sidekickLog, ($_ | Out-String), [Text.UTF8Encoding]::new($false)); Write-Host $_ -ForegroundColor Red }} finally {{ if (-not $sidekickFinished -and $sidekickExit -eq 0) {{ $sidekickExit=1 }}; [IO.File]::AppendAllText($sidekickLog, ('SIDEKICK_RESULT:{id}:' + $sidekickExit + [Environment]::NewLine), [Text.UTF8Encoding]::new($false)) }}"
+        "$duskieLog='{quoted_path}'; $duskieExit=0; $duskieFinished=$false; [IO.File]::AppendAllText($duskieLog, ('DUSKIE_START:{id}' + [Environment]::NewLine), [Text.UTF8Encoding]::new($false)); $ErrorActionPreference='Continue'; $global:LASTEXITCODE=0; try {{ & {{ {command} }} 2>&1 | ForEach-Object {{ if ($_ -is [System.Management.Automation.ErrorRecord]) {{ if ($_.FullyQualifiedErrorId -match '^NativeCommandError') {{ $_.Exception.Message }} else {{ $duskieExit=1; $_ }} }} else {{ $_ }} }} | Out-String -Stream | ForEach-Object {{ [IO.File]::AppendAllText($duskieLog, ([string]$_ + [Environment]::NewLine), [Text.UTF8Encoding]::new($false)); Write-Host $_ }}; if ($LASTEXITCODE) {{ $duskieExit=$LASTEXITCODE }}; $duskieFinished=$true }} catch {{ $duskieExit=1; [IO.File]::AppendAllText($duskieLog, ($_ | Out-String), [Text.UTF8Encoding]::new($false)); Write-Host $_ -ForegroundColor Red }} finally {{ if (-not $duskieFinished -and $duskieExit -eq 0) {{ $duskieExit=1 }}; [IO.File]::AppendAllText($duskieLog, ('DUSKIE_RESULT:{id}:' + $duskieExit + [Environment]::NewLine), [Text.UTF8Encoding]::new($false)) }}"
     );
     activity::report(app, &id, "setup", label, Phase::Running, None, None, None);
     // Only the step actually starting takes the headline. Its start/output
@@ -131,7 +131,7 @@ pub fn prepare(
                 let Some(line) = line else {
                     continue;
                 };
-                if line == format!("SIDEKICK_START:{id}") {
+                if line == format!("DUSKIE_START:{id}") {
                     activity::report(
                         &app,
                         &id,
@@ -144,7 +144,7 @@ pub fn prepare(
                     );
                     continue;
                 }
-                if let Some(code) = line.strip_prefix(&format!("SIDEKICK_RESULT:{id}:")) {
+                if let Some(code) = line.strip_prefix(&format!("DUSKIE_RESULT:{id}:")) {
                     activity::report(
                         &app,
                         &id,
@@ -230,7 +230,7 @@ pub fn prepare(
 }
 
 pub fn launch_failed(script: &str, error: &str) {
-    let logs = regex::Regex::new(r"\$sidekickLog='((?:[^']|'')*)'").unwrap();
+    let logs = regex::Regex::new(r"\$duskieLog='((?:[^']|'')*)'").unwrap();
     for capture in logs.captures_iter(script) {
         let path = std::path::PathBuf::from(capture[1].replace("''", "'"));
         // Only the private logs emitted by prepare; no inferred processes.
@@ -244,7 +244,7 @@ pub fn launch_failed(script: &str, error: &str) {
                 .unwrap_or_default()
                 .to_string_lossy()
                 .replacen("setup-", "setup:", 1);
-            let _ = std::fs::write(path, format!("{error}\nSIDEKICK_RESULT:{id}:1\n"));
+            let _ = std::fs::write(path, format!("{error}\nDUSKIE_RESULT:{id}:1\n"));
         }
     }
 }

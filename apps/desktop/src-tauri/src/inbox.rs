@@ -1,4 +1,4 @@
-//! The notification inbox. With Windows silenced (Do Not Disturb), Sidekick
+//! The notification inbox. With Windows silenced (Do Not Disturb), Duskie
 //! reads each notification as it lands in Notification Center, sorts it,
 //! and only brings up what matters:
 //!
@@ -17,11 +17,11 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
+use duskie_core::{Event, NotificationSettings};
+use duskie_sensors::toasts::{self, Toast};
 use regex::Regex;
 use serde::Serialize;
 use serde_json::json;
-use sidekick_core::{Event, NotificationSettings};
-use sidekick_sensors::toasts::{self, Toast};
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, lock};
@@ -63,6 +63,16 @@ impl Level {
             Level::Soon => "soon",
             Level::Digest => "digest",
             Level::Never => "never",
+        }
+    }
+
+    /// Higher is quieter.
+    fn quietness(self) -> u8 {
+        match self {
+            Level::Now => 0,
+            Level::Soon => 1,
+            Level::Digest => 2,
+            Level::Never => 3,
         }
     }
 
@@ -507,9 +517,9 @@ async fn judge(
         t.body.chars().take(400).collect::<String>()
     ));
     let model = crate::ai::local_model(&settings.ai);
-    let req = sidekick_ai::ChatRequest {
+    let req = duskie_ai::ChatRequest {
         system: JUDGE_SYSTEM.into(),
-        messages: vec![sidekick_ai::Message::user(prompt)],
+        messages: vec![duskie_ai::Message::user(prompt)],
         image: None,
         think: false,
     };
@@ -588,13 +598,14 @@ pub fn start(app: &AppHandle) {
 /// Screenshot tools only exist to capture; their toasts ("copied to clipboard")
 /// are noise, and focusing them is not "the app you were in".
 const IGNORE_NOTIFY: &[&str] = &[
+    "duskie",
     "sidekick",
     "screensketch",
     "snippingtool",
     "screenclippinghost",
 ];
 
-fn denied(app_name: &str, s: &sidekick_core::Settings) -> bool {
+fn denied(app_name: &str, s: &duskie_core::Settings) -> bool {
     let lower = app_name.to_lowercase();
     let stem = lower.trim_end_matches(".exe");
     IGNORE_NOTIFY.contains(&stem)
@@ -603,7 +614,7 @@ fn denied(app_name: &str, s: &sidekick_core::Settings) -> bool {
             .any(|d| d.trim_end_matches(".exe").eq_ignore_ascii_case(stem))
 }
 
-async fn take(app: &AppHandle, settings: &sidekick_core::Settings, t: Toast, think: bool) {
+async fn take(app: &AppHandle, settings: &duskie_core::Settings, t: Toast, think: bool) {
     if denied(&t.app, settings) {
         return;
     }
@@ -627,7 +638,7 @@ async fn take(app: &AppHandle, settings: &sidekick_core::Settings, t: Toast, thi
                 // The user's own pick for an app or a VIP keeps its level.
                 if !matches!(sorted.why, "your choice for this app" | "from a VIP") {
                     sorted.level = v.level;
-                    sorted.why = "Sidekick's judgement";
+                    sorted.why = "Duskie's judgement";
                 }
                 sorted.reason = Some(v.why);
             }
@@ -725,7 +736,7 @@ fn first_link(text: &str) -> Option<String> {
 
 /// Messages gathered since the last card, as one card, at most every
 /// `SOON_EVERY`. During a meeting the card waits (suggestions handle that).
-fn flush_soon(app: &AppHandle, settings: &sidekick_core::Settings) {
+fn flush_soon(app: &AppHandle, settings: &duskie_core::Settings) {
     let pending = {
         let mut i = inbox();
         let due = i.last_soon.is_none_or(|t| t.elapsed() >= SOON_EVERY);
@@ -825,20 +836,32 @@ pub fn on_dismiss(app: &AppHandle, from: &str) -> Option<String> {
     set_level(app, from, current.lower()).ok()
 }
 
-/// Back to letting Sidekick decide for this app.
+/// Back to letting Duskie decide for this app.
 pub fn clear_level(app: &AppHandle, from: &str) -> Result<String, String> {
     let mut next = lock(&app.state::<AppState>().settings).clone();
     next.notifications.apps.remove(from);
     crate::commands::apply_settings(app, next)?;
-    Ok(format!("Sidekick decides for {from}"))
+    Ok(format!("Duskie decides for {from}"))
 }
 
 /// The user's level for one app, from a card ("Less from WhatsApp") or Settings.
 pub fn set_level(app: &AppHandle, from: &str, level: Level) -> Result<String, String> {
     let mut next = lock(&app.state::<AppState>().settings).clone();
+    let before = next
+        .notifications
+        .apps
+        .get(from)
+        .and_then(|l| Level::parse(l))
+        .unwrap_or(Level::Now);
     next.notifications
         .apps
         .insert(from.to_owned(), level.as_str().to_owned());
+    // Asking for less is the one thing besides acting that teaches scoring.
+    if level.quietness() > before.quietness() {
+        next.notifications
+            .lessons
+            .show_less(&format!("app:{from}"), chrono::Utc::now().timestamp());
+    }
     crate::commands::apply_settings(app, next)?;
     inbox().dismissals.remove(from);
     lesson(format!("Set {from} to {}", level.as_str()));
@@ -854,7 +877,7 @@ pub fn set_level(app: &AppHandle, from: &str, level: Level) -> Result<String, St
 #[serde(rename_all = "camelCase")]
 pub struct AppLevel {
     pub app: String,
-    /// The user's pick; None lets Sidekick decide per notification.
+    /// The user's pick; None lets Duskie decide per notification.
     pub level: Option<Level>,
     pub count: usize,
 }
@@ -950,6 +973,21 @@ pub fn describe(level: Option<&str>, from: Option<&str>, minutes: Option<u64>) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Logs may name an id or a count, never what a notification said.
+    #[test]
+    fn logs_carry_no_notification_content() {
+        let src = include_str!("inbox.rs");
+        let body = src.split("#[cfg(test)]").next().unwrap_or(src);
+        for line in body.lines().filter(|l| l.contains("log::")) {
+            for word in ["title", "body", "text", "subject", "sender"] {
+                assert!(
+                    !line.contains(&format!("{{{word}")) && !line.contains(&format!(", {word}")),
+                    "log line may carry content: {line}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn finds_the_link_in_a_message() {

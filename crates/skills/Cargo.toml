@@ -1,5 +1,5 @@
 [package]
-name = "sidekick-skills"
+name = "duskie-skills"
 description = "Skill manifests and the rule-based engine that turns events into suggestions"
 version.workspace = true
 edition.workspace = true
@@ -11,5 +11,5 @@ regex = "1"
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml = "0.9"
-sidekick-core.workspace = true
+duskie-core.workspace = true
 thiserror.workspace = true

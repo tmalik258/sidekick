@@ -8,7 +8,7 @@
 import { useState } from "react";
 import { setTab, startSession } from "@/lib/agents";
 import { api } from "@/lib/bridge";
-import { openMerge, useSidekick } from "@/lib/store";
+import { openMerge, useDuskie } from "@/lib/store";
 
 type Side = "mine" | "theirs" | "both";
 
@@ -30,7 +30,7 @@ function split(file: string): [string, string] {
 }
 
 export function MergeCard({ path }: { path: string }) {
-  const state = useSidekick((s) => s.merge?.state);
+  const state = useDuskie((s) => s.merge?.state);
   const [kept, setKept] = useState<Record<string, string>>({});
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -56,7 +56,7 @@ export function MergeCard({ path }: { path: string }) {
     setError(null);
     try {
       const lastResult = await api.mergeEnd(path, finish);
-      useSidekick.setState({ merge: null, lastResult, mascot: "success" });
+      useDuskie.setState({ merge: null, lastResult, mascot: "success" });
     } catch (e) {
       setError(String(e));
       // The files may have changed outside the island: look again.
@@ -76,7 +76,7 @@ export function MergeCard({ path }: { path: string }) {
       "edit",
     ).then(() => {
       setTab("agents");
-      useSidekick.setState({ merge: null });
+      useDuskie.setState({ merge: null });
     });
 
   return (

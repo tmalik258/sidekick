@@ -26,7 +26,7 @@ function readSeen(): number {
   }
 }
 
-/** When the user last looked at what Sidekick had for them. */
+/** When the user last looked at what Duskie had for them. */
 export const useSeen = create<{ at: number }>(() => ({ at: typeof window === "undefined" ? 0 : readSeen() }));
 
 export function markSeen() {

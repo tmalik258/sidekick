@@ -1,12 +1,12 @@
 [package]
-name = "sidekick-desktop"
-description = "Sidekick desktop app (Tauri 2)"
+name = "duskie-desktop"
+description = "Duskie desktop app (Tauri 2)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [lib]
-name = "sidekick_desktop_lib"
+name = "duskie_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -23,19 +23,21 @@ rusqlite.workspace = true
 rfd = "0.15"
 getrandom = "0.3"
 sysinfo = { version = "0.39", default-features = false, features = ["system", "disk"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+webpki-roots = "0.26"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 regex = "1"
 log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sidekick-actions.workspace = true
-sidekick-ai.workspace = true
-sidekick-core.workspace = true
-sidekick-calc.workspace = true
-sidekick-sensors.workspace = true
-sidekick-layout.workspace = true
-sidekick-skills.workspace = true
-sidekick-voice.workspace = true
+duskie-actions.workspace = true
+duskie-ai.workspace = true
+duskie-core.workspace = true
+duskie-calc.workspace = true
+duskie-sensors.workspace = true
+duskie-layout.workspace = true
+duskie-skills.workspace = true
+duskie-voice.workspace = true
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-global-shortcut = "2"
@@ -47,5 +49,5 @@ ulid.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_Security_Credentials"] }
 xcap = "0.9"

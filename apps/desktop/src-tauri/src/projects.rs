@@ -8,11 +8,11 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use chrono::{Local, Utc};
+use duskie_core::Event;
+use duskie_sensors::ReposSensor;
+use duskie_sensors::repos::{find_repos, status};
 use serde::Serialize;
 use serde_json::Value;
-use sidekick_core::Event;
-use sidekick_sensors::ReposSensor;
-use sidekick_sensors::repos::{find_repos, status};
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, lock};

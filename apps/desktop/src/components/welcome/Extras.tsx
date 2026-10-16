@@ -5,11 +5,11 @@
 import { useState } from "react";
 import { api } from "@/lib/bridge";
 import { useDnd } from "@/lib/hooks";
-import { updateSettings, useAssistantName, useSidekick } from "@/lib/store";
+import { updateSettings, useAssistantName, useDuskie } from "@/lib/store";
 import { WelcomeChoice } from "./WelcomeChoice";
 
 export function Extras() {
-  const settings = useSidekick((s) => s.settings);
+  const settings = useDuskie((s) => s.settings);
   const dnd = useDnd({ autoEnable: true });
   const name = useAssistantName();
   return (
@@ -49,10 +49,10 @@ export function Extras() {
 
 /** Call me something else: the name, and "Hey <name>" to talk. */
 function Rename() {
-  const saved = useSidekick((s) => s.settings.assistantName);
+  const saved = useDuskie((s) => s.settings.assistantName);
   const [draft, setDraft] = useState(saved);
   const save = () => {
-    const v = draft.trim() || "Sidekick";
+    const v = draft.trim() || "Duskie";
     if (v !== saved) void updateSettings({ assistantName: v });
   };
   return (

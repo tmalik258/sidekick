@@ -1,6 +1,7 @@
 // Browser-only stand-in for the Rust core, used when the UI runs outside
 // Tauri. It mimics the app loosely; the real rules live in Rust.
 
+import type { MailStatus } from "./types";
 import {
   type ActivitySnapshot,
   type CloudId,
@@ -18,6 +19,7 @@ type Handler = (payload: unknown) => void;
 
 const handlers = new Map<string, Set<Handler>>();
 let settings: Settings = structuredClone(DEFAULT_SETTINGS);
+let mailStatus: MailStatus = { state: "disconnected", configured: true, lastOk: null, error: null, provider: null };
 if (typeof localStorage !== "undefined") {
   try {
     Object.assign(settings, JSON.parse(localStorage.getItem("sidekick.mock.savedFolders") ?? "{}"));
@@ -31,6 +33,7 @@ const previewFlag = (name: string) => typeof location !== "undefined" && new URL
 if (typeof location !== "undefined") {
   const q = new URLSearchParams(location.search);
   if (q.has("onboarded")) settings.onboarded = true;
+  if (q.has("redesign")) settings.redesign = { enabled: true };
   settings.islandColor = (q.get("color") as Settings["islandColor"] | null) ?? settings.islandColor;
   settings.theme = (q.get("theme") as Settings["theme"] | null) ?? settings.theme;
   if (q.get("voice") === "full") settings.voice.listeningStyle = "full";
@@ -98,7 +101,7 @@ async function mockInstallUpdate(): Promise<string> {
   report("verifying", 100 * 1_048_576);
   await delay();
   report("opening", 100 * 1_048_576);
-  return "Installing Sidekick_0.2.0_x64-setup.exe";
+  return "Installing Duskie_0.2.0_x64-setup.exe";
 }
 
 const CUE_BY_STATE: Partial<Record<MascotState, Cue>> = {
@@ -120,7 +123,7 @@ function go(state: MascotState) {
   mascot = state;
   epoch += 1;
   emit("mascot://state", { previous, state, cue: CUE_BY_STATE[state] ?? null });
-  if (state === "success") later(1500, () => go("idle"));
+  if (state === "success") later(4000, () => go("idle"));
   if (state === "error") later(4000, () => go("idle"));
 }
 
@@ -218,8 +221,8 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
       tools: true,
     },
   ],
-  report_save: () => "C:\\Users\\you\\Downloads\\Sidekick report 2026-10-08 0930.txt",
-  diagnostics: () => "Sidekick 0.1.0 (browser mock)\nWindows 11 Pro 24H2\nModels in order: local, claude_code",
+  report_save: () => "C:\\Users\\you\\Downloads\\Duskie report 2026-10-08 0930.txt",
+  diagnostics: () => "Duskie 0.1.0 (browser mock)\nWindows 11 Pro 24H2\nModels in order: local, claude_code",
   crash_pending: () => (previewFlag("crash") ? "2026-10-07T09:12:00Z panicked at src/voice.rs:120:9" : null),
   crash_dismiss: () => undefined,
   settings_get: () => settings,
@@ -501,6 +504,65 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   },
   recipe_run: () => "Running",
   know_how_clear: () => null,
+  attention_lessons: () =>
+    Object.entries(settings.notifications.lessons.entries).map(([key, l]) => ({
+      key,
+      shift: Math.max(-45, Math.min(20, Math.round(l.acted * 6 - l.showLess * 14))),
+      updated: l.updated,
+    })),
+  attention_acted: () => null,
+  attention_show_less: () => null,
+  attention_reset: (args) => {
+    const entries = { ...settings.notifications.lessons.entries };
+    const scope = String(args.scope);
+    for (const k of Object.keys(entries)) {
+      if (scope === "all" || k === scope || (scope.startsWith("group:") && k.startsWith(scope.slice(6))))
+        delete entries[k];
+    }
+    settings = { ...settings, notifications: { ...settings.notifications, lessons: { entries } } };
+    return null;
+  },
+  git_status: () => [
+    { path: "src/app.ts", kind: "M", staged: true, unstaged: false },
+    { path: "src/util.ts", kind: "M", staged: false, unstaged: true },
+    { path: "README.md", kind: "?", staged: false, unstaged: true },
+  ],
+  git_stage: () => "Staged",
+  git_unstage: () => "Unstaged",
+  git_commit: () => "Committed",
+  git_write_message: () => "Tidy the util helpers",
+  git_amend: () => "Amended the last commit",
+  git_last_commit_pushed: () => false,
+  git_message_diff: () => ({ text: "diff --git a/src/app.ts b/src/app.ts", covered: 1, total: 1 }),
+  mail_status: () => mailStatus,
+  mail_connect: () => {
+    mailStatus = {
+      state: "connected",
+      configured: true,
+      lastOk: Math.floor(Date.now() / 1000),
+      error: null,
+      provider: "gmail",
+    };
+    return mailStatus;
+  },
+  mail_connect_imap: () => {
+    mailStatus = {
+      state: "connected",
+      configured: true,
+      lastOk: Math.floor(Date.now() / 1000),
+      error: null,
+      provider: "imap",
+    };
+    return mailStatus;
+  },
+  mail_disconnect: () => {
+    mailStatus = { state: "disconnected", configured: true, lastOk: null, error: null, provider: null };
+    return mailStatus;
+  },
+  attention_set_profile: (args) => {
+    settings = { ...settings, notifications: { ...settings.notifications, profile: args.profile as never } };
+    return null;
+  },
   notifications_set_level: (args) => {
     const from = String(args.from);
     const level = String(args.level);
@@ -588,7 +650,7 @@ function mockChat(a: Record<string, unknown>) {
   const answer: string = formatted
     ? "Here is the plan for **Friday**:\n\n1. Send the invoice to **Ali** by 10:00\n2. Review the *Upwork* proposal\n3. Book the dentist\n\nCosts so far:\n\n| Item | Amount |\n| --- | --- |\n| Hosting | **$24** |\n| Domain | $12 |\n\n- Invoice is in [invoice-sept.pdf](C:\\Users\\you\\Downloads\\invoice-sept.pdf)\n- Notes are in [Projects](C:\\Users\\you\\Projects\\)\nOPTION: Draft the email to Ali"
     : /sidekick/i.test(last)
-      ? "Found it: [Sidekick's app folder](/C:/Users/you/AppData/Roaming/app.sidekick.desktop), changed today. Its settings are in [settings.json](C:\\Users\\you\\AppData\\Roaming\\app.sidekick.desktop\\settings.json).\nOPTION: Open the folder\nOPTION: Show settings.json"
+      ? "Found it: [Duskie's app folder](/C:/Users/you/AppData/Roaming/app.duskie.desktop), changed today. Its settings are in [settings.json](C:\\Users\\you\\AppData\\Roaming\\app.duskie.desktop\\settings.json).\nOPTION: Open the folder\nOPTION: Show settings.json"
       : `Found invoice-sept.pdf in Downloads, from Ali on Tuesday (preview, you asked "${last}").\nOPTION: Open invoice-sept.pdf\nOPTION: Show the folder\nOPTION: Find other invoices`;
   // Formatted answers arrive in bursts, like Claude Code's whole sentences.
   const words = formatted ? (answer.match(/[\s\S]{1,90}/g) ?? [answer]) : answer.split(/(?<=\s)/);
@@ -640,7 +702,9 @@ function mockChat(a: Record<string, unknown>) {
       "Zip it as Invoices-October.zip",
     ];
     for (const [n, label] of plan.entries()) {
-      later(1000 + n * 60, () => emit("ai://proposal", { chatId: id, id: `p-${id}-${n}`, label, step: true }));
+      later(1000 + n * 60, () =>
+        emit("ai://proposal", { chatId: id, id: `p-${id}-${n}`, label, step: true, undoable: n % 2 === 0 }),
+      );
     }
   } else {
     later(1200, () => emit("ai://proposal", { chatId: id, id: `p-${id}`, label: "Move invoice-sept.pdf to Invoices" }));
@@ -1095,13 +1159,13 @@ commands.browsers_status = () => [
 commands.extension_install = (a) => {
   later(4000, () => browsersSeen.add(a.browser as string));
   return {
-    copied: "C:\\Users\\you\\AppData\\Local\\app.sidekick.desktop\\extension",
+    copied: "C:\\Users\\you\\AppData\\Local\\app.duskie.desktop\\extension",
     page: "chrome://extensions/",
     steps: [
       "If the extensions page is not showing, paste its address into the address bar and press Enter (it is copied).",
       "Turn on Developer mode (top right), then click Load unpacked.",
       "Copy folder path below (or its Alt key), paste it into the folder box and press Enter, then Select Folder.",
-      "Press Allow on Sidekick's island when it asks.",
+      "Press Allow on Duskie's island when it asks.",
     ],
   };
 };
@@ -1159,8 +1223,8 @@ commands.chat_save = (a) => {
 commands.chat_delete = (a) => {
   chats.delete(a.id as string);
 };
-commands.ai_handoff = () => "C:/Users/you/AppData/Local/Sidekick/ai/handoff";
-commands.backup_export = () => "C:/Users/you/Documents/Sidekick backup.json";
+commands.ai_handoff = () => "C:/Users/you/AppData/Local/Duskie/ai/handoff";
+commands.backup_export = () => "C:/Users/you/Documents/Duskie backup.json";
 commands.backup_import = () => "Restored settings and 2 skills";
 commands.project_pick_folder = () => {
   if (previewFlag("foldercancel")) return null;
@@ -1239,6 +1303,7 @@ commands.voice_download = () => {
   tick();
 };
 commands.voice_cancel_download = () => undefined;
+commands.voice_typing = () => undefined;
 commands.voice_listen = () => {
   const words = ["What", "What time", "What time is it", "What time is it in London?"];
   for (const [i, w] of words.entries()) {
@@ -1252,11 +1317,11 @@ commands.voice_stop = () => {
 };
 // The welcome line as Rust would report it while it is spoken.
 const WELCOME_LINES = [
-  "Hey — I'm Sidekick. I live up here with you on this PC. I notice things, I help when you want, and I stay put: nothing leaves this machine, and I wait for your okay.",
+  "Hey — I'm Duskie. I live up here with you on this PC. I notice things, I help when you want, and I stay put: nothing leaves this machine, and I wait for your okay.",
   "First, how I think. If you want everything to stay on this PC, you can run a local model — only if your machine is up for it. Or use Claude Code or Codex with the plan you already have. You can use any of them, or all three, and set the order I try.",
   "Now, your world. Connect your calendar, your mail and the tools you use, and I'll start noticing what matters.",
   "A few small helpers make me sharper. Install the ones you want, and I'll wait while they finish.",
-  "Welcome aboard. Say Hey Sidekick whenever you need me. Do Not Disturb is on so Windows stays quiet and alerts show once up here. Launch on login is already on, so I'm here when you sit down.",
+  "Welcome aboard. Say Hey Duskie whenever you need me. Do Not Disturb is on so Windows stays quiet and alerts show once up here. Launch on login is already on, so I'm here when you sit down.",
 ];
 let welcome: WelcomeSpeech = {
   step: 0,
@@ -1434,4 +1499,70 @@ export const mock = {
 // Exposed for console debugging in the browser preview.
 if (typeof window !== "undefined") {
   (window as unknown as { sidekickMock: unknown }).sidekickMock = { go, cues: CUES, invoke: mock.invoke, emit };
+}
+
+// Preview only (browser mock, never in the app): lets the parity script put
+// the island in any state.
+if (typeof window !== "undefined") {
+  Object.assign(window, {
+    __mockEmit: emit,
+    __mockGo: go,
+    __mockCall: (name: string, args: Record<string, unknown> = {}) => commands[name]?.(args),
+    __mockAgents: async () => {
+      const { useAgents } = await import("./agents");
+      const now = Date.now();
+      const mk = (
+        id: string,
+        agent: string,
+        project: string,
+        title: string,
+        status: string,
+        mode: string,
+        mins: number,
+        extra = {},
+      ) => ({
+        id,
+        agent,
+        project,
+        branch: null,
+        reviewable: true,
+        mode,
+        title,
+        status,
+        entries: [],
+        plan: [],
+        usage: null,
+        question: null,
+        error: null,
+        startedAt: now - mins * 60_000,
+        turnAt: now - mins * 60_000,
+        tookMs: null,
+        changes: 0,
+        ...extra,
+      });
+      useAgents.setState({
+        sessions: [
+          mk("a1", "Codex", "duskie", "Migrate tests to Vitest", "idle", "full", 22, { finished: true }),
+          mk("a2", "Claude Code", "duskie", "Compact label wraps on narrow screens", "idle", "edit", 10, {
+            changes: 3,
+          }),
+          mk("a3", "Claude Code", "falconxoft-portal", "Add CSV export to invoices", "idle", "edit", 14, {
+            changes: 5,
+          }),
+          mk("a4", "Codex", "api-gateway", "Fix missing rate limit headers", "waiting", "ask", 3),
+          mk("a5", "Claude Code", "duskie", "Voice settings: rate slider", "working", "edit", 1),
+        ] as never,
+        current: null,
+      });
+    },
+    __mockWork: async (label: string) => {
+      const { beginActivity } = await import("./activities");
+      beginActivity(label);
+      go("working");
+    },
+    __mockSuggest: (s: Suggestion) => {
+      suggestion = s;
+      emit("suggestion://new", s);
+    },
+  });
 }

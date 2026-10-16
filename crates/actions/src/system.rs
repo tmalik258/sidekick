@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
-use sidekick_sensors::classify::{ClipKind, clip_kind};
+use duskie_sensors::classify::{ClipKind, clip_kind};
 
 use crate::{ActionError, Outcome, file_name};
 
@@ -37,9 +37,9 @@ pub fn open_folder_path(path: &Path) -> Result<(), ActionError> {
             "-WindowStyle",
             "Hidden",
             "-Command",
-            "Invoke-Item -LiteralPath $env:SIDEKICK_OPEN",
+            "Invoke-Item -LiteralPath $env:DUSKIE_OPEN",
         ])
-        .env("SIDEKICK_OPEN", path.as_os_str())
+        .env("DUSKIE_OPEN", path.as_os_str())
         .creation_flags(0x0800_0000);
         cmd.spawn().map(drop).map_err(fail)
     }

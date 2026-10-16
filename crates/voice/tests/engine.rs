@@ -1,19 +1,19 @@
 //! Runs the real models end to end: the voice says the wake phrase and a
 //! question, the engine must wake and transcribe it. Needs the models, so it
-//! only runs when SIDEKICK_VOICE_MODELS points at a folder holding them.
+//! only runs when DUSKIE_VOICE_MODELS points at a folder holding them.
 
-use sherpa_onnx::OfflineTts;
-use sidekick_voice::audio::Resampler;
-use sidekick_voice::listen::Engine;
-use sidekick_voice::text::strip_wake;
-use sidekick_voice::{
+use duskie_voice::audio::Resampler;
+use duskie_voice::listen::Engine;
+use duskie_voice::text::strip_wake;
+use duskie_voice::{
     DEFAULT_VOICE, Heard, MIC_RATE, VOICES, respell, speaker_id, synthesize, tts_config,
 };
+use sherpa_onnx::OfflineTts;
 
 #[test]
 fn wakes_and_transcribes_spoken_audio() {
-    let Ok(root) = std::env::var("SIDEKICK_VOICE_MODELS") else {
-        eprintln!("skipped: set SIDEKICK_VOICE_MODELS to run");
+    let Ok(root) = std::env::var("DUSKIE_VOICE_MODELS") else {
+        eprintln!("skipped: set DUSKIE_VOICE_MODELS to run");
         return;
     };
     let root = std::path::PathBuf::from(root);
@@ -23,7 +23,7 @@ fn wakes_and_transcribes_spoken_audio() {
     // test is about the listener, so a few takes are allowed.
     let mut heard = Vec::new();
     for _ in 0..4 {
-        let text = respell("Hey Sidekick. What time is it in London right now?");
+        let text = respell("Hey Duskie. What time is it in London right now?");
         let (said, rate) = synthesize(&tts, &text, speaker_id(DEFAULT_VOICE), 1.0).expect("speech");
         let mut audio = vec![0.0; MIC_RATE as usize];
         audio.extend(Resampler::new(rate, MIC_RATE).process(&said));
@@ -53,12 +53,12 @@ fn wakes_and_transcribes_spoken_audio() {
     );
 }
 
-/// Sidekick saying "Hey Sidekick" itself (muted while it speaks) must not
+/// Duskie saying "Hey Duskie" itself (muted while it speaks) must not
 /// wake it; once unmuted, the same audio does.
 #[test]
 fn muted_engine_never_wakes() {
-    let Ok(root) = std::env::var("SIDEKICK_VOICE_MODELS") else {
-        eprintln!("skipped: set SIDEKICK_VOICE_MODELS to run");
+    let Ok(root) = std::env::var("DUSKIE_VOICE_MODELS") else {
+        eprintln!("skipped: set DUSKIE_VOICE_MODELS to run");
         return;
     };
     let root = std::path::PathBuf::from(root);
@@ -66,7 +66,7 @@ fn muted_engine_never_wakes() {
     let mut engine = Engine::new(&root, true).unwrap();
     let (said, rate) = synthesize(
         &tts,
-        &respell("Hey Sidekick. What time is it in London right now?"),
+        &respell("Hey Duskie. What time is it in London right now?"),
         speaker_id(DEFAULT_VOICE),
         1.0,
     )
@@ -87,12 +87,12 @@ fn muted_engine_never_wakes() {
     assert!(after.is_empty(), "{after:?}");
 }
 
-/// People pause after "Hey Sidekick". The pause must not end listening;
+/// People pause after "Hey Duskie". The pause must not end listening;
 /// the question that follows is what gets transcribed.
 #[test]
 fn waits_for_the_question_after_a_pause() {
-    let Ok(root) = std::env::var("SIDEKICK_VOICE_MODELS") else {
-        eprintln!("skipped: set SIDEKICK_VOICE_MODELS to run");
+    let Ok(root) = std::env::var("DUSKIE_VOICE_MODELS") else {
+        eprintln!("skipped: set DUSKIE_VOICE_MODELS to run");
         return;
     };
     let root = std::path::PathBuf::from(root);
@@ -108,7 +108,7 @@ fn waits_for_the_question_after_a_pause() {
     let mut last = String::new();
     for _ in 0..3 {
         let mut audio = vec![0.0; MIC_RATE as usize];
-        audio.extend(say("Hey Sidekick."));
+        audio.extend(say("Hey Duskie."));
         // A long breath before the question.
         audio.extend(vec![0.0; MIC_RATE as usize * 3 / 2]);
         audio.extend(say("What is on my calendar today?"));
@@ -136,25 +136,25 @@ fn waits_for_the_question_after_a_pause() {
     panic!("never heard the question after the pause: {last}");
 }
 
-/// How often each way of waking catches "Hey Sidekick" across voices and
+/// How often each way of waking catches "Hey Duskie" across voices and
 /// speeds, and how often everyday speech wakes it by mistake. Prints a
-/// table; run with SIDEKICK_WAKE_BENCH=1 in release mode.
+/// table; run with DUSKIE_WAKE_BENCH=1 in release mode.
 #[test]
 fn wake_bench() {
     let (Ok(root), Ok(_)) = (
-        std::env::var("SIDEKICK_VOICE_MODELS"),
-        std::env::var("SIDEKICK_WAKE_BENCH"),
+        std::env::var("DUSKIE_VOICE_MODELS"),
+        std::env::var("DUSKIE_WAKE_BENCH"),
     ) else {
-        eprintln!("skipped: set SIDEKICK_VOICE_MODELS and SIDEKICK_WAKE_BENCH to run");
+        eprintln!("skipped: set DUSKIE_VOICE_MODELS and DUSKIE_WAKE_BENCH to run");
         return;
     };
     let root = std::path::PathBuf::from(root);
     let tts = OfflineTts::create(&tts_config(&root)).expect("voice model loads");
     let wakes = [
-        "Hey Sidekick.",
-        "Hey Sidekick, what is on my calendar?",
-        "Hi Sidekick, open my notes.",
-        "Okay Sidekick.",
+        "Hey Duskie.",
+        "Hey Duskie, what is on my calendar?",
+        "Hi Duskie, open my notes.",
+        "Okay Duskie.",
     ];
     let others = [
         "I need to finish the report before lunch.",

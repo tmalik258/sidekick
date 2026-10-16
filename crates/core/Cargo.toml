@@ -1,6 +1,6 @@
 [package]
-name = "sidekick-core"
-description = "Event bus, mascot state machine, settings, and storage for Sidekick"
+name = "duskie-core"
+description = "Event bus, mascot state machine, settings, and storage for Duskie"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

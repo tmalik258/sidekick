@@ -38,7 +38,7 @@ pub struct SetupItem {
     pub status: String,
     /// What to type, ready to copy. None when it is set in Settings.
     pub command: Option<String>,
-    /// The command can be run from Sidekick in a new terminal window.
+    /// The command can be run from Duskie in a new terminal window.
     pub runnable: bool,
     /// Button label for running it: "Install", "Download", "Sign in", "Start".
     pub action: &'static str,
@@ -148,7 +148,7 @@ pub fn hook_snippet() -> String {
     serde_json::to_string_pretty(&v).unwrap_or_default()
 }
 
-/// How far the user's Claude Code settings already point at Sidekick.
+/// How far the user's Claude Code settings already point at Duskie.
 #[derive(Debug, PartialEq, Eq)]
 pub enum HookState {
     Missing,
@@ -270,14 +270,14 @@ fn read(path: &Path) -> String {
 
 pub async fn ollama_models(base_url: &str) -> Option<Vec<String>> {
     let mut client = reqwest::Client::builder().timeout(Duration::from_millis(1500));
-    if sidekick_ai::is_local_url(base_url) {
+    if duskie_ai::is_local_url(base_url) {
         client = client.no_proxy();
     }
     let client = client.build().ok()?;
     let resp = client
         .get(format!(
             "{}/models",
-            sidekick_ai::loopback(base_url.trim_end_matches('/'))
+            duskie_ai::loopback(base_url.trim_end_matches('/'))
         ))
         .send()
         .await
@@ -301,7 +301,7 @@ const MIN_CONTEXT: u64 = 8192;
 
 /// The smallest context a loaded Ollama model runs with, when one is loaded.
 async fn loaded_context(base_url: &str) -> Option<u64> {
-    let root = sidekick_ai::loopback(base_url.trim_end_matches('/'));
+    let root = duskie_ai::loopback(base_url.trim_end_matches('/'));
     let root = root.trim_end_matches("/v1");
     let v: serde_json::Value = reqwest::Client::builder()
         .timeout(Duration::from_millis(1500))
@@ -381,7 +381,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     let base_url = settings.ai.local.base_url.clone();
 
     // Independent probes run together so wall time ≈ the slowest one.
-    let caps_fut = tauri::async_runtime::spawn_blocking(sidekick_actions::Capabilities::detect);
+    let caps_fut = tauri::async_runtime::spawn_blocking(duskie_actions::Capabilities::detect);
     let models_fut = ollama_models(&base_url);
     let gh_fut = gh_signed_in();
     let ctx_fut = loaded_context(&base_url);
@@ -392,7 +392,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         .executor
         .write()
         .unwrap_or_else(std::sync::PoisonError::into_inner) =
-        std::sync::Arc::new(sidekick_actions::Executor::new(caps.clone()));
+        std::sync::Arc::new(duskie_actions::Executor::new(caps.clone()));
     crate::editors::refresh(app);
     let caps = executor(&state).capabilities().clone();
     let home = dirs::home_dir().unwrap_or_default();
@@ -435,8 +435,8 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
 
     let ollama_installed = found("ollama");
     let picked = if settings.ai.local.model.trim().is_empty() {
-        let gpu = sidekick_sensors::graphics_memory().unwrap_or(0);
-        chat_model_for(gpu, sidekick_sensors::total_memory())
+        let gpu = duskie_sensors::graphics_memory().unwrap_or(0);
+        chat_model_for(gpu, duskie_sensors::total_memory())
     } else {
         ChatPick {
             model: settings.ai.local.model.trim().to_owned(),
@@ -466,7 +466,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
 
     let has_chat = models.as_ref().is_some_and(|m| {
         if settings.ai.local.model.trim().is_empty() {
-            m.iter().any(|x| sidekick_ai::is_chat_model(x))
+            m.iter().any(|x| duskie_ai::is_chat_model(x))
         } else {
             has_model(m, &picked.model)
         }
@@ -566,12 +566,12 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     // Ollama's defaults keep room for four answers at once, full-size
     // caches and a 4K context. One at a time, flash attention and an 8-bit
     // cache roughly halve the memory a model holds, which pays for the 8K
-    // context Sidekick's tools need.
+    // context Duskie's tools need.
     let short = context.is_some_and(|c| c < MIN_CONTEXT);
     let lighter = !short
         && OLLAMA_LIGHT
             .iter()
-            .all(|(k, v)| sidekick_sensors::user_env(k).as_deref() == Some(v));
+            .all(|(k, v)| duskie_sensors::user_env(k).as_deref() == Some(v));
     let mut light = SetupItem::new(
         "ollama_light",
         Group::Ai,
@@ -636,8 +636,8 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
     let mut mcp = SetupItem::new(
         "claude_mcp",
         Group::Connect,
-        "Sidekick tools in Claude Code",
-        "Lets Claude Code use Sidekick's tools.",
+        "Duskie tools in Claude Code",
+        "Lets Claude Code use Duskie's tools.",
     )
     .done(
         mcp_added(&read(&home.join(".claude.json")), &mcp_url),
@@ -673,8 +673,8 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
         SetupItem::new(
             "codex_mcp",
             Group::Connect,
-            "Sidekick tools in Codex",
-            "Lets Codex use Sidekick's tools.",
+            "Duskie tools in Codex",
+            "Lets Codex use Duskie's tools.",
         )
         .done(codex_mcp, "Added", "Not added")
         .tab("ai"),
@@ -739,7 +739,7 @@ pub async fn status(app: &AppHandle) -> Vec<SetupItem> {
             "voice",
             Group::Connect,
             "Voice",
-            "Say \"Hey Sidekick\" and hear answers. About 205 MB, all on this PC.",
+            "Say \"Hey Duskie\" and hear answers. About 205 MB, all on this PC.",
         )
         .done(
             voice_ready && settings.voice.enabled,
@@ -958,9 +958,9 @@ async fn start_or_open(app: &AppHandle, id: &str) -> Result<(), String> {
 
 /// Ollama's native API root from the OpenAI-style base URL in settings.
 fn ollama_api_root(base_url: &str) -> String {
-    let b = sidekick_ai::loopback(base_url.trim().trim_end_matches('/'));
+    let b = duskie_ai::loopback(base_url.trim().trim_end_matches('/'));
     let b = if b.is_empty() {
-        sidekick_ai::OLLAMA_URL.to_owned()
+        duskie_ai::OLLAMA_URL.to_owned()
     } else {
         b
     };
@@ -1121,7 +1121,7 @@ fn open_terminal_paste(command: &str) -> Result<(), String> {
         .and_then(|mut c| c.set_text(command.to_owned()))
         .map_err(|e| format!("could not copy the command: {e}"))?;
     open_terminal_window(&format!(
-        "Write-Host 'Command copied to the clipboard:' -ForegroundColor Cyan; Write-Host '  {}' -ForegroundColor Yellow; Write-Host ''; Write-Host 'Replace your-key with your real key, paste (Ctrl+V), press Enter, then come back to Sidekick.' -ForegroundColor White",
+        "Write-Host 'Command copied to the clipboard:' -ForegroundColor Cyan; Write-Host '  {}' -ForegroundColor Yellow; Write-Host ''; Write-Host 'Replace your-key with your real key, paste (Ctrl+V), press Enter, then come back to Duskie.' -ForegroundColor White",
         command.replace('\'', "''")
     ))
 }
@@ -1137,7 +1137,7 @@ fn open_tracked_terminal(command: &str) -> Result<(), String> {
 #[cfg(windows)]
 fn open_terminal(command: &str) -> Result<(), String> {
     open_terminal_window(&format!(
-        "Write-Host 'Sidekick setup' -ForegroundColor Cyan; {command}; Write-Host ''; Write-Host 'Setup commands finished. Check status in Sidekick.' -ForegroundColor Cyan"
+        "Write-Host 'Duskie setup' -ForegroundColor Cyan; {command}; Write-Host ''; Write-Host 'Setup commands finished. Check status in Duskie.' -ForegroundColor Cyan"
     ))
 }
 
@@ -1145,7 +1145,7 @@ fn open_terminal(command: &str) -> Result<(), String> {
 fn open_terminal_window(script: &str) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     use std::process::Stdio;
-    // Sidekick is a GUI process with no console. If we spawn PowerShell with
+    // Duskie is a GUI process with no console. If we spawn PowerShell with
     // inherited stdio, it gets invalid handles and tools like ollama print
     // "failed to get console mode for stderr". `cmd /c start` opens a real
     // console window; CREATE_NO_WINDOW only hides the brief cmd trampoline.
@@ -1169,7 +1169,7 @@ fn open_terminal_window(script: &str) -> Result<(), String> {
         .args([
             "/c",
             "start",
-            "Sidekick setup",
+            "Duskie setup",
             "powershell.exe",
             "-NoExit",
             "-NoLogo",
@@ -1362,8 +1362,8 @@ mod tests {
             resolve_model_tag(&models, "moondream").as_deref(),
             Some("moondream:latest")
         );
-        assert!(sidekick_ai::is_embedding_model("nomic-embed-text:latest"));
-        assert!(!sidekick_ai::is_embedding_model("qwen3:4b"));
+        assert!(duskie_ai::is_embedding_model("nomic-embed-text:latest"));
+        assert!(!duskie_ai::is_embedding_model("qwen3:4b"));
     }
 
     #[test]

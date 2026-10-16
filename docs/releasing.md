@@ -11,7 +11,7 @@
 
 ```bash
 ollama pull qwen3:4b
-SIDEKICK_EVAL_MODEL=qwen3:4b cargo test -p sidekick-desktop eval -- --ignored --nocapture
+DUSKIE_EVAL_MODEL=qwen3:4b cargo test -p duskie-desktop eval -- --ignored --nocapture
 ```
 
    Every wrong prompt is printed with what the model called. Fix the prompt or tool description before tagging.

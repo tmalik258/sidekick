@@ -1,4 +1,4 @@
-use sidekick_core::Pause;
+use duskie_core::Pause;
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Wry};
@@ -19,12 +19,12 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             &PredefinedMenuItem::separator(app)?,
             &item(app, "settings", "Settings")?,
             &PredefinedMenuItem::separator(app)?,
-            &item(app, "quit", "Quit Sidekick")?,
+            &item(app, "quit", "Quit Duskie")?,
         ],
     )?;
 
     let mut builder = TrayIconBuilder::with_id("main")
-        .tooltip("Sidekick")
+        .tooltip("Duskie")
         .menu(&menu)
         .on_menu_event(on_menu_event);
     if let Some(icon) = app.default_window_icon() {

@@ -18,6 +18,7 @@ import { createPortal } from "react-dom";
 import { AnswerOptions } from "@/components/ask/Proposals";
 import { activityLabel, useActivities } from "@/lib/activities";
 import { type AgentCommand, commandCatalog } from "@/lib/agent-commands";
+import { answerText, type OpenChoice } from "@/lib/agent-questions";
 import {
   answerQuestion,
   COMPACT_AT,
@@ -52,7 +53,7 @@ import { useNow } from "@/lib/hooks";
 import { Markdown } from "@/lib/markdown";
 import { extractChoices } from "@/lib/options";
 import { parsePlanDocument } from "@/lib/plan";
-import { setAsk, setOverlayHit } from "@/lib/store";
+import { setAsk, setOverlayHit, useDuskie } from "@/lib/store";
 import type { AgentInfo, AgentMode, Agents, CursorChat, EditorList } from "@/lib/types";
 import { scrollIfActive } from "../ask/parts";
 import { Icon } from "../Icon";
@@ -287,6 +288,7 @@ function SessionChips({
 }
 
 function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorChat[] }) {
+  const redesign = useDuskie((st) => st.settings.redesign.enabled);
   const { data: agents, refreshing, refresh } = useCached<Agents>("agents", api.agentsStatus);
   const { data: projects } = useCached<{ name: string; path: string }[]>("projects", api.projectsList, 30_000);
   const prefs = useRef(readNewPrefs()).current;
@@ -377,10 +379,16 @@ function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorC
   };
   return (
     <>
-      <div className="ak-head">
-        <span className="ak-title">New session</span>
-      </div>
-      <SessionChips sessions={sessions} current={null} cursor={cursor} />
+      {redesign && sessions.length > 0 ? (
+        <SessionList sessions={sessions} />
+      ) : (
+        <>
+          <div className="ak-head">
+            <span className="ak-title">New session</span>
+          </div>
+          <SessionChips sessions={sessions} current={null} cursor={cursor} />
+        </>
+      )}
       {!agents || (refreshing && choices.length === 0) ? (
         <NewSessionLoading />
       ) : choices.length === 0 ? (
@@ -538,7 +546,7 @@ function pickerNote(a: AgentInfo): string {
 
 function readyNote(a: AgentInfo): string {
   if (!a.installed) {
-    // Cursor app on PATH is not the agent CLI Sidekick runs.
+    // Cursor app on PATH is not the agent CLI Duskie runs.
     if (a.id === "cursor") return "Needs agent CLI";
     return "Not installed";
   }
@@ -1010,6 +1018,8 @@ function SessionView({
               </div>
             )}
 
+            {s.choose && <ChoiceCard open={s.choose} agent={s.agent} onAnswer={(text) => sendToSession(s.id, text)} />}
+
             {s.error && <p className="ak-err">{s.error}</p>}
 
             {done && !s.error && (
@@ -1114,7 +1124,7 @@ function SessionView({
                   Resume
                 </button>
                 <span className="ak-note">
-                  {s.restored ? "Sidekick restarted since this ran." : "This session ended."} Resume carries on where it
+                  {s.restored ? "Duskie restarted since this ran." : "This session ended."} Resume carries on where it
                   stopped.
                 </span>
               </div>
@@ -1700,7 +1710,7 @@ export function Composer({
           limit={s.limit}
           onCompact={
             (s.agent === "Claude Code" || s.agent === "Codex") && !working
-              ? () => runCommand({ name: "/compact", description: "", group: "Sidekick", execution: "control" })
+              ? () => runCommand({ name: "/compact", description: "", group: "Duskie", execution: "control" })
               : undefined
           }
           keys={working ? "Esc interrupt" : "Enter send"}
@@ -1744,4 +1754,125 @@ export function limitNote(agent: string, l: NonNullable<Session["limit"]>): stri
     return `${agent} has used up its ${span}.${resets} Ask mode uses another model meanwhile.`;
   const pct = l.used !== null ? `${Math.round(l.used <= 1 ? l.used * 100 : l.used)}% of ` : "most of ";
   return `You have used ${pct}${agent}'s ${span}.${resets}`;
+}
+
+/** The agent's own multiple-choice question: tap an option to answer. With
+ * several questions, each is answered in turn; "Several" questions allow
+ * more than one pick. */
+function ChoiceCard({ open, agent, onAnswer }: { open: OpenChoice; agent: string; onAnswer: (text: string) => void }) {
+  const [picks, setPicks] = useState<string[][]>([]);
+  const at = picks.length;
+  const [multi, setMulti] = useState<string[]>([]);
+  const q = open.questions[at];
+  if (!q) return null;
+  const next = (chosen: string[]) => {
+    const all = [...picks, chosen];
+    setMulti([]);
+    if (all.length >= open.questions.length) onAnswer(answerText(open, all));
+    else setPicks(all);
+  };
+  return (
+    <section className="ak-ask ak-in" aria-label={`${agent} asks`}>
+      <p>
+        {agent} asks: <span className="font-medium text-white">{q.question}</span>
+      </p>
+      <div className="ak-chips">
+        {q.options.map((o) => {
+          const on = multi.includes(o.label);
+          return (
+            <button
+              key={o.label}
+              type="button"
+              title={o.description}
+              aria-pressed={q.multiSelect ? on : undefined}
+              onClick={() =>
+                q.multiSelect
+                  ? setMulti(on ? multi.filter((m) => m !== o.label) : [...multi, o.label])
+                  : next([o.label])
+              }
+              className={`ak-chip chip ${on ? "primary" : ""}`}
+            >
+              {o.label}
+            </button>
+          );
+        })}
+        {q.multiSelect && (
+          <button type="button" onClick={() => next(multi)} className="ak-chip primary chip">
+            Done
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+type Group = "Needs you" | "Running" | "Ready to review" | "Done" | "Stopped";
+const GROUPS: Group[] = ["Needs you", "Running", "Ready to review", "Done", "Stopped"];
+
+function groupOf(s: Session): Group {
+  if (s.status === "waiting" || s.question || s.choose) return "Needs you";
+  if (s.status === "working") return "Running";
+  if (s.status === "failed") return "Stopped";
+  if (!s.finished && s.changes > 0) return "Ready to review";
+  return "Done";
+}
+
+const MODE_WORD: Record<string, string> = { plan: "Plan", ask: "Ask", edit: "Edit", full: "Full" };
+
+function ago(ms: number): string {
+  const m = Math.max(0, Math.round(ms / 60_000));
+  if (m < 60) return `${m} min`;
+  const h = Math.round(m / 60);
+  return h < 24 ? `${h} h` : `${Math.round(h / 24)} d`;
+}
+
+/** Agents home: every session grouped by what it needs, newest first. */
+function SessionList({ sessions }: { sessions: Session[] }) {
+  const now = useNow(30_000);
+  const running = sessions.filter((s) => s.status === "working").length;
+  const need = sessions.filter((s) => groupOf(s) === "Needs you").length;
+  return (
+    <div className="ag-home">
+      <p className="ag-count">
+        {running} of {sessions.length} running
+        {need > 0 && <span className="ag-need"> · {need} need you</span>}
+      </p>
+      {GROUPS.map((g) => {
+        const list = sessions.filter((s) => groupOf(s) === g).sort((a, b) => b.turnAt - a.turnAt);
+        if (list.length === 0) return null;
+        return (
+          <div key={g} className="ag-group">
+            <p className="ak-group">
+              {g} <span className="ag-n">{list.length}</span>
+            </p>
+            {list.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className="ag-row chip"
+                onClick={() => useAgents.setState({ current: s.id })}
+              >
+                <AgentMark agent={s.agent} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{s.title}</span>
+                  <span className="ag-sub block truncate">
+                    {s.project} · {MODE_WORD[s.mode] ?? s.mode} · {ago(now - s.turnAt)}
+                  </span>
+                </span>
+                <span className="ag-st" data-g={g}>
+                  {g === "Needs you"
+                    ? "Needs you"
+                    : g === "Running"
+                      ? "Working"
+                      : g === "Ready to review"
+                        ? "Ready to review"
+                        : g}
+                </span>
+              </button>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
 }

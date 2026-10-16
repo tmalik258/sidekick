@@ -5,7 +5,7 @@
 import { memo, type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
 import { friendlyError } from "@/lib/friendly";
-import { startWaiting, stopWaiting, useSidekick } from "@/lib/store";
+import { startWaiting, stopWaiting, useDuskie } from "@/lib/store";
 import type { SetupItem } from "@/lib/types";
 import { ItemGuide } from "./SetupGuides";
 import { Tip } from "./Tip";
@@ -64,9 +64,9 @@ export const SetupRow = memo(function SetupRow({
   children?: ReactNode;
 }) {
   const [busy, setBusy] = useState(false);
-  const waiting = useSidekick((s) => s.waiting);
+  const waiting = useDuskie((s) => s.waiting);
   // App connects (app:notion) highlight the Composio row — that is the island done ring.
-  const justDone = useSidekick(
+  const justDone = useDuskie(
     (s) => s.justDone === item.id || (item.id === "composio" && (s.justDone?.startsWith("app:") ?? false)),
   );
   // When Settings reopens after a step finished, show that step.
@@ -122,12 +122,12 @@ export const SetupRow = memo(function SetupRow({
     startWaiting(item.id, item.title, {
       resumeTab: item.tab ?? "home",
       steps: item.opensApp
-        ? [`Sidekick is starting ${item.title} in the background.`, "This finishes by itself when it is running."]
+        ? [`Duskie is starting ${item.title} in the background.`, "This finishes by itself when it is running."]
         : item.opensTerminal
           ? [
               "PowerShell is open. The command is already on the clipboard.",
               "Replace your-key with your API key, paste (Ctrl+V), press Enter.",
-              "Come back here — Sidekick notices when the key is set. No restart needed.",
+              "Come back here — Duskie notices when the key is set. No restart needed.",
             ]
           : [
               `A PowerShell window is running: ${item.action} ${item.title}.`,

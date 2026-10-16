@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Expression } from "@/components/orb/expressions";
+import type { Expression } from "@/components/creature/expressions";
 import { acceptActivities, beginActivity, finishActivity, ownsWorking, useActivities } from "./activities";
 import { setTab, startHere } from "./agents";
 import { api, EVENTS, listen } from "./bridge";
@@ -29,7 +29,7 @@ import {
 } from "./types";
 import { updateBusy } from "./updates";
 
-interface SidekickState {
+interface DuskieState {
   mascot: MascotState;
   settings: Settings;
   suggestion: Suggestion | null;
@@ -73,7 +73,7 @@ interface SidekickState {
   chatPage: string | null;
   /** The conversation is about writing a new skill. */
   chatSkill: boolean;
-  /** The model picked in Ask mode; null lets Sidekick choose. */
+  /** The model picked in Ask mode; null lets Duskie choose. */
   askModel: string | null;
   /** A spoken question asked with Ask closed: the island stays compact
    * ("Thinking...") until the answer starts, then opens to show it. */
@@ -84,14 +84,14 @@ interface SidekickState {
   focusUntil: number | null;
   /** Where the conversation is saved, so it can be picked up later. */
   conversation: string;
-  /** Sidekick's voice is playing; the mascot talks along. */
+  /** Duskie's voice is playing; the mascot talks along. */
   speaking: boolean;
   /** Voice: what is being heard right now, while listening. */
   hearing: string | null;
   voiceStatus: VoiceStatus | null;
   /** Suggestions held while you were busy or in a meeting. */
   later: number;
-  /** A setup step finishing outside Sidekick (browser, PowerShell). */
+  /** A setup step finishing outside Duskie (browser, PowerShell). */
   waiting: Waiting | null;
   /** The step that just finished while waited for, shown highlighted. */
   justDone: string | null;
@@ -165,9 +165,9 @@ function savedModel(): string | null {
   }
 }
 
-/** Picks the model for Ask mode (null: Sidekick chooses), kept for next time. */
+/** Picks the model for Ask mode (null: Duskie chooses), kept for next time. */
 export function setAskModel(id: string | null) {
-  useSidekick.setState({ askModel: id });
+  useDuskie.setState({ askModel: id });
   try {
     if (id) localStorage.setItem(MODEL_KEY, id);
     else localStorage.removeItem(MODEL_KEY);
@@ -176,7 +176,7 @@ export function setAskModel(id: string | null) {
   }
 }
 
-export const useSidekick = create<SidekickState>(() => ({
+export const useDuskie = create<DuskieState>(() => ({
   mascot: "idle",
   settings: DEFAULT_SETTINGS,
   suggestion: null,
@@ -240,7 +240,7 @@ export function startWaiting(
   const since = Date.now();
   const hasSteps = (steps?.length ?? 0) > 0;
   const startMinimized = hasSteps ? minimized : true;
-  useSidekick.setState({
+  useDuskie.setState({
     waiting: {
       id,
       label,
@@ -257,7 +257,7 @@ export function startWaiting(
   if (hasSteps && !startMinimized) {
     guideHoldTimer = setTimeout(() => {
       guideHoldTimer = null;
-      const waiting = useSidekick.getState().waiting;
+      const waiting = useDuskie.getState().waiting;
       if (waiting?.id === id && waiting.since === since) minimizeWaiting(true);
     }, GUIDE_HOLD_MS);
   }
@@ -270,13 +270,13 @@ export function stopWaiting() {
     clearTimeout(guideHoldTimer);
     guideHoldTimer = null;
   }
-  useSidekick.setState({ waiting: null });
+  useDuskie.setState({ waiting: null });
 }
 
 /** The guide's Cancel: stop waiting, and carry on with the welcome if unfinished. */
 export function cancelWaiting() {
   stopWaiting();
-  const { settings, ask } = useSidekick.getState();
+  const { settings, ask } = useDuskie.getState();
   if (!settings.onboarded && !ask) void api.askResumeWelcome();
 }
 
@@ -302,28 +302,28 @@ export async function installExtension(id: string, name: string): Promise<Extens
 
 /** Shrinks the guide to the pill, or brings it back. */
 export function minimizeWaiting(minimized: boolean) {
-  const waiting = useSidekick.getState().waiting;
+  const waiting = useDuskie.getState().waiting;
   if (waiting)
-    useSidekick.setState({ waiting: { ...waiting, minimized, background: minimized ? waiting.background : false } });
+    useDuskie.setState({ waiting: { ...waiting, minimized, background: minimized ? waiting.background : false } });
 }
 
 /** Wait as a pill only: hover no longer opens the guide; success still finishes normally. */
 export function backgroundWaiting() {
-  const waiting = useSidekick.getState().waiting;
-  if (waiting) useSidekick.setState({ waiting: { ...waiting, minimized: true, background: true } });
+  const waiting = useDuskie.getState().waiting;
+  if (waiting) useDuskie.setState({ waiting: { ...waiting, minimized: true, background: true } });
 }
 
 /** How long a done pill stays before the island settles. */
 const DONE_PILL_MS = 2600;
 /** Immediately acknowledges a click; Rust broadcasts progress to every window. */
 export async function installUpdate(): Promise<void> {
-  if (updateBusy(useSidekick.getState().updateProgress)) return;
-  useSidekick.setState({ updateProgress: { phase: "preparing", done: 0, total: null, error: null } });
+  if (updateBusy(useDuskie.getState().updateProgress)) return;
+  useDuskie.setState({ updateProgress: { phase: "preparing", done: 0, total: null, error: null } });
   try {
     await api.updateInstall();
   } catch (error) {
     const progress = await api.updateProgress().catch(() => null);
-    useSidekick.setState({
+    useDuskie.setState({
       updateProgress: progress ?? { phase: "failed", done: 0, total: null, error: String(error) },
     });
     throw error;
@@ -334,8 +334,8 @@ let doneTimer: ReturnType<typeof setTimeout> | undefined;
 /** Shows a compact done pill for a moment: nothing needs you. */
 export function showDone(text: string) {
   clearTimeout(doneTimer);
-  useSidekick.setState({ donePill: text, voiceQuestion: null });
-  doneTimer = setTimeout(() => useSidekick.setState({ donePill: null }), DONE_PILL_MS);
+  useDuskie.setState({ donePill: text, voiceQuestion: null });
+  doneTimer = setTimeout(() => useDuskie.setState({ donePill: null }), DONE_PILL_MS);
 }
 
 /**
@@ -355,7 +355,7 @@ export async function runOpen(open: () => Promise<boolean>, doneMessage: string)
   const label = doneMessage.replace(/^Opened\b/i, "Opening");
   const id = beginActivity(label);
   void api.askClose();
-  useSidekick.setState({ mascot: "working", running: label });
+  useDuskie.setState({ mascot: "working", running: label });
   try {
     await api.activityOpenStart(id, label).catch(() => {});
     const opened = await open();
@@ -363,7 +363,7 @@ export async function runOpen(open: () => Promise<boolean>, doneMessage: string)
     finishActivity(id, true, outcome);
     void api.activityOpenFinish(id, true, outcome).catch(() => {});
     if (mayFinishOpen(generation, id)) {
-      useSidekick.setState({ running: null, mascot: "idle" });
+      useDuskie.setState({ running: null, mascot: "idle" });
       if (opened) showDone(outcome);
     }
     return opened;
@@ -371,15 +371,15 @@ export async function runOpen(open: () => Promise<boolean>, doneMessage: string)
     finishActivity(id, false, String(e));
     void api.activityOpenFinish(id, false, String(e)).catch(() => {});
     if (mayFinishOpen(generation, id))
-      useSidekick.setState({
+      useDuskie.setState({
         running: null,
         mascot: "error",
         lastResult: { ok: false, message: String(e), path: null, auto: false, undoId: null },
       });
     return false;
   } finally {
-    if (mayFinishOpen(generation, id) && useSidekick.getState().mascot === "working")
-      useSidekick.setState({ running: null, mascot: "idle" });
+    if (mayFinishOpen(generation, id) && useDuskie.getState().mascot === "working")
+      useDuskie.setState({ running: null, mascot: "idle" });
   }
 }
 
@@ -388,16 +388,16 @@ const JUST_DONE_MS = 3000;
 
 /** Marks a waited-for step done: speak, show island Done, then reopen welcome or Settings. */
 export function finishWaiting(waiting: Waiting, line: string) {
-  if (useSidekick.getState().waiting?.id !== waiting.id) return;
+  if (useDuskie.getState().waiting?.id !== waiting.id) return;
   stopWaiting();
-  const { settings } = useSidekick.getState();
+  const { settings } = useDuskie.getState();
   playCue("ding", cueVolume(settings, "ding"), settings.soundKit);
   void api.voiceSay(line);
 
   // Island Done / All set (mascot success) — not only the orb celebrate face.
   // Welcome/Settings reopen after this so the card is actually visible.
   const detail = line.replace(/^Done\.\s*/i, "").trim() || `${waiting.label} is connected.`;
-  useSidekick.setState({
+  useDuskie.setState({
     justDone: waiting.id,
     mascot: "success",
     lastResult: { ok: true, message: detail, path: null, auto: false, undoId: null },
@@ -405,11 +405,11 @@ export function finishWaiting(waiting: Waiting, line: string) {
   setMood("celebrate", JUST_DONE_MS);
 
   const openPanel = () => {
-    if (useSidekick.getState().justDone === waiting.id) {
-      useSidekick.setState({ justDone: null });
+    if (useDuskie.getState().justDone === waiting.id) {
+      useDuskie.setState({ justDone: null });
     }
-    if (useSidekick.getState().mascot === "success") {
-      useSidekick.setState({ mascot: "idle", lastResult: null });
+    if (useDuskie.getState().mascot === "success") {
+      useDuskie.setState({ mascot: "idle", lastResult: null });
     }
     if (settings.onboarded) {
       resumeSettingsTab = waiting.resumeTab ?? "home";
@@ -446,7 +446,7 @@ function onBrowsersChanged() {
     .then((s) => putCached(SETUP_STATUS_CACHE_KEY, s))
     .catch(() => undefined);
 
-  const waiting = useSidekick.getState().waiting;
+  const waiting = useDuskie.getState().waiting;
   if (waiting?.id !== "browser" || !waiting.target) return;
   const target = waiting.target;
   const name = waiting.label.charAt(0).toUpperCase() + waiting.label.slice(1);
@@ -454,7 +454,7 @@ function onBrowsersChanged() {
     .browsersStatus()
     .then((browsers) => {
       putCached("browsers", browsers);
-      if (useSidekick.getState().waiting?.id !== waiting.id) return;
+      if (useDuskie.getState().waiting?.id !== waiting.id) return;
       if (browsers.some((b) => b.id === target && b.connected)) {
         finishWaiting(waiting, `Done. ${name} is connected.`);
       }
@@ -466,7 +466,7 @@ function onBrowsersChanged() {
 export function watchWaiting(): () => void {
   let busy = false;
   const id = setInterval(() => {
-    const waiting = useSidekick.getState().waiting;
+    const waiting = useDuskie.getState().waiting;
     if (!waiting || busy) return;
     if (Date.now() - waiting.since > WAIT_LIMIT_MS) {
       stopWaiting();
@@ -482,7 +482,7 @@ export function watchWaiting(): () => void {
       api
         .browsersStatus()
         .then((browsers) => {
-          if (useSidekick.getState().waiting?.id !== waiting.id) return;
+          if (useDuskie.getState().waiting?.id !== waiting.id) return;
           if (browsers.some((b) => b.id === target && b.connected)) {
             finishWaiting(waiting, `Done. ${name} is connected.`);
           }
@@ -496,7 +496,7 @@ export function watchWaiting(): () => void {
     api
       .setupStatus()
       .then((status) => {
-        if (useSidekick.getState().waiting?.id !== waiting.id) return;
+        if (useDuskie.getState().waiting?.id !== waiting.id) return;
         const item = status.items.find((i) => i.id === waiting.id);
         if (item?.done) {
           finishWaiting(
@@ -517,8 +517,8 @@ export function watchWaiting(): () => void {
 /** Runs an action Ask offered, and records what happened on its button. */
 export async function runProposal(id: string) {
   const mark = (ran: NonNullable<Proposal["ran"]>) =>
-    useSidekick.setState({
-      turns: useSidekick
+    useDuskie.setState({
+      turns: useDuskie
         .getState()
         .turns.map((t) =>
           t.proposals?.some((p) => p.id === id)
@@ -535,14 +535,14 @@ export async function runProposal(id: string) {
 
 /** Undoes what a tapped action did; marks it so Undo does not show again. */
 export async function undoProposal(id: string): Promise<string> {
-  const p = useSidekick
+  const p = useDuskie
     .getState()
     .turns.flatMap((t) => t.proposals ?? [])
     .find((x) => x.id === id);
   if (!p?.ran?.undoId) return "Nothing to undo.";
   const message = await api.actionUndo(p.ran.undoId);
-  useSidekick.setState({
-    turns: useSidekick.getState().turns.map((t) =>
+  useDuskie.setState({
+    turns: useDuskie.getState().turns.map((t) =>
       t.proposals?.some((x) => x.id === id)
         ? {
             ...t,
@@ -555,43 +555,43 @@ export async function undoProposal(id: string): Promise<string> {
 }
 
 export const setAsk = (patch: Partial<AskState>) => {
-  const ask = useSidekick.getState().ask;
-  if (ask) useSidekick.setState({ ask: { ...ask, ...patch } });
+  const ask = useDuskie.getState().ask;
+  if (ask) useDuskie.setState({ ask: { ...ask, ...patch } });
 };
 
 /** Sends a message in the Ask conversation; answers stream into the last turn. */
 /** Asks the last question again after an answer failed. */
 /** Asks the question of the last answer again when the internet is back. */
 export function askWhenOnline() {
-  const { turns } = useSidekick.getState();
+  const { turns } = useDuskie.getState();
   const question = turns.findLast((t) => t.role === "user");
-  if (question) useSidekick.setState({ askWhenOnline: question.content });
+  if (question) useDuskie.setState({ askWhenOnline: question.content });
 }
 
 // Back online with a question waiting: open Ask and ask it.
-useSidekick.subscribe((s, prev) => {
+useDuskie.subscribe((s, prev) => {
   if (!prev.online && s.online && s.askWhenOnline) {
     const q = s.askWhenOnline;
-    useSidekick.setState({ askWhenOnline: null });
+    useDuskie.setState({ askWhenOnline: null });
     void api.askOpen().then(() => setTimeout(() => sendChat(q), 400));
   }
 });
 
 export function retryLast(): boolean {
-  const { turns, chatId } = useSidekick.getState();
+  const { turns, chatId } = useDuskie.getState();
   const last = turns[turns.length - 1];
   const question = turns[turns.length - 2];
   if (chatId || !last?.error || question?.role !== "user") return false;
-  useSidekick.setState({ turns: turns.slice(0, -2) });
+  useDuskie.setState({ turns: turns.slice(0, -2) });
   return sendChat(question.content);
 }
 
 /** Asks the last question again; `think` lets the local model reason first. */
 export function askAgain(think = false): boolean {
-  const { turns, chatId } = useSidekick.getState();
+  const { turns, chatId } = useDuskie.getState();
   const question = turns[turns.length - 2];
   if (chatId || question?.role !== "user") return false;
-  useSidekick.setState({ turns: turns.slice(0, -2) });
+  useDuskie.setState({ turns: turns.slice(0, -2) });
   return sendChat(question.content, { think });
 }
 
@@ -606,11 +606,11 @@ let moodTimer: ReturnType<typeof setTimeout> | undefined;
 export function setMood(id: Expression, ms: number, sound?: SynthSound) {
   clearTimeout(moodTimer);
   const until = Date.now() + ms;
-  useSidekick.setState({ mood: { id, until } });
+  useDuskie.setState({ mood: { id, until } });
   moodTimer = setTimeout(() => {
-    if (useSidekick.getState().mood?.until === until) useSidekick.setState({ mood: null });
+    if (useDuskie.getState().mood?.until === until) useDuskie.setState({ mood: null });
   }, ms);
-  if (sound) playMood(sound, uiVolume(), useSidekick.getState().settings.soundKit);
+  if (sound) playMood(sound, uiVolume(), useDuskie.getState().settings.soundKit);
 }
 
 /** Marks a result whose branch update stopped on conflicts. */
@@ -619,9 +619,9 @@ const MERGE_AT = "git-merge:";
 /** Loads the conflicts of an update into the island. */
 export async function openMerge(path: string) {
   try {
-    useSidekick.setState({ merge: { path, state: await api.mergeState(path) } });
+    useDuskie.setState({ merge: { path, state: await api.mergeState(path) } });
   } catch (e) {
-    useSidekick.setState({ lastResult: { ok: false, message: String(e), path: null, auto: false, undoId: null } });
+    useDuskie.setState({ lastResult: { ok: false, message: String(e), path: null, auto: false, undoId: null } });
   }
 }
 
@@ -663,7 +663,7 @@ function thanked() {
   setTimeout(() => setMood("love", 2400, "mwah"), 1400);
 }
 
-/** The first time Sidekick is seen each day, it says hello. */
+/** The first time Duskie is seen each day, it says hello. */
 function helloOncePerDay() {
   if (firstToday()) setTimeout(() => setMood("hello", 2600, "hello"), 900);
 }
@@ -672,7 +672,7 @@ type ChatAttach = { clipboard?: boolean; screen?: boolean; speak?: boolean; voic
 
 /** What `api.aiChat` needs for question `q` in the chat as it is now. */
 function chatRequest(q: string, attach?: ChatAttach) {
-  const { ask, turns, chatPage, chatSkill, askModel, settings } = useSidekick.getState();
+  const { ask, turns, chatPage, chatSkill, askModel, settings } = useDuskie.getState();
   const history: ChatMessage[] = [
     ...turns.filter((t) => !t.error).map(({ role, content }) => ({ role, content })),
     { role: "user", content: q },
@@ -708,7 +708,7 @@ interface EarlyChat {
   id: string;
   q: string;
   tools: { name: string; label?: string }[];
-  proposals: { id: string; label: string; step?: boolean }[];
+  proposals: { id: string; label: string; step?: boolean; undoable?: boolean }[];
 }
 let early: EarlyChat | null = null;
 
@@ -719,7 +719,7 @@ function dropEarly() {
 }
 
 function startEarly(q: string, speak: boolean) {
-  if (!q || useSidekick.getState().chatId || early?.q === q) return;
+  if (!q || useDuskie.getState().chatId || early?.q === q) return;
   dropEarly();
   const id = crypto.randomUUID();
   const req = chatRequest(q, { speak, voice: true });
@@ -729,7 +729,7 @@ function startEarly(q: string, speak: boolean) {
 }
 
 export function sendChat(prompt: string, attach?: ChatAttach): boolean {
-  const { turns, chatId, ask } = useSidekick.getState();
+  const { turns, chatId, ask } = useDuskie.getState();
   const q = prompt.trim();
   if (!q || chatId) {
     dropEarly();
@@ -753,7 +753,7 @@ export function sendChat(prompt: string, attach?: ChatAttach): boolean {
       : ask;
   const req = chatRequest(q, attach);
   const screen = req.attach.screen;
-  useSidekick.setState({
+  useDuskie.setState({
     chatId: id,
     ask: nextAsk,
     turns: [
@@ -764,7 +764,7 @@ export function sendChat(prompt: string, attach?: ChatAttach): boolean {
         content: "",
         streaming: true,
         startedAt: Date.now(),
-        offline: !useSidekick.getState().online,
+        offline: !useDuskie.getState().online,
         steps: adopted?.tools.map((t) => t.label || toolStatus(t.name).replace(/\.\.\.$/, "")),
         proposals: adopted?.proposals,
       },
@@ -813,7 +813,7 @@ export function autoContext(q: string, ask: AskState | null): { window: boolean;
 
 /** Saves the conversation so Ask mode can list it later. */
 function saveChat() {
-  const { turns, conversation } = useSidekick.getState();
+  const { turns, conversation } = useDuskie.getState();
   const first = turns.find((t) => t.role === "user");
   if (!first) return;
   const title = first.content.length > 60 ? `${first.content.slice(0, 57)}...` : first.content;
@@ -827,9 +827,9 @@ export async function openChat(id: string) {
   const turns = await api.chatGet(id);
   // The chat keeps the This PC only it was last asked with, whatever the setting says now.
   const last = turns.findLast((t) => t.role === "user");
-  const { ask, settings } = useSidekick.getState();
+  const { ask, settings } = useDuskie.getState();
   const localOnly = last?.localOnly ?? settings.ai.localOnly;
-  useSidekick.setState({
+  useDuskie.setState({
     turns,
     chatId: null,
     chatPage: null,
@@ -842,12 +842,12 @@ export async function openChat(id: string) {
 /** Starts a conversation in which AI drafts a new skill. */
 export function startSkill(description: string) {
   newChat();
-  useSidekick.setState({ chatSkill: true });
+  useDuskie.setState({ chatSkill: true });
   sendChat(`Write a skill: ${description}`);
 }
 
 export function cancelChat() {
-  const { chatId } = useSidekick.getState();
+  const { chatId } = useDuskie.getState();
   if (chatId) void api.aiCancel(chatId);
   void api.voiceStop();
 }
@@ -855,15 +855,15 @@ export function cancelChat() {
 /** Ends an in-flight chat so a new voice turn can start (clears chatId). */
 function clearInFlightChat() {
   cancelChat();
-  if (useSidekick.getState().chatId) useSidekick.setState({ chatId: null });
+  if (useDuskie.getState().chatId) useDuskie.setState({ chatId: null });
 }
 
 /** Push to talk: listen now, no wake word needed. */
 export function startListening() {
-  useSidekick.setState({ hearing: "" });
+  useDuskie.setState({ hearing: "" });
   api.voiceListen().catch((e) => {
-    const { turns } = useSidekick.getState();
-    useSidekick.setState({ hearing: null, turns: [...turns, { role: "assistant", content: "", error: String(e) }] });
+    const { turns } = useDuskie.getState();
+    useDuskie.setState({ hearing: null, turns: [...turns, { role: "assistant", content: "", error: String(e) }] });
   });
 }
 
@@ -878,26 +878,26 @@ let voiceTimer: ReturnType<typeof setTimeout> | null = null;
  */
 function watchVoice() {
   if (voiceTimer) clearTimeout(voiceTimer);
-  const { hearing, voiceQuestion } = useSidekick.getState();
+  const { hearing, voiceQuestion } = useDuskie.getState();
   const ms = voiceQuestion !== null ? VOICE_STUCK_MS.question : VOICE_STUCK_MS.hearing;
   voiceTimer = setTimeout(() => {
     voiceTimer = null;
-    const now = useSidekick.getState();
+    const now = useDuskie.getState();
     if (now.hearing !== null && now.hearing === hearing) stopListening();
     if (now.voiceQuestion !== null && now.voiceQuestion === voiceQuestion) {
-      useSidekick.setState({ voiceQuestion: null });
+      useDuskie.setState({ voiceQuestion: null });
     }
   }, ms);
 }
 
 export function stopListening() {
-  useSidekick.setState({ hearing: null });
+  useDuskie.setState({ hearing: null });
   void api.voiceStop();
 }
 
 /** Chirp/Pop while listening or waiting on a voice answer would talk over the user. */
 function muteSuggestionCue(state: MascotState, previous: MascotState | null): boolean {
-  const { hearing, voiceQuestion } = useSidekick.getState();
+  const { hearing, voiceQuestion } = useDuskie.getState();
   if (hearing !== null || voiceQuestion !== null) return true;
   return state === "listening" || previous === "listening";
 }
@@ -906,8 +906,8 @@ function muteSuggestionCue(state: MascotState, previous: MascotState | null): bo
  * running unbound (Ctrl+N) so it can finish in the background. */
 export function newChat(opts?: { cancel?: boolean }) {
   if (opts?.cancel !== false) cancelChat();
-  const { ask, settings } = useSidekick.getState();
-  useSidekick.setState({
+  const { ask, settings } = useDuskie.getState();
+  useDuskie.setState({
     // A new chat starts from the setting; the old chat's choice stays with it.
     ask: ask && { ...ask, localOnly: settings.ai.localOnly },
     turns: [],
@@ -953,26 +953,26 @@ let askClosedAt = Date.now();
 let lastPanelCloseGen = 0;
 
 function updateLastTurn(id: string, fn: (t: Turn) => Turn) {
-  const { chatId, turns } = useSidekick.getState();
+  const { chatId, turns } = useDuskie.getState();
   const last = turns[turns.length - 1];
   if (id !== chatId || last?.role !== "assistant") return;
-  useSidekick.setState({ turns: [...turns.slice(0, -1), fn(last)] });
+  useDuskie.setState({ turns: [...turns.slice(0, -1), fn(last)] });
 }
 
 export const setHovered = (hovered: boolean) => {
   if (hovered) {
-    useSidekick.setState({ hovered });
+    useDuskie.setState({ hovered });
     return;
   }
   // Leave shiftHeld alone while a suggestion is up — Shift+Alt morph is global
   // and must survive the cursor leaving the island.
-  const keepShift = useSidekick.getState().suggestion != null;
-  useSidekick.setState(keepShift ? { hovered } : { hovered, shiftHeld: false });
+  const keepShift = useDuskie.getState().suggestion != null;
+  useDuskie.setState(keepShift ? { hovered } : { hovered, shiftHeld: false });
 };
 
 /** Grow the clickable area around a floating menu so it is not click-through. */
 export const setOverlayHit = (overlayHit: HitRect | null) => {
-  const prev = useSidekick.getState().overlayHit;
+  const prev = useDuskie.getState().overlayHit;
   if (prev === overlayHit) return;
   if (
     prev &&
@@ -984,7 +984,7 @@ export const setOverlayHit = (overlayHit: HitRect | null) => {
   ) {
     return;
   }
-  useSidekick.setState({ overlayHit });
+  useDuskie.setState({ overlayHit });
 };
 
 let confirmedCodeFolders: string[] | null = null;
@@ -997,7 +997,7 @@ function confirmSettings(settings: Settings) {
     JSON.stringify(confirmedSavedProjects) !== JSON.stringify(settings.savedProjects);
   confirmedCodeFolders = [...settings.codeFolders];
   confirmedSavedProjects = [...settings.savedProjects];
-  useSidekick.setState({ settings });
+  useDuskie.setState({ settings });
   if (changed || savedChanged) {
     revalidate("projects", api.projectsList);
     revalidate("repos", () => api.reposOverview(false));
@@ -1005,8 +1005,8 @@ function confirmSettings(settings: Settings) {
 }
 
 export function updateSettings(patch: Partial<Settings>): Promise<Settings> {
-  const next = { ...useSidekick.getState().settings, ...patch };
-  useSidekick.setState({ settings: next });
+  const next = { ...useDuskie.getState().settings, ...patch };
+  useDuskie.setState({ settings: next });
   return api.settingsSet(next).then((settings) => {
     confirmSettings(settings);
     return settings;
@@ -1043,7 +1043,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
   let updateRevision = 0;
   let settingsRevision = 0;
   unlisteners.push(
-    useSidekick.subscribe((state, previous) => {
+    useDuskie.subscribe((state, previous) => {
       if (state.updateProgress !== previous.updateProgress) progressRevision++;
       if (state.update !== previous.update) updateRevision++;
     }),
@@ -1051,20 +1051,20 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
   const loadUpdate = () => {
     const revision = updateRevision;
     void api.updateStatus().then(
-      (update) => !disposed && revision === updateRevision && useSidekick.setState({ update }),
+      (update) => !disposed && revision === updateRevision && useDuskie.setState({ update }),
       () => {},
     );
   };
 
   void api.focusStatus().then(
-    (f) => !disposed && useSidekick.setState({ focusUntil: f.until }),
+    (f) => !disposed && useDuskie.setState({ focusUntil: f.until }),
     () => {},
   );
   void (async () => {
     const offs = await Promise.all([
       listen(EVENTS.mascotState, (t) => {
-        useSidekick.setState({ mascot: t.state });
-        const { settings } = useSidekick.getState();
+        useDuskie.setState({ mascot: t.state });
+        const { settings } = useDuskie.getState();
         const suggestionCue = t.cue === "chirp" || t.cue === "pop";
         const skipCue = suggestionCue && muteSuggestionCue(t.state, t.previous);
         if (sounds && t.cue && !skipCue) playCue(t.cue, cueVolume(settings, t.cue), settings.soundKit);
@@ -1075,18 +1075,18 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         confirmSettings(settings);
         if (sounds) preloadSounds(settings.soundKit);
         loadUpdate();
-        if (!settings.onboarded && !useSidekick.getState().ask) void api.askEnsureWelcome();
+        if (!settings.onboarded && !useDuskie.getState().ask) void api.askEnsureWelcome();
       }),
       listen(EVENTS.updateAvailable, (update) => {
         updateRevision++;
-        useSidekick.setState({ update });
+        useDuskie.setState({ update });
       }),
       listen(EVENTS.updateProgress, (updateProgress) => {
         progressRevision++;
-        useSidekick.setState({ updateProgress });
+        useDuskie.setState({ updateProgress });
       }),
       listen(EVENTS.suggestionNew, (suggestion) => {
-        useSidekick.setState({ suggestion, lastResult: null });
+        useDuskie.setState({ suggestion, lastResult: null });
         // The cue already plays for a new suggestion, so the mood is silent.
         const mood = moodForSkill(suggestion.skillId);
         if (mood) setMood(mood, SUGGESTION_MOOD_MS);
@@ -1094,32 +1094,32 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       listen(EVENTS.actionResult, (result) => {
         const merging = result.path?.startsWith(MERGE_AT) ? result.path.slice(MERGE_AT.length) : null;
         const lastResult = merging ? { ...result, path: null } : result;
-        useSidekick.setState({ lastResult, running: null });
+        useDuskie.setState({ lastResult, running: null });
         if (merging) void openMerge(merging);
         // Done with nothing to undo or open: a compact pill, not a card.
-        if (lastResult.ok && !lastResult.undoId && !lastResult.path && !useSidekick.getState().ask) {
+        if (lastResult.ok && !lastResult.undoId && !lastResult.path && !useDuskie.getState().ask) {
           showDone(lastResult.message);
         }
         reactToResult(lastResult, sounds);
       }),
       listen(EVENTS.suggestionClear, (id) => {
-        if (useSidekick.getState().suggestion?.id === id) {
-          useSidekick.setState({ suggestion: null, shiftHeld: false });
+        if (useDuskie.getState().suggestion?.id === id) {
+          useDuskie.setState({ suggestion: null, shiftHeld: false });
         }
       }),
       listen(EVENTS.suggestionLater, (later) => {
         // Everything that was waiting is dealt with: a small celebration.
-        const before = useSidekick.getState().later;
-        useSidekick.setState({ later });
+        const before = useDuskie.getState().later;
+        useDuskie.setState({ later });
         if (before >= 2 && later === 0) setMood("celebrate", 3000, sounds ? "tada" : undefined);
       }),
       listen(EVENTS.islandHover, setHovered),
-      listen(EVENTS.islandShift, (shiftHeld: boolean) => useSidekick.setState({ shiftHeld })),
-      listen(EVENTS.islandVisible, (visible) => useSidekick.setState({ visible })),
-      listen(EVENTS.islandFullscreen, (fullscreen) => useSidekick.setState({ fullscreen })),
+      listen(EVENTS.islandShift, (shiftHeld: boolean) => useDuskie.setState({ shiftHeld })),
+      listen(EVENTS.islandVisible, (visible) => useDuskie.setState({ visible })),
+      listen(EVENTS.islandFullscreen, (fullscreen) => useDuskie.setState({ fullscreen })),
       listen(EVENTS.browsersChanged, () => onBrowsersChanged()),
       listen(EVENTS.composioChanged, ({ ok, message }) => {
-        const waiting = useSidekick.getState().waiting;
+        const waiting = useDuskie.getState().waiting;
         if (!ok || !waiting) return;
         if (waiting.id === "composio") {
           finishWaiting(waiting, message.trim() || "Done. Composio is connected.");
@@ -1135,23 +1135,23 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         const panelGen = open.panelGen ?? 0;
         if (panelGen > 0 && panelGen <= lastPanelCloseGen) return;
         timings.opened(open.sentAt);
-        const seq = (useSidekick.getState().ask?.seq ?? 0) + 1;
+        const seq = (useDuskie.getState().ask?.seq ?? 0) + 1;
         // Back within 10 minutes: the last chat is still there. Later, a new one.
-        const { turns, chatId } = useSidekick.getState();
+        const { turns, chatId } = useDuskie.getState();
         if (turns.length > 0 && chatId === null && Date.now() - askClosedAt > RESUME_MS) newChat();
         const clip = open.clipboard && !open.context.clipboardSecret;
         if (open.page) {
           newChat();
-          useSidekick.setState({ chatPage: open.page });
+          useDuskie.setState({ chatPage: open.page });
         }
         const settingsTab = open.settingsTab ?? resumeSettingsTab ?? undefined;
         resumeSettingsTab = null;
         // This PC only belongs to the chat: it stays while the chat goes on.
         // A new chat starts from the setting.
-        const state = useSidekick.getState();
+        const state = useDuskie.getState();
         const sameChat = state.turns.length > 0;
         const localOnly = sameChat ? (state.ask?.localOnly ?? keptLocalOnly) : state.settings.ai.localOnly;
-        useSidekick.setState({
+        useDuskie.setState({
           ask: {
             view: open.view ?? "ask",
             context: open.context,
@@ -1171,59 +1171,59 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       }),
       listen(EVENTS.askClose, (payload) => {
         const panelGen = payload.panelGen ?? 0;
-        const current = useSidekick.getState().ask;
+        const current = useDuskie.getState().ask;
         if (panelGen > 0 && current !== null && current.panelGen > 0 && panelGen < current.panelGen) {
           return;
         }
         if (panelGen > 0) lastPanelCloseGen = panelGen;
         askClosedAt = Date.now();
-        keptLocalOnly = useSidekick.getState().ask?.localOnly ?? false;
-        if (useSidekick.getState().hearing !== null) stopListening();
-        useSidekick.setState({ ask: null });
+        keptLocalOnly = useDuskie.getState().ask?.localOnly ?? false;
+        if (useDuskie.getState().hearing !== null) stopListening();
+        useDuskie.setState({ ask: null });
         // Hide parks welcome; do not fight the park with ensure_welcome.
         if (payload.reason === "defer") return;
-        if (!useSidekick.getState().settings.onboarded) {
+        if (!useDuskie.getState().settings.onboarded) {
           void api.askEnsureWelcome();
         }
       }),
       listen(EVENTS.voiceState, (voiceStatus) => {
-        useSidekick.setState({ voiceStatus });
-        const { settings, ask } = useSidekick.getState();
+        useDuskie.setState({ voiceStatus });
+        const { settings, ask } = useDuskie.getState();
         if (!settings.onboarded && !ask && voiceReady(voiceStatus)) {
           void api.askEnsureWelcome();
         }
       }),
-      listen(EVENTS.voiceSpeaking, (speaking) => useSidekick.setState({ speaking })),
+      listen(EVENTS.voiceSpeaking, (speaking) => useDuskie.setState({ speaking })),
       listen(EVENTS.voiceHeard, ({ text, final, pause, byVoice }) => {
         if (!final) {
           if (pause) {
-            startEarly(text.trim(), useSidekick.getState().settings.voice.speakAnswers);
+            startEarly(text.trim(), useDuskie.getState().settings.voice.speakAnswers);
             return;
           }
           // More words came: the early answer was for a different question.
           if (early && text.trim() !== early.q) dropEarly();
-          useSidekick.setState({ hearing: text });
+          useDuskie.setState({ hearing: text });
           watchVoice();
           return;
         }
         const q = text.trim();
         if (!q) dropEarly();
-        const { settings, turns, ask, chatId } = useSidekick.getState();
+        const { settings, turns, ask, chatId } = useDuskie.getState();
         if (q) {
           // A stale chatId makes sendChat no-op and drops the Thinking pill,
           // leaving a bare idle island (tiny hit rect / lockout).
           if (chatId) clearInFlightChat();
           // Asked with Ask closed: Thinking pill first so the hit rect stays live.
           if (!ask) {
-            useSidekick.setState({ hearing: null, voiceQuestion: q });
+            useDuskie.setState({ hearing: null, voiceQuestion: q });
             watchVoice();
           } else {
-            useSidekick.setState({ hearing: null });
+            useDuskie.setState({ hearing: null });
           }
           const started = sendChat(q, { speak: settings.voice.speakAnswers, voice: true });
-          if (!started && !ask) useSidekick.setState({ voiceQuestion: null });
+          if (!started && !ask) useDuskie.setState({ voiceQuestion: null });
         } else {
-          useSidekick.setState({ hearing: null });
+          useDuskie.setState({ hearing: null });
           if (byVoice && turns.length === 0 && ask) void api.askClose();
         }
       }),
@@ -1239,9 +1239,9 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         scheduleText();
         timings.firstWord(id);
         // The first words of a spoken question's answer: open to show it.
-        if (sounds && useSidekick.getState().voiceQuestion !== null) {
-          useSidekick.setState({ voiceQuestion: null });
-          if (!useSidekick.getState().ask) void api.askOpen();
+        if (sounds && useDuskie.getState().voiceQuestion !== null) {
+          useDuskie.setState({ voiceQuestion: null });
+          if (!useDuskie.getState().ask) void api.askOpen();
         }
       }),
       listen(EVENTS.aiTool, ({ id, name, label }) => {
@@ -1257,14 +1257,14 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
         const step = label || toolStatus(name).replace(/\.\.\.$/, "");
         updateLastTurn(id, (t) => ({ ...t, tool: step, steps: [...(t.steps ?? []), step] }));
       }),
-      listen(EVENTS.aiProposal, ({ chatId, id, label, step }) => {
+      listen(EVENTS.aiProposal, ({ chatId, id, label, step, undoable }) => {
         if (early?.id === chatId) {
-          early.proposals.push({ id, label, step });
+          early.proposals.push({ id, label, step, undoable });
           return;
         }
-        updateLastTurn(chatId, (t) => ({ ...t, proposals: [...(t.proposals ?? []), { id, label, step }] }));
+        updateLastTurn(chatId, (t) => ({ ...t, proposals: [...(t.proposals ?? []), { id, label, step, undoable }] }));
       }),
-      listen(EVENTS.islandFocus, ({ until }) => useSidekick.setState({ focusUntil: until })),
+      listen(EVENTS.islandFocus, ({ until }) => useDuskie.setState({ focusUntil: until })),
       listen(EVENTS.islandDone, ({ id, text }) => {
         updateLastTurn(id, (t) => ({ ...t, content: text }));
         showDone(text);
@@ -1272,7 +1272,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
       listen(EVENTS.aiDone, ({ id, provider, error, handoff, cost }) => {
         flushText();
         timings.done(id);
-        if (useSidekick.getState().voiceQuestion !== null) useSidekick.setState({ voiceQuestion: null });
+        if (useDuskie.getState().voiceQuestion !== null) useDuskie.setState({ voiceQuestion: null });
         updateLastTurn(id, (t) => ({
           ...t,
           provider,
@@ -1283,11 +1283,11 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
           streaming: false,
           tookMs: t.startedAt ? Date.now() - t.startedAt : undefined,
         }));
-        if (useSidekick.getState().chatId === id) {
-          useSidekick.setState({ chatId: null });
-          if (sounds && !useSidekick.getState().chatSkill) saveChat();
+        if (useDuskie.getState().chatId === id) {
+          useDuskie.setState({ chatId: null });
+          if (sounds && !useDuskie.getState().chatSkill) saveChat();
           // Ask was closed while the answer came in: bring it back with the answer.
-          if (sounds && !useSidekick.getState().ask && useSidekick.getState().turns.length > 0) {
+          if (sounds && !useDuskie.getState().ask && useDuskie.getState().turns.length > 0) {
             void api.askOpen();
           }
         }
@@ -1303,7 +1303,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
     const progressSnapshotRevision = progressRevision;
     void api.updateProgress().then(
       (updateProgress) =>
-        !disposed && progressSnapshotRevision === progressRevision && useSidekick.setState({ updateProgress }),
+        !disposed && progressSnapshotRevision === progressRevision && useDuskie.setState({ updateProgress }),
       () => {},
     );
     loadUpdate();
@@ -1318,7 +1318,7 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
     ]);
     if (disposed) return;
     if (settingsSnapshotRevision === settingsRevision) confirmSettings(settings);
-    useSidekick.setState({ mascot, suggestion, voiceStatus, later: later.length, ready: true });
+    useDuskie.setState({ mascot, suggestion, voiceStatus, later: later.length, ready: true });
     if (sounds) preloadSounds(settings.soundKit);
     if (sounds && settings.onboarded) helloOncePerDay();
     // Listeners are live; re-emit welcome if still locked (repairs missed emit).
@@ -1326,9 +1326,9 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
   })();
 
   const stopNet = watchNet(
-    useSidekick.getState,
-    (s) => useSidekick.setState(s),
-    sounds ? (sound) => playSound(sound, uiVolume(), useSidekick.getState().settings.soundKit) : null,
+    useDuskie.getState,
+    (s) => useDuskie.setState(s),
+    sounds ? (sound) => playSound(sound, uiVolume(), useDuskie.getState().settings.soundKit) : null,
     () => setMood("happy", 2500),
   );
 
@@ -1341,9 +1341,9 @@ export function connect({ sounds }: { sounds: boolean }): () => void {
 
 /** Volume for interface sounds (chip presses), following the master volume. */
 export function uiVolume(): number {
-  const { settings } = useSidekick.getState();
+  const { settings } = useDuskie.getState();
   return settings.muted ? 0 : settings.masterVolume * 0.7;
 }
 
-/** The assistant's name, "Sidekick" unless the user renamed it. */
-export const useAssistantName = () => useSidekick((s) => s.settings.assistantName || "Sidekick");
+/** The assistant's name, "Duskie" unless the user renamed it. */
+export const useAssistantName = () => useDuskie((s) => s.settings.assistantName || "Duskie");

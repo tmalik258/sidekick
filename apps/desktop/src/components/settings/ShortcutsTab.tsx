@@ -3,7 +3,7 @@
 // Shortcuts: every key in one place. Keys that work anywhere can be
 // changed; keys inside the island are listed so they are easy to learn.
 
-import { updateSettings, useSidekick } from "@/lib/store";
+import { updateSettings, useDuskie } from "@/lib/store";
 import { type Settings, SHORTCUT_ACTIONS } from "@/lib/types";
 import { Field, Section, ShortcutRecorder } from "./ui";
 
@@ -29,7 +29,7 @@ const ISLAND_KEYS: [string, string][] = [
 ];
 
 export function ShortcutsTab({ onError }: { onError: (e: string) => void }) {
-  const settings = useSidekick((s) => s.settings);
+  const settings = useDuskie((s) => s.settings);
   const save = (patch: Partial<Settings>) => void updateSettings(patch).catch((e: unknown) => onError(String(e)));
   return (
     <>

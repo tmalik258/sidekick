@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
 import { SETUP_STATUS_CACHE_KEY, useCached } from "@/lib/cache";
-import { stopWaiting, useSidekick } from "@/lib/store";
+import { stopWaiting, useDuskie } from "@/lib/store";
 import type { SetupGroup, SetupItem } from "@/lib/types";
 import { ActivityProgress } from "./ActivityProgress";
 import { BrowserInstallPanel } from "./SetupBrowser";
@@ -123,7 +123,7 @@ export function SetupChecklist({
   const { status, checking, check, refreshQuiet, watchForChanges } = useSetupStatus();
   const [error, setError] = useState<string | null>(null);
   // Coming back from a step finished elsewhere: make sure its row shows.
-  const justDone = useSidekick((s) => s.justDone);
+  const justDone = useDuskie((s) => s.justDone);
   const [openGuide, setOpenGuide] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(false);
 
@@ -289,7 +289,7 @@ export function SetupItems({ ids }: { ids: string[] }) {
   const { status, watchForChanges, check } = useSetupStatus();
   const [error, setError] = useState<string | null>(null);
   const [openGuide, setOpenGuide] = useState<string | null>(null);
-  const justDone = useSidekick((s) => s.justDone);
+  const justDone = useDuskie((s) => s.justDone);
   const run = useCallback(
     (id: string) => {
       setError(null);

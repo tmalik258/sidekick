@@ -95,7 +95,7 @@ export function activityLabel(a: Activity, now: number, opts?: { elapsed?: boole
           : "Setting up";
   const label = a.label
     .replace(/^Setting up/, phase)
-    .replace(/^Updating Sidekick$/, `${phase === "Setting up" ? "Updating" : phase} Sidekick`);
+    .replace(/^Updating Duskie$/, `${phase === "Setting up" ? "Updating" : phase} Duskie`);
   const idle = Math.max(0, now - a.lastProgressAt);
   if (a.phase === "unconfirmed" && idle < INACTIVITY_MS) return `${label} · progress unconfirmed`;
   if (idle >= INACTIVITY_MS || a.phase === "unconfirmed") {
@@ -111,11 +111,27 @@ export function activityLabel(a: Activity, now: number, opts?: { elapsed?: boole
   if (opts?.elapsed === false) return `${label}…`;
   return `${label}… · ${Math.max(0, Math.floor((now - a.startedAt) / 1000))}s`;
 }
-export function visibleActivities(activities: Activity[], now: number) {
-  const unique = new Map(activities.map((a) => [a.id, a]));
+/** A stalled or failed activity: the user has to look at it, so it is never hidden by a timer. */
+export function needsAttention(a: Activity, now: number): boolean {
+  if (a.phase === "failed" || a.phase === "unconfirmed") return true;
+  return !terminal(a) && now - a.lastProgressAt >= INACTIVITY_MS;
+}
+
+/**
+ * What the island shows. Done activities clear after a short hold. With
+ * `keepProblems`, failed, unconfirmed and stalled ones stay until dismissed.
+ */
+export function visibleActivities(activities: Activity[], now: number, keepProblems = false) {
+  // Matched by id: a later copy (newer revision) replaces an earlier one.
+  const unique = new Map<string, Activity>();
+  for (const a of activities) {
+    const seen = unique.get(a.id);
+    if (!seen || a.revision >= seen.revision) unique.set(a.id, a);
+  }
   return [...unique.values()]
     .filter((a) => {
       if (a.dismissed) return false;
+      if (keepProblems && needsAttention(a, now)) return true;
       const idle = now - a.lastProgressAt;
       // Done / failed: brief hold, then gone (compact pill settles).
       if (terminal(a) && idle >= ACTIVITY_HOLD_MS) return false;

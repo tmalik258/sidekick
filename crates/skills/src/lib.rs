@@ -465,7 +465,7 @@ mod tests {
 
     #[test]
     fn user_skills_override_builtins_and_bad_files_are_reported() {
-        let dir = std::env::temp_dir().join(format!("sidekick-skills-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("duskie-skills-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("mine.yaml"),

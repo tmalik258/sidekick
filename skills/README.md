@@ -30,6 +30,6 @@ suggestion:
 
 Actions: `open_path`, `open_folder`, `reveal_path`, `copy_file`, `copy_text`, `open_url`, `open_in_editor`, `open_system_page`, `extract_text` (OCR to clipboard), `convert`, `extract_archive`, `run_installer`, `kill_port`, `clear_clipboard_later`, `format_json_clipboard`, `ask_ai` (`prompt`, optional `page` text and `clipboard: "false"`), `browser_close_duplicates`, `browser_save_session`.
 
-Use `open_folder`, never `open_path`, for paths that come from outside Sidekick (hooks, the browser): `open_path` opens files, which runs programs.
+Use `open_folder`, never `open_path`, for paths that come from outside Duskie (hooks, the browser): `open_path` opens files, which runs programs.
 
 Capabilities for `requires`: `browser:chrome|edge|firefox|zen|brave|samsung`, `tool:ffmpeg`, `tool:image` (ImageMagick or ffmpeg), `tool:soffice`, `tool:pandoc`, `tool:tar`, `tool:code` (a code editor; `{{editor}}` in a label is its name, e.g. "Open in {{editor}}"), `tool:tesseract` (OCR), `ai` (a reachable AI provider).

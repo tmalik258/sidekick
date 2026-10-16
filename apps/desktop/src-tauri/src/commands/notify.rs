@@ -22,17 +22,17 @@ pub fn notifications_set_level(app: AppHandle, from: String, level: String) -> C
 /// Whether Windows' Do Not Disturb is on right now (None: cannot tell).
 #[tauri::command]
 pub async fn dnd_get() -> Option<bool> {
-    tauri::async_runtime::spawn_blocking(sidekick_actions::dnd::state)
+    tauri::async_runtime::spawn_blocking(duskie_actions::dnd::state)
         .await
         .ok()
         .flatten()
 }
 
 /// Switches Windows' Do Not Disturb, quietly: pop-ups stop while every
-/// notification still reaches Sidekick.
+/// notification still reaches Duskie.
 #[tauri::command]
 pub async fn dnd_set(on: bool) -> CmdResult<String> {
-    tauri::async_runtime::spawn_blocking(move || sidekick_actions::pc::set_dnd(on))
+    tauri::async_runtime::spawn_blocking(move || duskie_actions::pc::set_dnd(on))
         .await
         .map_err(|e| e.to_string())?
         .map(|o| o.message)
@@ -41,7 +41,7 @@ pub async fn dnd_set(on: bool) -> CmdResult<String> {
 
 /// Saves a recipe from Settings or Ask's Save as recipe.
 #[tauri::command]
-pub fn recipe_save(app: AppHandle, recipe: sidekick_core::Recipe) -> CmdResult<String> {
+pub fn recipe_save(app: AppHandle, recipe: duskie_core::Recipe) -> CmdResult<String> {
     crate::recipes::save(&app, recipe)
 }
 

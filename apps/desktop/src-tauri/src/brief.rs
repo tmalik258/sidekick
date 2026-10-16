@@ -9,8 +9,8 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use chrono::{Local, Timelike};
+use duskie_core::{AppTime, Event};
 use serde_json::Value;
-use sidekick_core::{AppTime, Event};
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, lock};
@@ -367,9 +367,9 @@ fn gh(filter: &str) -> Vec<Pr> {
 fn unsaved_repos(roots: &[PathBuf]) -> Vec<Repo> {
     roots
         .iter()
-        .flat_map(|r| sidekick_sensors::repos::find_repos(r))
+        .flat_map(|r| duskie_sensors::repos::find_repos(r))
         .filter_map(|repo| {
-            let (changed, ahead) = sidekick_sensors::repos::unsaved(&repo)?;
+            let (changed, ahead) = duskie_sensors::repos::unsaved(&repo)?;
             Some(Repo {
                 name: repo.file_name()?.to_string_lossy().into_owned(),
                 path: repo.to_string_lossy().into_owned(),
@@ -399,7 +399,7 @@ fn gather(
             .calendar
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        sidekick_sensors::calendar::on_day(&c.meetings, Local::now().date_naive())
+        duskie_sensors::calendar::on_day(&c.meetings, Local::now().date_naive())
             .iter()
             .map(|m| {
                 (

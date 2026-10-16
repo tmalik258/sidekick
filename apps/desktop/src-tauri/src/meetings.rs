@@ -4,8 +4,8 @@
 use std::time::Duration;
 
 use chrono::Utc;
+use duskie_sensors::calendar::{Meeting, from_google, from_outlook};
 use serde_json::json;
-use sidekick_sensors::calendar::{Meeting, from_google, from_outlook};
 use tauri::{AppHandle, Listener, Manager};
 
 use crate::composio_api::find_array;

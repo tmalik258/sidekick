@@ -1,21 +1,21 @@
-//! Voice in the app: "Hey Sidekick" opens Ask mode and shows what you say
+//! Voice in the app: "Hey Duskie" opens Ask mode and shows what you say
 //! as you say it; when you stop, the question goes to the AI and the answer
 //! is read aloud with Supertonic. Speech models are prefetched at build/dev into
 //! resources, copied into app data on launch, and only downloaded from GitHub
 //! when still missing (the voice first). The assistant stays on "Preparing voice"
 //! until the voice can speak; then welcome opens and greets. The microphone stops
-//! whenever voice is off or Sidekick is paused.
+//! whenever voice is off or Duskie is paused.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use chrono::Utc;
+use duskie_core::MascotEvent;
+use duskie_core::settings::VoiceSettings;
+use duskie_voice::text::strip_wake;
+use duskie_voice::{Control, Heard, Listener, ListenerConfig, Speaker, SpeechEvent, models};
 use serde::Serialize;
-use sidekick_core::MascotEvent;
-use sidekick_core::settings::VoiceSettings;
-use sidekick_voice::text::strip_wake;
-use sidekick_voice::{Control, Heard, Listener, ListenerConfig, Speaker, SpeechEvent, models};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::ask;
@@ -28,16 +28,16 @@ pub const DOWNLOAD_EVENT: &str = "voice://download";
 
 pub const WELCOME_EVENT: &str = "voice://welcome";
 
-/// What Sidekick says on each welcome step (Welcome, Your AI, Connect,
+/// What Duskie says on each welcome step (Welcome, Your AI, Connect,
 /// Tools, Extras), and what the step shows, word by word as it is heard.
 /// Punctuation is the direction: the voice lifts on "!" and "?" and
 /// breathes at commas.
 pub const WELCOME_LINES: [&str; 5] = [
-    "Hey — I'm Sidekick. I live up here with you on this PC. I notice things, I help when you want, and I stay put: nothing leaves this machine, and I wait for your okay.",
+    "Hey — I'm Duskie. I live up here with you on this PC. I notice things, I help when you want, and I stay put: nothing leaves this machine, and I wait for your okay.",
     "First, how I think. If you want everything to stay on this PC, you can run a local model — only if your machine is up for it. Or use Claude Code or Codex with the plan you already have. You can use any of them, or all three, and set the order I try.",
     "Now, your world. Connect your calendar, your mail and the tools you use, and I'll start noticing what matters.",
     "A few small helpers make me sharper. Install the ones you want, and I'll wait while they finish.",
-    "Welcome aboard. Say Hey Sidekick whenever you need me. Do Not Disturb is on so Windows stays quiet and alerts show once up here. Launch on login is already on, so I'm here when you sit down.",
+    "Welcome aboard. Say Hey Duskie whenever you need me. Do Not Disturb is on so Windows stays quiet and alerts show once up here. Launch on login is already on, so I'm here when you sit down.",
 ];
 
 /// When each sentence of the welcome line sounds, in Unix milliseconds, so
@@ -86,7 +86,7 @@ struct Key {
     /// The assistant's name: "hey <name>" wakes it, so a rename rebuilds.
     name: String,
     /// The microphone opens only once onboarding is done; until then
-    /// Sidekick speaks the welcome but never listens.
+    /// Duskie speaks the welcome but never listens.
     listen: bool,
 }
 
@@ -117,6 +117,14 @@ pub struct Voice {
     pending_welcome_greet: AtomicBool,
     /// The chat being read aloud and its utterance.
     speaking: Mutex<Option<(String, u64)>>,
+    /// The chat whose question was spoken. Only its answer reopens the mic.
+    asked_by_voice: Mutex<Option<String>>,
+    /// When a key was last pressed in Ask (ms since the epoch), and whether
+    /// its input has text. Either keeps the mic closed after an answer.
+    typed_at: AtomicU64,
+    input_has_text: AtomicBool,
+    /// Counts partial words heard, so a follow-up that hears nothing ends.
+    words_heard: AtomicU64,
     /// The first-run welcome line as it is being heard.
     welcome: Mutex<WelcomeSpeech>,
     /// A suggestion read aloud, waiting for a spoken choice: its id and
@@ -139,6 +147,10 @@ impl Voice {
             welcome_greeted: AtomicBool::new(false),
             pending_welcome_greet: AtomicBool::new(false),
             speaking: Mutex::default(),
+            asked_by_voice: Mutex::default(),
+            typed_at: AtomicU64::new(0),
+            input_has_text: AtomicBool::new(false),
+            words_heard: AtomicU64::new(0),
             welcome: Mutex::new(WelcomeSpeech {
                 lines: WELCOME_LINES,
                 script: WELCOME_LINES[0],
@@ -221,7 +233,7 @@ pub fn status(app: &AppHandle) -> VoiceStatus {
             .as_ref()
             .is_some_and(|r| r.listener.is_some()),
         error: lock(&v.last_error).clone(),
-        voices: sidekick_voice::VOICES
+        voices: duskie_voice::VOICES
             .iter()
             .map(|(id, label, _)| VoiceOption { id, label })
             .collect(),
@@ -244,7 +256,7 @@ pub fn refresh(app: &AppHandle) {
             s.assistant_name.clone(),
         )
     };
-    sidekick_voice::text::set_name(&name);
+    duskie_voice::text::set_name(&name);
     let v = voice(app);
     // The speaker also runs for typed answers when "Speak answers" is on,
     // even with the wake word and microphone off.
@@ -334,15 +346,15 @@ pub fn refresh(app: &AppHandle) {
     });
 }
 
-/// True while Sidekick's voice plays, false when it stops.
+/// True while Duskie's voice plays, false when it stops.
 pub const SPEAKING_EVENT: &str = "voice://speaking";
-/// How often the echo guard checks whether Sidekick is speaking.
+/// How often the echo guard checks whether Duskie is speaking.
 const ECHO_CHECK: std::time::Duration = std::time::Duration::from_millis(50);
 /// The room still rings a moment after the speakers go quiet.
 const ECHO_TAIL: std::time::Duration = std::time::Duration::from_millis(400);
 
-/// Keeps the microphone deaf while Sidekick's own voice plays, so a line
-/// like "just say Hey Sidekick" never wakes it. Runs for the whole process.
+/// Keeps the microphone deaf while Duskie's own voice plays, so a line
+/// like "just say Hey Duskie" never wakes it. Runs for the whole process.
 /// Only changes are sent (and the current state to a newly built listener):
 /// a push to talk right after speaking unmutes and must stay unmuted.
 pub fn start_echo_guard(app: &AppHandle) {
@@ -353,7 +365,7 @@ pub fn start_echo_guard(app: &AppHandle) {
             let mut quiet_since: Option<std::time::Instant> = None;
             // The listener told last, and what it was told.
             let mut told: Option<(usize, bool)> = None;
-            // What the island was told about Sidekick talking.
+            // What the island was told about Duskie talking.
             let mut said_speaking = false;
             loop {
                 std::thread::sleep(ECHO_CHECK);
@@ -537,7 +549,7 @@ fn say_with(app: &AppHandle, text: &str, started: impl FnOnce(u64, u64)) -> bool
 
 /// Forwards what a speaker is saying to the welcome timeline, when it is
 /// the welcome line.
-fn speech_events(app: &AppHandle) -> sidekick_voice::SpeechEvents {
+fn speech_events(app: &AppHandle) -> duskie_voice::SpeechEvents {
     let app = app.clone();
     std::sync::Arc::new(move |event| {
         let v = voice(&app);
@@ -769,11 +781,17 @@ fn on_heard(app: &AppHandle, heard: Heard) {
             mascot::dispatch(app, MascotEvent::ListenStart);
             emit_heard(app, String::new(), false);
         }
-        Heard::Partial(text) => emit_heard(app, fixed(app, strip_wake(&text)), false),
+        Heard::Partial(text) => {
+            let text = fixed(app, strip_wake(&text));
+            if !text.trim().is_empty() {
+                v.words_heard.fetch_add(1, Ordering::SeqCst);
+            }
+            emit_heard(app, text, false);
+        }
         // A choice ("open", "not now") is taken when it is final.
         Heard::Pause(text) if lock(&v.choosing).is_none() => {
             let text = fixed(app, strip_wake(&text));
-            if sidekick_voice::text::looks_like_request(&text) {
+            if duskie_voice::text::looks_like_request(&text) {
                 emit_pause(app, text);
             }
         }
@@ -797,7 +815,7 @@ fn on_heard(app: &AppHandle, heard: Heard) {
             }
             // A wake on a stray sound turns noise into a word or two
             // ("byzant mixed"); that is not a question, so go back to rest.
-            if !pushed && !text.is_empty() && !sidekick_voice::text::looks_like_request(&text) {
+            if !pushed && !text.is_empty() && !duskie_voice::text::looks_like_request(&text) {
                 log::debug!("voice: ignored {text:?}");
                 text.clear();
             }
@@ -877,7 +895,7 @@ pub fn stop(app: &AppHandle) {
         l.send(Control::Cancel);
     }
     stop_speaking(app);
-    if mascot::current(app) == sidekick_core::MascotState::Listening {
+    if mascot::current(app) == duskie_core::MascotState::Listening {
         mascot::dispatch(app, MascotEvent::Cancelled);
     }
 }
@@ -894,7 +912,7 @@ fn stop_speaking(app: &AppHandle) {
 }
 
 /// Reads chat `id`'s answer aloud as it streams. False when voice is off.
-pub fn begin_answer(app: &AppHandle, id: &str) -> bool {
+pub fn begin_answer(app: &AppHandle, id: &str, by_voice: bool) -> bool {
     let v = voice(app);
     let Some(utterance) = lock(&v.runtime)
         .as_ref()
@@ -904,6 +922,7 @@ pub fn begin_answer(app: &AppHandle, id: &str) -> bool {
         return false;
     };
     *lock(&v.speaking) = Some((id.to_owned(), utterance));
+    *lock(&v.asked_by_voice) = by_voice.then(|| id.to_owned());
     true
 }
 
@@ -931,16 +950,23 @@ pub fn answer_done(app: &AppHandle, id: &str, error: Option<&str>) {
         spoke = true;
     });
     let conversation = lock(&app.state::<AppState>().settings).voice.conversation;
-    if spoke && conversation && error.is_none() {
+    // Keep listening only after a question that was spoken, never a typed one.
+    let asked_by_voice = lock(&voice(app).asked_by_voice).as_deref() == Some(id);
+    if spoke && conversation && asked_by_voice && error.is_none() {
         let (app, id) = (app.clone(), id.to_owned());
         // Listen for a reply once the answer has been read out, unless the
         // user moved on (closed Ask, or another answer started).
-        listen_after_speaking(&app, move |app| {
-            ask::is_open(app)
-                && lock(&voice(app).speaking)
-                    .as_ref()
-                    .is_some_and(|(chat, _)| *chat == id)
-        });
+        listen_after_speaking(
+            &app,
+            move |app| {
+                ask::is_open(app)
+                    && !user_typing(app)
+                    && lock(&voice(app).speaking)
+                        .as_ref()
+                        .is_some_and(|(chat, _)| *chat == id)
+            },
+            Some(REPLY_WAIT),
+        );
     }
 }
 
@@ -949,37 +975,95 @@ pub fn answer_done(app: &AppHandle, id: &str, error: Option<&str>) {
 fn listen_after_speaking(
     app: &AppHandle,
     still_wanted: impl Fn(&AppHandle) -> bool + Send + 'static,
+    give_up: Option<std::time::Duration>,
 ) {
     let app = app.clone();
     std::thread::spawn(move || {
-        let started = std::time::Instant::now();
-        // Give the speaker a moment to start, then wait until it is quiet.
-        std::thread::sleep(std::time::Duration::from_millis(300));
-        while started.elapsed() < MAX_SPEECH {
-            let busy = lock(&voice(&app).runtime)
+        let busy = || {
+            lock(&voice(&app).runtime)
                 .as_ref()
                 .and_then(|r| r.speaker.as_ref())
-                .is_some_and(Speaker::busy);
-            if !busy {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(100));
+                .is_some_and(Speaker::busy)
+        };
+        wait_until_quiet(busy, QUIET_HOLD, MAX_SPEECH);
+        if !still_wanted(&app) {
+            return;
         }
-        std::thread::sleep(std::time::Duration::from_millis(250));
-        if still_wanted(&app) {
-            let _ = listen(&app);
+        let v = voice(&app);
+        let before = v.words_heard.load(Ordering::SeqCst);
+        if listen(&app).is_err() {
+            return;
+        }
+        let Some(wait) = give_up else { return };
+        std::thread::sleep(wait);
+        // Nothing said: stop listening instead of leaving the mic open.
+        let silent = voice(&app).words_heard.load(Ordering::SeqCst) == before;
+        if silent && mascot::current(&app) == duskie_core::MascotState::Listening {
+            stop(&app);
         }
     });
 }
 
+/// How long the mic waits for a spoken reply after an answer.
+const REPLY_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+/// A key pressed in Ask this recently counts as typing.
+const TYPING_GRACE_MS: u64 = 3000;
+
+/// Ask's input changed. Typing keeps the mic closed after an answer.
+pub fn note_typing(app: &AppHandle, has_text: bool) {
+    let v = voice(app);
+    v.typed_at.store(now_ms(), Ordering::SeqCst);
+    v.input_has_text.store(has_text, Ordering::SeqCst);
+}
+
+fn user_typing(app: &AppHandle) -> bool {
+    let v = voice(app);
+    is_typing(
+        v.input_has_text.load(Ordering::SeqCst),
+        v.typed_at.load(Ordering::SeqCst),
+        now_ms(),
+    )
+}
+
+fn is_typing(has_text: bool, typed_at: u64, now: u64) -> bool {
+    has_text || (typed_at > 0 && now.saturating_sub(typed_at) < TYPING_GRACE_MS)
+}
+
 const MAX_SPEECH: std::time::Duration = std::time::Duration::from_secs(90);
+/// The speaker must stay silent this long before the mic opens, so a pause
+/// between two sentences of one answer does not count as the end.
+const QUIET_HOLD: std::time::Duration = std::time::Duration::from_millis(600);
+
+/// Blocks until `busy` has been false for `hold` without a break, or `max`
+/// passes. Returns whether it ended quiet.
+fn wait_until_quiet(
+    mut busy: impl FnMut() -> bool,
+    hold: std::time::Duration,
+    max: std::time::Duration,
+) -> bool {
+    let started = std::time::Instant::now();
+    let step = (hold / 6).max(std::time::Duration::from_millis(5));
+    let mut quiet_since: Option<std::time::Instant> = None;
+    while started.elapsed() < max {
+        if busy() {
+            quiet_since = None;
+        } else {
+            let since = *quiet_since.get_or_insert_with(std::time::Instant::now);
+            if since.elapsed() >= hold {
+                return true;
+            }
+        }
+        std::thread::sleep(step);
+    }
+    false
+}
 /// How long a spoken suggestion waits for an answer.
 const CHOICE_WAIT: std::time::Duration = std::time::Duration::from_secs(6);
 /// Suggestions below this priority are not read aloud.
 const SPEAK_FROM_PRIORITY: i32 = 50;
 
 fn suggestion_speech_blocked(app: &AppHandle) -> bool {
-    mascot::current(app) == sidekick_core::MascotState::Listening
+    mascot::current(app) == duskie_core::MascotState::Listening
         || lock(&voice(app).speaking).is_some()
         || !lock(&app.state::<AppState>().chats).is_empty()
 }
@@ -1010,10 +1094,14 @@ pub fn offer_spoken(app: &AppHandle, ui: &crate::state::Suggestion, priority: i3
     let (id, labels) = (ui.id.clone(), ui.options.clone());
     *lock(&v.choosing) = Some((id.clone(), labels));
     let wanted_id = id.clone();
-    listen_after_speaking(app, move |app| {
-        crate::suggestions::current(app).is_some_and(|s| s.id == wanted_id)
-            && lock(&voice(app).choosing).is_some()
-    });
+    listen_after_speaking(
+        app,
+        move |app| {
+            crate::suggestions::current(app).is_some_and(|s| s.id == wanted_id)
+                && lock(&voice(app).choosing).is_some()
+        },
+        None,
+    );
     // Nobody answered: stop listening and leave the suggestion on screen.
     let app = app.clone();
     std::thread::spawn(move || {
@@ -1144,7 +1232,7 @@ pub fn test(app: &AppHandle) -> Result<(), String> {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
     let wanted = lock(&app.state::<AppState>().settings).voice.clone();
-    let line = sidekick_voice::test_line(&wanted.voice);
+    let line = duskie_voice::test_line(&wanted.voice);
     {
         let runtime = lock(&v.runtime);
         if let Some(s) = runtime
@@ -1284,10 +1372,44 @@ pub fn cancel_download(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_pause_between_sentences_is_not_the_end() {
+        use std::time::Duration;
+        let start = std::time::Instant::now();
+        let busy = || {
+            let t = start.elapsed();
+            t < Duration::from_millis(100)
+                || (t >= Duration::from_millis(160) && t < Duration::from_millis(260))
+        };
+        assert!(super::wait_until_quiet(
+            busy,
+            Duration::from_millis(120),
+            Duration::from_secs(2)
+        ));
+        assert!(start.elapsed() >= Duration::from_millis(380));
+    }
+
+    #[test]
+    fn typing_keeps_the_mic_closed() {
+        assert!(super::is_typing(true, 0, 10_000));
+        assert!(super::is_typing(false, 9_000, 10_000));
+        assert!(!super::is_typing(false, 5_000, 10_000));
+        assert!(!super::is_typing(false, 0, 10_000));
+    }
+
+    #[test]
+    fn waiting_gives_up_after_the_limit() {
+        use std::time::Duration;
+        assert!(!super::wait_until_quiet(
+            || true,
+            Duration::from_millis(30),
+            Duration::from_millis(100)
+        ));
+    }
 
     #[test]
     fn fixes_words_voice_gets_wrong() {
-        let fixes = "horsepot = hotspot, bad line\nsidekik = Sidekick";
+        let fixes = "horsepot = hotspot, bad line\nsidekik = Duskie";
         assert_eq!(
             apply_fixes("Turn on Horsepot please", fixes),
             "Turn on hotspot please"
@@ -1298,7 +1420,7 @@ mod tests {
             "whole words only"
         );
         assert_eq!(apply_fixes("no change", ""), "no change");
-        assert_eq!(apply_fixes("hey sidekik", fixes), "hey Sidekick");
+        assert_eq!(apply_fixes("hey sidekik", fixes), "hey Duskie");
     }
 
     use super::*;

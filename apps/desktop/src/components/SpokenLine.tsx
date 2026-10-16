@@ -1,6 +1,6 @@
 "use client";
 
-// What Sidekick says on a welcome step, shown word by word as it is heard. Rust
+// What Duskie says on a welcome step, shown word by word as it is heard. Rust
 // reports when each sentence starts sounding and how long it lasts (Unix ms,
 // so a late-mounting panel still lines up); words inside a sentence are
 // spread by length, with a beat after punctuation. Only words heard so far

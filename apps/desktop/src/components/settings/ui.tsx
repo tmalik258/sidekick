@@ -17,7 +17,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { shortcutBinding, shortcutEnabled } from "@/lib/shortcuts";
-import { setOverlayHit, useSidekick } from "@/lib/store";
+import { setOverlayHit, useDuskie } from "@/lib/store";
 import { EASE_OUT_STRONG } from "@/lib/ui-motion";
 import { Tip } from "../Tip";
 
@@ -383,7 +383,7 @@ export function Select({
     return [{ value, label: labelFor }, ...rows];
   })();
   const current = currentLabel ?? list.find((r) => r.value === value)?.label ?? (value || "Default");
-  const islandColor = useSidekick((s) => s.settings.islandColor);
+  const islandColor = useDuskie((s) => s.settings.islandColor);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();

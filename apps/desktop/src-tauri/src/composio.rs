@@ -12,13 +12,13 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use chrono::Utc;
-use serde::Serialize;
-use serde_json::{Value, json};
-use sidekick_ai::{
+use duskie_ai::{
     AiError, AiProvider, CancellationToken, ChatRequest, McpClient, McpTool, Message, OpenAiCompat,
     Sink, ToolDef, ToolRunner,
 };
-use sidekick_core::{ActionRecord, ComposioSettings};
+use duskie_core::{ActionRecord, ComposioSettings};
+use serde::Serialize;
+use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::composio_api as api;
@@ -36,60 +36,6 @@ const MAX_TOOLS: usize = 6;
 const TOOL_BUDGET: usize = 12_000;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 const SKILL_ID: &str = "chat.composio";
-
-/// Words in a tool's name that mean it changes something.
-const WRITE_WORDS: &[&str] = &[
-    "ADD",
-    "APPROVE",
-    "ARCHIVE",
-    "ASSIGN",
-    "BASH",
-    "CANCEL",
-    "CLOSE",
-    "COMMENT",
-    "COPY",
-    "CREATE",
-    "DELETE",
-    "DISABLE",
-    "EDIT",
-    "ENABLE",
-    "EXECUTE",
-    "FORWARD",
-    "INITIATE",
-    "INSERT",
-    "INVITE",
-    "LABEL",
-    "MANAGE",
-    "MARK",
-    "MERGE",
-    "MODIFY",
-    "MOVE",
-    "PATCH",
-    "POST",
-    "PUBLISH",
-    "PUT",
-    "REJECT",
-    "REMOVE",
-    "RENAME",
-    "REPLY",
-    "RUN",
-    "SCHEDULE",
-    "SEND",
-    "SET",
-    "SHARE",
-    "STAR",
-    "START",
-    "STOP",
-    "SUBMIT",
-    "TRANSITION",
-    "TRASH",
-    "TRIGGER",
-    "UPDATE",
-    "UPLOAD",
-    "UPSERT",
-    "WORKBENCH",
-    "WRITE",
-];
 
 /// Keys where meta tools (like COMPOSIO_MULTI_EXECUTE_TOOL) name the tool
 /// they will run.
@@ -152,7 +98,7 @@ async fn access_token(force: bool) -> Result<String, String> {
     Ok(access)
 }
 
-/// Headers that sign Sidekick in: the consumer key, the OAuth token, or
+/// Headers that sign Duskie in: the consumer key, the OAuth token, or
 /// headers given by hand.
 async fn auth_headers(c: &ComposioSettings, force: bool) -> Result<Vec<(String, String)>, String> {
     if let Some(key) = crate::secrets::get(api::CONSUMER_KEY_NAME) {
@@ -257,7 +203,7 @@ async fn call(c: &ComposioSettings, tool: &str, args: Value) -> Result<Value, St
     api::parse_text(&text)
 }
 
-/// Runs one app tool for Sidekick itself (calendar, brief, notes).
+/// Runs one app tool for Duskie itself (calendar, brief, notes).
 /// When several accounts are connected, fans out with `account` and merges lists.
 pub async fn run_tool(c: &ComposioSettings, tool: &str, args: Value) -> Result<Value, String> {
     async fn once(c: &ComposioSettings, tool: &str, args: Value) -> Result<Value, String> {
@@ -318,16 +264,7 @@ pub fn manual(c: &ComposioSettings) -> Option<(String, Vec<(String, String)>)> {
     (!headers.is_empty()).then(|| (url.to_owned(), headers))
 }
 
-fn words(name: &str) -> impl Iterator<Item = String> + '_ {
-    name.split(|c: char| !c.is_ascii_alphanumeric())
-        .filter(|w| !w.is_empty())
-        .map(str::to_ascii_uppercase)
-}
-
-/// The tool's name says it changes something.
-pub fn is_write(name: &str) -> bool {
-    words(name).any(|w| WRITE_WORDS.contains(&w.as_str()))
-}
+pub use duskie_core::connectors::is_write;
 
 fn collect_slugs(v: &Value, out: &mut Vec<String>) {
     match v {
@@ -364,7 +301,7 @@ pub fn blocked(name: &str, args: &Value) -> Option<String> {
 }
 
 /// Composio's own plumbing: connecting accounts, its sandbox, feedback.
-/// Sidekick handles connections in Settings, so the model never sees these.
+/// Duskie handles connections in Settings, so the model never sees these.
 fn plumbing(name: &str) -> bool {
     let upper = name.to_ascii_uppercase();
     [
@@ -499,7 +436,7 @@ impl ToolRunner for Runner {
                 .into();
         }
         if plumbing(name) {
-            return "Error: app connections are managed in Sidekick's Settings > Apps, not here."
+            return "Error: app connections are managed in Duskie's Settings > Apps, not here."
                 .into();
         }
         if let Some(what) = blocked(name, arguments) {
@@ -599,7 +536,7 @@ async fn inject_screen_ocr(app: &AppHandle, req: &mut ChatRequest, png: &[u8]) {
     }
 }
 
-/// The local model with Sidekick's own tools (search, today, recent, open),
+/// The local model with Duskie's own tools (search, today, recent, open),
 /// plus Composio's when they are set up and reachable.
 pub struct LocalWithTools {
     pub inner: OpenAiCompat,
@@ -650,7 +587,7 @@ impl AiProvider for LocalWithTools {
             .messages
             .iter()
             .rev()
-            .find(|m| m.role == sidekick_ai::Role::User)
+            .find(|m| m.role == duskie_ai::Role::User)
             .map(|m| m.content.as_str())
             .unwrap_or_default();
         let started = std::time::Instant::now();
@@ -803,7 +740,7 @@ async fn open_chat_client(
 }
 
 /// Connects to Composio for a chat, reusing the last connection. Unreachable
-/// is not an error: the chat goes on with Sidekick's own tools.
+/// is not an error: the chat goes on with Duskie's own tools.
 async fn connect(
     (url, headers): &(String, Vec<(String, String)>),
     cancel: &CancellationToken,
@@ -888,12 +825,12 @@ pub fn from_claude_config(claude_json: &str) -> Option<(String, BTreeMap<String,
 
 /// A file with the chat so far, for Claude Code to pick up.
 pub fn handoff_markdown(
-    messages: &[sidekick_ai::Message],
+    messages: &[duskie_ai::Message],
     reason: Option<&str>,
     context: &crate::ai::Context,
 ) -> String {
     let mut md = String::from(
-        "# Continued from Sidekick\n\nThe user started this in Sidekick (a desktop assistant) \
+        "# Continued from Duskie\n\nThe user started this in Duskie (a desktop assistant) \
          with a small local model, which handed it over to you. Read the conversation, then \
          continue it: answer the latest request, using your tools (including Composio) \
          where needed. Ask before changing anything.\n",
@@ -914,8 +851,8 @@ pub fn handoff_markdown(
     md.push_str("\n## Conversation\n");
     for m in messages {
         let who = match m.role {
-            sidekick_ai::Role::User => "User",
-            sidekick_ai::Role::Assistant => "Sidekick",
+            duskie_ai::Role::User => "User",
+            duskie_ai::Role::Assistant => "Duskie",
         };
         md.push_str(&format!("\n**{who}:**\n\n{}\n", m.content.trim()));
     }
@@ -942,7 +879,7 @@ fn changed(app: &AppHandle, ok: bool, message: impl Into<String>) {
     );
 }
 
-async fn open_url(app: &AppHandle, url: &str) -> Result<(), String> {
+pub async fn open_url(app: &AppHandle, url: &str) -> Result<(), String> {
     crate::state::executor(&app.state::<AppState>())
         .run("open_url", &serde_json::json!({ "url": url }))
         .await
@@ -1072,7 +1009,7 @@ pub fn sign_out(app: &AppHandle) -> Result<(), String> {
     crate::commands::apply_settings(app, settings).map(|_| ())
 }
 
-/// Every app connected in the account: Sidekick's own (connected or not)
+/// Every app connected in the account: Duskie's own (connected or not)
 /// first, then the rest. The last good answer is kept, so Settings still
 /// shows it when Composio is slow.
 pub async fn apps(c: &ComposioSettings) -> Result<Vec<api::App>, String> {
@@ -1344,9 +1281,9 @@ mod tests {
     #[test]
     fn handoff_file_carries_the_conversation() {
         let messages = vec![
-            sidekick_ai::Message::user("Move my Jira ticket ABC-1 to Done"),
-            sidekick_ai::Message {
-                role: sidekick_ai::Role::Assistant,
+            duskie_ai::Message::user("Move my Jira ticket ABC-1 to Done"),
+            duskie_ai::Message {
+                role: duskie_ai::Role::Assistant,
                 content: "I can only read; Claude Code can do it.".into(),
             },
         ];
@@ -1362,6 +1299,6 @@ mod tests {
         assert!(md.contains("ABC-1 to Done"));
         assert!(md.contains("JIRA_TRANSITION_ISSUE"));
         assert!(md.contains("Visual Studio Code"));
-        assert!(md.find("**User:**").unwrap() < md.find("**Sidekick:**").unwrap());
+        assert!(md.find("**User:**").unwrap() < md.find("**Duskie:**").unwrap());
     }
 }

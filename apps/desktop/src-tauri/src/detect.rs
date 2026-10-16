@@ -1,4 +1,4 @@
-//! First-run detection: what Sidekick can set up without asking the user
+//! First-run detection: what Duskie can set up without asking the user
 //! to type anything. Code folders come from the usual places and from VS
 //! Code's recent projects (WSL ones included); search folders are the
 //! standard ones that exist; models are whatever Ollama already has.
@@ -131,7 +131,7 @@ fn vscode_storage_files() -> Vec<PathBuf> {
 /// folders plus the parents of projects recently opened in VS Code.
 pub fn code_roots() -> Vec<Folder> {
     let mut counts: BTreeMap<PathBuf, usize> = BTreeMap::new();
-    for root in sidekick_sensors::repos::ReposSensor::default_roots() {
+    for root in duskie_sensors::repos::ReposSensor::default_roots() {
         counts.entry(root).or_default();
     }
     for file in vscode_storage_files() {
@@ -151,7 +151,7 @@ pub fn code_roots() -> Vec<Folder> {
     let mut out: Vec<Folder> = counts
         .into_keys()
         .map(|p| {
-            let repos = sidekick_sensors::repos::find_repos(&p).len();
+            let repos = duskie_sensors::repos::find_repos(&p).len();
             Folder {
                 label: label_for(&p),
                 path: p.display().to_string(),

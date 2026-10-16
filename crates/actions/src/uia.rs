@@ -91,7 +91,7 @@ if($env:SK_NAME -and (-not $e -or $e.Current.Name -ne $env:SK_NAME)){
 }
 if(-not $e){ Write-Output "#error`tThat control is not there now; read the window again"; exit }
 $c=$e.Current
-if($c.IsPassword -and $env:SK_DO -eq 'type'){ Write-Output "#error`tSidekick never types into password fields"; exit }
+if($c.IsPassword -and $env:SK_DO -eq 'type'){ Write-Output "#error`tDuskie never types into password fields"; exit }
 # Show where: a short outline around the control, without taking focus.
 if($env:SK_HIGHLIGHT -eq '1'){ try { Show-Outline $c.BoundingRectangle } catch {} }
 $p=$null

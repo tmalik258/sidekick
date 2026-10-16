@@ -37,7 +37,7 @@ pub use system::{
 };
 pub use window::WindowSensor;
 
-use sidekick_core::EventBus;
+use duskie_core::EventBus;
 use tokio::task::JoinHandle;
 
 pub trait Sensor: Send + 'static {

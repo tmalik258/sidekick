@@ -1,6 +1,6 @@
 [package]
-name = "sidekick-voice"
-description = "Voice for Sidekick: the Hey Sidekick wake word, live speech to text and Supertonic speech, all on this PC (sherpa-onnx)"
+name = "duskie-voice"
+description = "Voice for Duskie: the Hey Duskie wake word, live speech to text and Supertonic speech, all on this PC (sherpa-onnx)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -4,9 +4,9 @@
 //! and only when that option is safe to run on its own.
 
 use chrono::{DateTime, Duration, Utc};
+use duskie_core::Habit;
+use duskie_skills::{Proposal, ProposedOption, Trust};
 use serde_json::json;
-use sidekick_core::Habit;
-use sidekick_skills::{Proposal, ProposedOption, Trust};
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, lock};
@@ -62,7 +62,7 @@ const MUTE_FOR: Duration = Duration::hours(24);
 const ACCEPTS_TO_OFFER: i64 = 5;
 pub const OFFER_SKILL: &str = "learn.offer-auto";
 
-/// Skills that are Sidekick talking about itself, not habits to learn.
+/// Skills that are Duskie talking about itself, not habits to learn.
 pub fn tracked(skill_id: &str) -> bool {
     !skill_id.starts_with("learn.")
         && !skill_id.starts_with("mcp.")
@@ -168,7 +168,7 @@ pub fn on_accept(
         && index == 0
         && can_automate(&proposal.skill_id)
         && proposal.trust == Trust::Suggest
-        && sidekick_actions::is_safe(&option.action);
+        && duskie_actions::is_safe(&option.action);
     if offer {
         h.offered = true;
     }
@@ -188,7 +188,7 @@ fn offer_auto(skill_id: &str, label: &str) -> Proposal {
         skill_ids: vec![OFFER_SKILL.into()],
         title: format!("Always \"{label}\"?"),
         detail: format!(
-            "You picked it {ACCEPTS_TO_OFFER} times in a row. Sidekick can do it without asking."
+            "You picked it {ACCEPTS_TO_OFFER} times in a row. Duskie can do it without asking."
         ),
         options: vec![
             opt(

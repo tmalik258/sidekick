@@ -1,6 +1,6 @@
 "use client";
 
-// While Sidekick waits on something you finish elsewhere (signing in, loading
+// While Duskie waits on something you finish elsewhere (signing in, loading
 // the extension, an install), the island keeps the steps on screen with copy
 // buttons, so nothing disappears when Settings closes. It never blocks other
 // apps: outside its own shape the island is click-through. Every button has

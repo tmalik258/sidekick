@@ -2,7 +2,7 @@
 import { Fragment, type RefObject, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
 import { joinMultiPicks } from "@/lib/options";
-import { runProposal, sendChat, undoProposal, useSidekick } from "@/lib/store";
+import { runProposal, sendChat, undoProposal, useDuskie } from "@/lib/store";
 import type { Proposal } from "@/lib/types";
 import { Tip } from "../Tip";
 
@@ -57,7 +57,7 @@ export function Proposals({ items, keys }: { items: Proposal[]; keys: boolean })
     try {
       for (const p of pending) {
         await runProposal(p.id);
-        const ran = useSidekick
+        const ran = useDuskie
           .getState()
           .turns.flatMap((t) => t.proposals ?? [])
           .find((x) => x.id === p.id)?.ran;
@@ -377,7 +377,7 @@ function Plan({ items, keys }: { items: Proposal[]; keys: boolean }) {
       for (const p of pending) {
         setAt(p.id);
         await runProposal(p.id);
-        const ran = useSidekick
+        const ran = useDuskie
           .getState()
           .turns.flatMap((t) => t.proposals ?? [])
           .find((x) => x.id === p.id)?.ran;
@@ -434,6 +434,11 @@ function Plan({ items, keys }: { items: Proposal[]; keys: boolean }) {
               <span className="n mono">{s === "done" ? "✓" : s === "failed" ? "✕" : i + 1}</span>
               <span className="min-w-0">
                 {p.label}
+                {!started && (
+                  <span className="ml-1.5 text-[11px] opacity-60">
+                    {p.undoable ? "can be undone" : "cannot be undone"}
+                  </span>
+                )}
                 {s === "failed" && p.ran && <span className="block text-[12px]">{p.ran.message}</span>}
               </span>
             </div>

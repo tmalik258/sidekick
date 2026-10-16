@@ -40,7 +40,7 @@ export function updateDetail(progress: UpdateProgress): string {
     case "verifying":
       return "Checking the installer before opening it.";
     case "opening":
-      return "Sidekick will close. Follow the installer to finish updating.";
+      return "Duskie will close. Follow the installer to finish updating.";
     case "failed":
       return progress.error ?? "Could not update. Try again.";
   }

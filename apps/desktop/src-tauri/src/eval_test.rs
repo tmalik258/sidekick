@@ -3,16 +3,16 @@
 //! is ignored by default and runs before each release against a local
 //! Ollama:
 //!
-//! SIDEKICK_EVAL_MODEL=qwen3:4b cargo test -p sidekick-desktop eval -- --ignored --nocapture
+//! DUSKIE_EVAL_MODEL=qwen3:4b cargo test -p duskie-desktop eval -- --ignored --nocapture
 //!
-//! SIDEKICK_EVAL_URL changes the server and SIDEKICK_EVAL_MIN the pass rate
+//! DUSKIE_EVAL_URL changes the server and DUSKIE_EVAL_MIN the pass rate
 //! (0.85 by default).
 
 use std::sync::Mutex;
 
+use duskie_ai::{CancellationToken, ChatRequest, Message, OpenAiCompat, Sink, ToolRunner};
 use serde::Deserialize;
 use serde_json::Value;
-use sidekick_ai::{CancellationToken, ChatRequest, Message, OpenAiCompat, Sink, ToolRunner};
 
 const PROMPTS: &str = include_str!("../evals/prompts.json");
 
@@ -151,9 +151,9 @@ impl ToolRunner for Recorder {
 #[tokio::test]
 #[ignore = "needs a local model; run before each release"]
 async fn local_model_picks_the_right_tools() {
-    let model = std::env::var("SIDEKICK_EVAL_MODEL").ok();
-    let url = std::env::var("SIDEKICK_EVAL_URL").ok();
-    let min: f64 = std::env::var("SIDEKICK_EVAL_MIN")
+    let model = std::env::var("DUSKIE_EVAL_MODEL").ok();
+    let url = std::env::var("DUSKIE_EVAL_URL").ok();
+    let min: f64 = std::env::var("DUSKIE_EVAL_MIN")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.85);

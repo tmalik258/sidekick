@@ -5,10 +5,10 @@
 use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
 
+use duskie_core::Event;
 use regex::Regex;
 use serde::Serialize;
 use serde_json::Value;
-use sidekick_core::Event;
 
 use crate::manifest::{Matcher, Skill, Trust};
 use crate::template::{Vars, render, vars_from};

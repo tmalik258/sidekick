@@ -31,7 +31,7 @@ Then add `"crates/calc"` to the `members` list in the root `Cargo.toml`.
 
 ```toml
 [package]
-name = "sidekick-calc"
+name = "duskie-calc"
 version = "0.1.0"
 edition = "2021"
 
@@ -42,7 +42,7 @@ This is like `package.json`. No dependencies: we write it all ourselves.
 
 ### crates/calc/src/lib.rs
 
-Type it in parts, running `cargo test -p sidekick-calc` after each part. Full file:
+Type it in parts, running `cargo test -p duskie-calc` after each part. Full file:
 
 ```rust
 //! The calculator behind Ask's instant results.
@@ -454,7 +454,7 @@ mod tests {
 Run them:
 
 ```bash
-cargo test -p sidekick-calc
+cargo test -p duskie-calc
 ```
 
 ## Try it yourself

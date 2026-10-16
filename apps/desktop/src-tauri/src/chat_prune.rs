@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use chrono::{Duration as ChronoDuration, Utc};
-use sidekick_ai::{Decider, Decision, DecisionOption};
-use sidekick_sensors::classify::{ClipKind, clip_kind};
+use duskie_ai::{Decider, Decision, DecisionOption};
+use duskie_sensors::classify::{ClipKind, clip_kind};
 use tauri::{AppHandle, Manager};
 
 use crate::ai;
@@ -135,7 +135,7 @@ fn decision(id: &str, title: &str, updated: &str, user_turns: usize, excerpt: &s
         state: format!(
             "Past Ask chat titled \"{title}\". Last updated {age}. {user_turns} user message(s). {clip}"
         ),
-        question: "Should Sidekick keep this past Ask chat?".into(),
+        question: "Should Duskie keep this past Ask chat?".into(),
         options: vec![
             DecisionOption {
                 id: "keep".into(),

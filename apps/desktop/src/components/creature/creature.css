@@ -1,0 +1,128 @@
+/* The Duskie creature. Sizes come from --s, eye placement from the engine. */
+.mz {
+  position: relative;
+  flex: none;
+}
+.mz-move {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 94%;
+  will-change: transform;
+}
+.mz canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.mz-fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-size: var(--s);
+}
+.mz-eyes {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+.mz-pair {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  gap: var(--gap);
+  translate: -50% -50%;
+  transform-origin: 50% 50%;
+}
+.mz-eye {
+  width: var(--ew);
+  height: var(--eh);
+  overflow: visible;
+  color: var(--eye);
+  filter: drop-shadow(0 0 calc(var(--s) * 0.025) rgb(var(--glow) / var(--eglow)))
+    drop-shadow(0 0 calc(var(--s) * 0.07) rgb(var(--glow) / calc(var(--eglow) * 0.6)));
+}
+.mz-eye * {
+  fill: currentColor;
+}
+.mz-eye .ln {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.mz-eye .gl {
+  fill: rgb(255 255 255 / 0.9);
+}
+.mz-tape {
+  position: absolute;
+  left: 0;
+  top: calc(var(--eh) * -0.5);
+  width: calc(var(--ew) * 0.58);
+  height: calc(var(--eh) * 0.42);
+  margin-left: calc(var(--ew) * -0.29);
+  opacity: 0;
+  transform-origin: 50% 100%;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgb(236 222 180 / 0.94), rgb(255 247 218 / 0.97) 45%, rgb(236 222 180 / 0.94));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+  clip-path: polygon(
+    0 4%,
+    15% 0,
+    32% 5%,
+    50% 0,
+    68% 5%,
+    85% 0,
+    100% 4%,
+    100% 96%,
+    85% 100%,
+    68% 95%,
+    50% 100%,
+    32% 95%,
+    15% 100%,
+    0 96%
+  );
+}
+.mz-glyph {
+  position: absolute;
+  line-height: 1;
+  font-weight: 700;
+  font-family: inherit;
+  color: rgb(242 240 235 / 0.85);
+}
+.mz-bubble {
+  position: absolute;
+  right: 2%;
+  top: -2%;
+  display: flex;
+  gap: 0.03em;
+  padding: 0.035em 0.06em;
+  border-radius: 999px;
+  background: rgb(242 240 235 / 0.16);
+}
+.mz-bubble span {
+  width: 0.045em;
+  height: 0.045em;
+  border-radius: 50%;
+  background: #f2f0eb;
+}
+.mz-nowifi {
+  width: 0.2em;
+  height: 0.2em;
+  padding: 0.04em;
+  color: #f2f0eb;
+}
+.mz-twinkle {
+  position: absolute;
+  width: 1em;
+  height: 1em;
+  background: #fff2cf;
+  clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
+  filter: drop-shadow(0 0 0.2em rgb(255 207 143 / 0.9));
+}

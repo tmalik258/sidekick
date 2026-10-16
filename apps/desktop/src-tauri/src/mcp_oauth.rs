@@ -1,6 +1,6 @@
 //! Signing in to a remote MCP server with OAuth, the way Claude Desktop's
 //! Connect button does: find the server's sign-in service, register
-//! Sidekick with it, open the browser, catch the answer on a local port
+//! Duskie with it, open the browser, catch the answer on a local port
 //! and keep the tokens. Works for any server that follows the MCP
 //! authorization spec (Composio Connect among them).
 //!
@@ -84,7 +84,7 @@ pub fn challenge(verifier: &str) -> String {
 }
 
 fn encode(s: &str) -> String {
-    sidekick_sensors::entity::encode(s)
+    duskie_sensors::entity::encode(s)
 }
 
 /// `scheme://host[:port]` of a URL.
@@ -139,7 +139,7 @@ pub async fn discover(mcp_url: &str) -> Result<Discovery, String> {
         .json(
             &serde_json::json!({ "jsonrpc": "2.0", "id": 0, "method": "initialize",
             "params": { "protocolVersion": "2025-06-18", "capabilities": {},
-                "clientInfo": { "name": "sidekick", "version": env!("CARGO_PKG_VERSION") } } }),
+                "clientInfo": { "name": "duskie", "version": env!("CARGO_PKG_VERSION") } } }),
         )
         .send()
         .await
@@ -213,12 +213,12 @@ pub async fn discover(mcp_url: &str) -> Result<Discovery, String> {
     })
 }
 
-/// Registers Sidekick with the sign-in service (RFC 7591).
+/// Registers Duskie with the sign-in service (RFC 7591).
 async fn register(endpoint: &str, redirect: &str) -> Result<(String, String), String> {
     let resp = client()
         .post(endpoint)
         .json(&serde_json::json!({
-            "client_name": "Sidekick",
+            "client_name": "Duskie",
             "redirect_uris": [redirect],
             "grant_types": ["authorization_code", "refresh_token"],
             "response_types": ["code"],
@@ -231,7 +231,7 @@ async fn register(endpoint: &str, redirect: &str) -> Result<(String, String), St
     let v: Value = resp.json().await.unwrap_or(Value::Null);
     if !status.is_success() {
         return Err(format!(
-            "the sign-in service refused Sidekick ({status}): {}",
+            "the sign-in service refused Duskie ({status}): {}",
             v["error_description"].as_str().unwrap_or("no details")
         ));
     }
@@ -295,14 +295,16 @@ pub fn authorize_url(
         '?'
     };
     let mut url = format!(
-        "{}{sep}response_type=code&client_id={}&redirect_uri={}&code_challenge={}&code_challenge_method=S256&state={}&resource={}",
+        "{}{sep}response_type=code&client_id={}&redirect_uri={}&code_challenge={}&code_challenge_method=S256&state={}",
         d.authorization_endpoint,
         encode(client_id),
         encode(redirect),
         challenge(verifier),
         encode(state),
-        encode(&d.resource),
     );
+    if !d.resource.is_empty() {
+        url.push_str(&format!("&resource={}", encode(&d.resource)));
+    }
     if let Some(scope) = &d.scope {
         url.push_str(&format!("&scope={}", encode(scope)));
     }
@@ -351,9 +353,9 @@ fn decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-const DONE_PAGE: &str = "<!doctype html><meta charset=utf-8><title>Sidekick</title>\
+const DONE_PAGE: &str = "<!doctype html><meta charset=utf-8><title>Duskie</title>\
 <body style=\"font-family:system-ui;background:#000;color:#fff;display:grid;place-items:center;height:100vh;margin:0\">\
-<div style=\"text-align:center\"><h2>Connected</h2><p style=\"color:#aaa\">You can close this tab and go back to Sidekick.</p></div>";
+<div style=\"text-align:center\"><h2>Connected</h2><p style=\"color:#aaa\">You can close this tab and go back to Duskie.</p></div>";
 
 /// Waits for the browser to come back with a code.
 async fn catch_code(listener: TcpListener, state: &str) -> Result<String, String> {
@@ -379,7 +381,7 @@ async fn catch_code(listener: TcpListener, state: &str) -> Result<String, String
         let (status, page, result) = match (code, error) {
             _ if got_state.as_deref() != Some(state) => (
                 "400 Bad Request",
-                "Sign-in did not match. Press Connect in Sidekick again.".to_owned(),
+                "Sign-in did not match. Press Connect in Duskie again.".to_owned(),
                 Err("The sign-in did not match. Press Connect again.".to_owned()),
             ),
             (Some(code), _) => ("200 OK", DONE_PAGE.to_owned(), Ok(code)),
@@ -402,6 +404,15 @@ async fn catch_code(listener: TcpListener, state: &str) -> Result<String, String
     }
 }
 
+/// A local port for the browser to come back to, and the redirect URL.
+pub async fn bind_loopback() -> Result<(TcpListener, String), String> {
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .map_err(|e| format!("could not open a local port: {e}"))?;
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    Ok((listener, format!("http://127.0.0.1:{port}/callback")))
+}
+
 /// The whole sign-in: discovery, registration, browser, code, tokens.
 /// `open` shows the page in the browser. Returns the grant to keep and a
 /// fresh access token.
@@ -411,19 +422,31 @@ where
     Fut: std::future::Future<Output = Result<(), String>>,
 {
     let d = discover(mcp_url).await?;
-    let listener = TcpListener::bind(("127.0.0.1", 0))
-        .await
-        .map_err(|e| format!("could not open a local port: {e}"))?;
-    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
-    let redirect = format!("http://127.0.0.1:{port}/callback");
+    let (listener, redirect) = bind_loopback().await?;
     let reg = d
         .registration_endpoint
         .as_deref()
         .ok_or("This server needs a key instead of a sign-in.")?;
     let (client_id, client_secret) = register(reg, &redirect).await?;
+    run_flow(&d, listener, &redirect, client_id, client_secret, open).await
+}
+
+/// Browser, code and tokens for a service whose client is already known.
+pub async fn run_flow<F, Fut>(
+    d: &Discovery,
+    listener: TcpListener,
+    redirect: &str,
+    client_id: String,
+    client_secret: String,
+    open: F,
+) -> Result<(Grant, String, u64), String>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+{
     let verifier = random(48);
     let state = random(16);
-    open(authorize_url(&d, &client_id, &redirect, &verifier, &state)).await?;
+    open(authorize_url(d, &client_id, redirect, &verifier, &state)).await?;
     let code = tokio::time::timeout(SIGN_IN_WAIT, catch_code(listener, &state))
         .await
         .map_err(|_| "Sign-in timed out. Press Connect again.".to_string())??;
@@ -432,7 +455,7 @@ where
         &[
             ("grant_type", "authorization_code"),
             ("code", &code),
-            ("redirect_uri", &redirect),
+            ("redirect_uri", redirect),
             ("client_id", &client_id),
             ("client_secret", &client_secret),
             ("code_verifier", &verifier),
@@ -443,8 +466,8 @@ where
     let grant = Grant {
         client_id,
         client_secret,
-        token_endpoint: d.token_endpoint,
-        resource: d.resource,
+        token_endpoint: d.token_endpoint.clone(),
+        resource: d.resource.clone(),
         access_token: if refresh.is_empty() {
             access.clone()
         } else {

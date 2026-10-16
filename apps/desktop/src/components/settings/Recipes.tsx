@@ -5,7 +5,7 @@
 
 import { useState } from "react";
 import { api } from "@/lib/bridge";
-import { useSidekick } from "@/lib/store";
+import { useDuskie } from "@/lib/store";
 import type { Recipe, Trigger } from "@/lib/types";
 import { Button, Field, Select, TextField, Toggle } from "./ui";
 
@@ -137,7 +137,7 @@ function TriggerFields({ trigger, onChange }: { trigger: Trigger; onChange: (t: 
 }
 
 export function Recipes({ onError }: { onError: (e: string) => void }) {
-  const recipes = useSidekick((s) => s.settings.recipes);
+  const recipes = useDuskie((s) => s.settings.recipes);
   const [draft, setDraft] = useState<Recipe | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const save = (r: Recipe) =>

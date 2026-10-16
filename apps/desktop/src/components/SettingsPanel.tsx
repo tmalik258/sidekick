@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { friendlyError } from "@/lib/friendly";
 import { useScrollEdge } from "@/lib/hooks";
-import { useSidekick } from "@/lib/store";
+import { useDuskie } from "@/lib/store";
 import { AiTab } from "./settings/AiTab";
 import { AppearanceTab } from "./settings/AppearanceTab";
 import { ConnectionsTab } from "./settings/ConnectionsTab";
@@ -60,7 +60,7 @@ function recent() {
 
 /** Settings, shown inside the island: tabs and a search over all of them. */
 export function SettingsPanel() {
-  const ready = useSidekick((s) => s.ready);
+  const ready = useDuskie((s) => s.ready);
   const [tab, setTab] = useState<SettingsTab>(() => recent()?.tab ?? "home");
   const [query, setQuery] = useState("");
   const scroller = useRef<HTMLDivElement | null>(null);
@@ -76,7 +76,7 @@ export function SettingsPanel() {
   tabRef.current = tab;
   // Kept as it scrolls: the element is already gone when unmounting.
   const scrolled = useRef(0);
-  const wantedTab = useSidekick((s) => s.ask?.settingsTab);
+  const wantedTab = useDuskie((s) => s.ask?.settingsTab);
   // A new tab starts at its top.
   const pick = useCallback((t: SettingsTab) => {
     setTab(t);

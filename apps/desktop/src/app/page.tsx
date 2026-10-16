@@ -5,7 +5,7 @@ import Link from "next/link";
 export default function Home() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-3 bg-neutral-900 text-white">
-      <h1 className="text-lg font-semibold">Sidekick UI preview</h1>
+      <h1 className="text-lg font-semibold">Duskie UI preview</h1>
       <Link className="underline" href="/island/">
         Island
       </Link>

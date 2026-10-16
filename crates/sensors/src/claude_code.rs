@@ -5,13 +5,13 @@ use std::time::Duration;
 
 use tokio::sync::oneshot;
 
-use sidekick_core::{Event, EventBus, Sensitivity};
+use duskie_core::{Event, EventBus, Sensitivity};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
 
 use crate::{Sensor, SensorGate, http};
 
-/// Receives Claude Code hooks on a local port, so Sidekick knows
+/// Receives Claude Code hooks on a local port, so Duskie knows
 /// when a session finishes or needs the user. Claude Code posts the hook
 /// input here through an HTTP hook in `~/.claude/settings.json`. The user can
 /// add those hooks with "Add for me" (backup + merge); this sensor never
@@ -277,7 +277,7 @@ pub fn codex_event(input: &serde_json::Value) -> Option<Event> {
     )
 }
 
-/// Turns hook input into an event. Only the fields Sidekick needs are kept;
+/// Turns hook input into an event. Only the fields Duskie needs are kept;
 /// the transcript path is dropped on purpose.
 pub fn hook_event(input: &serde_json::Value) -> Option<Event> {
     let kind = match input["hook_event_name"].as_str()? {

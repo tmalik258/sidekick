@@ -1,4 +1,4 @@
-//! A tiny HTTP/1.1 reader for Sidekick's localhost endpoints (Claude Code
+//! A tiny HTTP/1.1 reader for Duskie's localhost endpoints (Claude Code
 //! hooks, the browser extension). Only what those need: one request per
 //! connection, a JSON body, and checks that keep web pages out.
 //!

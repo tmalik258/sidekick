@@ -22,7 +22,7 @@ pub struct Crash {
     pub detail: String,
 }
 
-/// A likely cause and the fix to offer, if Sidekick can run one.
+/// A likely cause and the fix to offer, if Duskie can run one.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Cause {
     pub what: String,
@@ -242,7 +242,7 @@ fn normal_code(raw: &str) -> String {
     format!("0x{}", raw.to_lowercase())
 }
 
-/// Compatibility layers Sidekick will set.
+/// Compatibility layers Duskie will set.
 const MODES: &[&str] = &[
     "WIN8RTM",
     "WIN7RTM",
@@ -257,7 +257,7 @@ pub fn set_compat(exe: &str, mode: &str) -> Result<Outcome, ActionError> {
     let mode = mode.to_uppercase();
     if !MODES.contains(&mode.as_str()) {
         return Err(ActionError::Invalid(format!(
-            "{mode} is not a mode Sidekick sets"
+            "{mode} is not a mode Duskie sets"
         )));
     }
     if !exe.to_lowercase().ends_with(".exe") || !std::path::Path::new(exe).is_file() {
@@ -281,7 +281,7 @@ pub fn set_compat(exe: &str, mode: &str) -> Result<Outcome, ActionError> {
     )))
 }
 
-/// Removes Sidekick's (or any) compatibility mode for `exe`.
+/// Removes Duskie's (or any) compatibility mode for `exe`.
 pub fn clear_compat(exe: &str) -> Result<Outcome, ActionError> {
     reg(&["delete", LAYERS, "/v", exe, "/f"])?;
     Ok(Outcome::msg(format!(

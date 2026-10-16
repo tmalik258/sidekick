@@ -2,7 +2,7 @@
 
 // What Ask mode offers before you type: context chips and starters.
 
-import { sendChat, setAsk, useSidekick } from "@/lib/store";
+import { sendChat, setAsk, useDuskie } from "@/lib/store";
 import type { AskContext, CalendarToday } from "@/lib/types";
 import { Icon, type IconName } from "../Icon";
 import { Tip } from "../Tip";
@@ -26,10 +26,10 @@ export function ContextLine({ keys }: { keys: boolean }) {
   // Clicking a chip leaves focus in the input; otherwise the next Enter
   // would press the chip again and switch it back.
   const keepFocus = (e: { preventDefault: () => void }) => e.preventDefault();
-  const ask = useSidekick((s) => s.ask);
-  const offline = useSidekick((s) => !s.online);
+  const ask = useDuskie((s) => s.ask);
+  const offline = useDuskie((s) => !s.online);
   // Answer actions already own Alt 1…n; leave chips free when those are waiting.
-  const proposalDigits = useSidekick((s) => pendingCount(s.turns.at(-1)?.proposals));
+  const proposalDigits = useDuskie((s) => pendingCount(s.turns.at(-1)?.proposals));
   const { context } = ask ?? { context: null };
   const items: {
     id: string;

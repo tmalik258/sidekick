@@ -14,7 +14,7 @@ pub struct BrowserInfo {
 pub fn browser_info(state: State<'_, AppState>) -> BrowserInfo {
     BrowserInfo {
         token: state.browser_token.clone(),
-        port: sidekick_sensors::BrowserSensor::DEFAULT_PORT,
+        port: duskie_sensors::BrowserSensor::DEFAULT_PORT,
     }
 }
 
@@ -61,7 +61,7 @@ pub struct ComposioStatus {
     error: Option<String>,
 }
 
-/// Whether Composio is connected, and which of Sidekick's apps are.
+/// Whether Composio is connected, and which of Duskie's apps are.
 #[tauri::command]
 pub async fn composio_status(app: AppHandle) -> ComposioStatus {
     let c = lock(&app.state::<AppState>().settings).composio.clone();
@@ -129,7 +129,7 @@ pub struct Found {
     installable: Vec<crate::setup::SetupItem>,
 }
 
-/// Everything Sidekick can set up on its own, found on this PC.
+/// Everything Duskie can set up on its own, found on this PC.
 #[tauri::command]
 pub async fn setup_detect(app: AppHandle) -> Found {
     let state = app.state::<AppState>();
@@ -142,9 +142,9 @@ pub async fn setup_detect(app: AppHandle) -> Found {
     let mut chat_models = Vec::new();
     let mut embed_models = Vec::new();
     for m in models {
-        if sidekick_ai::is_embedding_model(&m) {
+        if duskie_ai::is_embedding_model(&m) {
             embed_models.push(m);
-        } else if sidekick_ai::is_chat_model(&m) {
+        } else if duskie_ai::is_chat_model(&m) {
             chat_models.push(m);
         }
     }
@@ -223,7 +223,7 @@ pub async fn setup_apply(app: AppHandle, plan: Plan) -> CmdResult<Vec<String>> {
     }
     if plan.claude_mcp {
         claude_add_mcp(app.clone()).await?;
-        done.push("Sidekick tools added to Claude Code".to_owned());
+        done.push("Duskie tools added to Claude Code".to_owned());
     }
     if !plan.install.is_empty() {
         done.extend(crate::setup::run_many(&app, &plan.install).await?);
@@ -241,13 +241,13 @@ pub async fn setup_apply(app: AppHandle, plan: Plan) -> CmdResult<Vec<String>> {
     Ok(done)
 }
 
-/// Adds Sidekick's hooks to Claude Code's settings (backed up first).
+/// Adds Duskie's hooks to Claude Code's settings (backed up first).
 #[tauri::command]
 pub fn claude_add_hooks() -> CmdResult<Option<String>> {
     crate::claude_config::add_hooks().map(|b| b.map(|p| p.display().to_string()))
 }
 
-/// Adds Sidekick's MCP server to Claude Code with `claude mcp add`.
+/// Adds Duskie's MCP server to Claude Code with `claude mcp add`.
 #[tauri::command]
 pub async fn claude_add_mcp(app: AppHandle) -> CmdResult<()> {
     let state = app.state::<AppState>();
@@ -261,7 +261,7 @@ pub async fn claude_add_mcp(app: AppHandle) -> CmdResult<()> {
     crate::claude_config::add_mcp(&claude, &url, &state.mcp_token).await
 }
 
-/// Adds Sidekick's notify script to Codex, so the island hears when a turn
+/// Adds Duskie's notify script to Codex, so the island hears when a turn
 /// is done. Returns the backup of Codex's settings, if one was made.
 #[tauri::command]
 pub fn codex_add_notify(app: AppHandle) -> CmdResult<Option<String>> {
@@ -269,7 +269,7 @@ pub fn codex_add_notify(app: AppHandle) -> CmdResult<Option<String>> {
     crate::codex_config::add_notify(&dir).map(|b| b.map(|p| p.display().to_string()))
 }
 
-/// Adds Sidekick's MCP server to Codex's settings.
+/// Adds Duskie's MCP server to Codex's settings.
 #[tauri::command]
 pub fn codex_add_mcp(state: State<'_, AppState>) -> CmdResult<Option<String>> {
     let url = format!("http://127.0.0.1:{}/mcp", crate::mcp::PORT);

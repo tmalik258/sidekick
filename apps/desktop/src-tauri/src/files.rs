@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime};
 
 use chrono::{Local, Timelike};
-use sidekick_core::Event;
+use duskie_core::Event;
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, executor, lock};
@@ -122,14 +122,14 @@ pub fn start_weekly_check(app: &AppHandle) {
                 continue;
             }
             done_on = Some(now.date_naive());
-            let cutoff = SystemTime::now() - sidekick_actions::cleanup::OLD_AFTER;
-            let files = sidekick_actions::cleanup::old_files(&dir, cutoff);
+            let cutoff = SystemTime::now() - duskie_actions::cleanup::OLD_AFTER;
+            let files = duskie_actions::cleanup::old_files(&dir, cutoff);
             let mb = files.iter().map(|(_, s)| s).sum::<u64>() / 1_000_000;
             let day = SystemTime::now() - Duration::from_secs(24 * 60 * 60);
-            let loose = sidekick_actions::cleanup::loose_files(&dir, day).len();
-            let installers = sidekick_actions::cleanup::old_installers(
+            let loose = duskie_actions::cleanup::loose_files(&dir, day).len();
+            let installers = duskie_actions::cleanup::old_installers(
                 &dir,
-                SystemTime::now() - sidekick_actions::cleanup::INSTALLER_AFTER,
+                SystemTime::now() - duskie_actions::cleanup::INSTALLER_AFTER,
             )
             .len();
             if let Some(e) = piling_up(files.len(), mb, loose, installers, &dir) {

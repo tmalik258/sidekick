@@ -13,9 +13,9 @@ use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 use chrono::{DateTime, Datelike, Local, Timelike};
+use duskie_core::{Event, RoutineOpen};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sidekick_core::{Event, RoutineOpen};
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, executor, lock};
@@ -40,7 +40,7 @@ const LAUNCH_GAP: Duration = Duration::from_millis(700);
 /// Time for the windows to appear before the layout is put back.
 const SETTLE: Duration = Duration::from_secs(6);
 
-/// Shell windows, lock screens and Sidekick itself are not things you open.
+/// Shell windows, lock screens and Duskie itself are not things you open.
 const SKIP_EXES: &[&str] = &[
     "explorer.exe",
     "lockapp.exe",
@@ -50,8 +50,8 @@ const SKIP_EXES: &[&str] = &[
     "shellexperiencehost.exe",
     "applicationframehost.exe",
     "textinputhost.exe",
-    "sidekick.exe",
-    "sidekick-desktop.exe",
+    "duskie.exe",
+    "duskie-desktop.exe",
     "taskmgr.exe",
     "systemsettings.exe",
     "",

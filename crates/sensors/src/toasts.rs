@@ -239,7 +239,7 @@ const KNOWN: &[(&str, &str)] = &[
     ("calendar", "Calendar"),
     ("files", "Files"),
     ("explorer", "File Explorer"),
-    ("sidekick", "Sidekick"),
+    ("sidekick", "Duskie"),
 ];
 
 pub fn app_name(app_id: &str) -> String {

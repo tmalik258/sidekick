@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    sidekick_desktop_lib::run()
+    duskie_desktop_lib::run()
 }

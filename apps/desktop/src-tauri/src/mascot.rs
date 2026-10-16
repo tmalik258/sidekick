@@ -3,7 +3,7 @@
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use sidekick_core::{MascotEvent, MascotState, Transition};
+use duskie_core::{MascotEvent, MascotState, Transition};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::state::{AppState, lock};
@@ -77,6 +77,10 @@ fn entered(app: &AppHandle, t: Transition) {
         log::warn!("could not emit mascot state: {err}");
     }
     match t.state {
+        // Back to idle while a focus stretch runs: stay quiet.
+        MascotState::Idle if crate::focus::active() => {
+            dispatch(app, MascotEvent::FocusStart);
+        }
         MascotState::Success => {
             let linger = app.state::<AppState>().linger.swap(false, Ordering::SeqCst);
             let hold = if linger { LINGER_HOLD } else { SUCCESS_HOLD };

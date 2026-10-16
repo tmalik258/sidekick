@@ -1,14 +1,14 @@
 //! Update check: once a day, asks GitHub for the latest release and
 //! offers it when it is newer. Install downloads the installer from this
 //! repository's release, checks it against the release's SHA256SUMS.txt,
-//! and runs it (the user clicks through it); Sidekick then quits so it can
+//! and runs it (the user clicks through it); Duskie then quits so it can
 //! be replaced. Nothing installs on its own.
 
 use std::sync::Mutex;
 use std::time::Duration;
 
+use duskie_core::Event;
 use serde::Serialize;
-use sidekick_core::Event;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::state::{AppState, lock};
@@ -63,7 +63,7 @@ fn report(app: &AppHandle, activity_id: &str, phase: Phase, done: u64, total: Op
         app,
         activity_id,
         "update",
-        "Updating Sidekick",
+        "Updating Duskie",
         match phase {
             Phase::Preparing => crate::activity::Phase::Running,
             Phase::Downloading => crate::activity::Phase::Downloading,
@@ -162,8 +162,11 @@ pub fn pick_assets(body: &serde_json::Value) -> Option<(String, String)> {
     // A rebuilt release can retain installers from an older version.
     // Match the release tag rather than taking the first executable.
     let version = body["tag_name"].as_str()?.trim_start_matches('v');
-    let prefix = format!("Sidekick_{version}_");
-    let installer = url(&|n| n.starts_with(&prefix) && n.ends_with("_x64-setup.exe"))?;
+    // Installers were named Sidekick_ before the rename to Duskie.
+    let prefixes = [format!("Duskie_{version}_"), format!("Sidekick_{version}_")];
+    let installer = url(&|n| {
+        prefixes.iter().any(|p| n.starts_with(p.as_str())) && n.ends_with("_x64-setup.exe")
+    })?;
     let sums = url(&|n| n == "SHA256SUMS.txt")?;
     Some((installer, sums))
 }
@@ -196,7 +199,7 @@ pub async fn install(app: &AppHandle) -> Result<String, String> {
         app,
         &activity_id,
         "update",
-        "Updating Sidekick",
+        "Updating Duskie",
         crate::activity::Phase::Running,
         Some(0),
         None,
@@ -221,7 +224,7 @@ pub async fn install(app: &AppHandle) -> Result<String, String> {
             app,
             &activity_id,
             "update",
-            "Updating Sidekick",
+            "Updating Duskie",
             crate::activity::Phase::Failed,
             Some(failed.done),
             failed.total,
@@ -235,7 +238,7 @@ pub async fn install(app: &AppHandle) -> Result<String, String> {
 async fn install_inner(app: &AppHandle, activity_id: &str) -> Result<String, String> {
     use sha2::Digest;
     let client = reqwest::Client::builder()
-        .user_agent("Sidekick")
+        .user_agent("Duskie")
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(30 * 60))
         .build()
@@ -255,7 +258,7 @@ async fn install_inner(app: &AppHandle, activity_id: &str) -> Result<String, Str
     let name = installer
         .rsplit('/')
         .next()
-        .unwrap_or("Sidekick-setup.exe")
+        .unwrap_or("Duskie-setup.exe")
         .to_owned();
     let sums = client
         .get(&sums_url)
@@ -329,7 +332,7 @@ async fn download_bytes(
 
 async fn latest() -> Result<(String, String), String> {
     let client = reqwest::Client::builder()
-        .user_agent("Sidekick")
+        .user_agent("Duskie")
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|e| e.to_string())?;

@@ -7,8 +7,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use sidekick_core::Event;
-use sidekick_layout::Placement;
+use duskie_core::Event;
+use duskie_layout::Placement;
 use tauri::{AppHandle, Manager};
 
 use crate::island::LABEL;
@@ -97,7 +97,7 @@ pub fn start(app: &AppHandle) {
             let key = now.0.clone();
             let handle = app.clone();
             let _ = tauri::async_runtime::spawn_blocking(move || {
-                let placements = sidekick_layout::capture();
+                let placements = duskie_layout::capture();
                 if placements.is_empty() {
                     return;
                 }
@@ -116,7 +116,7 @@ pub async fn restore(app: &AppHandle) -> Result<String, String> {
     let saved = load(app)
         .remove(&key)
         .ok_or("No layout saved for this monitor setup yet.")?;
-    let moved = tauri::async_runtime::spawn_blocking(move || sidekick_layout::restore(&saved))
+    let moved = tauri::async_runtime::spawn_blocking(move || duskie_layout::restore(&saved))
         .await
         .map_err(|e| e.to_string())?;
     Ok(format!("Moved {moved} windows back"))

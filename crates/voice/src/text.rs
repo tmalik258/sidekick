@@ -1,22 +1,22 @@
 //! Text helpers: the wake phrase out of transcripts, and answers made fit to
 //! be read aloud, a sentence at a time.
 
-/// Phrases that wake Sidekick, as the wake word model spells them (BPE
-/// tokens of the gigaspeech KWS model), and how they appear in transcripts.
-pub const WAKE_KEYWORDS: &str = "▁HE Y ▁ SIDE K IC K @hey_sidekick\n▁HI ▁ SIDE K IC K @hey_sidekick\n▁O K ▁ SIDE K IC K @hey_sidekick\n";
+/// "Hey Duskie" letter by letter, for when the wake model's vocabulary cannot
+/// be read; `wake_keywords` spells it properly from the vocabulary otherwise.
+pub const WAKE_KEYWORDS: &str = "▁HE Y ▁ D U S K I E @hey_duskie\n▁HI ▁ D U S K I E @hey_duskie\n▁O K ▁ D U S K I E @hey_duskie\n";
 
 /// A name the user gave the assistant ("Orbi"), as lowercase words. Empty
-/// means only "Sidekick". The default name always keeps working too.
+/// means only "Duskie". The default name always keeps working too.
 static CUSTOM_NAME: std::sync::RwLock<Vec<String>> = std::sync::RwLock::new(Vec::new());
 
-/// Sets the assistant's name for wake matching. "Sidekick" or blank clears it.
+/// Sets the assistant's name for wake matching. "Duskie" or blank clears it.
 pub fn set_name(name: &str) {
     let words: Vec<String> = name
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| !w.is_empty())
         .map(str::to_lowercase)
         .collect();
-    let words = if words == ["sidekick"] {
+    let words = if words == ["duskie"] {
         Vec::new()
     } else {
         words
@@ -150,10 +150,21 @@ fn spell_word(vocab: &Vocab, word: &str) -> Option<Vec<String>> {
     best.remove(&text.len()).map(|(_, p)| p)
 }
 
-/// The wake phrases for the keyword model: "hey Sidekick" always, plus
+/// The wake phrases for the keyword model: "hey Duskie" always, plus
 /// "hey <name>" when the user renamed the assistant.
 pub fn wake_keywords(vocab: Option<&Vocab>) -> String {
-    let mut out = WAKE_KEYWORDS.to_owned();
+    let mut out = String::new();
+    // The app's own name, spelled from the model's vocabulary.
+    if let Some(vocab) = vocab {
+        for greeting in ["hey", "hi", "ok"] {
+            if let Some(spelled) = spell(vocab, &format!("{greeting} duskie")) {
+                out.push_str(&format!("{spelled} @hey_duskie\n"));
+            }
+        }
+    }
+    if out.is_empty() {
+        out.push_str(WAKE_KEYWORDS);
+    }
     let name = custom_name();
     if let (Some(vocab), false) = (vocab, name.is_empty()) {
         let name = name.join(" ");
@@ -169,22 +180,23 @@ pub fn wake_keywords(vocab: Option<&Vocab>) -> String {
 /// Words a greeting can start with.
 const GREETINGS: &[&str] = &["hey", "hi", "ok", "okay", "a"];
 
-/// How the name comes out of speech to text, as one word or two: people
-/// (and voices) often soften the "d", so "cider kick" is common.
+/// How the name comes out of speech to text, as one word or two ("dusky",
+/// "dusk key"). The old name, Sidekick, no longer wakes it.
 const NAMES: &[&[&str]] = &[
-    &["sidekick"],
-    &["sidekik"],
-    &["side", "kick"],
-    &["cider", "kick"],
-    &["side", "kik"],
-    &["psych", "kick"],
+    &["duskie"],
+    &["dusky"],
+    &["duskey"],
+    &["dusk", "e"],
+    &["dusk", "ee"],
+    &["dusk", "key"],
+    &["dust", "key"],
 ];
 
 /// After a greeting, any word starting with one of these counts as the name,
-/// so accents and loose transcripts still work ("hey sidecaig", "hey sidekey").
-const NAME_STARTS: &[&str] = &["side", "sight", "syde"];
+/// so accents and loose transcripts still work ("hey duskee", "hey duskii").
+const NAME_STARTS: &[&str] = &["dusk"];
 
-/// Whether `word` could be the end of a split name ("side caig", "side kick"):
+/// Whether `word` could be the end of a split name ("dusk key", "dusk kee"):
 /// a short fragment with a k, c, q or g sound up front.
 fn name_tail(word: &str) -> bool {
     word.len() <= 6 && word.starts_with(['k', 'c', 'q', 'g'])
@@ -236,7 +248,7 @@ pub fn strip_wake(text: &str) -> String {
 }
 
 /// Where the wake phrase starts in a running transcript: a greeting and the
-/// name anywhere ("so, hey sidekick, what..."), or the bare name as the
+/// name anywhere ("so, hey duskie, what..."), or the bare name as the
 /// first word. None when it is not there.
 pub fn find_wake(text: &str) -> Option<usize> {
     let mut starts = Vec::new();
@@ -265,8 +277,8 @@ pub fn find_wake(text: &str) -> Option<usize> {
     })
 }
 
-/// "hey side*": the greeting's next word starts like the name. A bare "side"
-/// or "sight" also takes a short k/c/g fragment after it ("side caig").
+/// "hey dusk*": the greeting's next word starts like the name. A bare "dusk"
+/// also takes a short k/c/g fragment after it ("dusk key").
 fn loose_name(words: &[(String, usize)]) -> Option<usize> {
     let word = words.get(1)?.0.as_str();
     if !NAME_STARTS.iter().any(|p| word.starts_with(p)) {
@@ -569,7 +581,7 @@ mod tests {
     }
 
     #[test]
-    fn spells_sidekick_like_the_built_in_phrase() {
+    fn spells_names_from_the_wake_model() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../apps/desktop/src-tauri/resources/voice-models/",
@@ -580,26 +592,25 @@ mod tests {
             return;
         };
         let vocab = read_vocab(&bytes);
-        assert_eq!(
-            spell(&vocab, "hey sidekick").as_deref(),
-            Some("▁HE Y ▁ SIDE K IC K")
-        );
-        assert_eq!(
-            spell(&vocab, "ok sidekick").as_deref(),
-            Some("▁O K ▁ SIDE K IC K")
-        );
+        assert!(spell(&vocab, "hey duskie").is_some_and(|s| s.starts_with("▁HE Y ")));
+        assert!(wake_keywords(Some(&vocab)).contains("@hey_duskie"));
+        assert!(!wake_keywords(Some(&vocab)).contains("SIDE"));
         // Checked against the sentencepiece library.
         assert_eq!(spell(&vocab, "hey orbi").as_deref(), Some("▁HE Y ▁OR B I"));
         assert_eq!(spell(&vocab, "light up").as_deref(), Some("▁ L IGHT ▁UP"));
     }
 
     #[test]
-    fn a_custom_name_wakes_and_sidekick_still_does() {
+    fn a_custom_name_wakes_and_duskie_still_does() {
         set_name("Orbi");
         assert_eq!(strip_wake("hey orbi, open mail"), "open mail");
-        assert_eq!(strip_wake("hey sidekick open mail"), "open mail");
+        assert_eq!(strip_wake("hey duskie open mail"), "open mail");
+        assert_eq!(
+            strip_wake("hey sidekick open mail"),
+            "hey sidekick open mail"
+        );
         assert!(find_wake("so hey orbi what time is it").is_some());
-        set_name("Sidekick");
+        set_name("Duskie");
         assert_eq!(strip_wake("hey orbi open mail"), "hey orbi open mail");
     }
 
@@ -613,49 +624,45 @@ mod tests {
 
     #[test]
     fn finds_the_wake_phrase_mid_sentence() {
-        assert_eq!(find_wake("hey sidekick what time is it"), Some(0));
-        let t = "so anyway hey sidekick open my notes";
-        assert_eq!(&t[find_wake(t).unwrap()..], "hey sidekick open my notes");
-        assert_eq!(find_wake("sidekick open my notes"), Some(0));
-        assert_eq!(find_wake("i built a sidekick app"), None);
-        assert_eq!(find_wake("my sidekick is great"), None);
-        assert_eq!(find_wake("ok cider kick play music"), Some(0));
+        assert_eq!(find_wake("hey duskie what time is it"), Some(0));
+        let t = "so anyway hey duskie open my notes";
+        assert_eq!(&t[find_wake(t).unwrap()..], "hey duskie open my notes");
+        assert_eq!(find_wake("duskie open my notes"), Some(0));
+        assert_eq!(find_wake("the sky looks dusky today"), None);
+        assert_eq!(find_wake("ok dusky play music"), Some(0));
+        // The old name no longer wakes it.
+        assert_eq!(find_wake("hey sidekick what time is it"), None);
+        assert_eq!(find_wake("ok cider kick play music"), None);
         assert_eq!(find_wake("nothing to see here"), None);
     }
 
     #[test]
     fn strips_the_wake_phrase() {
         assert_eq!(
-            strip_wake(" Hey sidekick, what time is it?"),
+            strip_wake(" Hey duskie, what time is it?"),
             "what time is it?"
         );
-        assert_eq!(
-            strip_wake("Sidekick. Open my downloads"),
-            "Open my downloads"
-        );
-        assert_eq!(strip_wake("Hey Sidekick"), "");
-        assert_eq!(strip_wake("What is a sidekick?"), "What is a sidekick?");
+        assert_eq!(strip_wake("Duskie. Open my downloads"), "Open my downloads");
+        assert_eq!(strip_wake("Hey Duskie"), "");
+        assert_eq!(strip_wake("What is dusk?"), "What is dusk?");
         // Common mishearings of the name.
         assert_eq!(
-            strip_wake("hey, cider kick, what time is it in london?"),
+            strip_wake("hey, dusky, what time is it in london?"),
             "what time is it in london?"
         );
-        assert_eq!(strip_wake("Okay side kick open settings"), "open settings");
-        assert_eq!(strip_wake("Hi Sidekik. Pause"), "Pause");
+        assert_eq!(strip_wake("Okay dusk key open settings"), "open settings");
+        assert_eq!(strip_wake("Hi Duskey. Pause"), "Pause");
         assert_eq!(strip_wake("hey there"), "hey there");
         assert_eq!(
-            strip_wake("Hey sidecaig, open my downloads"),
+            strip_wake("Hey duskee, open my downloads"),
             "open my downloads"
         );
+        assert_eq!(strip_wake("hey dusk open settings"), "open settings");
+        assert_eq!(strip_wake("duskee open settings"), "duskee open settings");
+        // The old name no longer wakes it.
         assert_eq!(
-            strip_wake("hey side caig what time is it"),
-            "what time is it"
-        );
-        assert_eq!(strip_wake("Hey sidekey. Next"), "Next");
-        assert_eq!(strip_wake("hey side open settings"), "open settings");
-        assert_eq!(
-            strip_wake("sidecaig open settings"),
-            "sidecaig open settings"
+            strip_wake("Hey sidekick, open mail"),
+            "Hey sidekick, open mail"
         );
     }
 

@@ -2,7 +2,7 @@
 
 // The timings overlay: how fast Ask was, last and typical, against the
 // targets. Ctrl+Alt+Shift+T shows or hides it; the choice is remembered on
-// this PC. The numbers also go to timings.log in Sidekick's data folder.
+// this PC. The numbers also go to timings.log in Duskie's data folder.
 
 import { useEffect, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";

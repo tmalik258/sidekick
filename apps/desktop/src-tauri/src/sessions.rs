@@ -3,14 +3,14 @@
 //! the island and every change reviewable afterwards (see `review`).
 //!
 //! Claude Code runs as `claude -p` with stream-json in and out; its
-//! permission questions come through Sidekick's MCP server
+//! permission questions come through Duskie's MCP server
 //! (`--permission-prompt-tool`). Codex runs as `codex app-server` and asks
 //! for approvals as JSON-RPC requests.
 
 mod local;
 pub mod reviews;
 
-use sidekick_sensors::classify::mask;
+use duskie_sensors::classify::mask;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -146,8 +146,8 @@ fn codex_turn_params(
             json!({"type":"workspaceWrite","writableRoots":[path.to_string_lossy()],"networkAccess":false})
         }
     };
-    // Clarifying choices become Sidekick's selectable list when written as OPTION lines.
-    // Plan mode also needs a structured collaboration plan Sidekick can show and edit.
+    // Clarifying choices become Duskie's selectable list when written as OPTION lines.
+    // Plan mode also needs a structured collaboration plan Duskie can show and edit.
     let instructions = if mode == Mode::Plan {
         "You are in Plan mode (read-only). Produce a concrete step-by-step plan the user can review before any changes. \
 When the user must choose first, ask in one short sentence, then end with up to six lines each starting with OPTION: and a short label in their words. \
@@ -314,7 +314,7 @@ struct Handle {
 }
 
 /// What is kept on disk for each session, so Review, Undo and Resume work
-/// after Sidekick restarts.
+/// after Duskie restarts.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Saved {
@@ -990,7 +990,7 @@ pub fn undo(id: &str, path: Option<&str>, hunk: Option<usize>) -> Result<(), Str
             review::undo_all(&b)?;
         }
     }
-    // What is on disk now is Sidekick's own doing: the new fingerprint.
+    // What is on disk now is Duskie's own doing: the new fingerprint.
     with(&SESSIONS, |s| {
         if let Some(h) = s.get_mut(id) {
             let keys: Vec<String> = match path {
@@ -1205,7 +1205,7 @@ pub fn open_terminal(app: &AppHandle, id: &str) -> Result<(), String> {
     })
     .ok_or("That session has ended.")?;
     if agent == Agent::Local {
-        return Err("The local agent runs inside Sidekick, not in a terminal.".into());
+        return Err("The local agent runs inside Duskie, not in a terminal.".into());
     }
     let settings = lock(&app.state::<AppState>().settings).clone();
     let exe = agent
@@ -1286,7 +1286,7 @@ static SESSION_ALLOWED: Mutex<Option<HashMap<String, std::collections::HashSet<S
     Mutex::new(None);
 
 /// What Claude Code's permission prompt tool gets: called by the CLI (not
-/// the model) through Sidekick's MCP server.
+/// the model) through Duskie's MCP server.
 pub async fn claude_permission(app: &AppHandle, args: &Value) -> String {
     let tool = args["tool_name"].as_str().unwrap_or("a tool");
     let input = &args["input"];
@@ -1295,7 +1295,7 @@ pub async fn claude_permission(app: &AppHandle, args: &Value) -> String {
         .and_then(|t| with(&TOOL_OWNER, |o| o.get(t).cloned()))
         .or_else(|| with(&SESSIONS, |s| s.keys().last().cloned()));
     let Some(session) = owner else {
-        return json!({ "behavior": "deny", "message": "No Sidekick session is waiting for this." })
+        return json!({ "behavior": "deny", "message": "No Duskie session is waiting for this." })
             .to_string();
     };
     // Allowed for this session already (Allow this session).
@@ -1397,10 +1397,7 @@ async fn run_claude(
     if mcp_config.is_file() {
         cmd.arg("--mcp-config").arg(mcp_config);
         if mode != Mode::Full {
-            cmd.args([
-                "--permission-prompt-tool",
-                "mcp__sidekick__sidekick_permission",
-            ]);
+            cmd.args(["--permission-prompt-tool", "mcp__duskie__duskie_permission"]);
         }
     }
     cmd.current_dir(path)
@@ -1518,6 +1515,21 @@ pub fn claude_events(v: &Value) -> Vec<Value> {
                     out.push(json!({ "kind": "plan", "items": items }));
                     continue;
                 }
+                // The agent's own signal that its plan is ready: no need to
+                // guess from the wording of the answer.
+                if name == "ExitPlanMode"
+                    && let Some(plan) = b["input"]["plan"].as_str()
+                {
+                    out.push(json!({ "kind": "plan_doc", "text": plan }));
+                    continue;
+                }
+                // The agent's own multiple-choice question, with its options.
+                if name == "AskUserQuestion" && b["input"]["questions"].is_array() {
+                    out.push(json!({
+                        "kind": "choose", "id": b["id"], "questions": b["input"]["questions"],
+                    }));
+                    continue;
+                }
                 let (label, detail) = describe_tool(name, &b["input"]);
                 out.push(json!({
                     "kind": "step", "id": b["id"], "tool": name, "label": label,
@@ -1597,7 +1609,7 @@ fn keep_stderr(child: &mut tokio::process::Child) -> std::sync::Arc<Mutex<String
 }
 
 /// Why an agent stopped, in words: a CLI too old for a flag or method
-/// Sidekick uses says how to update it.
+/// Duskie uses says how to update it.
 pub fn why_stopped(agent: &str, stderr: &str) -> String {
     let e = stderr.to_lowercase();
     let old = [
@@ -1660,7 +1672,7 @@ async fn codex_initialize<W: tokio::io::AsyncWrite + Unpin, R: tokio::io::AsyncB
     lines: &mut tokio::io::Lines<R>,
 ) -> Result<(), String> {
     write_line(stdin, json!({"id":1,"method":"initialize","params":{
-        "clientInfo":{"name":"sidekick","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}}})).await?;
+        "clientInfo":{"name":"duskie","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}}})).await?;
     tokio::time::timeout(Duration::from_secs(30), async {
         loop {
             let line = lines
@@ -2679,6 +2691,24 @@ mod tests {
         .unwrap();
         assert_eq!(claude_events(&todo)[0]["items"][0]["text"], "Add retries");
 
+        let plan: Value = serde_json::from_str(
+            r##"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t3","name":"ExitPlanMode","input":{"plan":"# Plan\n1. Add retries"}}]}}"##,
+        )
+        .unwrap();
+        let ev = claude_events(&plan);
+        assert_eq!(ev.len(), 1, "the plan is not also a step");
+        assert_eq!(ev[0]["kind"], "plan_doc");
+        assert!(ev[0]["text"].as_str().unwrap().contains("Add retries"));
+
+        let ask: Value = serde_json::from_str(
+            r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t4","name":"AskUserQuestion","input":{"questions":[{"question":"Which database?","header":"DB","multiSelect":false,"options":[{"label":"SQLite","description":"local"},{"label":"Postgres","description":"server"}]}]}}]}}"#,
+        )
+        .unwrap();
+        let ev = claude_events(&ask);
+        assert_eq!(ev.len(), 1);
+        assert_eq!(ev[0]["kind"], "choose");
+        assert_eq!(ev[0]["questions"][0]["options"][1]["label"], "Postgres");
+
         let result: Value = serde_json::from_str(
             r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":true}]}}"#,
         )
@@ -2753,8 +2783,8 @@ mod tests {
             ("Run a command".into(), "npm test".into())
         );
         assert_eq!(
-            describe_tool("mcp__sidekick__sidekick_search", &json!({})).0,
-            "sidekick sidekick search"
+            describe_tool("mcp__duskie__duskie_search", &json!({})).0,
+            "duskie duskie search"
         );
     }
 

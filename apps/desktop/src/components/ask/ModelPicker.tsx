@@ -5,7 +5,7 @@
 
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { setAskModel, setOverlayHit, useSidekick } from "@/lib/store";
+import { setAskModel, setOverlayHit, useDuskie } from "@/lib/store";
 import { PROVIDER_LABELS, type ProviderStatus } from "@/lib/types";
 import { Icon } from "../Icon";
 import { Tip } from "../Tip";
@@ -26,7 +26,7 @@ const SHORT: Record<string, string> = {
   local: "Local",
 };
 
-/** The model that answers in Ask mode: Auto (Sidekick picks) or one of
+/** The model that answers in Ask mode: Auto (Duskie picks) or one of
  * those that can answer now. Kept for next time. */
 export function ModelPicker({
   choices,
@@ -105,7 +105,7 @@ export function ModelPicker({
     }
   };
   const shown = picked ?? best;
-  const islandColor = useSidekick((s) => s.settings.islandColor);
+  const islandColor = useDuskie((s) => s.settings.islandColor);
   return (
     <span ref={chipRef} className={`relative shrink-0 ${disabled ? "opacity-60" : ""}`}>
       <Tip label={disabled ? "Model (answering…)" : "Model (Alt M)"}>

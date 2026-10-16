@@ -42,13 +42,13 @@ pub fn test_line(voice: &str) -> &'static str {
         "f2" => "Hey! Female 2 here — lively, bright, and ready to jump in.",
         "f3" => "Hello from Female 3. A calm voice for everyday questions.",
         "f4" => "Hi — Female 4, bright and upbeat when you need a quick answer.",
-        "f5" => "Hi, I'm Sidekick. Female 5 is warm — say hey Sidekick anytime.",
+        "f5" => "Hi, I'm Duskie. Female 5 is warm — say hey Duskie anytime.",
         "m1" => "Hello. Male 1 speaking — straightforward and clear.",
         "m2" => "Hey there. Male 2 — deep, lively, and easy on the ears.",
-        "m3" => "Hi. Male 3 here — a solid everyday voice for Sidekick.",
+        "m3" => "Hi. Male 3 here — a solid everyday voice for Duskie.",
         "m4" => "Hello. Male 4 — calm and measured when things get busy.",
         "m5" => "Hi. Male 5 — deep and steady for longer answers.",
-        _ => "Hi, I'm Sidekick. Say hey Sidekick whenever you need me.",
+        _ => "Hi, I'm Duskie. Say hey Duskie whenever you need me.",
     }
 }
 
@@ -110,29 +110,11 @@ pub fn synthesize(tts: &OfflineTts, text: &str, sid: i32, speed: f32) -> Option<
     (!samples.is_empty()).then_some((samples, rate))
 }
 
-/// Written how the voice should say it. Supertonic softens "Sidekick" into
-/// something like "cider kick"; "Syde kick" was recognised as the name 5
-/// times in 6 by the wake word model, plain "Sidekick" 0 in 6. Mid-line
-/// stops become commas so the model breathes without saying "dot". Pieces
-/// stay short so the next synth finishes before the speaker queue runs dry.
+/// Written how the voice should say it. Mid-line stops become commas so the
+/// model breathes without saying "dot". Pieces stay short so the next synth
+/// finishes before the speaker queue runs dry.
 pub fn respell(text: &str) -> String {
-    let mut out = String::with_capacity(text.len() + 8);
-    let mut rest = text;
-    while let Some(i) = rest.to_ascii_lowercase().find("sidekick") {
-        let end = i + "sidekick".len();
-        let before = rest[..i].chars().next_back();
-        let after = rest[end..].chars().next();
-        let word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric());
-        out.push_str(&rest[..i]);
-        out.push_str(if word(before) || word(after) {
-            &rest[i..end]
-        } else {
-            "Syde kick"
-        });
-        rest = &rest[end..];
-    }
-    out.push_str(rest);
-    tts_punctuation(&out)
+    tts_punctuation(text)
 }
 
 /// `. ` / `! ` / `? ` → `, ` so Supertonic does not say "dot"; trailing
@@ -441,30 +423,22 @@ mod tests {
             respell("Now, your world. Connect your calendar"),
             "Now, your world, Connect your calendar"
         );
-        assert_eq!(respell("I'm Sidekick."), "I'm Syde kick");
-        assert_eq!(respell("Hi! I'm Sidekick."), "Hi, I'm Syde kick");
-    }
-
-    #[test]
-    fn respells_the_name_only_as_a_word() {
-        assert_eq!(respell("Hi! I'm Sidekick."), "Hi, I'm Syde kick");
-        assert_eq!(respell("hey SIDEKICK, go"), "hey Syde kick, go");
-        assert_eq!(respell("sidekicks are fun"), "sidekicks are fun");
-        assert_eq!(respell("No name here"), "No name here");
+        assert_eq!(respell("I'm Duskie."), "I'm Duskie");
+        assert_eq!(respell("Hi! I'm Duskie."), "Hi, I'm Duskie");
     }
 
     /// Runs the real model when it is on disk:
-    /// `SIDEKICK_VOICE_MODELS=<folder holding the voice model> cargo test -p sidekick-voice -- --ignored`
+    /// `DUSKIE_VOICE_MODELS=<folder holding the voice model> cargo test -p duskie-voice -- --ignored`
     #[test]
     #[ignore = "needs the downloaded voice model"]
     fn speaks_with_the_real_model() {
-        let root = std::env::var("SIDEKICK_VOICE_MODELS").expect("set SIDEKICK_VOICE_MODELS");
+        let root = std::env::var("DUSKIE_VOICE_MODELS").expect("set DUSKIE_VOICE_MODELS");
         let models = Path::new(&root);
         let tts = OfflineTts::create(&tts_config(models)).expect("model loads");
         for (voice, _, sid) in VOICES {
             let (samples, rate) = synthesize(
                 &tts,
-                "Hi there! I'm Sidekick. Shall we get you set up?",
+                "Hi there! I'm Duskie. Shall we get you set up?",
                 *sid,
                 1.0,
             )

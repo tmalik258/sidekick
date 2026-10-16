@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
 
-const base = process.env.SIDEKICK_PREVIEW_URL ?? "http://localhost:3002";
+const base = process.env.DUSKIE_PREVIEW_URL ?? "http://localhost:3002";
 const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
 const errors = [];
 

@@ -13,7 +13,7 @@ use crate::{
 };
 
 /// Chat through the user's own Claude Code install (`claude -p`), so answers
-/// come from their subscription. One session per chat is kept warm. Sidekick never reads Claude Code's
+/// come from their subscription. One session per chat is kept warm. Duskie never reads Claude Code's
 /// credential files; it only runs the CLI the user already signed in to.
 pub struct ClaudeCode {
     /// Explicit path to `claude`; otherwise it is looked up on PATH.
@@ -22,7 +22,7 @@ pub struct ClaudeCode {
     pub model: Option<String>,
     /// Folder the CLI runs in. Kept empty so it has no project to touch.
     pub workdir: PathBuf,
-    /// An MCP config file (Sidekick's own server) to load for the chat. Its
+    /// An MCP config file (Duskie's own server) to load for the chat. Its
     /// tools are pre-approved; they only search, notify and open links.
     pub mcp_config: Option<PathBuf>,
 }

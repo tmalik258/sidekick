@@ -26,7 +26,7 @@ pub fn routines_remove(app: AppHandle, kind: String, key: String) -> CmdResult<u
     crate::routines::remove(&app, &kind, &key)
 }
 
-/// Everything Sidekick has learned, for Settings > Memory.
+/// Everything Duskie has learned, for Settings > Memory.
 #[tauri::command]
 pub async fn learned_list(app: AppHandle) -> Vec<crate::learned::Learned> {
     off_ui(move || crate::learned::list(&app))
@@ -89,7 +89,7 @@ pub async fn actions_recent(app: AppHandle, limit: Option<u32>) -> CmdResult<Vec
 
 /// Today's time per app and project, largest first.
 #[tauri::command]
-pub async fn time_today(app: AppHandle) -> CmdResult<Vec<sidekick_core::AppTime>> {
+pub async fn time_today(app: AppHandle) -> CmdResult<Vec<duskie_core::AppTime>> {
     off_ui(move || {
         let day = chrono::Local::now().format("%Y-%m-%d").to_string();
         let state = app.state::<AppState>();
@@ -101,7 +101,7 @@ pub async fn time_today(app: AppHandle) -> CmdResult<Vec<sidekick_core::AppTime>
 }
 
 #[tauri::command]
-pub async fn search(app: AppHandle, query: String) -> Vec<sidekick_core::SearchHit> {
+pub async fn search(app: AppHandle, query: String) -> Vec<duskie_core::SearchHit> {
     crate::search::hybrid(&app, &query, &[], 30).await
 }
 
@@ -156,7 +156,7 @@ pub async fn open_reference(app: AppHandle, source: String, reference: String) -
 }
 
 /// Hands the reminder lead time to the calendar sensor.
-pub fn sync_calendar(calendar: &sidekick_sensors::Calendar, settings: &Settings) {
+pub fn sync_calendar(calendar: &duskie_sensors::Calendar, settings: &Settings) {
     let mut c = calendar
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -173,18 +173,17 @@ pub async fn calendar_today(app: AppHandle) -> serde_json::Value {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let today = chrono::Local::now().date_naive();
-        let meetings: Vec<serde_json::Value> =
-            sidekick_sensors::calendar::on_day(&c.meetings, today)
-                .iter()
-                .map(|m| {
-                    serde_json::json!({
-                        "title": m.title,
-                        "start": m.start.with_timezone(&chrono::Local).format("%H:%M").to_string(),
-                        "end": m.end.with_timezone(&chrono::Local).format("%H:%M").to_string(),
-                        "joinUrl": m.join_url,
-                    })
+        let meetings: Vec<serde_json::Value> = duskie_sensors::calendar::on_day(&c.meetings, today)
+            .iter()
+            .map(|m| {
+                serde_json::json!({
+                    "title": m.title,
+                    "start": m.start.with_timezone(&chrono::Local).format("%H:%M").to_string(),
+                    "end": m.end.with_timezone(&chrono::Local).format("%H:%M").to_string(),
+                    "joinUrl": m.join_url,
                 })
-                .collect();
+            })
+            .collect();
         serde_json::json!({ "meetings": meetings, "error": c.error, "sources": c.sources })
     })
     .await
@@ -353,7 +352,7 @@ fn write_backup(app: &AppHandle) -> CmdResult<String> {
     });
     let dir = dirs::document_dir().ok_or("no Documents folder")?;
     let path = dir.join(format!(
-        "Sidekick backup {}.json",
+        "Duskie backup {}.json",
         chrono::Local::now().format("%Y-%m-%d %H%M")
     ));
     let text = serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())?;
@@ -366,9 +365,9 @@ fn write_backup(app: &AppHandle) -> CmdResult<String> {
 #[tauri::command]
 pub fn backup_import(app: AppHandle, text: String) -> CmdResult<String> {
     let bundle: serde_json::Value =
-        serde_json::from_str(&text).map_err(|_| "This is not a Sidekick backup.".to_string())?;
+        serde_json::from_str(&text).map_err(|_| "This is not a Duskie backup.".to_string())?;
     if bundle["sidekickBackup"].as_u64().is_none() {
-        return Err("This is not a Sidekick backup.".into());
+        return Err("This is not a Duskie backup.".into());
     }
     let state = app.state::<AppState>();
     let mut installed = 0;
@@ -378,7 +377,7 @@ pub fn backup_import(app: AppHandle, text: String) -> CmdResult<String> {
             let Some(yaml) = s["yaml"].as_str() else {
                 continue;
             };
-            let Ok(skill) = sidekick_skills::Skill::parse("backup", yaml) else {
+            let Ok(skill) = duskie_skills::Skill::parse("backup", yaml) else {
                 continue;
             };
             let safe_id: String = skill
@@ -393,8 +392,8 @@ pub fn backup_import(app: AppHandle, text: String) -> CmdResult<String> {
                 installed += 1;
             }
         }
-        let (skills, errors) = sidekick_skills::load_all(&state.skills_dir);
-        *lock(&state.engine) = sidekick_skills::Engine::new(skills);
+        let (skills, errors) = duskie_skills::load_all(&state.skills_dir);
+        *lock(&state.engine) = duskie_skills::Engine::new(skills);
         *lock(&state.skill_errors) = errors;
     }
     let mut restored = false;

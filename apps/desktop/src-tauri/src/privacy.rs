@@ -2,8 +2,8 @@
 //! and sites are dropped before they are stored, indexed or seen by skills.
 //! Password managers are on the list from the start.
 
+use duskie_core::Event;
 use serde_json::Value;
-use sidekick_core::Event;
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, lock};

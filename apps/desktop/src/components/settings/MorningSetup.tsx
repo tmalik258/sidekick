@@ -1,12 +1,12 @@
 "use client";
 
 // Morning setup: the apps and sites you open first on most mornings,
-// learned on this PC. Sidekick asks to open them (Ask first), opens them
+// learned on this PC. Duskie asks to open them (Ask first), opens them
 // by itself, or does nothing (Off). One click takes an item out.
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
-import { updateSettings, useSidekick } from "@/lib/store";
+import { updateSettings, useDuskie } from "@/lib/store";
 import type { RoutineItem } from "@/lib/types";
 import { Tip } from "../Tip";
 import { appName, Button, Segmented } from "./ui";
@@ -14,8 +14,8 @@ import { appName, Button, Segmented } from "./ui";
 type Mode = "ask" | "auto" | "off";
 
 export function MorningSetup({ onError }: { onError: (e: string) => void }) {
-  const on = useSidekick((s) => s.settings.routines);
-  const auto = useSidekick((s) => s.settings.routinesAuto);
+  const on = useDuskie((s) => s.settings.routines);
+  const auto = useDuskie((s) => s.settings.routinesAuto);
   const [items, setItems] = useState<RoutineItem[] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sure, setSure] = useState(false);

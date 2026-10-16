@@ -16,8 +16,8 @@ const shots = join(dir, "..", "visual");
 mkdirSync(shots, { recursive: true });
 
 const css = readFileSync(join(dir, "..", "src", "app", "globals.css"), "utf8");
-const orb = readFileSync(join(dir, "..", "src", "components", "Orb.tsx"), "utf8");
-const themes = [...orb.matchAll(/^ {2}(\w+): \{\n {4}label:/gm)].map((m) => m[1]);
+const themeFile = readFileSync(join(dir, "..", "src", "components", "creature", "themes.ts"), "utf8");
+const themes = [...themeFile.matchAll(/^ {2}(\w+): "/gm)].map((m) => m[1]);
 const colors = ["glass", ...[...css.matchAll(/\.island-shell\[data-color="([^"]+)"\]/g)].map((m) => m[1])];
 
 const TYPES = {
@@ -49,7 +49,12 @@ const DESKTOPS = {
   dark: "linear-gradient(180deg, #14162c, #2a2150)",
 };
 
-const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+// Software WebGL 2 so the real creature draws; the app skips software
+// renderers unless this flag is set.
+const browser = await chromium.launch({
+  ...(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {}),
+  args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"],
+});
 const errors = [];
 let count = 0;
 async function shoot(name, query, desktop, act) {
@@ -57,6 +62,9 @@ async function shoot(name, query, desktop, act) {
     viewport: { width: 760, height: 560 },
     colorScheme: desktop === "light" ? "light" : "dark",
     reducedMotion: "reduce",
+  });
+  await page.addInitScript(() => {
+    window.__creatureForce = true;
   });
   page.on("pageerror", (e) => errors.push(`${name}: ${e.message}`));
   await page.goto(base + query);
@@ -73,7 +81,7 @@ const hover = (p) => p.mouse.move(380, 25, { steps: 4 });
 const ask = async (p) => {
   await hover(p);
   await p.waitForTimeout(800);
-  await p.getByRole("button", { name: /Ask Sidekick/ }).click();
+  await p.getByRole("button", { name: /Ask Duskie/ }).click();
 };
 const agents = async (p) => {
   await ask(p);

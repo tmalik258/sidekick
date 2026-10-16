@@ -4,7 +4,7 @@
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
-use sidekick_core::Event;
+use duskie_core::Event;
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, lock};

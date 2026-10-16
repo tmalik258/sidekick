@@ -3,9 +3,10 @@
 // Appearance: how the mascot and the island look, and how the island
 // behaves on screen. Every choice applies at once.
 
-import { updateSettings, useSidekick } from "@/lib/store";
+import { updateSettings, useDuskie } from "@/lib/store";
 import { ISLAND_COLORS, type IslandColor, THEMES } from "@/lib/types";
-import { Orb, THEME_STYLES } from "../Orb";
+import { Creature } from "../Creature";
+import { THEME_LABELS } from "../creature/themes";
 import { Field, Section, Select, TextField, Toggle } from "./ui";
 
 const COLLAPSE_OPTIONS: [string, string][] = [
@@ -46,7 +47,7 @@ const tile = (on: boolean) =>
   }`;
 
 export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
-  const settings = useSidekick((s) => s.settings);
+  const settings = useDuskie((s) => s.settings);
   const save = (patch: Parameters<typeof updateSettings>[0]) =>
     void updateSettings(patch).catch((e) => onError(String(e)));
 
@@ -66,9 +67,9 @@ export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
               className={tile(settings.theme === t)}
             >
               <span className="orb-still">
-                <Orb state="idle" size={34} theme={t} magnetic={false} simple active={false} />
+                <Creature state="idle" size={34} theme={t} magnetic={false} simple active={false} />
               </span>
-              {THEME_STYLES[t].label}
+              {THEME_LABELS[t]}
             </button>
           ))}
         </div>
@@ -78,8 +79,8 @@ export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
           <TextField
             label="Assistant name"
             value={settings.assistantName}
-            placeholder="Sidekick"
-            onCommit={(assistantName) => save({ assistantName: assistantName || "Sidekick" })}
+            placeholder="Duskie"
+            onCommit={(assistantName) => save({ assistantName: assistantName || "Duskie" })}
           />
         </Field>
       </Section>
@@ -112,7 +113,7 @@ export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
                 }}
               >
                 <span className="orb-still">
-                  <Orb state="idle" size={15} theme={settings.theme} magnetic={false} simple active={false} />
+                  <Creature state="idle" size={15} theme={settings.theme} magnetic={false} simple active={false} />
                 </span>
                 <span className="h-[4px] w-[26px] rounded-full bg-white/55" />
               </span>
@@ -121,7 +122,13 @@ export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
           ))}
         </div>
       </Section>
-      <Section title="Behaviour" keywords="fullscreen hide alive idle collapse close suggestions">
+      <Section title="Behaviour" keywords="fullscreen hide alive idle collapse close suggestions redesign atelier">
+        <Toggle
+          label="New island look"
+          hint="Prototype shell: Take A mascot, grain wash, Atelier chrome. Off keeps the current island."
+          checked={settings.redesign.enabled}
+          onChange={(enabled) => save({ redesign: { enabled } })}
+        />
         <Field label="Close suggestions after">
           <Select
             label="Close suggestions after"
@@ -132,7 +139,7 @@ export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
         </Field>
         <Toggle
           label="Alive mode"
-          hint="While nothing is happening, Sidekick glances around, blinks and smiles now and then. No sounds."
+          hint="While nothing is happening, Duskie glances around, blinks and smiles now and then. No sounds."
           checked={settings.alive}
           onChange={(alive) => save({ alive })}
         />
@@ -155,7 +162,7 @@ export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
 
 /** What saying the name does, and a warning for names that wake by mistake. */
 function nameHint(name: string): string {
-  const said = `Say "Hey ${name || "Sidekick"}" to talk. "Hey Sidekick" keeps working too.`;
+  const said = `Say "Hey ${name || "Duskie"}" to talk. "Hey Duskie" keeps working too.`;
   const vowels = (name.toLowerCase().match(/[aeiouy]+/g) ?? []).length;
   return name.length < 4 || vowels < 2
     ? `${said} Short names wake by mistake more often; two syllables or more work best.`

@@ -1,8 +1,8 @@
 // Moods: a short-lived expression on top of the mascot's state, set by what
 // just happened (Claude finished, you said thanks). The state machine says
-// what Sidekick is doing; a mood says how it feels about it, for a few seconds.
+// what Duskie is doing; a mood says how it feels about it, for a few seconds.
 
-import type { Expression } from "@/components/orb/expressions";
+import type { Expression } from "@/components/creature/expressions";
 
 export interface Mood {
   id: Expression;
@@ -35,14 +35,14 @@ export function moodForSkill(skillId: string): Expression | null {
   return BY_SKILL[skillId] ?? null;
 }
 
-/** "thanks", "thank you", "thx", "ty", "tysm" said to Sidekick. */
+/** "thanks", "thank you", "thx", "ty", "tysm" said to Duskie. */
 export function isThanks(text: string): boolean {
   return /\b(thanks|thank you|thank u|thx|tysm|ty)\b/i.test(text) && text.length < 80;
 }
 
 const HELLO_KEY = "sidekick-hello-day";
 
-/** True once per calendar day: the first time Sidekick is seen that day. */
+/** True once per calendar day: the first time Duskie is seen that day. */
 export function firstToday(now = new Date()): boolean {
   const day = now.toDateString();
   try {

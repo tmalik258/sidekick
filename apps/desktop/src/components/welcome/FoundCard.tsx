@@ -1,12 +1,12 @@
 "use client";
 
-// What Sidekick found on this PC — pick rows, one tap to apply.
+// What Duskie found on this PC — pick rows, one tap to apply.
 
 import { useMemo, useState } from "react";
 import { api } from "@/lib/bridge";
 import { SETUP_STATUS_CACHE_KEY, useCached } from "@/lib/cache";
 import { friendlyError } from "@/lib/friendly";
-import { useSidekick } from "@/lib/store";
+import { useDuskie } from "@/lib/store";
 import type { Settings, SetupFound } from "@/lib/types";
 import { SetupSpinner } from "../SetupChecklistRow";
 import { WelcomeChoice, WelcomeChoiceSkeleton } from "./WelcomeChoice";
@@ -42,7 +42,7 @@ function picksFrom(f: SetupFound, off: Set<string>, settings: Settings): Pick[] 
     list.push({ id: "hooks", title: "Claude hooks", hint: "Hear when it finishes or asks" });
   }
   if (f.claudeInstalled && !f.claudeMcp) {
-    list.push({ id: "mcp", title: "Claude tools", hint: "Let it use Sidekick" });
+    list.push({ id: "mcp", title: "Claude tools", hint: "Let it use Duskie" });
   }
   for (const item of f.installable.filter((i) => i.recommended && !i.done && i.runnable)) {
     list.push({ id: `install:${item.id}`, title: item.title, hint: item.why });
@@ -57,7 +57,7 @@ function ctaLabel(selected: number, busy: boolean): string {
 }
 
 export function FoundCard({ onDone }: { onDone: () => void }) {
-  const settings = useSidekick((s) => s.settings);
+  const settings = useDuskie((s) => s.settings);
   const { data: found, refresh } = useCached<SetupFound>("setup-detect", api.setupDetect);
   const { refresh: refreshStatus } = useCached(SETUP_STATUS_CACHE_KEY, api.setupStatus);
   // Unticked rows; everything else found is on. Kept apart from the data so a

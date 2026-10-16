@@ -22,7 +22,7 @@ pub const EXECUTE_TOOL: &str = "COMPOSIO_MULTI_EXECUTE_TOOL";
 pub const CONNECTIONS_TOOL: &str = "COMPOSIO_MANAGE_CONNECTIONS";
 pub const SEARCH_TOOL: &str = "COMPOSIO_SEARCH_TOOLS";
 
-/// Apps Sidekick uses on its own, in the order shown, with what for.
+/// Apps Duskie uses on its own, in the order shown, with what for.
 pub const APPS: &[(&str, &str, &str)] = &[
     (
         "googlecalendar",
@@ -45,7 +45,7 @@ pub const APPS: &[(&str, &str, &str)] = &[
 pub struct App {
     pub slug: String,
     pub name: String,
-    /// What Sidekick uses it for; empty for other apps in the account.
+    /// What Duskie uses it for; empty for other apps in the account.
     pub why: String,
     pub connected: bool,
 }
@@ -76,7 +76,7 @@ pub fn app_name(slug: &str) -> String {
     c
 }
 
-/// Arguments that list the connections of Sidekick's apps in one call.
+/// Arguments that list the connections of Duskie's apps in one call.
 pub fn list_args() -> Value {
     let toolkits: Vec<Value> = APPS
         .iter()
@@ -95,7 +95,7 @@ pub fn execute_args(tool: &str, arguments: Value) -> Value {
     json!({
         "tools": [{ "tool_slug": tool, "arguments": arguments }],
         "sync_response_to_workbench": false,
-        "thought": "Sidekick reads this for the user.",
+        "thought": "Duskie reads this for the user.",
     })
 }
 
@@ -163,7 +163,7 @@ pub fn connected_from_description(description: &str) -> BTreeSet<String> {
         .collect()
 }
 
-/// Sidekick's apps first (connected or not), then the rest of what the
+/// Duskie's apps first (connected or not), then the rest of what the
 /// account has connected.
 pub fn merge_apps(connected: &BTreeSet<String>) -> Vec<App> {
     let mut out: Vec<App> = APPS

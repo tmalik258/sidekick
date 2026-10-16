@@ -1,4 +1,4 @@
-//! Search over what Sidekick has seen:
+//! Search over what Duskie has seen:
 //! downloads, screenshots, clipboard text, web pages from the extension,
 //! Claude Code sessions, actions, Ask answers, and text files in folders
 //! the user opts into. Everything stays in the local SQLite FTS5 index.
@@ -7,7 +7,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use sidekick_core::{Event, SearchHit};
+use duskie_core::{Event, SearchHit};
 use tauri::{AppHandle, Manager};
 
 use crate::state::{AppState, lock};
@@ -156,13 +156,13 @@ static EMBED_ERROR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(Non
 const EMBED_BATCH: u32 = 24;
 const QUERY_TIMEOUT: Duration = Duration::from_secs(3);
 
-pub(crate) fn embedder(app: &AppHandle) -> Option<(sidekick_ai::OpenAiCompat, String)> {
+pub(crate) fn embedder(app: &AppHandle) -> Option<(duskie_ai::OpenAiCompat, String)> {
     let state = app.state::<AppState>();
     let s = lock(&state.settings);
     if !s.semantic_search.enabled {
         return None;
     }
-    let client = sidekick_ai::OpenAiCompat::new(Some(s.ai.local.base_url.clone()), None);
+    let client = duskie_ai::OpenAiCompat::new(Some(s.ai.local.base_url.clone()), None);
     Some((client, s.semantic_search.model.clone()))
 }
 
@@ -191,7 +191,7 @@ pub fn start_embedder(app: &AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
             // Embedding is heavy: only while plugged in and not paused.
-            if crate::state::is_paused(&app) || !sidekick_sensors::on_mains() {
+            if crate::state::is_paused(&app) || !duskie_sensors::on_mains() {
                 tokio::time::sleep(Duration::from_secs(60)).await;
                 continue;
             }
@@ -281,7 +281,7 @@ pub async fn hybrid(app: &AppHandle, query: &str, sources: &[&str], limit: u32) 
         .iter()
         .map(|h| (h.source.clone(), h.reference.clone()))
         .collect();
-    let mut out: Vec<SearchHit> = sidekick_core::storage::fuse(&[keys, near], limit as usize * 2)
+    let mut out: Vec<SearchHit> = duskie_core::storage::fuse(&[keys, near], limit as usize * 2)
         .into_iter()
         .filter_map(|(source, reference)| {
             keyword

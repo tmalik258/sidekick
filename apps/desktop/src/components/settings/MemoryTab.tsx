@@ -1,18 +1,18 @@
 "use client";
 
-// Memory: who you are, what Sidekick remembers, and what it has learned
+// Memory: who you are, what Duskie remembers, and what it has learned
 // from your choices. Everything here stays on this PC and can be forgotten.
 
 import { useState } from "react";
 import { api } from "@/lib/bridge";
 import { useCached } from "@/lib/cache";
-import { updateSettings, useSidekick } from "@/lib/store";
+import { updateSettings, useDuskie } from "@/lib/store";
 import type { Learned, Settings, SuggestionRate } from "@/lib/types";
 import { Memory } from "./PrivacyTab";
 import { Button, Field, Section, Segmented, TextField, Toggle } from "./ui";
 
 export function MemoryTab({ onError }: { onError: (e: string) => void }) {
-  const settings = useSidekick((s) => s.settings);
+  const settings = useDuskie((s) => s.settings);
   const save = (patch: Partial<Settings>) => void updateSettings(patch).catch((e: unknown) => onError(String(e)));
   return (
     <>
@@ -108,7 +108,7 @@ function LearnedList({ onError }: { onError: (e: string) => void }) {
   return (
     <div className="flex flex-col gap-2.5 text-[13px]">
       {items.length === 0 ? (
-        <p className="text-(--muted)">Nothing yet. As you pick options, Sidekick learns what you usually do.</p>
+        <p className="text-(--muted)">Nothing yet. As you pick options, Duskie learns what you usually do.</p>
       ) : (
         items.map((l) => (
           <div key={`${l.kind}:${l.key}:${l.label}`} className="flex items-center gap-3">

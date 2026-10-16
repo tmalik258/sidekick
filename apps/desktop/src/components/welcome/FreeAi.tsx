@@ -4,11 +4,11 @@
 // with one pasted key, said plainly that free cloud tiers may train on it.
 
 import { useState } from "react";
-import { useSidekick } from "@/lib/store";
+import { useDuskie } from "@/lib/store";
 import { CloudKey } from "../settings/AiTab";
 
 export function FreeAi() {
-  const codes = useSidekick((s) => s.settings.codes);
+  const codes = useDuskie((s) => s.settings.codes);
   const [error, setError] = useState<string | null>(null);
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-white/10 p-3 text-[13px]">
