@@ -118,6 +118,8 @@ fn card(p: &Promise) -> Proposal {
         trust: Trust::Suggest,
         remember: None,
         priority: 60,
+        compact: false,
+        silent: false,
     }
 }
 

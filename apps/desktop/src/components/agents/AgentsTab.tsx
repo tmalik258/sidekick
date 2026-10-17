@@ -53,10 +53,10 @@ import { useNow } from "@/lib/hooks";
 import { Markdown } from "@/lib/markdown";
 import { extractChoices } from "@/lib/options";
 import { parsePlanDocument } from "@/lib/plan";
-import { setAsk, setOverlayHit, useDuskie } from "@/lib/store";
+import { setAsk, setOverlayHit } from "@/lib/store";
 import type { AgentInfo, AgentMode, Agents, CursorChat, EditorList } from "@/lib/types";
 import { scrollIfActive } from "../ask/parts";
-import { Icon } from "../Icon";
+import { Ic, Icon } from "../Icon";
 import { Select } from "../settings/ui";
 import { Tip } from "../Tip";
 import { Board } from "./Board";
@@ -169,7 +169,7 @@ export function AgentsTab({
   active = true,
 }: {
   maxHeight: number;
-  /** False while Ask is closed but Agents is kept warm — skip background work. */
+  /** False while Ask is closed but Agents is kept warm, skip background work. */
   active?: boolean;
 }) {
   const sessions = useAgents((s) => s.sessions);
@@ -288,7 +288,6 @@ function SessionChips({
 }
 
 function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorChat[] }) {
-  const redesign = useDuskie((st) => st.settings.redesign.enabled);
   const { data: agents, refreshing, refresh } = useCached<Agents>("agents", api.agentsStatus);
   const { data: projects } = useCached<{ name: string; path: string }[]>("projects", api.projectsList, 30_000);
   const prefs = useRef(readNewPrefs()).current;
@@ -379,7 +378,7 @@ function NewSession({ sessions, cursor }: { sessions: Session[]; cursor: CursorC
   };
   return (
     <>
-      {redesign && sessions.length > 0 ? (
+      {sessions.length > 0 ? (
         <SessionList sessions={sessions} />
       ) : (
         <>
@@ -752,7 +751,7 @@ function SessionView({
     return step && step.kind === "step" ? step.step.label : null;
   }, [s.entries]);
   // Restore scroll before paint; ResizeObserver keeps follow pinned while Markdown grows.
-  // Skip while warm/hidden — hidden nodes report scrollHeight 0 and would wipe the saved offset.
+  // Skip while warm/hidden, hidden nodes report scrollHeight 0 and would wipe the saved offset.
   // biome-ignore lint/correctness/useExhaustiveDependencies: follow new entry count, not every streamed token array identity
   useLayoutEffect(() => {
     if (!active) return;
@@ -880,7 +879,7 @@ function SessionView({
               onClick={() => closeSession(s.id)}
               className="ak-ibtn chip"
             >
-              <Icon name="close" size={13} />
+              <Ic name="x" size={13} />
             </button>
           </Tip>
         )}
@@ -923,7 +922,7 @@ function SessionView({
               const i = entryStart + j;
               // Last agent prose (idle or still "working" after a clarifying ask).
               const lastText = e.kind === "text" && !s.question && i === lastAgentText;
-              // Full plan lives in PlanPanel — don't repeat the same prose above it.
+              // Full plan lives in PlanPanel, don't repeat the same prose above it.
               const planCovers =
                 lastText && !!s.planDoc && e.kind === "text" && (parsePlanDocument(e.text)?.items.length ?? 0) >= 2;
               return (

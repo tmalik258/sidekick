@@ -101,8 +101,6 @@ pub struct Settings {
     /// Apps connected directly over MCP, preferred over Composio.
     pub direct_servers: Vec<DirectServer>,
     pub semantic_search: SemanticSearch,
-    /// The new island look; off by default.
-    pub redesign: Redesign,
     /// MCP servers the user connected directly (stdio), preferred over Composio.
     pub direct_mcp: DirectMcp,
     /// The first-run welcome was finished or skipped.
@@ -319,13 +317,6 @@ pub const DEFAULT_DENY_APPS: &[&str] = &[
     "screenclippinghost.exe",
 ];
 
-/// Switches for the new island look. Off until it is ready for everyone.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-pub struct Redesign {
-    pub enabled: bool,
-}
-
 /// One MCP server started as a program on this PC (no shell).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -427,6 +418,11 @@ pub struct VoiceSettings {
     pub model: u32,
     /// Words voice gets wrong, comma separated: "horsepot = hotspot".
     pub fixes: String,
+    /// Live: start answering at a pause in speech and show captions in the
+    /// island. Off by default; off is the kill switch.
+    pub live: bool,
+    /// Keep Live conversations in Ask history (text only, never audio).
+    pub live_history: bool,
 }
 
 /// Settings saved before the v1.0 voice model had no `model` field.
@@ -452,6 +448,8 @@ impl Default for VoiceSettings {
             speed: 1.0,
             model: VOICE_MODEL,
             fixes: String::new(),
+            live: false,
+            live_history: true,
         }
     }
 }
@@ -474,6 +472,10 @@ pub struct AiSettings {
     pub groq: CloudPref,
     /// One key for hundreds of models, some free.
     pub openrouter: CloudPref,
+    /// OpenAI's API with the user's key.
+    pub openai: CloudPref,
+    /// xAI Grok with the user's key.
+    pub xai: CloudPref,
     pub semif: SemIfPref,
     /// Let SemIf or the local model rank suggestion options.
     pub decisions: bool,
@@ -555,7 +557,7 @@ pub struct SemIfPref {
     pub gguf: String,
 }
 
-pub const AI_PROVIDERS: [&str; 7] = [
+pub const AI_PROVIDERS: [&str; 9] = [
     "local",
     "gemini",
     "groq",
@@ -563,6 +565,8 @@ pub const AI_PROVIDERS: [&str; 7] = [
     "codex",
     "anthropic",
     "openrouter",
+    "openai",
+    "xai",
 ];
 
 /// A cloud model reached with an API key kept in Credential Manager. On
@@ -586,6 +590,8 @@ impl Default for AiSettings {
             gemini: CloudPref::default(),
             groq: CloudPref::default(),
             openrouter: CloudPref::default(),
+            openai: CloudPref::default(),
+            xai: CloudPref::default(),
             semif: SemIfPref::default(),
             decisions: true,
             local_only: false,
@@ -757,7 +763,6 @@ impl Default for Settings {
             composio: ComposioSettings::default(),
             direct_servers: Vec::new(),
             semantic_search: SemanticSearch::default(),
-            redesign: Redesign::default(),
             direct_mcp: DirectMcp::default(),
             onboarded: false,
             welcome_step: 0,
@@ -849,6 +854,25 @@ impl Settings {
         if self.onboarded && self.codes.is_none() {
             self.codes = Some(true);
         }
+        // The older direct MCP list moves into the servers list, unconfirmed,
+        // so nothing it names runs before the user looked at it again.
+        for old in std::mem::take(&mut self.direct_mcp.servers) {
+            if self
+                .direct_servers
+                .iter()
+                .any(|s| s.command == old.command && s.args == old.args)
+            {
+                continue;
+            }
+            self.direct_servers.push(DirectServer {
+                id: old.id,
+                app: old.name.trim().to_lowercase(),
+                kind: "stdio".into(),
+                command: old.command,
+                args: old.args,
+                ..DirectServer::default()
+            });
+        }
         self.master_volume = self.master_volume.clamp(0.0, 1.0);
         for v in self.cue_volumes.values_mut() {
             *v = v.clamp(0.0, 1.0);
@@ -936,13 +960,6 @@ impl Settings {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn redesign_is_off_by_default_and_old_files_still_load() {
-        assert!(!Settings::default().redesign.enabled);
-        let old: Settings = serde_json::from_str("{\"muted\":true}").unwrap();
-        assert!(!old.redesign.enabled);
-    }
-
     use super::*;
 
     #[test]
@@ -1009,7 +1026,9 @@ mod tests {
                 "claude_code",
                 "codex",
                 "anthropic",
-                "openrouter"
+                "openrouter",
+                "openai",
+                "xai"
             ]
         );
         assert_eq!(s.ai.coding_agent, "auto");
@@ -1149,6 +1168,27 @@ mod tests {
         assert_eq!(s.island_color, "atelier");
         assert_eq!(Settings::default().island_color, "atelier");
         assert_eq!(Settings::default().theme, "atelier");
+    }
+
+    #[test]
+    fn old_direct_mcp_moves_to_servers_unconfirmed() {
+        let mut s = Settings::default();
+        s.direct_mcp.servers.push(DirectMcpServer {
+            id: "a".into(),
+            name: "GitHub".into(),
+            command: "npx".into(),
+            args: vec!["-y".into(), "gh-mcp".into()],
+        });
+        let s = s.sanitized();
+        assert!(s.direct_mcp.servers.is_empty());
+        assert_eq!(s.direct_servers.len(), 1);
+        let d = &s.direct_servers[0];
+        assert_eq!(
+            (d.app.as_str(), d.kind.as_str(), d.confirmed),
+            ("github", "stdio", false)
+        );
+        // Sanitizing again does not add it twice.
+        assert_eq!(s.sanitized().direct_servers.len(), 1);
     }
 
     #[test]

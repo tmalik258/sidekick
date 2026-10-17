@@ -4,7 +4,7 @@
 
 import { sendChat, setAsk, useDuskie } from "@/lib/store";
 import type { AskContext, CalendarToday } from "@/lib/types";
-import { Icon, type IconName } from "../Icon";
+import { Ic, type IcName, Icon } from "../Icon";
 import { Tip } from "../Tip";
 import { pendingCount, useAltDigits } from "./Proposals";
 import { KeyHint } from "./parts";
@@ -13,7 +13,7 @@ export interface Command {
   id: string;
   label: string;
   hint?: string;
-  icon: IconName;
+  icon: IcName;
   run: () => void;
   /** Keep Ask mode open after running. */
   stay?: boolean;
@@ -77,7 +77,7 @@ export function ContextLine({ keys }: { keys: boolean }) {
               onClick={it.toggle}
               className={`ak-ctx-i chip ${it.id === "clip" ? "cpy" : ""}`}
             >
-              <Icon name={it.on ? "check" : "plus"} size={10} />
+              <Ic name={it.id === "clip" ? "copy" : "file"} size={12} />
               <span className="truncate">{it.label}</span>
             </button>
           </Tip>
@@ -99,7 +99,7 @@ export function ContextLine({ keys }: { keys: boolean }) {
             onClick={() => setAsk({ localOnly: !ask.localOnly })}
             className="ak-pc chip"
           >
-            <Icon name={ask.localOnly ? "check" : "lock"} size={10} />
+            <Ic name={ask.localOnly ? "check" : "lock"} size={10} />
             {ask.localOnly && "This PC only"}
           </button>
         </Tip>
@@ -146,7 +146,7 @@ export function roleStarters(
         id: "starter:reply",
         label: "Draft a reply in my tone",
         hint: "From this email",
-        icon: "ask",
+        icon: "send",
         run: () => sendChat("Draft a reply to this email in my usual tone. Short, friendly, no filler."),
         stay: true,
       },
@@ -154,7 +154,7 @@ export function roleStarters(
         id: "starter:triage",
         label: "Triage my inbox",
         hint: "What needs me today",
-        icon: "ask",
+        icon: "box",
         run: () => sendChat("Triage my inbox: what needs a reply today, what can wait, what to archive."),
         stay: true,
       },
@@ -165,7 +165,7 @@ export function roleStarters(
       id: "starter:tasks",
       label: "Turn my notes into tasks",
       hint: "Owner and due date each",
-      icon: "ask",
+      icon: "check",
       run: () =>
         sendChat("Turn the notes I copied into a task list with an owner and due date each.", { clipboard: true }),
       stay: true,
@@ -176,7 +176,7 @@ export function roleStarters(
       id: "starter:delegate",
       label: "Hand this to a coding agent",
       hint: "Say what to do",
-      icon: "ask",
+      icon: "pr",
       run: () => focusInput("Ask the coding agent to "),
       stay: true,
     });
@@ -187,7 +187,7 @@ export function roleStarters(
       id: "starter:weekly",
       label: "Draft my weekly status",
       hint: "Done, next, blocked",
-      icon: "ask",
+      icon: "send",
       run: () => sendChat("Draft my weekly status from what I worked on this week: done, next, blocked."),
       stay: true,
     });
@@ -196,7 +196,7 @@ export function roleStarters(
       id: "starter:standup",
       label: "Draft my standup",
       hint: "Yesterday, today, blockers",
-      icon: "ask",
+      icon: "send",
       run: () => sendChat("Draft my standup from what I worked on yesterday: yesterday, today, blockers. Three lines."),
       stay: true,
     });
@@ -229,7 +229,7 @@ export function contextStarters({
       id: "starter:clip",
       label: "Summarize what I copied",
       hint: "Three lines",
-      icon: "ask",
+      icon: "copy",
       run: () => sendChat("Summarize what I copied in three short lines.", { clipboard: true }),
       stay: true,
     });
@@ -239,7 +239,7 @@ export function contextStarters({
       id: "starter:error",
       label: "Explain the error I copied",
       hint: "Two ways to fix it",
-      icon: "ask",
+      icon: "warn",
       run: () => sendChat("Explain the error I copied and give me the two most likely fixes.", { clipboard: true }),
       stay: true,
     });
@@ -249,7 +249,7 @@ export function contextStarters({
       id: "starter:page",
       label: "Summarize this page",
       hint: "In three lines",
-      icon: "ask",
+      icon: "open",
       run: () => sendChat("Summarize this page in three short lines."),
       stay: true,
     });
@@ -260,7 +260,7 @@ export function contextStarters({
       id: "starter:howto",
       label: `How do I use ${app}?`,
       hint: "Three steps, shows where",
-      icon: "ask",
+      icon: "spark",
       run: () =>
         sendChat(`How do I use ${app} for what I am doing? Three short steps, and point at the first control.`),
       stay: true,
@@ -271,7 +271,7 @@ export function contextStarters({
       id: "starter:meeting",
       label: `Prepare for ${meeting.title}`,
       hint: `At ${meeting.start}`,
-      icon: "ask",
+      icon: "clock",
       run: () =>
         sendChat(`Help me prepare for "${meeting.title}" at ${meeting.start}: related notes, files and open items.`),
       stay: true,
@@ -290,7 +290,7 @@ export function contextStarters({
     {
       id: "starter:today",
       label: "What did I work on today?",
-      icon: "ask",
+      icon: "clock",
       run: () => sendChat("What did I work on today? Two lines."),
       stay: true,
     },

@@ -213,7 +213,7 @@ function EmptySlot({
   recent: Session[];
   /** Parent bumps this (Ctrl N) to open the new-session picker. */
   openSignal?: number;
-  /** After the picker closes — put focus back on the board composer. */
+  /** After the picker closes, put focus back on the board composer. */
   onDismiss?: () => void;
 }) {
   const { data: agents } = useCached<Agents>("agents", api.agentsStatus);
@@ -261,7 +261,7 @@ function EmptySlot({
       pickRoot.current?.focus({ preventScroll: true });
     });
   }, [openSignal]);
-  // Esc closes the picker (or steps back), not the island — AskPanel also
+  // Esc closes the picker (or steps back), not the island, AskPanel also
   // listens for Esc on window; capture + preventDefault wins that race.
   useEffect(() => {
     if (!picking) return;
@@ -486,7 +486,7 @@ export function Board({
 }: {
   sessions: Session[];
   maxHeight: number;
-  /** False while Ask is shown but Agents is kept warm — do not steal Ctrl N. */
+  /** False while Ask is shown but Agents is kept warm, do not steal Ctrl N. */
   active?: boolean;
 }) {
   const focus = useAgents((s) => s.focus);

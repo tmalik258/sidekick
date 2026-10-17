@@ -13,6 +13,7 @@ pub mod doctor;
 mod editors;
 mod files;
 pub mod gitflow;
+pub mod installed;
 pub mod office;
 pub mod pc;
 mod script;
@@ -391,6 +392,12 @@ impl Executor {
             "sort_downloads" => tokio::task::spawn_blocking(cleanup::sort_downloads)
                 .await
                 .map_err(fail)?,
+            "uninstall" => {
+                let name = arg(args, "name")?.to_owned();
+                tokio::task::spawn_blocking(move || installed::uninstall(&name))
+                    .await
+                    .map_err(fail)?
+            }
             "clean_installers" => tokio::task::spawn_blocking(cleanup::clean_installers)
                 .await
                 .map_err(fail)?,

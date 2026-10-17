@@ -1,18 +1,19 @@
 "use client";
 
-// Compact island for the redesign: one line with a label, a dim detail and a
-// trailing chip, as in the island design. It reports its own width so the
-// shell fits it (the shell springs to whatever this measures).
+// Compact island: one line with a label, a dim detail and a trailing chip.
+// It reports its own width so the shell fits it (the shell springs to whatever
+// this measures).
 
 import { motion } from "motion/react";
-import { type ReactNode, useLayoutEffect, useRef } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef } from "react";
 import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
-import { Icon } from "./Icon";
+import { Ic } from "./Icon";
 
 export type PillKind =
   | "working"
   | "listening"
+  | "caption"
   | "done"
   | "error"
   | "focus"
@@ -20,7 +21,8 @@ export type PillKind =
   | "offline"
   | "noticing"
   | "waiting"
-  | "suggest";
+  | "suggest"
+  | "notify";
 
 export interface PillModel {
   kind: PillKind;
@@ -46,7 +48,7 @@ const clock = (ms: number) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 };
 
-export function RedesignPill({ model, onWidth }: { model: PillModel; onWidth: (w: number) => void }) {
+export function IslandPill({ model, onWidth }: { model: PillModel; onWidth: (w: number) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const now = useNow(1000);
   const { kind } = model;
@@ -64,6 +66,23 @@ export function RedesignPill({ model, onWidth }: { model: PillModel; onWidth: (w
   let trail: ReactNode = null;
   if (kind === "working") trail = <span className="tnum">{clock(now - (model.startedAt ?? now))}</span>;
   else if (kind === "listening") trail = <Bars />;
+  else if (kind === "caption")
+    trail = (
+      <>
+        {model.chip && <span className="chip-s cap-tool">{model.chip}</span>}
+        <button
+          type="button"
+          className="chip-s ic-only"
+          aria-label="Stop"
+          onClick={(e) => {
+            e.stopPropagation();
+            model.onChip?.();
+          }}
+        >
+          <Ic name="x" size={12} />
+        </button>
+      </>
+    );
   else if (kind === "done" && model.onOpen)
     trail = (
       <button
@@ -75,7 +94,7 @@ export function RedesignPill({ model, onWidth }: { model: PillModel; onWidth: (w
           model.onOpen?.();
         }}
       >
-        <Icon name="folder" size={12} />
+        <Ic name="folder" size={12} />
       </button>
     );
   else if (kind === "focus")
@@ -88,12 +107,21 @@ export function RedesignPill({ model, onWidth }: { model: PillModel; onWidth: (w
     trail = <span className="dot" style={{ background: "var(--warn)", boxShadow: "0 0 8px var(--warn)" }} />;
   else if (kind === "offline")
     trail = (
-      <span style={{ color: "var(--warn)", display: "inline-flex" }}>
-        <Icon name="wifiOff" size={14} />
-      </span>
+      <button
+        type="button"
+        className="chip-s ic-only"
+        aria-label="Details"
+        style={{ color: "var(--warn)" }}
+        onClick={(e) => {
+          e.stopPropagation();
+          model.onOpen?.();
+        }}
+      >
+        <Ic name="wifi" size={13} />
+      </button>
     );
   else if (kind === "waiting") trail = <span className="badge tnum">{model.count ?? 1}</span>;
-  else if (kind === "suggest" && model.chip)
+  else if ((kind === "suggest" || kind === "notify") && model.chip)
     trail = (
       <button
         type="button"
@@ -133,17 +161,40 @@ export function RedesignPill({ model, onWidth }: { model: PillModel; onWidth: (w
       >
         {kind === "done" && (
           <span style={{ color: "var(--ok)", display: "inline-flex" }}>
-            <Icon name="check" size={15} />
+            <Ic name="check" size={15} />
           </span>
         )}
         {kind === "suggest" && <span className="dot" style={{ background: "#95a89a" }} />}
-        <span className={`cmp-label${kind === "suggest" ? " nt" : ""}${kind === "listening" ? " words" : ""}`}>
-          {model.label}
+        <span
+          className={`cmp-label${kind === "suggest" || kind === "notify" ? " nt" : ""}${kind === "listening" ? " words" : ""}${kind === "caption" ? " cap" : ""}`}
+        >
+          <MorphLabel text={model.label} />
           {model.dim && <span className="dim"> {model.dim}</span>}
         </span>
         {trail && <span className="cmp-trail">{trail}</span>}
       </motion.div>
     </>
+  );
+}
+
+/** The label morphs word by word: words that changed blur in, the rest stay. */
+function MorphLabel({ text }: { text: string }) {
+  const prev = useRef<string[]>([]);
+  const words = text.split(" ");
+  const old = prev.current;
+  useEffect(() => {
+    prev.current = words;
+  });
+  return (
+    <span className="words">
+      {words.map((w, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: position is the identity of a word in the label
+        <span key={`${i}-${w}`} className={old.length && old[i] !== w ? "new" : undefined}>
+          {i ? " " : ""}
+          {w}
+        </span>
+      ))}
+    </span>
   );
 }
 

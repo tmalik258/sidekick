@@ -12,13 +12,13 @@ use super::*;
 
 const MAX_SERVERS: usize = 12;
 
-fn secret_name(id: &str, var: &str) -> String {
+pub(crate) fn secret_name(id: &str, var: &str) -> String {
     format!("mcp.{id}.{var}")
 }
 
 /// The program, arguments and variables to start a server with. Values come
 /// from the keychain through `lookup`.
-fn spec_of(s: &DirectServer, lookup: impl Fn(&str) -> Option<String>) -> Spec {
+pub(crate) fn spec_of(s: &DirectServer, lookup: impl Fn(&str) -> Option<String>) -> Spec {
     Spec {
         command: s.command.clone(),
         args: s.args.clone(),
@@ -194,6 +194,40 @@ pub fn servers_allow_write(app: AppHandle, id: String, tool: String, allow: bool
             if allow {
                 s.writes_allowed.push(tool);
             }
+        }
+    })
+}
+
+/// Signs in to an https server in the browser (OAuth), and keeps the token
+/// in the keychain as its Authorization header. Waits for the browser.
+#[tauri::command]
+pub async fn servers_sign_in(app: AppHandle, id: String) -> CmdResult<()> {
+    let s = lock(&app.state::<AppState>().settings)
+        .direct_servers
+        .iter()
+        .find(|s| s.id == id)
+        .cloned()
+        .ok_or("That server is gone.")?;
+    if s.kind != "url" {
+        return Err("Only an https address signs in in the browser.".into());
+    }
+    let app2 = app.clone();
+    let flow = crate::mcp_oauth::sign_in(&s.url, move |page| {
+        let app = app2.clone();
+        async move { crate::composio::open_url(&app, &page).await }
+    });
+    let (_, access, _) = tokio::time::timeout(std::time::Duration::from_secs(300), flow)
+        .await
+        .map_err(|_| "The sign-in took too long. Try again.".to_owned())??;
+    crate::secrets::set(
+        &secret_name(&id, "Authorization"),
+        &format!("Bearer {access}"),
+    )?;
+    edit(&app, |all| {
+        if let Some(s) = all.iter_mut().find(|s| s.id == id)
+            && !s.env_names.iter().any(|n| n == "Authorization")
+        {
+            s.env_names.push("Authorization".into());
         }
     })
 }

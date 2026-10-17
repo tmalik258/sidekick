@@ -8,10 +8,8 @@ import { useEffect } from "react";
 import { type AskTab, activeCount, setTab, useAgents } from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useAltHeld } from "@/lib/hooks";
-import { PANEL_MAX_HEIGHT } from "@/lib/islandSize";
-import { REDESIGN_SETTINGS } from "@/lib/redesign-layout";
 import { setAsk, useDuskie } from "@/lib/store";
-import { useRedesign } from "@/lib/use-redesign";
+import { SHELL_SETTINGS } from "./island-layout";
 import { nextTab, type PanelTab, PanelTabs } from "./PanelTabs";
 import { SettingsPanel } from "./SettingsPanel";
 
@@ -22,7 +20,6 @@ function leave(tab: PanelTab) {
 }
 
 export function IslandSettings() {
-  const redesign = useRedesign();
   const coder = useDuskie((s) => s.settings.codes !== false);
   const working = useAgents((s) => activeCount(s.sessions));
   const alt = useAltHeld();
@@ -49,15 +46,13 @@ export function IslandSettings() {
     return () => window.removeEventListener("keydown", onKey);
   }, [coder]);
 
-  const maxH = redesign ? `${REDESIGN_SETTINGS.height}px` : PANEL_MAX_HEIGHT;
   return (
     <div
       className="ak !flex min-h-0 flex-col"
       style={{
-        maxHeight: maxH,
-        width: redesign ? REDESIGN_SETTINGS.width - 24 : undefined,
+        maxHeight: `${SHELL_SETTINGS.height}px`,
+        width: SHELL_SETTINGS.width - 24,
       }}
-      data-redesign={redesign || undefined}
     >
       <PanelTabs current="settings" onPick={leave} coder={coder} working={working} alt={alt} />
       <SettingsPanel />

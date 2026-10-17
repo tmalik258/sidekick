@@ -33,11 +33,11 @@ async function live(query, name, test) {
   const page = await browser.newPage({ viewport: { width: 900, height: 700 }, reducedMotion: "reduce" });
   try {
     const q = query ? `&${query}` : "";
-    await page.goto(`${base}/island/?onboarded&redesign&color=atelier${q}`, {
+    await page.goto(`${base}/island/?onboarded&color=atelier${q}`, {
       waitUntil: "domcontentloaded",
       timeout: 60_000,
     });
-    await page.locator("[data-redesign]").first().waitFor({ state: "attached", timeout: 60_000 });
+    await page.locator(".island-shell").first().waitFor({ state: "attached", timeout: 60_000 });
     await page.waitForTimeout(800);
     await test(page);
     await shot(page, `live-${name}`);
@@ -89,7 +89,7 @@ try {
     await page.mouse.move(450, 25);
     await page.waitForTimeout(600);
     const glass = await page.evaluate(() => {
-      const shell = document.querySelector("[data-redesign]");
+      const shell = document.querySelector(".island-shell");
       if (!shell) return -1;
       const hits = [...shell.querySelectorAll("*")].filter((el) => {
         const cls = typeof el.className === "string" ? el.className : "";
@@ -98,7 +98,7 @@ try {
       return hits.length;
     });
     writeFileSync(join(out, "glance-glass-count.txt"), String(glass));
-    if (glass > 0) failures.push(`live glance: ${glass} glass bg-white class markers under redesign`);
+    if (glass > 0) failures.push(`live glance: ${glass} glass bg-white class markers on island shell`);
     if (!(await page.locator(".rd-glance, .rd-card-head").count())) {
       failures.push("live glance: missing rd-glance / rd-card-head structure");
     }
@@ -107,8 +107,8 @@ try {
   await live("ask", "ask", async (page) => {
     await page.keyboard.press("Control+Space").catch(() => {});
     await page.waitForTimeout(500);
-    const ask = await page.locator(".ak, [data-redesign]").count();
-    assert.ok(ask > 0, "Ask / redesign shell missing");
+    const ask = await page.locator(".ak, .island-shell").count();
+    assert.ok(ask > 0, "Ask / island shell missing");
     const size = await page.evaluate(() => {
       const c = document.querySelector(".creature");
       return c ? { w: c.offsetWidth, h: c.offsetHeight } : null;

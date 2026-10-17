@@ -1,7 +1,7 @@
 // Browser-only stand-in for the Rust core, used when the UI runs outside
 // Tauri. It mimics the app loosely; the real rules live in Rust.
 
-import type { MailStatus } from "./types";
+import type { DirectServer, LibrarySkill, MailStatus, SkillTarget } from "./types";
 import {
   type ActivitySnapshot,
   type CloudId,
@@ -20,6 +20,11 @@ type Handler = (payload: unknown) => void;
 const handlers = new Map<string, Set<Handler>>();
 let settings: Settings = structuredClone(DEFAULT_SETTINGS);
 let mailStatus: MailStatus = { state: "disconnected", configured: true, lastOk: null, error: null, provider: null };
+let library: LibrarySkill[] = [];
+const mockFiles: Record<string, string> = {
+  "src/main.ts": 'console.log("hello");\nexport {};\n',
+  "README.md": "# Demo\n",
+};
 if (typeof localStorage !== "undefined") {
   try {
     Object.assign(settings, JSON.parse(localStorage.getItem("sidekick.mock.savedFolders") ?? "{}"));
@@ -33,10 +38,10 @@ const previewFlag = (name: string) => typeof location !== "undefined" && new URL
 if (typeof location !== "undefined") {
   const q = new URLSearchParams(location.search);
   if (q.has("onboarded")) settings.onboarded = true;
-  if (q.has("redesign")) settings.redesign = { enabled: true };
   settings.islandColor = (q.get("color") as Settings["islandColor"] | null) ?? settings.islandColor;
   settings.theme = (q.get("theme") as Settings["theme"] | null) ?? settings.theme;
   if (q.get("voice") === "full") settings.voice.listeningStyle = "full";
+  if (q.has("live")) settings.voice.live = true;
 }
 let mascot: MascotState = previewFlag("orphan") ? "working" : "idle";
 let suggestion: Suggestion | null = null;
@@ -114,6 +119,11 @@ const CUE_BY_STATE: Partial<Record<MascotState, Cue>> = {
   error: "boop",
 };
 
+function setServers(directServers: Settings["directServers"]) {
+  settings = { ...settings, directServers };
+  emit("settings://changed", settings);
+}
+
 function emit(event: string, payload: unknown) {
   for (const h of handlers.get(event) ?? []) h(payload);
 }
@@ -134,7 +144,13 @@ function later(ms: number, fn: () => void) {
   }, ms);
 }
 
-const cloudKeys: Record<CloudId, boolean> = { gemini: previewFlag("gemini"), groq: false, openrouter: false };
+const cloudKeys: Record<CloudId, boolean> = {
+  gemini: previewFlag("gemini"),
+  groq: false,
+  openrouter: false,
+  openai: false,
+  xai: false,
+};
 
 function saveSettings(next: Settings): Settings {
   if (settings.codeFolders.some((p) => !next.codeFolders.includes(p))) {
@@ -314,6 +330,123 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
     go("idle");
   },
   events_recent: () => [],
+  term_open: () => {
+    setTimeout(() => emit("term://data", { id: 1, data: "PS C:\\code\\app> ", done: false }), 50);
+    return 1;
+  },
+  term_write: (a) => {
+    const data = (a as { data: string }).data;
+    emit("term://data", { id: 1, data: data === "\r" ? "\r\nPS C:\\code\\app> " : data, done: false });
+  },
+  term_resize: () => undefined,
+  term_close: () => undefined,
+  editor_tree: () => [
+    { path: "src", dir: true },
+    { path: "src/main.ts", dir: false },
+    { path: "README.md", dir: false },
+  ],
+  editor_read: (a) => ({ text: mockFiles[(a as { path: string }).path] ?? "", stamp: "s1" }),
+  editor_write: (a) => {
+    const { path, text } = a as { path: string; text: string };
+    mockFiles[path] = text;
+    return "s2";
+  },
+  editor_changed: () => false,
+  editor_head: (a) => ((a as { path: string }).path === "src/main.ts" ? 'console.log("hi");\n' : ""),
+  editor_search: (a) =>
+    Object.entries(mockFiles).flatMap(([path, text]) =>
+      text
+        .split("\n")
+        .map((line, i) => ({ path, line: i + 1, text: line }))
+        .filter((h) => h.text.toLowerCase().includes((a as { query: string }).query.toLowerCase())),
+    ),
+  library_review: () =>
+    library.some((l) => l.name === "pdf")
+      ? []
+      : [
+          {
+            name: "pdf",
+            description: "Read and fill PDF forms.",
+            origin: "claude",
+            dir: "~/.claude/skills/pdf",
+            hash: "a1",
+            files: ["SKILL.md"],
+            hasScripts: false,
+          },
+        ],
+  library_list: () => library,
+  library_import: (a) => {
+    for (const name of (a as { names: string[] }).names)
+      if (name === "pdf" && !library.some((l) => l.name === name))
+        library.push({
+          name,
+          description: "Read and fill PDF forms.",
+          origin: "claude",
+          hash: "a1",
+          hasScripts: false,
+          targets: { claude: true, codex: true, local: true },
+          synced: { claude: "a1" },
+          url: null,
+          commit: null,
+        });
+    return library;
+  },
+  library_set_target: (a) => {
+    const { name, target, on } = a as { name: string; target: SkillTarget; on: boolean };
+    library = library.map((l) => (l.name === name ? { ...l, targets: { ...l.targets, [target]: on } } : l));
+    return library;
+  },
+  library_remove: (a) => {
+    library = library.filter((l) => l.name !== (a as { name: string }).name);
+    return library;
+  },
+  library_fetch_url: (a) => {
+    const url = (a as { url: string }).url;
+    const had = library.find((l) => l.name === "pdf-tools");
+    return {
+      url,
+      commit: had ? "def5678" : "abc1234",
+      skills: [
+        {
+          name: "pdf-tools",
+          description: "Fill and split PDFs.",
+          files: 2,
+          bytes: 2048,
+          hasScripts: false,
+          status: had ? "changed" : "new",
+          diff: had ? ["changed SKILL.md"] : [],
+        },
+        {
+          name: "deploy",
+          description: "Ship a build.",
+          files: 3,
+          bytes: 4096,
+          hasScripts: true,
+          status: "new",
+          diff: [],
+        },
+      ],
+    };
+  },
+  library_install_fetched: (a) => {
+    const { url, commit, names } = a as { url: string; commit: string; names: string[] };
+    for (const name of names) {
+      library = library.filter((l) => l.name !== name);
+      library.push({
+        name,
+        description: "Added from a link.",
+        origin: "url",
+        hash: commit,
+        hasScripts: name === "deploy",
+        targets: { claude: true, codex: true, local: true },
+        synced: {},
+        url,
+        commit,
+      });
+    }
+    return library;
+  },
+  library_sync: () => ({ written: library.map((l) => l.name), conflicts: [], backups: [] }),
   skills_list: () => [
     {
       id: "dev.open-in-browser",
@@ -533,6 +666,74 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
   git_write_message: () => "Tidy the util helpers",
   git_amend: () => "Amended the last commit",
   git_last_commit_pushed: () => false,
+  git_log: () => [
+    { hash: "b56ca02", subject: "Proposals card with Skip and Approve per row", author: "You", when: "2 hours ago" },
+    { hash: "509e408", subject: "Agent card on hover", author: "You", when: "3 hours ago" },
+    { hash: "a5e488a", subject: "Meeting card on hover", author: "Ayesha", when: "yesterday" },
+  ],
+  git_stashes: () => mockStashes,
+  git_stash_apply: (a) => {
+    if (a.pop) mockStashes = mockStashes.filter((x) => x.name !== a.name);
+    return a.pop ? "Popped the stash" : "Applied the stash. A copy stays in Stashes.";
+  },
+  git_stash_drop: (a) => {
+    mockStashes = mockStashes.filter((x) => x.name !== a.name);
+    return "Dropped the stash";
+  },
+  island_width: () => undefined,
+  gpu_memory: () => (new URLSearchParams(location.search).has("cpu") ? 0 : 8192),
+  limits_paused: () =>
+    new URLSearchParams(location.search).has("limited") ? [{ name: "Anthropic", pausedSecs: 42 }] : [],
+  servers_save: (a) => {
+    const given = a.server as DirectServer;
+    const server: DirectServer = {
+      ...given,
+      id: given.id || `srv${Date.now()}`,
+      confirmed: false,
+      writesAllowed: [],
+      envNames: Object.keys((a.env as Record<string, string>) ?? {}),
+    };
+    setServers([...settings.directServers.filter((s) => s.id !== server.id), server]);
+    return server.id;
+  },
+  servers_command: (a) => {
+    const s = settings.directServers.find((x) => x.id === a.id);
+    if (!s) throw new Error("That server is gone.");
+    return s.kind === "stdio" ? [s.command, ...s.args].join(" ") : s.url;
+  },
+  servers_confirm: (a) =>
+    setServers(settings.directServers.map((s) => (s.id === a.id ? { ...s, confirmed: true } : s))),
+  servers_test: (a) => {
+    const s = settings.directServers.find((x) => x.id === a.id);
+    if (!s?.confirmed) throw new Error("Confirm the command first.");
+    return [
+      { name: "list_issues", description: "List issues in a repo", writes: false, allowed: false },
+      {
+        name: "create_issue",
+        description: "Open a new issue",
+        writes: true,
+        allowed: s.writesAllowed.includes("create_issue"),
+      },
+    ];
+  },
+  servers_allow_write: (a) =>
+    setServers(
+      settings.directServers.map((s) =>
+        s.id === a.id
+          ? {
+              ...s,
+              writesAllowed: [...s.writesAllowed.filter((t) => t !== a.tool), ...(a.allow ? [String(a.tool)] : [])],
+            }
+          : s,
+      ),
+    ),
+  servers_sign_in: (a) =>
+    setServers(
+      settings.directServers.map((s) =>
+        s.id === a.id ? { ...s, envNames: [...s.envNames.filter((n) => n !== "Authorization"), "Authorization"] } : s,
+      ),
+    ),
+  servers_remove: (a) => setServers(settings.directServers.filter((s) => s.id !== a.id)),
   git_message_diff: () => ({ text: "diff --git a/src/app.ts b/src/app.ts", covered: 1, total: 1 }),
   mail_status: () => mailStatus,
   mail_connect: () => {
@@ -694,7 +895,17 @@ function mockChat(a: Record<string, unknown>) {
       later(250 * (n + 1), () => emit("ai://tool", { id, name }));
     }
   }
-  if (/\bzip\b/i.test(last)) {
+  if (/\btidy\b/i.test(last)) {
+    // Separate actions, each needing its own yes.
+    const asks = [
+      "Archive 14 newsletters in Gmail",
+      "Move 3 invoices to Documents",
+      "Reply to Sara: timeline is Friday",
+      "Delete 2 old build folders (1.2 GB)",
+    ];
+    for (const [n, label] of asks.entries())
+      later(1000 + n * 60, () => emit("ai://proposal", { chatId: id, id: `p-${id}-${n}`, label, undoable: true }));
+  } else if (/\bzip\b/i.test(last)) {
     // A task with several actions comes back as a plan.
     const plan = [
       "Create Downloads\\Invoices October",
@@ -1150,6 +1361,11 @@ commands.setup_apply = () => {
 };
 commands.claude_add_hooks = () => "C:/Users/you/.claude/settings.json.sidekick-backup-20261002-101500";
 commands.claude_add_mcp = () => undefined;
+// Accepts any command with a name; the real check also looks for it on PATH.
+commands.mcp_validate_stdio = (a) => {
+  const spec = a.spec as { command?: string } | undefined;
+  if (!spec?.command?.trim()) throw new Error("Enter a command to run.");
+};
 const browsersSeen = new Set<string>(["chrome"]);
 commands.browsers_status = () => [
   { id: "chrome", name: "Chrome", connected: browsersSeen.has("chrome") },
@@ -1282,13 +1498,28 @@ commands.file_open = (a) => {
 };
 commands.project_launch = () => "Opened sidekick in VS Code and a terminal";
 commands.search_status = () => ({ items: 1240, embedded: 1240, embedError: null });
+let mockStashes = [{ name: "stash@{0}", message: "On main: island colours", when: "20 minutes ago" }];
+
+const soon = () => {
+  const d = new Date(Date.now() + 5 * 60_000);
+  const hm = (x: Date) => `${String(x.getHours()).padStart(2, "0")}:${String(x.getMinutes()).padStart(2, "0")}`;
+  return {
+    title: "Design review",
+    start: hm(d),
+    end: hm(new Date(d.getTime() + 45 * 60_000)),
+    joinUrl: "https://meet.google.com/abc-defg-hij",
+    notes: { title: "Design review notes", source: "page", reference: "https://docs.example.com/review" },
+  };
+};
 commands.calendar_today = () => ({
-  meetings: connected.has("googlecalendar")
-    ? [
-        { title: "Standup", start: "10:00", end: "10:15", joinUrl: "https://meet.google.com/abc-defg-hij" },
-        { title: "Design review", start: "15:00", end: "15:45", joinUrl: null },
-      ]
-    : [],
+  meetings: previewFlag("meeting")
+    ? [soon()]
+    : connected.has("googlecalendar")
+      ? [
+          { title: "Standup", start: "10:00", end: "10:15", joinUrl: "https://meet.google.com/abc-defg-hij" },
+          { title: "Design review", start: "15:00", end: "15:45", joinUrl: null },
+        ]
+      : [],
   error: null,
   sources: connected.has("googlecalendar") ? ["Google Calendar"] : [],
 });
@@ -1317,8 +1548,8 @@ commands.voice_stop = () => {
 };
 // The welcome line as Rust would report it while it is spoken.
 const WELCOME_LINES = [
-  "Hey — I'm Duskie. I live up here with you on this PC. I notice things, I help when you want, and I stay put: nothing leaves this machine, and I wait for your okay.",
-  "First, how I think. If you want everything to stay on this PC, you can run a local model — only if your machine is up for it. Or use Claude Code or Codex with the plan you already have. You can use any of them, or all three, and set the order I try.",
+  "Hey, I'm Duskie. I live up here with you on this PC. I notice things, I help when you want, and I stay put: nothing leaves this machine, and I wait for your okay.",
+  "First, how I think. If you want everything to stay on this PC, you can run a local model, only if your machine is up for it. Or use Claude Code or Codex with the plan you already have. You can use any of them, or all three, and set the order I try.",
   "Now, your world. Connect your calendar, your mail and the tools you use, and I'll start noticing what matters.",
   "A few small helpers make me sharper. Install the ones you want, and I'll wait while they finish.",
   "Welcome aboard. Say Hey Duskie whenever you need me. Do Not Disturb is on so Windows stays quiet and alerts show once up here. Launch on login is already on, so I'm here when you sit down.",
@@ -1508,7 +1739,7 @@ if (typeof window !== "undefined") {
     __mockEmit: emit,
     __mockGo: go,
     __mockCall: (name: string, args: Record<string, unknown> = {}) => commands[name]?.(args),
-    __mockAgents: async () => {
+    __mockAgents: async (calm = false) => {
       const { useAgents } = await import("./agents");
       const now = Date.now();
       const mk = (
@@ -1549,11 +1780,36 @@ if (typeof window !== "undefined") {
           mk("a3", "Claude Code", "falconxoft-portal", "Add CSV export to invoices", "idle", "edit", 14, {
             changes: 5,
           }),
-          mk("a4", "Codex", "api-gateway", "Fix missing rate limit headers", "waiting", "ask", 3),
-          mk("a5", "Claude Code", "duskie", "Voice settings: rate slider", "working", "edit", 1),
+          mk("a4", "Codex", "api-gateway", "Fix missing rate limit headers", calm ? "idle" : "waiting", "ask", 3),
+          mk("a5", "Claude Code", "duskie", "Writing tests for the wash controller", "working", "edit", 1, {
+            branch: "agent/claude-voice-settings",
+            plan: ["Read the controller", "List the cases", "Write the tests", "Run them", "Open a review"].map(
+              (text, i) => ({ text, status: i < 2 ? "completed" : i === 2 ? "in_progress" : "pending" }),
+            ),
+            entries: [
+              {
+                kind: "step",
+                step: { id: "s1", tool: "edit", label: "Edited lib/wash.ts", detail: "+42 -6", state: "done" },
+              },
+              {
+                kind: "step",
+                step: {
+                  id: "s2",
+                  tool: "bash",
+                  label: "Ran pnpm test --filter desktop",
+                  detail: "38 passed",
+                  state: "done",
+                },
+              },
+            ],
+          }),
         ] as never,
         current: null,
       });
+    },
+    __mockStore: async (patch: Record<string, unknown>) => {
+      const { useDuskie } = await import("./store");
+      useDuskie.setState(patch as never);
     },
     __mockWork: async (label: string) => {
       const { beginActivity } = await import("./activities");

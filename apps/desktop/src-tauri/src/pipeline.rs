@@ -130,7 +130,7 @@ async fn handle(app: &AppHandle, mut event: Event) {
         island::follow_fullscreen(app, &event.payload);
         let exe = event.payload["exe"].as_str().unwrap_or_default();
         let app_name = event.payload["app"].as_str().unwrap_or_default();
-        // Lock / sign-in UI: pause time and skip "where was I" — IdleSensor owns away.
+        // Lock / sign-in UI: pause time and skip "where was I", IdleSensor owns away.
         if duskie_sensors::is_lock_ui(exe) || duskie_sensors::is_lock_ui(app_name) {
             timetrack::on_away(app);
             return;
@@ -168,10 +168,15 @@ async fn handle(app: &AppHandle, mut event: Event) {
 fn propose(app: &AppHandle, event: &Event) {
     // "Do you work with code?" No: no repo or agent cards.
     let coder = lock(&app.state::<AppState>().settings).codes != Some(false);
-    if let Some(proposal) = evaluate(app, event)
+    if let Some(mut proposal) = evaluate(app, event)
         && !crate::learn::is_muted(app, &proposal.skill_id)
         && (coder || !proposal.skill_id.starts_with("dev."))
     {
+        // The attention profile decided how a notification shows.
+        if event.kind == crate::inbox::NOW_EVENT {
+            proposal.compact = event.payload["compact"].as_bool().unwrap_or(false);
+            proposal.silent = event.payload["sound"].as_bool() == Some(false);
+        }
         // Ranking may ask a model, so it runs beside the event loop.
         let app = app.clone();
         tauri::async_runtime::spawn(async move {

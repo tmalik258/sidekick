@@ -8,7 +8,9 @@ import { type CSSProperties, type ReactNode, useEffect, useLayoutEffect, useRef,
 import { createPortal } from "react-dom";
 import { type Session, seenUsage, seenWindows } from "@/lib/agents";
 import { CLAUDE_MODELS, CODEX_MODELS, FAST_CLAUDE_MODEL } from "@/lib/ai-models";
+import { api } from "@/lib/bridge";
 import { setOverlayHit, useDuskie } from "@/lib/store";
+import type { LimitState } from "@/lib/types";
 import { Select, type SelectOption } from "../settings/ui";
 import { AGENT_IMAGES, AGENT_MARKS } from "./AgentsTab";
 
@@ -196,12 +198,31 @@ function UsageBody({
   onRefresh?: () => void;
 }) {
   const [, tick] = useState(0);
+  const [paused, setPaused] = useState<LimitState[]>([]);
   useEffect(() => {
-    const timer = setInterval(() => tick((n) => n + 1), 1000);
+    const read = () => void api.limitsPaused().then(setPaused, () => {});
+    read();
+    const timer = setInterval(() => {
+      tick((n) => n + 1);
+      read();
+    }, 1000);
     return () => clearInterval(timer);
   }, []);
   return (
     <>
+      {paused.length > 0 && (
+        <>
+          <div className="ak-pop-h">
+            <span>Paused after errors</span>
+          </div>
+          {paused.map((p) => (
+            <p key={p.name} className="ak-note">
+              {p.name} is tried again in {p.pausedSecs} s
+            </p>
+          ))}
+          <div className="ak-pop-sep" />
+        </>
+      )}
       {!usage && <p className="ak-note">Context capacity: Not reported</p>}
       {usage && ctxPct !== null && (
         <>

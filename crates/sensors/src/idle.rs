@@ -10,7 +10,7 @@ use crate::{Sensor, SensorGate};
 /// user is away instead of popping up to an empty room.
 ///
 /// The Windows lock screen still sees mouse movement, so "back" only fires
-/// after the session is unlocked — not while LockApp / LogonUI is up.
+/// after the session is unlocked, not while LockApp / LogonUI is up.
 pub struct IdleSensor {
     pub away_after: Duration,
 }
@@ -124,7 +124,7 @@ pub fn idle_time() -> Option<Duration> {
 pub fn session_locked() -> bool {
     use windows_sys::Win32::Foundation::FALSE;
     use windows_sys::Win32::System::StationsAndDesktops::{CloseDesktop, OpenInputDesktop};
-    // DESKTOP_READOBJECTS — enough to probe; fails while the workstation is locked.
+    // DESKTOP_READOBJECTS, enough to probe; fails while the workstation is locked.
     const DESKTOP_READOBJECTS: u32 = 0x0001;
     // SAFETY: no handle retained on failure; CloseDesktop on success.
     let desk = unsafe { OpenInputDesktop(0, FALSE, DESKTOP_READOBJECTS) };

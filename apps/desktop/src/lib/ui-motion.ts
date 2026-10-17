@@ -16,7 +16,7 @@ export const washReduced = {
   ease: EASE_OUT_STRONG,
 } as const;
 
-/** Stagger for Ask list enter — under 250ms total for a short list. */
+/** Stagger for Ask list enter, under 250ms total for a short list. */
 export const staggerParent = {
   hidden: {},
   show: {

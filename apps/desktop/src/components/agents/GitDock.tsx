@@ -1,15 +1,16 @@
 "use client";
 
-// The Git dock: changed files with checkbox staging, one commit message
-// with a sparkle button that writes it from the staged diff, Commit, and
-// Amend. It shows exactly what will be committed.
+// The Git dock: Changes (checkbox staging, one commit message with a
+// sparkle button that writes it from the staged diff, Commit and Amend),
+// History, the branch's pull request, and Stashes. Esc closes it.
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/bridge";
 import { baseName, countChanges, groupByFolder } from "@/lib/changes";
-import type { GitFile } from "@/lib/types";
-import { Icon } from "../Icon";
+import type { CommitRow, GitFile, RepoRow, StashRow } from "@/lib/types";
+import { Ic, Icon } from "../Icon";
 import { Tip } from "../Tip";
+import { Editor } from "./Editor";
 
 const KIND: Record<string, string> = {
   M: "changed",
@@ -20,7 +21,251 @@ const KIND: Record<string, string> = {
   U: "conflict",
 };
 
-export function GitDock({ path, onClose }: { path: string; onClose: () => void }) {
+type GitTab = "changes" | "history" | "pr" | "stashes";
+
+export function GitDock({ path, repo, onClose }: { path: string; repo?: RepoRow | null; onClose: () => void }) {
+  const [tab, setTab] = useState<GitTab>("changes");
+  const [stashes, setStashes] = useState<StashRow[]>([]);
+  const [changed, setChanged] = useState(0);
+  const [full, setFull] = useState(false);
+  const [at, setAt] = useState<{ path: string; atChange?: boolean } | null>(null);
+  const loadStashes = useCallback(
+    () =>
+      void api
+        .gitStashes(path)
+        .then(setStashes)
+        .catch(() => {}),
+    [path],
+  );
+  useEffect(loadStashes, [loadStashes]);
+
+  // Esc closes the dock (the editor handles its own Esc).
+  useEffect(() => {
+    if (full) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, full]);
+
+  const pr = repo?.prs.find((p) => p.branch === repo.branch) ?? null;
+  const tabs: [GitTab, string, number | null][] = [
+    ["changes", "Changes", changed],
+    ["history", "History", null],
+    ["pr", "Pull request", null],
+    ["stashes", "Stashes", stashes.length],
+  ];
+  if (full)
+    return (
+      <Editor
+        root={path}
+        initial={at}
+        onClose={() => {
+          setFull(false);
+          setAt(null);
+        }}
+      />
+    );
+  return (
+    <section className="gd flex min-h-0 flex-1 flex-col" aria-label="Git">
+      <div className="gd-bar">
+        <span className="gd-pick">
+          <Ic name="folder" size={14} />
+          <span className="truncate">{repo?.name ?? baseName(path)}</span>
+        </span>
+        {repo?.branch && (
+          <span className="gd-pick">
+            <Ic name="branch" size={14} />
+            <span className="truncate mono">{repo.branch}</span>
+          </span>
+        )}
+        <button
+          type="button"
+          className="rd-btn ghost chip-s ml-auto"
+          onClick={() => {
+            setAt(null);
+            setFull(true);
+          }}
+        >
+          Full screen
+        </button>
+        <button type="button" className="rd-btn ghost chip-s ic-only" aria-label="Close Git" onClick={onClose}>
+          <Ic name="x" size={12} />
+        </button>
+      </div>
+      <div className="gd-tabs" role="tablist" aria-label="Git views">
+        {tabs.map(([k, label, n]) => (
+          <button
+            key={k}
+            type="button"
+            role="tab"
+            className="gd-tab"
+            aria-selected={tab === k}
+            onClick={() => setTab(k)}
+          >
+            {label}
+            {n !== null && n > 0 && <span className="n">{n}</span>}
+          </button>
+        ))}
+      </div>
+      <div className="gd-body min-h-0 flex-1">
+        {tab === "changes" && (
+          <Changes
+            path={path}
+            onCount={setChanged}
+            onOpen={(file) => {
+              setAt({ path: file, atChange: true });
+              setFull(true);
+            }}
+          />
+        )}
+        {tab === "history" && <History path={path} />}
+        {tab === "pr" && <PullRequest pr={pr} branch={repo?.branch ?? null} />}
+        {tab === "stashes" && <Stashes path={path} stashes={stashes} reload={loadStashes} />}
+      </div>
+    </section>
+  );
+}
+
+function History({ path }: { path: string }) {
+  const [rows, setRows] = useState<CommitRow[] | null>(null);
+  useEffect(
+    () =>
+      void api
+        .gitLog(path)
+        .then(setRows)
+        .catch(() => setRows([])),
+    [path],
+  );
+  if (!rows) return <p className="gd-empty shimmer-text">Reading the history</p>;
+  if (rows.length === 0) return <p className="gd-empty">No commits yet.</p>;
+  return (
+    <div className="flex flex-col">
+      {rows.map((c) => (
+        <div key={c.hash} className="gd-row">
+          <span className="mono gd-hash">{c.hash}</span>
+          <span className="min-w-0 flex-1 truncate">{c.subject}</span>
+          <span className="gd-meta">
+            {c.author}, {c.when}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const CI_TEXT = { pass: "Checks pass", fail: "Checks failing", pending: "Checks running", none: "No checks" } as const;
+
+function PullRequest({ pr, branch }: { pr: RepoRow["prs"][number] | null; branch: string | null }) {
+  if (!pr) {
+    return <p className="gd-empty">{branch ? `No open pull request for ${branch}.` : "No open pull request."}</p>;
+  }
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div>
+        <p className="gd-meta mono">#{pr.number}</p>
+        <p className="font-medium">{pr.title}</p>
+      </div>
+      <div className="gd-row">
+        <span
+          className="rd-dot"
+          style={{
+            background:
+              pr.ci === "pass"
+                ? "var(--ok)"
+                : pr.ci === "fail"
+                  ? "var(--err)"
+                  : pr.ci === "pending"
+                    ? "var(--warn)"
+                    : "var(--ink-3)",
+          }}
+        />
+        <span className="flex-1">{CI_TEXT[pr.ci]}</span>
+        {pr.failing && (
+          <button type="button" className="rd-btn ghost" onClick={() => void api.aiOpenLink(pr.failing?.[1] ?? pr.url)}>
+            {pr.failing[0]}
+          </button>
+        )}
+      </div>
+      {pr.reviewRequested && <p className="gd-meta">Your review is requested.</p>}
+      <div className="flex gap-1.5">
+        <button type="button" className="rd-btn primary" onClick={() => void api.aiOpenLink(pr.url)}>
+          Open on GitHub
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Stashes({ path, stashes, reload }: { path: string; stashes: StashRow[]; reload: () => void }) {
+  const [note, setNote] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<string | null>(null);
+  const run = (work: Promise<string>) =>
+    void work
+      .then(setNote)
+      .catch((e) => setNote(String(e)))
+      .finally(reload);
+  if (stashes.length === 0) return <p className="gd-empty">No stashes.</p>;
+  return (
+    <div className="flex flex-col gap-1">
+      {stashes.map((s) => (
+        <div key={s.name} className="gd-row">
+          <Ic name="box" size={14} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate">{s.message}</span>
+            <span className="gd-meta mono">
+              {s.name}, {s.when}
+            </span>
+          </span>
+          <button type="button" className="rd-btn primary" onClick={() => run(api.gitStashApply(path, s.name, true))}>
+            Pop
+          </button>
+          <button type="button" className="rd-btn ghost" onClick={() => run(api.gitStashApply(path, s.name, false))}>
+            Apply
+          </button>
+          {confirm === s.name ? (
+            <button
+              type="button"
+              className="rd-btn ghost"
+              style={{ color: "var(--err)" }}
+              onClick={() => {
+                setConfirm(null);
+                run(api.gitStashDrop(path, s.name));
+              }}
+            >
+              Drop for good
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="rd-btn ghost chip-s ic-only"
+              aria-label={`Drop ${s.name}`}
+              onClick={() => setConfirm(s.name)}
+            >
+              <Ic name="trash" size={12} />
+            </button>
+          )}
+        </div>
+      ))}
+      {note && (
+        <p className="gd-meta" role="status">
+          {note}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Changes({
+  path,
+  onCount,
+  onOpen,
+}: {
+  path: string;
+  onCount: (n: number) => void;
+  onOpen: (file: string) => void;
+}) {
   const [files, setFiles] = useState<GitFile[]>([]);
   const [message, setMessage] = useState("");
   const [note, setNote] = useState<string | null>(null);
@@ -29,15 +274,7 @@ export function GitDock({ path, onClose }: { path: string; onClose: () => void }
 
   const refresh = useCallback(() => void api.gitStatus(path).then(setFiles), [path]);
   useEffect(refresh, [refresh]);
-
-  // Esc closes the dock.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEffect(() => onCount(files.length), [files, onCount]);
 
   const counts = countChanges(files);
   const act = async (work: () => Promise<string>) => {
@@ -81,7 +318,7 @@ export function GitDock({ path, onClose }: { path: string; onClose: () => void }
       <div className="flex items-center justify-between">
         <span className="font-medium">
           Changes{" "}
-          <span className="text-white/55">
+          <span className="text-white/65">
             {counts.staged} of {counts.total} staged
           </span>
         </span>
@@ -96,11 +333,11 @@ export function GitDock({ path, onClose }: { path: string; onClose: () => void }
       </div>
 
       {files.length === 0 ? (
-        <p className="text-white/55">Nothing has changed.</p>
+        <p className="text-white/65">Nothing has changed.</p>
       ) : (
         groupByFolder(files).map((g) => (
           <div key={g.folder}>
-            <p className="mono text-[11px] text-white/45">{g.folder}</p>
+            <p className="mono text-[11px] text-white/65">{g.folder}</p>
             {g.files.map((f) => (
               <label key={f.path} className="flex cursor-pointer items-center gap-2 py-0.5">
                 <input
@@ -111,7 +348,20 @@ export function GitDock({ path, onClose }: { path: string; onClose: () => void }
                   aria-label={`Stage ${f.path}`}
                 />
                 <span className="min-w-0 flex-1 truncate">{baseName(f.path)}</span>
-                <span className="text-[11px] text-white/45">{KIND[f.kind] ?? f.kind}</span>
+                <span className="text-[11px] text-white/65">{KIND[f.kind] ?? f.kind}</span>
+                {f.kind !== "D" && (
+                  <button
+                    type="button"
+                    className="rd-btn ghost chip-s"
+                    aria-label={`Open ${f.path} at the change`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      onOpen(f.path);
+                    }}
+                  >
+                    Open
+                  </button>
+                )}
               </label>
             ))}
           </div>
@@ -135,7 +385,7 @@ export function GitDock({ path, onClose }: { path: string; onClose: () => void }
             onClick={() => void write()}
             className="absolute top-1.5 right-1.5 grid size-6 place-items-center rounded-md hover:bg-white/10 disabled:opacity-40"
           >
-            <Icon name="sparkle" size={14} />
+            <Ic name="spark" size={14} />
           </button>
         </Tip>
       </div>

@@ -7,7 +7,7 @@ import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { setAskModel, setOverlayHit, useDuskie } from "@/lib/store";
 import { PROVIDER_LABELS, type ProviderStatus } from "@/lib/types";
-import { Icon } from "../Icon";
+import { Ic } from "../Icon";
 import { Tip } from "../Tip";
 import { KeyHint } from "./parts";
 
@@ -122,7 +122,7 @@ export function ModelPicker({
         >
           <span className="ak-dot" aria-hidden="true" />
           {picked ? (SHORT[shown.id] ?? shown.id) : "Auto"}
-          <Icon name="chevron" size={10} />
+          <Ic name="chev" size={10} />
         </button>
       </Tip>
       {!disabled && <KeyHint show={keys}>Alt M</KeyHint>}
@@ -165,7 +165,7 @@ export function ModelPicker({
                   >
                     <span className="font-medium">{it.title}</span>
                     <span className="row-span-2 text-(--accent)" aria-hidden="true">
-                      {on && <Icon name="check" size={14} />}
+                      {on && <Ic name="check" size={14} />}
                     </span>
                     {it.note && <small>{it.note}</small>}
                   </button>

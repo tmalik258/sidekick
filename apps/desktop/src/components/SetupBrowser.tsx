@@ -13,7 +13,7 @@ import type { BrowserStatus } from "@/lib/types";
 /** The welcome's browser step (and anywhere the checklist expands it inline). */
 export function BrowserInstallPanel({ onDone }: { onDone?: () => void }) {
   const { data: browsers, refresh } = useCached<BrowserStatus[]>("browsers", api.browsersStatus);
-  // Already-paired ids when the panel first got data — only onDone for a new pair.
+  // Already-paired ids when the panel first got data, only onDone for a new pair.
   const known = useRef<Set<string> | null>(null);
 
   useEffect(() => {
@@ -33,7 +33,7 @@ export function BrowserInstallPanel({ onDone }: { onDone?: () => void }) {
     for (const b of browsers) {
       if (b.connected) known.current.add(b.id);
     }
-    // Once when a browser newly pairs — not on a timer (that pulsed Checking…).
+    // Once when a browser newly pairs, not on a timer (that pulsed Checking…).
     if (fresh) onDone?.();
   }, [browsers, onDone]);
 

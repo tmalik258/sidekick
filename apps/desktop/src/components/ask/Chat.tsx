@@ -11,7 +11,15 @@ import { Markdown } from "@/lib/markdown";
 import { extractChoices, splitOptions } from "@/lib/options";
 import { useReveal } from "@/lib/reveal";
 import { askAgain, askWhenOnline, retryLast, setAsk, setAskModel, thinkHarder, useDuskie } from "@/lib/store";
-import { type Agents, type AiSettings, PROVIDER_LABELS, type ProviderStatus, type Turn } from "@/lib/types";
+import {
+  type Agents,
+  type AiSettings,
+  CLOUD_IDS,
+  type CloudId,
+  PROVIDER_LABELS,
+  type ProviderStatus,
+  type Turn,
+} from "@/lib/types";
 import { Tip } from "../Tip";
 import { AnswerOptions, Proposals, pendingCount } from "./Proposals";
 import { FailureCard } from "./States";
@@ -79,6 +87,9 @@ export function Chat({ turns }: { turns: Turn[] }) {
             ) : t.streaming && steps.length === 0 ? (
               <LiveStep step={t.tool ?? null} since={t.startedAt} />
             ) : null}
+            {!t.streaming && t.content && t.sources && t.sources.length > 0 && (
+              <span className="ak-src">via {t.sources.join(" and ")}</span>
+            )}
             {blank(t) && t.provider && (
               <p className="ak-err" role="alert">
                 No answer came back. Ask again, or try another model.
@@ -146,6 +157,8 @@ const TAG_NAMES: Record<string, string> = {
   gemini: "Gemini",
   groq: "Groq",
   openrouter: "OpenRouter",
+  openai: "OpenAI",
+  xai: "Grok",
   instant: "Done without AI",
 };
 
@@ -160,8 +173,8 @@ function modelOf(ai: AiSettings, provider: string): string {
           ? ai.codex.model
           : provider === "anthropic"
             ? ai.anthropic.model
-            : provider === "gemini" || provider === "groq" || provider === "openrouter"
-              ? ai[provider].model
+            : (CLOUD_IDS as string[]).includes(provider)
+              ? ai[provider as CloudId].model
               : "";
   return m.replace(/^claude-/, "").replace(/-\d{8}$/, "");
 }

@@ -56,6 +56,10 @@ pub struct Proposal {
     /// The skill's priority (higher is more urgent); low ones can wait
     /// quietly and are not read aloud.
     pub priority: i32,
+    /// Shown as a small pill that opens on hover, not a full card.
+    pub compact: bool,
+    /// No sound when it shows.
+    pub silent: bool,
 }
 
 pub struct Engine {
@@ -160,6 +164,8 @@ impl Engine {
                         trust: env.trust_override(&skill.id).unwrap_or(skill.trust),
                         remember: skill.remember.as_ref().map(|r| render(r, &vars)),
                         priority: skill.priority,
+                        compact: false,
+                        silent: false,
                     });
                 }
                 Some(p) => {

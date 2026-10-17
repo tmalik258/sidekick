@@ -7,7 +7,7 @@ const BARE_NUM = /^\s*\d+[.)]\s*$/;
 const INLINE_NUM = /^\s*\d+[.)]\s+(.+?)\s*$/;
 const READY = /\bplan\s+is\s+ready\b/i;
 const SECTION_STOP = /^(assumptions?|notes?|the plan is ready)\b/i;
-const TITLE = /^\s*(?:#{1,3}\s*)?(?:plan\s*[:—-]\s*)(.+?)\s*$/i;
+const TITLE = /^\s*(?:#{1,3}\s*)?(?:plan\s*[:\u2014-]\s*)(.+?)\s*$/i;
 
 /** Full document parse: title, steps with bodies, assumptions. */
 export function parsePlanDocument(text: string): PlanDoc | null {
@@ -48,7 +48,7 @@ function findAssumptions(text: string): string {
   for (let i = 0; i < lines.length; i++) {
     const line = (lines[i] ?? "").trim();
     if (!/^assumptions?\b/i.test(line)) continue;
-    const rest = line.replace(/^assumptions?\s*[:.—-]?\s*/i, "").trim();
+    const rest = line.replace(/^assumptions?\s*[:.\u2014-]?\s*/i, "").trim();
     const parts: string[] = rest ? [rest] : [];
     for (let j = i + 1; j < lines.length; j++) {
       const next = (lines[j] ?? "").trim();
@@ -145,7 +145,7 @@ function stepTitle(raw: string): string {
   return t.length > 120 ? `${t.slice(0, 117)}…` : t;
 }
 
-/** Remainder after the title — the full step write-up. */
+/** Remainder after the title, the full step write-up. */
 function stepDetail(raw: string, title: string): string | undefined {
   let rest = raw.trim();
   if (rest.toLowerCase().startsWith(title.toLowerCase())) {
@@ -157,7 +157,7 @@ function stepDetail(raw: string, title: string): string | undefined {
   return rest.length > 0 ? rest : undefined;
 }
 
-/** Drop clarifying questions and OPTION leftovers — those are not plan steps. */
+/** Drop clarifying questions and OPTION leftovers: those are not plan steps. */
 function isPlanStep(raw: string): boolean {
   if (raw.length < 3) return false;
   if (/^option:/i.test(raw)) return false;

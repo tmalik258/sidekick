@@ -391,6 +391,8 @@ Never invent data you did not read with a tool.";
 struct ToolNote<'a> {
     id: &'a str,
     name: &'a str,
+    /// Where an app tool answered from; none for Duskie's own tools.
+    source: Option<&'static str>,
     /// What the step does, in words ("Searching the web for flights").
     label: String,
 }
@@ -414,6 +416,13 @@ impl ToolRunner for Runner {
             ToolNote {
                 id: &self.chat_id,
                 name,
+                source: if crate::ask_tools::is_own(name) || name == HANDOFF_TOOL {
+                    None
+                } else if name.contains("__") {
+                    Some(duskie_core::connectors::Source::Direct.label())
+                } else {
+                    Some(duskie_core::connectors::Source::Composio.label())
+                },
                 label: crate::ask_tools::step_label(name, arguments),
             },
         );
@@ -438,6 +447,10 @@ impl ToolRunner for Runner {
         if plumbing(name) {
             return "Error: app connections are managed in Duskie's Settings > Apps, not here."
                 .into();
+        }
+        if let Some(out) = crate::direct::call(name, arguments).await {
+            log_call(&self.app, name, !out.starts_with("Error:"), &out);
+            return out;
         }
         if let Some(what) = blocked(name, arguments) {
             // A change in an app: prepared as a button, run on the user's tap.
@@ -583,6 +596,24 @@ impl AiProvider for LocalWithTools {
             Some(server) => connect(server, cancel).await?,
             None => (None, Vec::new()),
         };
+        // Direct connections first; a Composio twin of the same app is not offered.
+        let direct = if self.offline {
+            Vec::new()
+        } else {
+            crate::direct::tools(&self.app).await
+        };
+        let direct_apps = crate::direct::apps(&direct);
+        if !direct_apps.is_empty() {
+            crate::direct::tell_duplicates(&self.app, &direct_apps, &tools);
+        }
+        let tools: Vec<McpTool> = crate::direct::as_mcp(&direct)
+            .into_iter()
+            .chain(
+                tools
+                    .into_iter()
+                    .filter(|t| !crate::direct::shadowed(&t.name, &direct_apps)),
+            )
+            .collect();
         let question = req
             .messages
             .iter()
@@ -639,7 +670,7 @@ Be concise."
         // Small talk and writing get no tools at all.
         let chatty = defs.is_empty();
         if !chatty {
-            if client.is_some() {
+            if client.is_some() || !direct.is_empty() {
                 defs.extend(pick_tools(&tools, question));
             } else {
                 defs.push(handoff_tool());
@@ -1029,7 +1060,7 @@ pub async fn apps(c: &ComposioSettings) -> Result<Vec<api::App>, String> {
             let listed = api::connected_from_list(&v);
             let inactive = api::inactive_from_list(&v);
             // Union description + active list. Keep what we already knew unless
-            // this list explicitly marks it inactive — a fresh connect can
+            // this list explicitly marks it inactive, a fresh connect can
             // disappear from the next poll for a second or two.
             connected.extend(listed);
             for s in previous {

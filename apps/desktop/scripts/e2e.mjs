@@ -244,8 +244,23 @@ try {
       5000,
     );
     const missing = [];
-    for (const label of ["Home", "Appearance", "AI", "Apps", "Memory", "Shortcuts", "Storage", "Privacy", "Skills"]) {
-      if (!(await clickText(label))) {
+    // The sidebar (new look) and the tab row (old look) name a few sections differently.
+    const tabs = [
+      ["General", "Home"],
+      ["Appearance"],
+      ["AI models", "AI"],
+      ["Apps"],
+      ["Memory"],
+      ["Shortcuts"],
+      ["Storage"],
+      ["Privacy"],
+      ["Skills and automations", "Skills"],
+    ];
+    for (const names of tabs) {
+      const label = names[0];
+      let found = false;
+      for (const n of names) if (!found) found = await clickText(n);
+      if (!found) {
         missing.push(label);
         continue;
       }
@@ -256,7 +271,7 @@ try {
   });
 
   await test("AI settings say why a model cannot be used", async () => {
-    await clickText("AI");
+    if (!(await clickText("AI models"))) await clickText("AI");
     await waitFor(
       "a reason instead of a switch",
       () => /No key|Not installed|Not running/.test(document.body.textContent),

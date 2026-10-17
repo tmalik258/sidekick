@@ -25,7 +25,7 @@
 
 ## What it is
 
-Duskie lives in a small island at the top of your screen, with a friendly orb for a face. It watches for moments where it can help (a download finishing, a dev server starting, an error on the clipboard, a meeting about to begin) and offers the next useful action. Safe actions can run on their own; everything else waits for one click, and anything destructive always asks.
+Duskie lives in a small island at the top of your screen, with Duskie, a small furry creature, for a face. It watches for moments where it can help (a download finishing, a dev server starting, an error on the clipboard, a meeting about to begin) and offers the next useful action. Safe actions can run on their own; everything else waits for one click, and anything destructive always asks.
 
 - **Local-first.** Events, history and settings stay on your PC. AI and online services are only used for what you turn on.
 - **Works without AI.** Rules handle the everyday moments. Add Claude Code, the Anthropic API, Codex or a local model through Ollama for answers, drafts and multi-step tasks.
@@ -87,6 +87,11 @@ Updates come to the island on their own (Settings > Home > Tell me about new ver
 - **Morning brief**: the first time you sit down each day, one card with yesterday's time, repos with unsaved work and PRs waiting on you (if the GitHub CLI `gh` is signed in). Plan my day hands it to your AI.
 - **End of day**: a time summary to paste into your standup, and repos with unsaved work.
 - **Learns**: three Not nows in a row quiet a skill for a while; **Always do this** on a suggestion makes it automatic (see Settings > Skills > Automations). Low-priority suggestions are saved for later instead of popping up; a small number on the island shows how many.
+- **Mail**: connect Gmail (or any IMAP server under Advanced) and mail that needs you shows up in the island, quiet by default and louder only for what matters. Settings > Notifications shows what Duskie has learned about your senders.
+- **Git dock** (Ctrl G in Ask): stage with checkboxes, write the commit message from the staged changes, see History, the pull request and Stashes side by side with the island.
+- **Editor**: Full screen in the Git dock opens the project in an editor with a file tree, change markers, Ctrl P to open a file, Ctrl Shift F to search and Ctrl ` for a terminal. Open on a changed file jumps to the change. If an agent edits a file you have open, Duskie asks before reloading.
+- **Skills library** (Settings > Skills > Library): skills from Claude Code and Codex in one place, written back to each tool you switch on, and readable by the local model. Add one from a GitHub link; it is pinned to a commit. Nothing in a skill runs when you add or sync it.
+- **Apps over MCP**: add a server you run on this PC, or sign in to one online, in Settings > Connections. Tools from a direct server win over the same app through Composio, and Ask shows which one answered.
 - **Shortcuts** for Talk, Accept, Not now, Ask about the screen, Clipboard history, Pause and Settings. Record your own in Settings > Home > Shortcuts.
 
 ## Setup

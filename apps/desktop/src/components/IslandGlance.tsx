@@ -15,18 +15,14 @@ import { installUpdate, updateSettings, useAssistantName, useDuskie } from "@/li
 import { pickTip } from "@/lib/tips";
 import { type AppTime, type CalendarToday, formatDuration, type LaterItem } from "@/lib/types";
 import { updateBusy, updateLabel } from "@/lib/updates";
-import { useRedesign } from "@/lib/use-redesign";
 import { ActivityProgress } from "./ActivityProgress";
-import { Icon } from "./Icon";
+import { Ic, Icon } from "./Icon";
 import { AwaySection, NeedsYouSection } from "./IslandAgents";
 import { CardChips, CardHead, CardNote } from "./IslandCard";
 import { Tip } from "./Tip";
 
-/** QA / round button look: glass legacy vs porcelain redesign. */
-const qbClass = (redesign: boolean) =>
-  redesign
-    ? "rd-qb chip relative grid size-8 place-items-center overflow-hidden"
-    : "chip relative grid size-8 place-items-center overflow-hidden rounded-full bg-white/12 text-white/90 hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff]";
+/** Round quick-action button (porcelain chrome). */
+const qbClass = "rd-qb chip relative grid size-8 place-items-center overflow-hidden";
 
 /** A meeting this close (or already on) takes the headline. */
 const MEETING_SOON_MIN = 60;
@@ -45,62 +41,31 @@ function openHistory() {
 
 /** Unified island hover: stacked sections, empty ones omit themselves. */
 export function Glance({ paused }: { paused: boolean }) {
-  const redesign = useRedesign();
   const sessions = useAgents((s) => s.sessions);
   const agentsLive = sessions.some((s) => s.status === "working" || s.status === "waiting");
   const { data: crash, refresh: refreshCrash } = useCached<string | null>("crash", api.crashPending);
   const activityState = useActivities();
   const activityNow = useNow(1000);
-  const keepProblems = redesign;
   // Agent/chat rows belong in the agents list, not the flat activity line.
   const otherActivities = visibleActivities(
     [...activityState.activities, ...activityState.local],
     activityNow,
-    keepProblems,
+    true,
   ).filter((a) => !(agentsLive && (a.source === "agent" || a.source === "chat")));
   const now = useNow(30_000);
   const { data: calendar } = useCached<CalendarToday>("calendar-today", api.calendarToday);
   const { data: time } = useCached<AppTime[]>("time-today", api.timeToday);
   const head = headline(now, paused, calendar, time);
   const [focusOpen, setFocusOpen] = useState(false);
-  const eyebrow = redesign
-    ? new Date(now).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })
-    : head.quiet
-      ? "Today"
-      : paused
-        ? "Paused"
-        : head.join
-          ? "Calendar"
-          : "Now";
+  const eyebrow = new Date(now).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
   return (
-    <div className={redesign ? "rd-glance flex flex-col gap-2.5" : "flex flex-col"}>
+    <div className="rd-glance flex flex-col gap-2.5">
       {crash && <CrashCard note={crash} onDone={() => void refreshCrash()} />}
-      {redesign ? (
-        <div className="rd-card-head">
-          <p className="rd-eyebrow">{eyebrow}</p>
-          <p className="rd-title">{head.title}</p>
-          <p className="rd-detail">{head.detail}</p>
-        </div>
-      ) : (
-        <div className="flex items-center gap-3">
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <p className="truncate font-display text-[15px] leading-5 font-semibold tracking-[-0.015em] text-white">
-              {head.title}
-            </p>
-            <p className="truncate text-[13px] leading-4 tracking-[-0.005em] text-[rgb(235_235_245/0.6)] tabular-nums">
-              {head.detail}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {head.join && (
-              <RoundButton label="Join meeting" onClick={() => void api.openReference("page", head.join ?? "")}>
-                <Icon name="play" size={14} />
-              </RoundButton>
-            )}
-            <QuickActions paused={paused} focusOpen={focusOpen} onFocusOpenChange={setFocusOpen} />
-          </div>
-        </div>
-      )}
+      <div className="rd-card-head">
+        <p className="rd-eyebrow">{eyebrow}</p>
+        <p className="rd-title">{head.title}</p>
+        <p className="rd-detail">{head.detail}</p>
+      </div>
       {focusOpen && <FocusPicker onDone={() => setFocusOpen(false)} />}
       <NeedsYouSection sessions={sessions} />
       <AwaySection />
@@ -112,22 +77,20 @@ export function Glance({ paused }: { paused: boolean }) {
       <FullscreenSwitch />
       <LaterList />
       {head.quiet && <QuietTip />}
-      {redesign && (
-        <div className="rd-gfoot">
-          {head.join ? (
-            <button
-              type="button"
-              className="rd-gfoot-btn"
-              onClick={() => void api.openReference("page", head.join ?? "")}
-            >
-              Join
-            </button>
-          ) : (
-            <span />
-          )}
-          <QuickActions paused={paused} focusOpen={focusOpen} onFocusOpenChange={setFocusOpen} />
-        </div>
-      )}
+      <div className="rd-gfoot">
+        {head.join ? (
+          <button
+            type="button"
+            className="rd-gfoot-btn"
+            onClick={() => void api.openReference("page", head.join ?? "")}
+          >
+            Join
+          </button>
+        ) : (
+          <span />
+        )}
+        <QuickActions paused={paused} focusOpen={focusOpen} onFocusOpenChange={setFocusOpen} />
+      </div>
     </div>
   );
 }
@@ -135,29 +98,16 @@ export function Glance({ paused }: { paused: boolean }) {
 /** About one hover in four, when nothing needs you: one short tip, never
  * the same one twice in a row. */
 function QuietTip() {
-  const redesign = useRedesign();
   const on = useDuskie((s) => s.settings.tips);
   const later = useDuskie((s) => s.later);
   const [tip] = useState(pickTip);
   if (!on || later > 0 || !tip) return null;
   return (
     <p
-      className={
-        redesign
-          ? "rd-list-row mt-1 flex items-baseline gap-2"
-          : "mt-3 flex items-baseline gap-2 rounded-xl bg-white/[0.05] px-3 py-2 text-[12.5px] text-[rgb(235_235_245/0.7)]"
-      }
+      className="rd-list-row mt-1 flex items-baseline gap-2"
       style={{ marginLeft: "calc(var(--orb-indent, 0px) * -1)" }}
     >
-      <span
-        className={
-          redesign
-            ? "rd-eyebrow shrink-0"
-            : "text-[10.5px] font-semibold tracking-[0.04em] text-[rgb(235_235_245/0.45)] uppercase"
-        }
-      >
-        Tip
-      </span>
+      <span className="rd-eyebrow shrink-0">Tip</span>
       {tip}
     </p>
   );
@@ -165,7 +115,6 @@ function QuietTip() {
 
 /** Only while a fullscreen app is in front: keep the island out of it. */
 function FullscreenSwitch() {
-  const redesign = useRedesign();
   const fullscreen = useDuskie((s) => s.fullscreen);
   const hide = useDuskie((s) => s.settings.hideInFullscreen);
   if (!fullscreen) return null;
@@ -176,51 +125,25 @@ function FullscreenSwitch() {
       aria-checked={hide}
       onClick={() => void updateSettings({ hideInFullscreen: !hide })}
       style={{ marginLeft: "calc(var(--orb-indent, 0px) * -1)", width: "calc(100% + var(--orb-indent, 0px))" }}
-      className={
-        redesign
-          ? "rd-list-row chip mt-1 flex items-center gap-3 text-left"
-          : "chip mt-3 flex items-center gap-3 rounded-xl bg-white/[0.07] px-3 py-2 text-left hover:bg-white/12"
-      }
+      className="rd-list-row chip mt-1 flex items-center gap-3 text-left"
     >
       <span className="min-w-0 flex-1">
-        <span className={`block text-[13px] font-medium ${redesign ? "text-(--ink)" : "text-white"}`}>
-          Hide while fullscreen
-        </span>
-        <span className={`block text-[12px] ${redesign ? "text-(--ink-2)" : "text-[rgb(235_235_245/0.62)]"}`}>
+        <span className="block text-[13px] font-medium text-(--ink)">Hide while fullscreen</span>
+        <span className="block text-[12px] text-(--ink-2)">
           {hide ? "Hidden; hover the top edge to bring it back" : "The island stays on top of this app"}
         </span>
       </span>
       <span
         aria-hidden="true"
-        className={
-          redesign
-            ? "flex shrink-0 gap-0.5 rounded-[10px] bg-(--fill) p-[3px] text-[12.5px] leading-none shadow-[inset_0_0_0_1px_var(--line)]"
-            : "flex shrink-0 gap-0.5 rounded-[10px] bg-white/[0.08] p-[3px] text-[12.5px] leading-none"
-        }
+        className="flex shrink-0 gap-0.5 rounded-[10px] bg-(--fill) p-[3px] text-[12.5px] leading-none shadow-[inset_0_0_0_1px_var(--line)]"
       >
         <span
-          className={`rounded-[8px] px-2.5 py-[5px] ${
-            hide
-              ? redesign
-                ? "bg-(--c2) font-semibold text-(--c1)"
-                : "bg-[#f5f5f7] font-semibold text-black"
-              : redesign
-                ? "text-(--ink-2)"
-                : "text-white/62"
-          }`}
+          className={`rounded-[8px] px-2.5 py-[5px] ${hide ? "bg-(--c2) font-semibold text-(--c1)" : "text-(--ink-2)"}`}
         >
           On
         </span>
         <span
-          className={`rounded-[8px] px-2.5 py-[5px] ${
-            hide
-              ? redesign
-                ? "text-(--ink-2)"
-                : "text-white/62"
-              : redesign
-                ? "bg-(--c2) font-semibold text-(--c1)"
-                : "bg-[#f5f5f7] font-semibold text-black"
-          }`}
+          className={`rounded-[8px] px-2.5 py-[5px] ${hide ? "text-(--ink-2)" : "bg-(--c2) font-semibold text-(--c1)"}`}
         >
           Off
         </span>
@@ -288,7 +211,6 @@ function topFocus(time: AppTime[]): string | null {
 
 /** Suggestions you missed (shown and timed out) or that waited quietly. */
 function LaterList() {
-  const redesign = useRedesign();
   const count = useDuskie((s) => s.later);
   const { data, refresh } = useCached<LaterItem[]>("later-list", api.laterList);
   const [all, setAll] = useState(false);
@@ -300,12 +222,6 @@ function LaterList() {
   if (items.length === 0) return null;
   const missed = items.some((l) => l.missed);
   const shown = all ? items : items.slice(0, LATER_SHOWN);
-  const muted = redesign ? "text-(--ink-2)" : "text-[rgb(235_235_245/0.6)]";
-  const title = redesign ? "text-(--ink)" : "text-white";
-  const detail = redesign ? "text-(--ink-2)" : "text-[rgb(235_235_245/0.62)]";
-  const dismissBtn = redesign
-    ? "chip grid size-7 shrink-0 place-items-center rounded-[8px] text-(--ink-2) hover:bg-(--fill-2) hover:text-(--ink)"
-    : "chip grid size-7 shrink-0 place-items-center rounded-full text-white/45 hover:bg-white/10 hover:text-white";
   return (
     <div
       className="mt-3 flex flex-col gap-1.5"
@@ -314,23 +230,15 @@ function LaterList() {
         width: "calc(100% + var(--orb-indent, 0px))",
       }}
     >
-      <div className={`flex items-center justify-between text-[12px] ${muted}`}>
+      <div className="flex items-center justify-between text-[12px] text-(--ink-2)">
         <span>{missed ? "You missed" : "Saved for later"}</span>
         <span className="flex items-center gap-3">
           {all && (
-            <button
-              type="button"
-              onClick={() => setAll(false)}
-              className={redesign ? "chip rd-gfoot-btn" : "chip hover:text-white"}
-            >
+            <button type="button" onClick={() => setAll(false)} className="chip rd-gfoot-btn">
               Show less
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => void api.laterClear()}
-            className={redesign ? "chip rd-gfoot-btn" : "chip hover:text-white"}
-          >
+          <button type="button" onClick={() => void api.laterClear()} className="chip rd-gfoot-btn">
             Clear
           </button>
         </span>
@@ -338,79 +246,41 @@ function LaterList() {
       <div
         className={`flex flex-col gap-1.5 ${all ? "island-scroll max-h-[260px] overflow-y-auto overscroll-contain" : ""}`}
       >
-        {shown.map((l, n) =>
-          redesign ? (
-            // biome-ignore lint/a11y/useSemanticElements: the row holds its own dismiss button, so it cannot be a button
-            <div
-              key={l.id}
-              role="button"
-              tabIndex={0}
-              style={{ animationDelay: `${Math.min(n, 6) * 40}ms` }}
-              className="rise-in rd-list-row chip"
-              onClick={() => void api.laterOpen(l.id)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void api.laterOpen(l.id);
+        {shown.map((l, n) => (
+          // biome-ignore lint/a11y/useSemanticElements: the row holds its own dismiss button, so it cannot be a button
+          <div
+            key={l.id}
+            role="button"
+            tabIndex={0}
+            style={{ animationDelay: `${Math.min(n, 6) * 40}ms` }}
+            className="rise-in rd-list-row chip"
+            onClick={() => void api.laterOpen(l.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void api.laterOpen(l.id);
+            }}
+          >
+            <span className="dot" style={{ background: "#95a89a" }} />
+            <span className="t">
+              {l.title}
+              {l.detail && <span className="text-(--ink-3)"> {l.detail}</span>}
+            </span>
+            <span className="r">{ago(l.minutesAgo)}</span>
+            <button
+              type="button"
+              className="rx"
+              aria-label={`Clear ${l.title}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                void api.laterDismiss(l.id);
               }}
             >
-              <span className="dot" style={{ background: "#95a89a" }} />
-              <span className="t">
-                {l.title}
-                {l.detail && <span className="text-(--ink-3)"> {l.detail}</span>}
-              </span>
-              <span className="r">{ago(l.minutesAgo)}</span>
-              <button
-                type="button"
-                className="rx"
-                aria-label={`Clear ${l.title}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void api.laterDismiss(l.id);
-                }}
-              >
-                <Icon name="close" size={12} />
-              </button>
-            </div>
-          ) : (
-            <div
-              key={l.id}
-              style={{ animationDelay: `${Math.min(n, 6) * 40}ms` }}
-              className="rise-in rd-list-row flex w-full shrink-0 items-center gap-2 pr-1.5"
-            >
-              <button
-                type="button"
-                onClick={() => void api.laterOpen(l.id)}
-                className="chip min-w-0 flex-1 px-3 py-1.5 text-left"
-              >
-                <span className={`block truncate text-[13px] font-medium ${title}`}>{l.title}</span>
-                <span className={`block truncate text-[12px] ${detail}`}>{l.detail}</span>
-              </button>
-              <span className={`shrink-0 text-[11px] tabular-nums ${redesign ? "text-(--ink-2)" : "text-white/40"}`}>
-                {ago(l.minutesAgo)}
-              </span>
-              <Tip label="Clear">
-                <button
-                  type="button"
-                  aria-label={`Clear ${l.title}`}
-                  onClick={() => void api.laterDismiss(l.id)}
-                  className={dismissBtn}
-                >
-                  <Icon name="close" size={12} />
-                </button>
-              </Tip>
-            </div>
-          ),
-        )}
+              <Ic name="x" size={12} />
+            </button>
+          </div>
+        ))}
       </div>
       {!all && items.length > LATER_SHOWN && (
-        <button
-          type="button"
-          onClick={() => setAll(true)}
-          className={
-            redesign
-              ? "chip rd-gfoot-btn self-start text-[12px]"
-              : "chip self-start text-[12px] text-white/62 hover:text-white"
-          }
-        >
+        <button type="button" onClick={() => setAll(true)} className="chip rd-gfoot-btn self-start text-[12px]">
           Show {items.length - LATER_SHOWN} more
         </button>
       )}
@@ -435,7 +305,7 @@ function QuickActions({
 }) {
   const update = useDuskie((s) => s.update);
   const shift = useShiftHeld();
-  // Single row keeps the glance short — two rows stacked taller than the copy.
+  // Single row keeps the glance short, two rows stacked taller than the copy.
   return (
     <div className="flex gap-1.5">
       <AskShiftAgentsButton shift={shift} />
@@ -447,7 +317,7 @@ function QuickActions({
 }
 
 /** Shift for glance morphs. The shell stays unfocused, so keydown never
- * arrives — Rust polls while hovered (and Shift+Alt for suggestions); pointer
+ * arrives, Rust polls while hovered (and Shift+Alt for suggestions); pointer
  * events back it up when the cursor is over the webview. */
 function useShiftHeld(): boolean {
   const fromRust = useDuskie((s) => s.shiftHeld);
@@ -492,7 +362,7 @@ function SettingsShiftHistoryButton({ shift }: { shift: boolean }) {
           if (e.shiftKey || history) openHistory();
           else void api.openSettings();
         }}
-        className={qbClass(useRedesign())}
+        className={qbClass}
       >
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.span
@@ -503,7 +373,7 @@ function SettingsShiftHistoryButton({ shift }: { shift: boolean }) {
             exit={reduced ? undefined : { opacity: 0, scale: 0.7, rotate: history ? 20 : -20 }}
             transition={{ duration: 0.16, ease: [0.23, 1, 0.32, 1] }}
           >
-            <Icon name={history ? "history" : "settings"} size={15} />
+            <Ic name={history ? "clock" : "gear"} size={15} />
           </motion.span>
         </AnimatePresence>
       </button>
@@ -530,7 +400,7 @@ function AskShiftAgentsButton({ shift }: { shift: boolean }) {
           if (e.shiftKey || agents) openAgentsBoard();
           else void api.askOpen();
         }}
-        className={qbClass(useRedesign())}
+        className={qbClass}
       >
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.span
@@ -541,7 +411,7 @@ function AskShiftAgentsButton({ shift }: { shift: boolean }) {
             exit={reduced ? undefined : { opacity: 0, scale: 0.7, rotate: agents ? 20 : -20 }}
             transition={{ duration: 0.16, ease: [0.23, 1, 0.32, 1] }}
           >
-            <Icon name={agents ? "terminal" : "ask"} size={15} />
+            <Ic name={agents ? "term" : "ask"} size={15} />
           </motion.span>
         </AnimatePresence>
       </button>
@@ -606,7 +476,6 @@ function FocusShiftPauseButton({
           : `Focus${focusHint} · Shift for Pause${pauseHint}`;
   const active = !pauseSide && (open || focusing);
   const icon = pauseSide ? (paused ? "play" : "pause") : "focus";
-  const redesign = useRedesign();
   return (
     <Tip label={label}>
       <button
@@ -627,13 +496,7 @@ function FocusShiftPauseButton({
           }
           onOpenChange(!open);
         }}
-        className={
-          redesign
-            ? `rd-qb chip relative grid size-8 place-items-center overflow-hidden${active ? " rd-qb-on" : ""}`
-            : `chip relative grid size-8 place-items-center overflow-hidden rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff] ${
-                active ? "bg-white text-black hover:bg-white/90" : "bg-white/12 text-white/90 hover:bg-white/20"
-              }`
-        }
+        className={`${qbClass}${active ? " rd-qb-on" : ""}`}
       >
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.span
@@ -652,9 +515,8 @@ function FocusShiftPauseButton({
   );
 }
 
-/** Choose how long, then start — presets plus a quiet custom stepper. */
+/** Choose how long, then start, presets plus a quiet custom stepper. */
 function FocusPicker({ onDone }: { onDone: () => void }) {
-  const redesign = useRedesign();
   const [minutes, setMinutes] = useState(readLastFocus);
   const start = (n: number) => {
     const next = Math.min(FOCUS_MAX, Math.max(FOCUS_MIN, Math.round(n)));
@@ -679,62 +541,32 @@ function FocusPicker({ onDone }: { onDone: () => void }) {
   const nudge = (delta: number) => setMinutes((m) => Math.min(FOCUS_MAX, Math.max(FOCUS_MIN, m + delta)));
   return (
     <div
-      className={
-        redesign
-          ? "rise-in mt-3 rounded-[12px] bg-(--fill-2) p-3 shadow-[inset_0_0_0_1px_var(--line)]"
-          : "rise-in mt-3 rounded-2xl bg-white/[0.06] p-3 ring-1 ring-white/[0.08]"
-      }
+      className="rise-in mt-3 rounded-[12px] bg-(--fill-2) p-3 shadow-[inset_0_0_0_1px_var(--line)]"
       style={{ marginLeft: "calc(var(--orb-indent, 0px) * -1)" }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p
-            className={`font-display text-[14px] leading-5 font-semibold tracking-[-0.015em] ${
-              redesign ? "text-(--ink)" : "text-white"
-            }`}
-          >
-            Focus
-          </p>
-          <p className={`mt-0.5 text-[12px] leading-4 ${redesign ? "text-(--ink-2)" : "text-[rgb(235_235_245/0.6)]"}`}>
-            Suggestions and alerts wait until you are done.
-          </p>
+          <p className="font-display text-[14px] leading-5 font-semibold tracking-[-0.015em] text-(--ink)">Focus</p>
+          <p className="mt-0.5 text-[12px] leading-4 text-(--ink-2)">Suggestions and alerts wait until you are done.</p>
         </div>
-        <div
-          className={
-            redesign
-              ? "flex shrink-0 items-center gap-1 rounded-[10px] bg-(--fill) px-1 py-0.5 shadow-[inset_0_0_0_1px_var(--line)]"
-              : "flex shrink-0 items-center gap-1 rounded-full bg-black/25 px-1 py-0.5 ring-1 ring-white/[0.06]"
-          }
-        >
+        <div className="flex shrink-0 items-center gap-1 rounded-[10px] bg-(--fill) px-1 py-0.5 shadow-[inset_0_0_0_1px_var(--line)]">
           <button
             type="button"
             aria-label="Five minutes less"
             onClick={() => nudge(-5)}
-            className={
-              redesign
-                ? "chip grid size-7 place-items-center rounded-[8px] text-(--ink-2) hover:bg-(--fill-2) hover:text-(--ink)"
-                : "chip grid size-7 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white"
-            }
+            className="chip grid size-7 place-items-center rounded-[8px] text-(--ink-2) hover:bg-(--fill-2) hover:text-(--ink)"
           >
             −
           </button>
-          <span
-            className={`min-w-[4.5rem] text-center font-display text-[15px] font-semibold tracking-[-0.02em] tabular-nums ${
-              redesign ? "text-(--ink)" : "text-white"
-            }`}
-          >
+          <span className="min-w-[4.5rem] text-center font-display text-[15px] font-semibold tracking-[-0.02em] text-(--ink) tabular-nums">
             {minutes}
-            <span className={`ml-1 text-[11px] font-medium ${redesign ? "text-(--ink-2)" : "text-white/45"}`}>min</span>
+            <span className="ml-1 text-[11px] font-medium text-(--ink-2)">min</span>
           </span>
           <button
             type="button"
             aria-label="Five minutes more"
             onClick={() => nudge(5)}
-            className={
-              redesign
-                ? "chip grid size-7 place-items-center rounded-[8px] text-(--ink-2) hover:bg-(--fill-2) hover:text-(--ink)"
-                : "chip grid size-7 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white"
-            }
+            className="chip grid size-7 place-items-center rounded-[8px] text-(--ink-2) hover:bg-(--fill-2) hover:text-(--ink)"
           >
             +
           </button>
@@ -749,13 +581,7 @@ function FocusPicker({ onDone }: { onDone: () => void }) {
               type="button"
               onClick={() => setMinutes(n)}
               className={`chip min-h-8 rounded-[10px] px-3 text-[12.5px] font-medium tracking-[-0.01em] tabular-nums transition-[background,color,transform] duration-150 ${
-                redesign
-                  ? on
-                    ? "bg-(--c2) text-(--c1)"
-                    : "bg-(--fill) text-(--ink-2) hover:bg-(--fill-2) hover:text-(--ink)"
-                  : on
-                    ? "rounded-full bg-white text-black shadow-[0_1px_0_rgb(255_255_255/0.35)_inset]"
-                    : "rounded-full bg-white/[0.08] text-white/80 hover:bg-white/14 hover:text-white"
+                on ? "bg-(--c2) text-(--c1)" : "bg-(--fill) text-(--ink-2) hover:bg-(--fill-2) hover:text-(--ink)"
               }`}
             >
               {n}m
@@ -767,26 +593,16 @@ function FocusPicker({ onDone }: { onDone: () => void }) {
         <button
           type="button"
           onClick={() => start(minutes)}
-          className={
-            redesign
-              ? "chip flex min-h-9 flex-1 items-center justify-center gap-2 rounded-[10px] bg-(--c2) px-4 text-[13px] font-semibold tracking-[-0.01em] text-(--c1) hover:opacity-92 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--c4)"
-              : "chip flex min-h-9 flex-1 items-center justify-center gap-2 rounded-full bg-white px-4 text-[13px] font-semibold tracking-[-0.01em] text-black hover:bg-white/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff]"
-          }
+          className="chip flex min-h-9 flex-1 items-center justify-center gap-2 rounded-[10px] bg-(--c2) px-4 text-[13px] font-semibold tracking-[-0.01em] text-(--c1) hover:opacity-92 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--c4)"
         >
-          <Icon name="focus" size={14} />
+          <Ic name="focus" size={14} />
           Start {minutes} minutes
-          <kbd className={`ml-0.5 font-sans text-[11px] font-medium ${redesign ? "text-(--c1)/40" : "text-black/35"}`}>
-            Enter
-          </kbd>
+          <kbd className="ml-0.5 font-sans text-[11px] font-medium text-(--c1)/40">Enter</kbd>
         </button>
         <button
           type="button"
           onClick={onDone}
-          className={
-            redesign
-              ? "chip shrink-0 rounded-[10px] px-3 py-2 text-[12.5px] text-(--ink-2) hover:bg-(--fill) hover:text-(--ink)"
-              : "chip shrink-0 rounded-full px-3 py-2 text-[12.5px] text-white/60 hover:bg-white/10 hover:text-white"
-          }
+          className="chip shrink-0 rounded-[10px] px-3 py-2 text-[12.5px] text-(--ink-2) hover:bg-(--fill) hover:text-(--ink)"
         >
           Not now
         </button>
@@ -817,7 +633,7 @@ function UpdateButton() {
             className="size-4 animate-spin rounded-full border-2 border-white/25 border-t-white motion-reduce:animate-none"
           />
         ) : (
-          <Icon name="update" size={15} />
+          <Ic name="update" size={15} />
         )}
       </RoundButton>
       <span
@@ -846,7 +662,7 @@ export function RoundButton({
         aria-label={label}
         disabled={disabled}
         onClick={onClick}
-        className={`${qbClass(useRedesign())} disabled:cursor-wait disabled:opacity-60`}
+        className={`${qbClass} disabled:cursor-wait disabled:opacity-60`}
       >
         {children}
       </button>

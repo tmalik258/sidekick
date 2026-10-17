@@ -6,10 +6,12 @@
 //! interface, [`Decider`], served by SemIf or a local model.
 
 mod anthropic;
+pub mod cache;
 mod claude_code;
 mod codex;
 mod decide;
 pub mod fit;
+pub mod limit;
 mod mcp;
 pub mod mcp_stdio;
 mod openai;

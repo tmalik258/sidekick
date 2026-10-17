@@ -5,8 +5,8 @@
   "scripts": {
     "postinstall": "node scripts/sync-sounds.mjs",
     "fetch-voice-models": "node scripts/fetch-voice-models.mjs",
-    "dev": "node scripts/fetch-voice-models.mjs && node scripts/sync-sounds.mjs && next dev --port 3002",
-    "build": "node scripts/fetch-voice-models.mjs && node scripts/sync-sounds.mjs && next build",
+    "dev": "node scripts/build-monaco-workers.mjs && node scripts/fetch-voice-models.mjs && node scripts/sync-sounds.mjs && next dev --port 3002",
+    "build": "node scripts/fetch-voice-models.mjs && node scripts/sync-sounds.mjs && node scripts/build-monaco-workers.mjs && next build",
     "typecheck": "tsc --noEmit",
     "tauri": "tauri",
     "check:contrast": "node scripts/check-contrast.mjs",
@@ -17,10 +17,14 @@
     "ask-eval": "node scripts/ask-eval.mjs",
     "ask-check": "node scripts/ask-check.mjs",
     "test": "vitest run",
-    "check:name": "node scripts/check-name.mjs"
+    "check:name": "node scripts/check-name.mjs",
+    "check:a11y": "node scripts/check-a11y.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.1",
+    "@xterm/addon-fit": "0.10.0",
+    "@xterm/xterm": "5.5.0",
+    "monaco-editor": "0.52.2",
     "motion": "^13.4.6",
     "next": "^16.3.8",
     "react": "^19.3.0",
@@ -34,6 +38,8 @@
     "@types/node": "^24",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19",
+    "axe-core": "4.10.2",
+    "esbuild": "0.28.2",
     "playwright": "1.56.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",

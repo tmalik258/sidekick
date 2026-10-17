@@ -5,8 +5,9 @@
 
 import type { ReactNode } from "react";
 import type { AskTab } from "@/lib/agents";
+import { api } from "@/lib/bridge";
 import { KeyHint } from "./ask/parts";
-import { Icon } from "./Icon";
+import { Ic } from "./Icon";
 import { Tip } from "./Tip";
 
 export type PanelTab = AskTab | "settings";
@@ -40,9 +41,9 @@ export function PanelTabs({
 }) {
   const words = (
     [
-      ["ask", "Ask", "sparkle"],
-      ["agents", "Agents", "terminal"],
-      ["repos", "Repos", "folder"],
+      ["ask", "Ask", "spark"],
+      ["agents", "Agents", "cpu"],
+      ["repos", "Git", "branch"],
     ] as const
   ).filter(([id]) => coder || id === "ask");
   return (
@@ -57,7 +58,7 @@ export function PanelTabs({
           className="ak-tab chip"
         >
           <span className="ak-tab-ic" aria-hidden>
-            <Icon name={icon} size={13} />
+            <Ic name={icon} size={13} />
           </span>
           {label}
           {id === "agents" && working > 0 && <i className="n not-italic">{working}</i>}
@@ -75,7 +76,7 @@ export function PanelTabs({
               onClick={() => onPick("history")}
               className="ak-tab ak-tabi chip"
             >
-              <Icon name="history" size={14} />
+              <Ic name="clock" size={14} />
             </button>
           </Tip>
           <KeyHint show={alt}>Alt H</KeyHint>
@@ -89,7 +90,12 @@ export function PanelTabs({
             onClick={() => onPick("settings")}
             className="ak-tab ak-tabi chip"
           >
-            <Icon name="settings" size={14} />
+            <Ic name="gear" size={14} />
+          </button>
+        </Tip>
+        <Tip label="Close (Esc)">
+          <button type="button" aria-label="Close" onClick={() => void api.askClose()} className="ak-tab ak-tabi chip">
+            <Ic name="x" size={14} />
           </button>
         </Tip>
       </span>

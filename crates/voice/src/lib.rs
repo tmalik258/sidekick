@@ -38,3 +38,35 @@ pub type Result<T> = std::result::Result<T, VoiceError>;
 
 /// Sample rate the wake word and speech models expect.
 pub const MIC_RATE: u32 = 16_000;
+
+/// Audio is never saved: the code that hears and speaks writes no files.
+#[cfg(test)]
+mod no_audio_saved {
+    const SOURCES: [(&str, &str); 3] = [
+        ("audio.rs", include_str!("audio.rs")),
+        ("listen.rs", include_str!("listen.rs")),
+        ("speak.rs", include_str!("speak.rs")),
+    ];
+    const DESKTOP: &str = include_str!("../../../apps/desktop/src-tauri/src/voice.rs");
+    const WRITES: [&str; 6] = [
+        "File::create",
+        "fs::write",
+        "OpenOptions",
+        "WavWriter",
+        "hound::",
+        "write_all(",
+    ];
+
+    #[test]
+    fn hearing_and_speaking_write_no_files() {
+        for (name, src) in SOURCES.iter().copied().chain([("voice.rs", DESKTOP)]) {
+            let code = src.split("#[cfg(test)]").next().unwrap_or(src);
+            for w in WRITES {
+                assert!(
+                    !code.contains(w),
+                    "{name} uses {w}; audio must never be saved"
+                );
+            }
+        }
+    }
+}

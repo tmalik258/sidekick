@@ -194,6 +194,8 @@ pub fn weekly_card(items: &[Learned]) -> Option<duskie_skills::Proposal> {
         trust: Trust::Suggest,
         remember: None,
         priority: 50,
+        compact: false,
+        silent: false,
     })
 }
 

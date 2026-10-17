@@ -19,55 +19,35 @@ import {
 } from "@/lib/activities";
 import { interruptSession, listenToAgents, useAgents, wideScreen } from "@/lib/agents";
 import { api } from "@/lib/bridge";
+import { useCached } from "@/lib/cache";
 import { useNow, useSystemLook } from "@/lib/hooks";
 import { PILL_FRESH_MS } from "@/lib/peek";
-import { REDESIGN_HOVER_IN_MS, REDESIGN_HOVER_OUT_MS } from "@/lib/redesign-layout";
 import { resolveIslandState } from "@/lib/resolve-island-state";
-import { connect, setHovered, useDuskie, watchWaiting } from "@/lib/store";
-import { isPaused, type MascotState, type Settings, type Suggestion } from "@/lib/types";
+import { connect, setHovered, stopLive, useDuskie, watchWaiting } from "@/lib/store";
+import { type CalendarToday, isPaused, type MascotState, type Settings, type Suggestion } from "@/lib/types";
 import { updateBusy, updateLabel } from "@/lib/updates";
-import { useRedesign } from "@/lib/use-redesign";
 import { PALETTES, type WashEvent } from "@/lib/wash";
+import { ActivitiesCard } from "./ActivitiesCard";
+import { AgentCard } from "./AgentCard";
 import { Announcer } from "./Announcer";
-import { ASK_MASCOT, ASK_ORB, ASK_PAD, AskPanel } from "./AskPanel";
+import { ASK_PAD, AskPanel } from "./AskPanel";
 import { Creature } from "./Creature";
-import { IslandBubbles } from "./IslandBubbles";
+import { type BubbleItem, IslandBubbles } from "./IslandBubbles";
 import { IslandGuide, useGuide } from "./IslandGuide";
 import { CompactTrailing, ExpandedContent } from "./IslandParts";
+import { IslandPill, type PillModel } from "./IslandPill";
 import { IslandSettings } from "./IslandSettings";
 import { FullVoice, openBoard, VoicePill, voiceShellWidth } from "./IslandVoice";
-import { IslandWash } from "./IslandWash";
 import { IslandWelcome } from "./IslandWelcome";
 import { useBlockBrowserKeys, useFocusLeft, useIntent, useSuggestionKeys } from "./island-hooks";
-import {
-  AGENTS_WIDTH,
-  ASK_RADIUS,
-  ASK_WIDTH,
-  agentsOpen,
-  askOpen,
-  BOARD_WIDE_WIDTH,
-  BOARD_WIDTH,
-  COMPACT,
-  EXPANDED,
-  FULL_VOICE_WIDTH,
-  GUIDE_WIDTH,
-  HOVER_IN_ACTIONS_MS,
-  HOVER_IN_MS,
-  HOVER_OUT_MS,
-  morphClose,
-  morphOpen,
-  OPEN_STATES,
-  ORB,
-  resize,
-  TOP,
-  WELCOME_WIDTH,
-} from "./island-layout";
+import { COMPACT, EXPANDED, OPEN_STATES, SHELL_HOVER_IN_MS, SHELL_HOVER_OUT_MS, TOP } from "./island-layout";
+import { MeetingCard } from "./MeetingCard";
+import { NetCard } from "./NetCard";
 import { PreparingVoice } from "./PreparingVoice";
-import { type PillModel, RedesignPill } from "./RedesignPill";
-import { redesignShell } from "./use-island-shell";
+import { UpdateCard } from "./UpdateCard";
+import { shellGeom } from "./use-island-shell";
 
 export function Island() {
-  const redesign = useRedesign();
   const { mascot, settings, suggestion, hovered: rawHover, visible, ready } = useDuskie();
   const asking = useDuskie((s) => s.ask !== null);
   const askTab = useAgents((s) => s.tab);
@@ -80,7 +60,26 @@ export function Island() {
   const chatting = useDuskie((s) => s.chatId !== null);
   const voiceStatus = useDuskie((s) => s.voiceStatus);
   const online = useDuskie((s) => s.online);
-  const netNotice = useDuskie((s) => s.netNotice);
+  const laterCount = useDuskie((s) => s.later);
+  // A newly held suggestion shows as a short notice, then the island rests.
+  const storeReady = useDuskie((s) => s.ready);
+  const [laterSeen, setLaterSeen] = useState<number | null>(null);
+  const [laterFresh, setLaterFresh] = useState(false);
+  if (storeReady && laterSeen === null) setLaterSeen(laterCount);
+  else if (laterSeen !== null && laterCount !== laterSeen) {
+    setLaterSeen(laterCount);
+    setLaterFresh(laterCount > laterSeen);
+  }
+  useEffect(() => {
+    if (!laterFresh) return;
+    const t = setTimeout(() => setLaterFresh(false), 8000);
+    return () => clearTimeout(t);
+  }, [laterFresh]);
+  const later = laterFresh ? laterCount : 0;
+  // Design: losing the connection only changes the pill; the card opens on a click.
+  const [netOpen, setNetOpen] = useState(false);
+  if (netOpen && online) setNetOpen(false);
+  const netShown = netOpen;
   const merging = useDuskie((s) => s.merge !== null);
   const updateProgress = useDuskie((s) => s.updateProgress);
   const updateActivity = useActivities((s) => latestActivity(s.activities, "update"));
@@ -138,7 +137,7 @@ export function Island() {
   // Combine outside a store selector so closed-over chat/agent labels stay fresh.
   const activityState = useActivities();
   const activityNow = useNow(1000);
-  const keepProblems = useDuskie((s) => s.settings.redesign.enabled);
+  const keepProblems = true;
   const liveActivities = visibleActivities(
     [...activityState.activities, ...activityState.local],
     activityNow,
@@ -185,6 +184,33 @@ export function Island() {
     return () => clearTimeout(timer);
   }, [mascot, chatWorking, agentWorking, activityState]);
   const agentAsks = useAgents((s) => s.sessions.some((x) => x.status === "waiting"));
+  const askingTitle = useAgents((s) => s.sessions.find((x) => x.status === "waiting")?.title ?? null);
+  const { data: calendarToday } = useCached<CalendarToday>("calendar-today", api.calendarToday);
+  const meetingSoon = soonMeeting(updateNow, calendarToday);
+  const cardAgent = useAgents(
+    (s) =>
+      (s.sessions.find((x) => x.status === "waiting") ?? s.sessions.find((x) => x.status === "working"))?.id ?? null,
+  );
+  const splitAgent = useAgents(
+    useShallow((s) => {
+      const x = s.sessions.find((y) => y.status === "working");
+      if (!x) return null;
+      const mark = x.agent
+        .split(/\s+/)
+        .map((w) => w[0] ?? "")
+        .join("")
+        .slice(0, 2)
+        .toUpperCase();
+      return {
+        id: x.id,
+        agent: x.agent,
+        mark,
+        done: x.plan.filter((p) => p.status === "completed").length,
+        total: x.plan.length,
+      };
+    }),
+  );
+  const askingCount = useAgents((s) => s.sessions.filter((x) => x.status === "waiting").length);
   const working = asking
     ? null
     : ((agentAsks ? agentWorking : null) ??
@@ -214,10 +240,11 @@ export function Island() {
   // Voice with Ask closed: a compact pill while listening and thinking; the
   // island opens only when the answer starts.
   const hearing = useDuskie((s) => (s.ask ? null : s.hearing));
+  const live = useDuskie((s) => (s.ask ? null : s.live));
   const voiceQuestion = useDuskie((s) => (s.ask ? null : s.voiceQuestion));
   // Something finished that needs nothing more: a short done pill.
   // Also covers mascot success without Undo / Open (e.g. "Switched to Claude"
-  // after Settings closed — showDone was skipped while Ask was open).
+  // after Settings closed, showDone was skipped while Ask was open).
   const donePill = useDuskie((s) => {
     if (s.ask || updateBusy(s.updateProgress)) return null;
     if (s.donePill) return s.donePill;
@@ -253,22 +280,16 @@ export function Island() {
     // instead of opening tall and shrinking to the new measure.
     if (asking) setContentHeight(0);
   }
-  const hoverOutMs = redesign ? REDESIGN_HOVER_OUT_MS : HOVER_OUT_MS;
-  const hoverInMs = redesign ? REDESIGN_HOVER_IN_MS : HOVER_IN_MS;
   // Cleared only once the cursor has been away as long as hover intent takes
   // to fall; clearing at once let a stale intent reopen a just-hidden welcome.
   useEffect(() => {
     if (!quiet || rawHover) return;
-    const id = setTimeout(() => setQuiet(false), hoverOutMs);
+    const id = setTimeout(() => setQuiet(false), SHELL_HOVER_OUT_MS);
     return () => clearTimeout(id);
-  }, [quiet, rawHover, hoverOutMs]);
-  const pillActions = !!displayedActivity;
-  const intent = useIntent(
-    rawHover && !quiet,
-    pillActions ? (redesign ? REDESIGN_HOVER_IN_MS : HOVER_IN_ACTIONS_MS) : hoverInMs,
-  );
+  }, [quiet, rawHover]);
+  const intent = useIntent(rawHover && !quiet, SHELL_HOVER_IN_MS);
 
-  // Fresh notification pill → unread count after PILL_FRESH_MS (redesign).
+  // Fresh notification pill → unread count after PILL_FRESH_MS.
   const [notifyAt, setNotifyAt] = useState<number | null>(null);
   const suggestionId = suggestion?.id ?? null;
   useEffect(() => {
@@ -280,10 +301,10 @@ export function Island() {
     const id = setTimeout(() => setNotifyAt(null), PILL_FRESH_MS);
     return () => clearTimeout(id);
   }, [suggestionId]);
-  // Redesign: a suggestion shows as a compact line first (the peek replaces the
+  // A suggestion shows as a compact line first (the peek replaces the
   // fresh-message pill); hover 220ms or holding Alt opens the card, leaving
   // folds it back after 450ms, and a click inside keeps it open.
-  const notifyFresh = false && notifyAt !== null;
+  const notifyFresh = (meetingSoon !== null && !paused) || (false && notifyAt !== null);
   const [peek, setPeek] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [altHeld, setAltHeld] = useState(false);
@@ -294,12 +315,12 @@ export function Island() {
     setPinned(false);
   }
   useEffect(() => {
-    if (!redesign || !suggestionId) return;
+    if (!suggestionId) return;
     const id = setTimeout(() => setPeek(rawHover), rawHover ? 220 : 450);
     return () => clearTimeout(id);
-  }, [redesign, suggestionId, rawHover]);
+  }, [suggestionId, rawHover]);
   useEffect(() => {
-    if (!redesign || !suggestionId) return;
+    if (!suggestionId) return;
     const down = (e: KeyboardEvent) => {
       if (e.key === "Alt") setAltHeld(true);
     };
@@ -315,8 +336,25 @@ export function Island() {
       window.removeEventListener("keyup", up);
       window.removeEventListener("blur", blur);
     };
-  }, [redesign, suggestionId]);
-  const suggestOpen = !redesign || peek || pinned || altHeld;
+  }, [suggestionId]);
+  // Keyboard users get the peek through focus: tabbing into the island opens it.
+  const [keyFocus, setKeyFocus] = useState(false);
+  useEffect(() => {
+    const into = (e: FocusEvent) =>
+      setKeyFocus(
+        e.target instanceof HTMLElement &&
+          e.target.matches(":focus-visible") &&
+          !e.target.matches("input, textarea, [contenteditable]"),
+      );
+    const out = () => setKeyFocus(false);
+    window.addEventListener("focusin", into);
+    window.addEventListener("focusout", out);
+    return () => {
+      window.removeEventListener("focusin", into);
+      window.removeEventListener("focusout", out);
+    };
+  }, []);
+  const suggestOpen = peek || pinned || altHeld || keyFocus;
   // Until onboarding is done, hover shows the steps being waited on, or else
   // brings the welcome back; the idle card ("watching for moments") would
   // just flash on the way.
@@ -378,20 +416,22 @@ export function Island() {
         ? { text: voiceQuestion, thinking: true }
         : hearing !== null || mascot === "listening"
           ? { text: hearing ?? "", thinking: false }
-          : working !== null
-            ? {
-                text: working,
-                thinking: !asksYou && !activityWaiting && (!displayedActivity || !terminal(displayedActivity)),
-                working: true,
-                asks: asksYou,
-                waiting: !!activityWaiting,
-                done: displayedActivity?.phase === "completed",
-                failed: displayedActivity?.phase === "failed",
-                dots: agentDots,
-              }
-            : focusLeft !== null
-              ? { text: `Focus · ${focusLeft}`, thinking: false, focus: true }
-              : null;
+          : live !== null
+            ? { text: live.caption || (live.tool ?? ""), thinking: !live.caption }
+            : working !== null
+              ? {
+                  text: working,
+                  thinking: !asksYou && !activityWaiting && (!displayedActivity || !terminal(displayedActivity)),
+                  working: true,
+                  asks: asksYou,
+                  waiting: !!activityWaiting,
+                  done: displayedActivity?.phase === "completed",
+                  failed: displayedActivity?.phase === "failed",
+                  dots: agentDots,
+                }
+              : focusLeft !== null
+                ? { text: `Focus · ${focusLeft}`, thinking: false, focus: true }
+                : null;
   // Only agents at work: hover lists them (and answers in place) instead of
   // opening Ask.
   const agentsOnly = voiceQuestion === null && hearing === null && chatWorking === null && agentWorking !== null;
@@ -403,7 +443,7 @@ export function Island() {
     !voicePill.focus &&
     !voicePill.done &&
     (settings.voice.listeningStyle ?? "compact") === "full";
-  // Suggestions stay normal during thinking — do not gate them on !voicePill.
+  // Suggestions stay normal during thinking, do not gate them on !voicePill.
   const askOpens =
     questionId !== null && !dndOn && !fullscreen && !paused && settings.onboarded && agentsOnly && !quiet;
   const expanded =
@@ -413,10 +453,10 @@ export function Island() {
     preparingVoice ||
     (hovered && (!voicePill || agentsOnly || updateWorking !== null || liveActivities.length > 0)) ||
     guiding ||
-    (OPEN_STATES.has(mascot) && !voicePill && !(redesign && mascot !== "suggesting")) ||
+    (OPEN_STATES.has(mascot) && !voicePill && mascot === "suggesting") ||
     successCard ||
     (!!suggestion && suggestOpen) ||
-    (!!netNotice && !voicePill) ||
+    (netShown && !voicePill) ||
     updateProgress?.phase === "failed" ||
     merging;
   // At rest only the sphere shows. The shell keeps its size (so hover and the
@@ -454,13 +494,11 @@ export function Island() {
     mood?.id ??
     (asksYou && !voiceQuestion && hearing === null ? "curious" : null) ??
     (focusLeft !== null && !voiceQuestion && hearing === null && mascot !== "listening" ? "focus" : null) ??
-    (redesign && paused && !voiceQuestion && hearing === null ? "sleepy" : null) ??
+    (paused && !voiceQuestion && hearing === null ? "sleepy" : null) ??
     (speaking && mascot !== "listening"
       ? "speak"
       : !online && (mascot === "idle" || mascot === "sleeping")
-        ? redesign
-          ? "oops"
-          : "offline"
+        ? "oops"
         : null);
   const contentEl = useRef<HTMLDivElement | null>(null);
 
@@ -496,7 +534,7 @@ export function Island() {
   // so a stale tall height does not stick after the chat clears.
   const turnsLen = useDuskie((s) => s.turns.length);
   const chatId = useDuskie((s) => s.chatId);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: triggers only — remeasure when Agents body changes size
+  // biome-ignore lint/correctness/useExhaustiveDependencies: triggers only, remeasure when Agents body changes size
   useEffect(() => {
     if (!asking) return;
     let id2 = 0;
@@ -521,7 +559,6 @@ export function Island() {
     (mascot === "idle" || mascot === "sleeping");
   const pillWidth = voicePill
     ? voiceShellWidth(voicePill.text, voicePill.thinking, {
-        redesign,
         status: !!(
           voicePill.working ||
           voicePill.done ||
@@ -548,32 +585,6 @@ export function Island() {
         : !online
           ? COMPACT.offlineWidth
           : COMPACT.width;
-  const legacyWidth = asking
-    ? view === "welcome"
-      ? WELCOME_WIDTH
-      : askPanel && askTab === "agents"
-        ? agentsLayout === "board"
-          ? wideScreen()
-            ? BOARD_WIDE_WIDTH
-            : BOARD_WIDTH
-          : // New session is sparse: keep Ask's width until a session is open.
-            agentCurrent === null
-            ? ASK_WIDTH
-            : AGENTS_WIDTH
-        : ASK_WIDTH
-    : expanded
-      ? fullVoice
-        ? FULL_VOICE_WIDTH
-        : showGuide
-          ? GUIDE_WIDTH
-          : EXPANDED.width
-      : pillWidth;
-  // The island window is already fixed (~640 tall); do not re-cap against
-  // innerHeight or Settings/Welcome get clipped by the shell spring.
-  const legacyHeight = expanded
-    ? Math.max(EXPANDED.minHeight, contentHeight + (askPanel ? ASK_PAD.bottom : EXPANDED.pad))
-    : COMPACT.height;
-  const legacyRadius = askPanel ? ASK_RADIUS : expanded ? EXPANDED.radius : COMPACT.radius;
   // The bounce is for opening only; once open, size changes are calm.
   const [settled, setSettled] = useState(false);
   useEffect(() => {
@@ -584,112 +595,138 @@ export function Island() {
     const id = setTimeout(() => setSettled(true), 600);
     return () => clearTimeout(id);
   }, [expanded, asking]);
-  const legacyTransition = reduced
-    ? { duration: 0 }
-    : expanded
-      ? settled
-        ? resize
-        : asking
-          ? askPanel && askTab === "agents"
-            ? agentsOpen
-            : askOpen
-          : morphOpen
-      : morphClose;
 
   const lastError = useDuskie((s) => (s.lastResult && !s.lastResult.ok ? s.lastResult.message : null));
   const peeking: Suggestion | null = suggestion && !suggestOpen ? suggestion : null;
   const pillModel: PillModel | null =
-    redesign && !expanded && !asking
+    !expanded && !asking
       ? peeking
         ? {
             kind: "suggest",
-            label: peeking.title,
-            chip: peeking.options[0],
-            onChip: () => void api.suggestionChoose(peeking.id, 0),
+            // Compact (lower priority): the source or title only, no chip.
+            ...(peeking.compact
+              ? { label: sourceApp(peeking) ?? peeking.title }
+              : sourceApp(peeking)
+                ? { label: sourceApp(peeking) as string, dim: peeking.title }
+                : { label: peeking.title }),
+            ...(peeking.compact
+              ? {}
+              : { chip: peeking.options[0], onChip: () => void api.suggestionChoose(peeking.id, 0) }),
           }
         : hearing !== null || mascot === "listening"
           ? { kind: "listening", label: hearing?.trim() ? hearing : "", dim: hearing?.trim() ? undefined : "Listening" }
-          : mascot === "error"
-            ? { kind: "error", label: shortError(lastError) }
-            : donePill !== null
-              ? { kind: "done", label: donePill }
-              : working !== null || voiceQuestion !== null
-                ? {
-                    kind: "working",
-                    label: displayedActivity
-                      ? activityLabel(displayedActivity, activityNow, { elapsed: false }).replace(/(\.\.\.|…)$/, "")
-                      : (voiceQuestion ?? working ?? "").replace(/(\.\.\.|…)$/, ""),
-                    startedAt: displayedActivity?.startedAt,
-                  }
-                : focusLeft !== null
+          : live !== null
+            ? {
+                kind: "caption",
+                label: live.caption || (live.tool ?? "Thinking"),
+                chip: live.caption && live.tool ? live.tool : undefined,
+                onChip: stopLive,
+              }
+            : mascot === "error"
+              ? { kind: "error", label: shortError(lastError) }
+              : donePill !== null
+                ? { kind: "done", label: donePill }
+                : asksYou && askingTitle && voiceQuestion === null
                   ? {
-                      kind: "focus",
-                      label: "Focus",
-                      dim: focusUntil ? `until ${clockTime(focusUntil)}` : undefined,
-                      left: focusLeft,
+                      kind: "waiting",
+                      label: askingTitle,
+                      dim: "waiting for you",
+                      count: askingCount,
+                      onOpen: () => void api.askOpen(),
                     }
-                  : paused
-                    ? { kind: "paused", label: "Paused", dim: pauseDim(settings.pause) }
-                    : !online
-                      ? { kind: "offline", label: "Offline", dim: "catching up when back" }
-                      : mascot === "noticing"
-                        ? { kind: "noticing", label: "Taking a look" }
-                        : null
+                  : working !== null || voiceQuestion !== null
+                    ? {
+                        kind: "working",
+                        label: displayedActivity
+                          ? activityLabel(displayedActivity, activityNow, { elapsed: false }).replace(/(\.\.\.|…)$/, "")
+                          : (voiceQuestion ?? working ?? "").replace(/(\.\.\.|…)$/, ""),
+                        startedAt: displayedActivity?.startedAt,
+                      }
+                    : focusLeft !== null
+                      ? {
+                          kind: "focus",
+                          label: "Focus",
+                          dim: focusUntil ? `until ${clockTime(focusUntil)}` : undefined,
+                          left: focusLeft,
+                        }
+                      : meetingSoon && !paused
+                        ? {
+                            kind: "notify",
+                            label: meetingSoon.title,
+                            dim: meetingSoon.mins < 1 ? "starting now" : `starts in ${meetingSoon.mins} minutes`,
+                            chip: meetingSoon.join ? "Join the call" : undefined,
+                            onChip: () => meetingSoon.join && void api.openReference("page", meetingSoon.join),
+                          }
+                        : later > 0 && !paused
+                          ? {
+                              kind: "waiting",
+                              label: later === 1 ? "1 suggestion" : `${later} suggestions`,
+                              dim: "held while you were busy",
+                              count: later,
+                            }
+                          : paused
+                            ? { kind: "paused", label: "Paused", dim: pauseDim(settings.pause) }
+                            : !online
+                              ? {
+                                  kind: "offline",
+                                  label: "Offline",
+                                  dim: "catching up when back",
+                                  onOpen: () => setNetOpen(true),
+                                }
+                              : mascot === "noticing"
+                                ? { kind: "noticing", label: "Taking a look" }
+                                : null
       : null;
   const [pillMeasured, setPillMeasured] = useState(0);
 
-  const registryId = redesign
-    ? resolveIslandState({
-        asking,
-        askTab: view === "settings" ? "settings" : asking ? askTab : null,
-        settingsView: view === "settings",
-        welcome: view === "welcome",
-        guiding,
-        expanded,
-        bare,
-        fullVoice,
-        voicePill: voicePill !== null,
-        suggestion: !!suggestion && suggestOpen,
-        suggestPeek: !!suggestion && !suggestOpen,
-        waitingForYou: !!waiting && !waiting.minimized && !guiding,
-        merging,
-        updateCard: updateProgress?.phase === "failed",
-        offline: !online,
-        netCard: !!netNotice && !voicePill,
-        focus: focusLeft !== null,
-        paused,
-        notifyFresh: !!notifyFresh && !busy && !expanded,
-        unread: suggestion ? 1 : 0,
-        activitiesOpen: expanded && liveActivities.length > 0 && !suggestion,
-        mascot,
-        quietGlance:
-          expanded &&
-          !suggestion &&
-          !merging &&
-          questionId === null &&
-          liveActivities.length === 0 &&
-          (mascot === "idle" || mascot === "sleeping"),
-      })
-    : null;
-  const redesignLayout =
-    redesign && registryId
-      ? redesignShell({
-          id: registryId,
-          contentHeight,
-          pillWidth: pillModel && pillMeasured ? pillMeasured : pillWidth,
-          askTab,
-          agentsWide: agentCurrent !== null,
-          boardWide: agentsLayout === "board" && wideScreen(),
-          settingsHeight: view === "settings" ? Math.max(460, contentHeight + 18) : undefined,
-          reduced,
-          settled: settled || (!expanded && !asking),
-        })
-      : null;
-  const width = redesignLayout?.geom.width ?? legacyWidth;
-  const height = redesignLayout?.geom.height ?? legacyHeight;
-  const radius = redesignLayout?.geom.radius ?? legacyRadius;
-  const transition = redesignLayout?.transition ?? legacyTransition;
-  const redesignBare = redesignLayout ? redesignLayout.geom.bare : bare;
+  const registryId = resolveIslandState({
+    asking,
+    askTab: view === "settings" ? "settings" : asking ? askTab : null,
+    settingsView: view === "settings",
+    welcome: view === "welcome",
+    guiding,
+    expanded,
+    bare,
+    fullVoice,
+    voicePill: voicePill !== null,
+    suggestion: !!suggestion && suggestOpen,
+    suggestPeek: !!suggestion && !suggestOpen,
+    waitingForYou: !!waiting && !waiting.minimized && !guiding,
+    merging,
+    updateCard: updateProgress?.phase === "failed" || (hovered && updateWorking !== null),
+    offline: !online,
+    netCard: netShown && !voicePill,
+    notifyCard: hovered && meetingSoon !== null && !paused,
+    agentCard: hovered && agentsOnly && cardAgent !== null,
+    focus: focusLeft !== null,
+    paused,
+    notifyFresh: !!notifyFresh && !busy && !expanded,
+    unread: later,
+    activitiesOpen: expanded && liveActivities.length > 0 && !suggestion,
+    mascot,
+    quietGlance:
+      expanded &&
+      !suggestion &&
+      !merging &&
+      questionId === null &&
+      liveActivities.length === 0 &&
+      (mascot === "idle" || mascot === "sleeping"),
+  });
+  const layout = shellGeom({
+    id: registryId,
+    contentHeight,
+    pillWidth: pillModel && pillMeasured ? pillMeasured : pillWidth,
+    askTab,
+    agentsWide: agentCurrent !== null,
+    boardWide: agentsLayout === "board" && wideScreen(),
+    settingsHeight: view === "settings" ? Math.max(460, contentHeight + 18) : undefined,
+    reduced,
+    settled: settled || (!expanded && !asking),
+  });
+  const width = layout.geom.width;
+  const height = layout.geom.height;
+  const radius = layout.geom.radius;
+  const transition = layout.transition;
 
   const overlayHit = useDuskie((s) => s.overlayHit);
   // Report the target shape as the interactive area; outside it the window
@@ -722,35 +759,43 @@ export function Island() {
 
   // Number keys must not pick a suggestion while the user is typing.
   useSuggestionKeys(asking ? null : suggestion);
-  // WebView chrome: Ctrl+J is Downloads — not a Duskie feature.
+  // WebView chrome: Ctrl+J is Downloads, not a Duskie feature.
   useBlockBrowserKeys();
 
   if (!ready) return null;
 
-  // The orb scales from its top-left corner, so these are its visual corner.
-  const orbScale = askPanel ? ASK_MASCOT.size / ORB : asking ? ASK_ORB / ORB : expanded ? 1 : COMPACT.orb / ORB;
-  const orbX = askPanel ? ASK_MASCOT.x : expanded ? EXPANDED.pad : (COMPACT.height - COMPACT.orb) / 2 + 1;
-  const orbY = askPanel ? ASK_MASCOT.y : expanded ? EXPANDED.pad : (COMPACT.height - COMPACT.orb) / 2;
-  const mascotX = redesignLayout?.geom.mascotX ?? orbX;
-  const mascotY = redesignLayout?.geom.mascotY ?? orbY;
-  const mascotSize = redesignLayout?.geom.mascotSize ?? ORB;
-  // Redesign: size stays 48; Take A / Ask scale via CSS (prototype orbAt).
-  const mascotScale = redesignLayout?.geom.mascotScale ?? orbScale;
+  const mascotX = layout.geom.mascotX;
+  const mascotY = layout.geom.mascotY;
+  const mascotSize = layout.geom.mascotSize;
+  // Size stays 48; Take A / Ask scale via CSS (prototype orbAt). perch is on geom.
+  const mascotScale = layout.geom.mascotScale;
   // Hidden for a fullscreen app, the island still comes back under the cursor.
   const shown = visible || rawHover;
-  const shellColor = redesign ? "atelier" : settings.islandColor;
+  const shellColor = settings.islandColor;
   const washEvent =
-    redesign && (mascot === "success" || donePill || mascot === "error")
+    mascot === "success" || donePill || mascot === "error"
       ? mascot === "error"
         ? ("error" as const)
         : ("success" as const)
       : null;
-  const bubbleItems =
-    redesign && busy && suggestion
+  const agentBubble: BubbleItem[] =
+    splitAgent && working !== agentWorking
+      ? [
+          {
+            id: `agent-${splitAgent.id}`,
+            label: splitAgent.total > 1 ? `${splitAgent.done + 1} of ${splitAgent.total}` : splitAgent.agent,
+            ring: { mark: splitAgent.mark, done: splitAgent.done, total: splitAgent.total },
+          },
+        ]
+      : [];
+  const bubbleItems = [
+    ...agentBubble,
+    ...(busy && suggestion
       ? [{ id: suggestion.id, label: suggestion.title || "Suggestion" }]
-      : redesign && busy
-        ? liveActivities.slice(redesign ? 1 : 0, 5).map((a) => ({ id: a.id, label: a.label || a.source }))
-        : [];
+      : busy
+        ? liveActivities.slice(1, 5).map((a) => ({ id: a.id, label: a.label || a.source }))
+        : []),
+  ];
 
   return (
     <motion.div
@@ -759,14 +804,14 @@ export function Island() {
       initial={false}
       animate={shown ? { opacity: 1, scale: 1, filter: "blur(0px)" } : { opacity: 0, scale: 0.92, filter: "blur(4px)" }}
       transition={reduced ? { duration: 0 } : { duration: shown ? 0.32 : 0.2, ease: [0.23, 1, 0.32, 1] }}
-      data-redesign={redesign || undefined}
     >
       <div className="relative">
         <motion.div
           className="island-shell relative overflow-hidden text-white"
-          data-bare={redesignBare}
+          data-bare={layout.geom.bare}
+          data-perch={layout.geom.perch || undefined}
           data-color={shellColor}
-          data-state={registryId ?? undefined}
+          data-state={registryId}
           data-solid={look.solid || undefined}
           data-simple={look.simple || undefined}
           initial={false}
@@ -779,24 +824,20 @@ export function Island() {
             e.currentTarget.scrollTop = 0;
           }}
           onPointerDownCapture={() => {
-            if (redesign && suggestion && peek) setPinned(true);
+            if (suggestion && peek) setPinned(true);
           }}
           onPointerEnter={() => setHovered(true)}
           onPointerLeave={() => setHovered(false)}
         >
-          {redesign && redesignLayout ? (
-            <div
-              className="isl-tint"
-              aria-hidden
-              style={{ "--tint": tintRgb(washEvent ?? redesignLayout.geom.wash) } as CSSProperties}
-            />
-          ) : (
-            <IslandWash simple={look.simple} mascot={mascot} donePill={donePill} />
-          )}
+          <div
+            className="isl-tint"
+            aria-hidden
+            style={{ "--tint": tintRgb(washEvent ?? layout.geom.wash) } as CSSProperties}
+          />
           <Announcer registryId={registryId} />
 
           <AnimatePresence initial={false}>
-            {pillModel && <RedesignPill key={`pill-${pillModel.kind}`} model={pillModel} onWidth={setPillMeasured} />}
+            {pillModel && <IslandPill key={`pill-${pillModel.kind}`} model={pillModel} onWidth={setPillMeasured} />}
             {!pillModel && !expanded && voicePill && (
               <VoicePill
                 key="voice"
@@ -835,21 +876,15 @@ export function Island() {
                 className="absolute top-0 right-0"
                 style={
                   askPanel
-                    ? redesign
-                      ? ({
-                          // Design: only the tab row sits beside Duskie; the rest runs full width.
-                          left: 12,
-                          paddingTop: ASK_PAD.top,
-                          paddingRight: ASK_PAD.x,
-                          "--ak-indent": `${(redesignLayout?.geom.contentPadLeft ?? ASK_PAD.x) - 12}px`,
-                        } as CSSProperties)
-                      : {
-                          left: ASK_PAD.x,
-                          paddingTop: ASK_PAD.top,
-                          paddingRight: ASK_PAD.x,
-                        }
+                    ? ({
+                        // Design: only the tab row sits beside Duskie; the rest runs full width.
+                        left: 12,
+                        paddingTop: ASK_PAD.top,
+                        paddingRight: ASK_PAD.x,
+                        "--ak-indent": `${layout.geom.contentPadLeft - 12}px`,
+                      } as CSSProperties)
                     : {
-                        left: redesign ? (redesignLayout?.geom.contentPadLeft ?? EXPANDED.pad) : EXPANDED.pad,
+                        left: layout.geom.contentPadLeft,
                         paddingTop: EXPANDED.pad,
                         paddingRight: EXPANDED.pad,
                       }
@@ -883,7 +918,11 @@ export function Island() {
                 key="preparing"
                 ref={contentRef}
                 className="absolute top-0 right-0"
-                style={{ left: EXPANDED.pad + ORB + 14, paddingTop: EXPANDED.pad, paddingRight: EXPANDED.pad }}
+                style={{
+                  left: layout.geom.contentPadLeft,
+                  paddingTop: EXPANDED.pad,
+                  paddingRight: EXPANDED.pad,
+                }}
                 initial={reduced ? { opacity: 0 } : { opacity: 0, filter: "blur(6px)", y: 4 }}
                 animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
                 exit={{ opacity: 0, filter: "blur(4px)", transition: { duration: 0.1 } }}
@@ -899,13 +938,11 @@ export function Island() {
                   className="absolute top-0 right-0"
                   style={
                     {
-                      left: redesign
-                        ? (redesignLayout?.geom.contentPadLeft ?? EXPANDED.pad + ORB + 14)
-                        : EXPANDED.pad + ORB + 14,
+                      left: layout.geom.contentPadLeft,
                       paddingTop: EXPANDED.pad,
                       paddingRight: EXPANDED.pad,
                       // Lists below the orb (You missed) reach back under it.
-                      "--orb-indent": `${redesign ? (redesignLayout?.geom.mascotSize ?? ORB) + 14 : ORB + 14}px`,
+                      "--orb-indent": `${layout.geom.mascotSize + 14}px`,
                     } as CSSProperties
                   }
                   initial={reduced ? { opacity: 0 } : { opacity: 0, filter: "blur(6px)", y: 4 }}
@@ -917,6 +954,16 @@ export function Island() {
                     <FullVoice text={voicePill.text} thinking={voicePill.thinking} />
                   ) : showGuide && waiting ? (
                     <IslandGuide waiting={waiting} guide={guide} />
+                  ) : registryId === "activities" ? (
+                    <ActivitiesCard />
+                  ) : registryId === "update" && updateWorking !== null ? (
+                    <UpdateCard activityId={updateActivity?.id ?? null} startedAt={updateActivity?.startedAt ?? null} />
+                  ) : registryId === "agent-card" && cardAgent ? (
+                    <AgentCard id={cardAgent} />
+                  ) : registryId === "notify-card" && meetingSoon ? (
+                    <MeetingCard meeting={meetingSoon} />
+                  ) : registryId === "net-card" ? (
+                    <NetCard onClose={() => setNetOpen(false)} />
                   ) : (
                     <ExpandedContent mascot={mascot} paused={paused} suggestion={suggestion} />
                   )}
@@ -934,17 +981,17 @@ export function Island() {
           transition={transition}
           style={{ originX: 0, originY: 0 }}
         >
-          <span className={redesign ? "dk-orb" : undefined} data-face={redesign ? haloFace(mascot) : undefined}>
-            {redesign && <span className="dk-halo" />}
+          <span className="dk-orb" data-face={haloFace(mascot)}>
+            <span className="dk-halo" />
             <Creature
               state={chatting && mascot === "idle" ? "working" : mascot}
               face={chatting && mascot === "idle" ? null : face}
               size={mascotSize}
-              theme={redesign ? "atelier" : settings.theme}
+              theme={settings.theme}
               alive={settings.alive && visible && !look.simple}
               simple={look.simple}
-              active={shown && (redesign || !bare)}
-              bust={redesign ? false : undefined}
+              active={shown}
+              bust={false}
             />
           </span>
         </motion.div>
@@ -984,4 +1031,37 @@ function clockTime(ms: number): string {
 
 function pauseDim(p: Settings["pause"]): string | undefined {
   return p.kind === "until" ? `until ${clockTime(Date.parse(p.until))}` : undefined;
+}
+
+const APPS = [
+  "Outlook",
+  "Gmail",
+  "Slack",
+  "Teams",
+  "Calendar",
+  "Chrome",
+  "Edge",
+  "WhatsApp",
+  "Discord",
+  "GitHub",
+  "Notion",
+];
+
+/** The app a suggestion came from, when its text names one. */
+function sourceApp(s: { skillId: string; detail: string }): string | null {
+  const hay = `${s.skillId} ${s.detail}`.toLowerCase();
+  return APPS.find((a) => hay.includes(a.toLowerCase())) ?? null;
+}
+
+/** A meeting starting within ten minutes (or just started), for the notify pill. */
+function soonMeeting(now: number, cal: CalendarToday | null | undefined) {
+  for (const m of cal?.meetings ?? []) {
+    const [h, mm] = m.start.split(":").map(Number);
+    const d = new Date(now);
+    d.setHours(h ?? 0, mm ?? 0, 0, 0);
+    const mins = Math.round((d.getTime() - now) / 60_000);
+    if (mins >= -2 && mins <= 10)
+      return { title: m.title, mins: Math.max(0, mins), join: m.joinUrl, notes: m.notes ?? null };
+  }
+  return null;
 }

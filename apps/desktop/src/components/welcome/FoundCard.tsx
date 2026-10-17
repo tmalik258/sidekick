@@ -1,6 +1,6 @@
 "use client";
 
-// What Duskie found on this PC — pick rows, one tap to apply.
+// What Duskie found on this PC, pick rows, one tap to apply.
 
 import { useMemo, useState } from "react";
 import { api } from "@/lib/bridge";
@@ -18,7 +18,7 @@ interface Pick {
   on: boolean;
 }
 
-/** Only things not already applied — remount after Hide must not re-offer them. */
+/** Only things not already applied, remount after Hide must not re-offer them. */
 function picksFrom(f: SetupFound, off: Set<string>, settings: Settings): Pick[] {
   const list: Omit<Pick, "on">[] = [];
   const repos = f.codeFolders.reduce((n, c) => n + c.repos, 0);
@@ -37,7 +37,7 @@ function picksFrom(f: SetupFound, off: Set<string>, settings: Settings): Pick[] 
       hint: f.searchFolders.map((c) => c.label).join(", "),
     });
   }
-  // Local chat / Ollama / vision stay in the checklist below — not here.
+  // Local chat / Ollama / vision stay in the checklist below, not here.
   if (f.claudeInstalled && !f.claudeHooks) {
     list.push({ id: "hooks", title: "Claude hooks", hint: "Hear when it finishes or asks" });
   }

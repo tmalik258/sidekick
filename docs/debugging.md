@@ -3,7 +3,7 @@
 ## Native crashes (`STATUS_HEAP_CORRUPTION` / `0xc0000374`)
 
 Rust panics are written to `last-crash.txt` in the app data folder. **Windows heap
-corruption does not run that path** — the process is killed by the OS — so you need
+corruption does not run that path** (the process is killed by the OS), so you need
 a dump.
 
 ### Local dumps (preferred)
@@ -37,7 +37,7 @@ Remove-Item -Recurse -Force "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Repo
 
 Full PageHeap catches the bad write at the cost of heavy memory and speed. Use it
 only on a dedicated repro, then turn it off. Install the Windows SDK Debugging Tools
-and use `gflags` / Application Verifier on `duskie-desktop.exe` — never leave it
+and use `gflags` / Application Verifier on `duskie-desktop.exe`, but never leave it
 on for normal development.
 
 ## UI thread holds
@@ -45,8 +45,8 @@ on for normal development.
 Duskie logs `UI thread held N ms by <name>` when the main thread is busy long
 enough to hitch:
 
-- **by a command name** — a sync Tauri invoke; move that work off the UI thread.
-- **by stall** — something else (WebView paint, tray, native code); no invoke name.
+- **by a command name**: a sync Tauri invoke; move that work off the UI thread.
+- **by stall**: something else (WebView paint, tray, native code); no invoke name.
 
 Copy diagnostics (Settings) includes a short freeze summary. `freeze_report` returns
 the same list for tools and tests.

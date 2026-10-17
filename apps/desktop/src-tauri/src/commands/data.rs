@@ -163,6 +163,27 @@ pub fn sync_calendar(calendar: &duskie_sensors::Calendar, settings: &Settings) {
     c.remind_minutes = i64::from(settings.calendar.remind_minutes);
 }
 
+/// The page or file from history that best matches a meeting title, so its
+/// card can open the notes used last time.
+fn meeting_notes(state: &AppState, title: &str) -> Option<serde_json::Value> {
+    if title.trim().is_empty() {
+        return None;
+    }
+    let hit = state
+        .storage
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .search(title, &["page", "file"], 1)
+        .ok()?
+        .into_iter()
+        .next()?;
+    Some(serde_json::json!({
+        "title": hit.title.chars().take(40).collect::<String>(),
+        "source": hit.source,
+        "reference": hit.reference,
+    }))
+}
+
 /// Today's meetings for Settings > Today.
 #[tauri::command]
 pub async fn calendar_today(app: AppHandle) -> serde_json::Value {
@@ -173,7 +194,10 @@ pub async fn calendar_today(app: AppHandle) -> serde_json::Value {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let today = chrono::Local::now().date_naive();
-        let meetings: Vec<serde_json::Value> = duskie_sensors::calendar::on_day(&c.meetings, today)
+        let day = duskie_sensors::calendar::on_day(&c.meetings, today);
+        let (error, sources) = (c.error.clone(), c.sources.clone());
+        drop(c);
+        let meetings: Vec<serde_json::Value> = day
             .iter()
             .map(|m| {
                 serde_json::json!({
@@ -181,10 +205,11 @@ pub async fn calendar_today(app: AppHandle) -> serde_json::Value {
                     "start": m.start.with_timezone(&chrono::Local).format("%H:%M").to_string(),
                     "end": m.end.with_timezone(&chrono::Local).format("%H:%M").to_string(),
                     "joinUrl": m.join_url,
+                    "notes": meeting_notes(&state, &m.title),
                 })
             })
             .collect();
-        serde_json::json!({ "meetings": meetings, "error": c.error, "sources": c.sources })
+        serde_json::json!({ "meetings": meetings, "error": error, "sources": sources })
     })
     .await
     .unwrap_or_else(|_| serde_json::json!({ "meetings": [], "error": null, "sources": [] }))

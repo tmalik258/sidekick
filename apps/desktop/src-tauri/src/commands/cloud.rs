@@ -17,6 +17,8 @@ pub struct CloudKeys {
     gemini: bool,
     groq: bool,
     openrouter: bool,
+    openai: bool,
+    xai: bool,
 }
 
 fn pref_mut<'a>(ai: &'a mut AiSettings, id: &str) -> Option<&'a mut CloudPref> {
@@ -24,6 +26,8 @@ fn pref_mut<'a>(ai: &'a mut AiSettings, id: &str) -> Option<&'a mut CloudPref> {
         "gemini" => Some(&mut ai.gemini),
         "groq" => Some(&mut ai.groq),
         "openrouter" => Some(&mut ai.openrouter),
+        "openai" => Some(&mut ai.openai),
+        "xai" => Some(&mut ai.xai),
         _ => None,
     }
 }
@@ -36,6 +40,8 @@ pub async fn cloud_keys() -> CmdResult<CloudKeys> {
         gemini: has("gemini"),
         groq: has("groq"),
         openrouter: has("openrouter"),
+        openai: has("openai"),
+        xai: has("xai"),
     })
     .await
 }

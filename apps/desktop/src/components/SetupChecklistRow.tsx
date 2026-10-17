@@ -65,7 +65,7 @@ export const SetupRow = memo(function SetupRow({
 }) {
   const [busy, setBusy] = useState(false);
   const waiting = useDuskie((s) => s.waiting);
-  // App connects (app:notion) highlight the Composio row — that is the island done ring.
+  // App connects (app:notion) highlight the Composio row, that is the island done ring.
   const justDone = useDuskie(
     (s) => s.justDone === item.id || (item.id === "composio" && (s.justDone?.startsWith("app:") ?? false)),
   );
@@ -127,7 +127,7 @@ export const SetupRow = memo(function SetupRow({
           ? [
               "PowerShell is open. The command is already on the clipboard.",
               "Replace your-key with your API key, paste (Ctrl+V), press Enter.",
-              "Come back here — Duskie notices when the key is set. No restart needed.",
+              "Come back here. Duskie notices when the key is set. No restart needed.",
             ]
           : [
               `A PowerShell window is running: ${item.action} ${item.title}.`,
@@ -300,7 +300,7 @@ export function SetupSpinner({ className = "" }: { className?: string }) {
   );
 }
 
-/** One status circle for rows and the folded "ready" bar — checking pulses. */
+/** One status circle for rows and the folded "ready" bar, checking pulses. */
 export function SetupStatusMark({ checking, done }: { checking: boolean; done: boolean }) {
   return (
     <span

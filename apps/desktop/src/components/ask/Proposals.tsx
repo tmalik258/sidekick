@@ -1,10 +1,10 @@
 "use client";
-import { Fragment, type RefObject, useEffect, useRef, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/bridge";
 import { joinMultiPicks } from "@/lib/options";
 import { runProposal, sendChat, undoProposal, useDuskie } from "@/lib/store";
 import type { Proposal } from "@/lib/types";
-import { Tip } from "../Tip";
+import { Ic } from "../Icon";
 
 /** Buttons still waiting for a tap; they take Alt 1, Alt 2... first. */
 export function pendingCount(items: Proposal[] | undefined): number {
@@ -32,7 +32,9 @@ export function useAltDigits(count: number, start: number, run: (n: number) => v
 
 /** Actions the answer offers: nothing runs until a tap, and Undo follows. */
 export function Proposals({ items, keys }: { items: Proposal[]; keys: boolean }) {
-  const pending = items.filter((p) => !p.ran);
+  const [skipped, setSkipped] = useState<string[]>([]);
+  const pending = items.filter((p) => !p.ran && !skipped.includes(p.id));
+  const waiting = pending;
   useAltDigits(keys ? Math.min(pending.length, 9) : 0, 0, (n) => void runProposal(pending[n].id));
   // Alt U undoes the newest action that can be undone.
   const undoable = [...items].reverse().find((p) => p.ran?.ok && p.ran.undoId != null && !p.ran.undone);
@@ -110,50 +112,50 @@ export function Proposals({ items, keys }: { items: Proposal[]; keys: boolean })
     );
   }
   return (
-    <div className="ak-body">
-      <div className="ak-prs">
-        {items.map((p, i) => {
-          const button = (
-            <button
-              key={p.id}
-              type="button"
-              disabled={!!p.ran || busy}
-              onClick={() => void runProposal(p.id)}
-              data-state={p.ran ? (p.ran.ok ? "done" : "failed") : "waiting"}
-              className="ak-pr ak-in"
-              style={{ animationDelay: `${i * 40}ms` }}
-            >
-              <span className="ak-cb" aria-hidden="true" />
-              <span className="min-w-0 flex-1 truncate">{p.ran && !p.ran.ok ? p.ran.message : p.label}</span>
-              {!p.ran && keys && pending.indexOf(p) < 9 && (
-                <kbd>
-                  <i className="alt-pre">Alt </i>
-                  {pending.indexOf(p) + 1}
-                </kbd>
-              )}
-            </button>
-          );
-          return p.ran?.message ? (
-            <Tip key={p.id} label={p.ran.message}>
-              {button}
-            </Tip>
-          ) : (
-            <Fragment key={p.id}>{button}</Fragment>
-          );
-        })}
+    <div className="flex flex-col gap-1.5">
+      <div className="rd-card-head">
+        <p className="rd-eyebrow flex items-center gap-1.5">
+          <span className="rd-dot" style={{ background: "#95a89a" }} />
+          Duskie suggests
+        </p>
+        <p className="rd-title">
+          {waiting.length === 1 ? "1 thing, your call" : `${waiting.length} things, your call`}
+        </p>
+        <p className="rd-detail">Each one only happens if you approve it.</p>
       </div>
-      <div className="ak-chips">
-        {pending.length > 0 && (
-          <button type="button" disabled={busy} onClick={() => void doAll()} className="ak-chip primary chip">
-            {busy ? "Working..." : `Do all ${pending.length}`}
-            {keys && !busy && (
-              <kbd>
-                <i className="alt-pre">Alt </i>A
-              </kbd>
+      {items.map((p) => {
+        const left = waiting.indexOf(p);
+        const off = skipped.includes(p.id);
+        return (
+          <div key={p.id} className="rd-list-row mg-row" data-off={off || undefined}>
+            <span style={{ color: "var(--ink-3)", display: "inline-flex" }}>
+              <Ic name={p.ran ? (p.ran.ok ? "check" : "warn") : "dot"} size={12} />
+            </span>
+            <span className="t" style={{ fontFamily: "inherit", fontSize: 13, opacity: off ? 0.45 : 1 }}>
+              {p.ran && !p.ran.ok ? p.ran.message : p.label}
+            </span>
+            {!p.ran && !off && (
+              <span className="inline-flex gap-1">
+                <button type="button" className="chip-s" onClick={() => setSkipped((x) => [...x, p.id])}>
+                  Skip
+                </button>
+                <button type="button" className="chip-s" disabled={busy} onClick={() => void runProposal(p.id)}>
+                  Approve
+                  {keys && left < 9 && <kbd className="ml-1 opacity-60">Alt {left + 1}</kbd>}
+                </button>
+              </span>
             )}
+            {p.ran?.ok && p.ran.undoId != null && !p.ran.undone && <UndoProposal proposal={p} />}
+          </div>
+        );
+      })}
+      <div className="mt-1 flex items-center gap-1.5">
+        {waiting.length > 0 && (
+          <button type="button" className="rd-btn primary" disabled={busy} onClick={() => void doAll()}>
+            {busy ? "Working" : "Approve all"}
+            {keys && !busy && <kbd className="ml-1.5 opacity-60">Alt A</kbd>}
           </button>
         )}
-        {undoable && <UndoProposal proposal={undoable} buttonRef={keys ? undoRef : undefined} />}
       </div>
     </div>
   );

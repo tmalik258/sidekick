@@ -4,6 +4,57 @@ All notable changes to Sidekick are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Look and feel
+
+- The new island look is now on by default. Settings > Appearance turns it off for one more release.
+- The editor and terminal use Duskie's own colours, glass panels and tabs.
+- Duskie, a small furry creature, replaces the orb. The island grows into compact pills and cards for suggestions, meetings, agents, updates and offline, with a word by word label morph.
+- Settings have a grouped sidebar; the welcome and setup guide are cards with one step at a time.
+- The island turns solid when Windows transparency is off or reduced transparency is asked for.
+
+### Notifications and mail
+
+- Notifications are scored and only the ones that matter get loud. A shared budget stops bursts, and Focus holds everything for later.
+- Gmail and any IMAP server: mail that needs you shows in the island. Composio Gmail fills in until Gmail is connected directly.
+- Settings show your notification profile and what Duskie learned from your choices.
+
+### Ask and agents
+
+- Claude Code and Codex questions show as option cards; plans say which steps can be undone.
+- Agent card on hover, agent ring next to a busy pill, Pause for an agent, and a card listing background work with Stop.
+
+### Voice
+
+- Live answers (Settings > AI > Voice, off by default): Duskie starts answering when you pause, and the answer shows as a caption in the island with the step it is on and a Stop button. Ask stays closed. Live conversations stay in Ask history as text unless you turn that off.
+- Ask can uninstall an app: you pick it on screen, and the app's own uninstaller opens. Nothing is removed silently.
+- Ask knows its way around Duskie: it says where a setting is, and for crashes or errors it reads the health report and suggests a fix.
+- Spoken choices cannot pick an option that deletes or closes; those need a tap.
+- Instructions found in mail, web pages or files cannot start a change on their own.
+- A local audit log keeps which tool ran and how it ended, never what it read or wrote.
+- A test makes sure the voice code writes no files, so audio is never saved.
+
+### Git and editor
+
+- Git dock: checkbox staging, commit message writer, amend, History, Pull request and Stashes, side by side with the island (Ctrl G).
+- Full screen editor: file tree, tabs, change markers against the last commit, quick open, project search and a terminal. File access stays inside the project, and a file changed on disk is never overwritten without asking.
+
+### Connections and AI
+
+- Direct MCP servers on this PC (after you confirm the exact command) and online with browser sign-in. Secrets stay in the keychain, writes are off until allowed per tool, and a direct server wins over the same app through Composio.
+- OpenAI and xAI Grok as cloud providers.
+- A notice when the graphics card is too small for local chat.
+- Shared cache and rate limits with retries; a provider that keeps failing pauses for a minute and the usage popover says so. Anthropic prompt caching.
+
+### Skills
+
+- One skills library for Claude Code, Codex and the local model, with per tool switches and sync. Copies you changed by hand are left alone, and anything replaced is backed up.
+- Add a skill from a GitHub folder link, pinned to a commit, and update it later. Duskie says once when a new skill appears.
+
+### Accessibility and quality
+
+- Accessibility audit (axe) in CI; contrast fixes in Git and editor.
+- No em dashes in UI text or docs, checked by a test.
+
 ## [0.2.2] - 2026-10-14
 
 ### Look and feel

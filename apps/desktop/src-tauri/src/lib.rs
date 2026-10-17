@@ -4,6 +4,7 @@ mod agents;
 mod ai;
 mod ask;
 mod ask_tools;
+mod audit;
 mod brief;
 mod browser;
 mod chat_prune;
@@ -18,6 +19,7 @@ mod decide;
 #[cfg(test)]
 mod decisions_test;
 mod detect;
+mod direct;
 mod disk;
 #[cfg(test)]
 mod drift_test;
@@ -33,6 +35,7 @@ mod freeze;
 mod git_watch;
 mod github;
 mod health;
+mod help;
 mod imap;
 mod inbox;
 mod instant;
@@ -53,6 +56,7 @@ mod pipeline;
 mod privacy;
 mod projects;
 mod promises;
+mod pty;
 mod quick;
 mod recipes;
 mod rename;
@@ -76,6 +80,7 @@ mod updates;
 mod voice;
 mod web;
 mod windows;
+mod workspace;
 
 use std::error::Error;
 use std::sync::{Arc, Mutex, RwLock};
@@ -220,12 +225,20 @@ pub fn run() {
             commands::servers_test,
             commands::servers_allow_write,
             commands::servers_remove,
+            commands::servers_sign_in,
             commands::git_status,
             commands::git_stage,
             commands::git_unstage,
             commands::git_commit,
             commands::git_amend,
             commands::git_last_commit_pushed,
+            commands::git_log,
+            commands::git_stashes,
+            commands::git_stash_apply,
+            commands::git_stash_drop,
+            commands::island_width,
+            commands::limits_paused,
+            commands::gpu_memory,
             commands::git_message_diff,
             commands::git_write_message,
             commands::mail_status,
@@ -257,6 +270,24 @@ pub fn run() {
             commands::debug_emit_event,
             commands::skills_list,
             commands::skill_set,
+            commands::library_review,
+            commands::library_list,
+            commands::library_import,
+            commands::library_set_target,
+            commands::library_remove,
+            commands::library_sync,
+            commands::library_fetch_url,
+            commands::library_install_fetched,
+            commands::editor_tree,
+            commands::editor_read,
+            commands::editor_write,
+            commands::editor_changed,
+            commands::editor_head,
+            commands::editor_search,
+            commands::term_open,
+            commands::term_write,
+            commands::term_resize,
+            commands::term_close,
             commands::capabilities_get,
             commands::choices_reset,
             commands::routines_today,
@@ -441,6 +472,7 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     }
     net::start(app);
     git_watch::start(app);
+    commands::library_watch(app);
     github::start(app);
     tauri::async_runtime::spawn(async move {
         let sensors: Vec<Box<dyn Sensor>> = vec![

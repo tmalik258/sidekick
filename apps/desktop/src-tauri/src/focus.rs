@@ -178,6 +178,8 @@ fn offer_held(app: &AppHandle, held: &[Held]) {
             trust: Trust::Suggest,
             remember: None,
             priority: 60,
+            compact: false,
+            silent: false,
         },
     );
 }

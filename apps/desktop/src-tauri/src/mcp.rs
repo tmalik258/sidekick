@@ -360,6 +360,8 @@ async fn call(app: &AppHandle, name: &str, args: &Value) -> Value {
                     trust: Trust::Suggest,
                     remember: None,
                     priority: 70,
+                    compact: false,
+                    silent: false,
                 },
             );
             text("Shown on the island.")

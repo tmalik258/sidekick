@@ -230,7 +230,7 @@ export function useAway(): {
   return { rows, reviewId, waitingId, agent };
 }
 
-/** "While you were away" — glance section; null when nothing to report. */
+/** "While you were away", glance section; null when nothing to report. */
 export function AwaySection() {
   const { rows, reviewId, waitingId, agent } = useAway();
   const review = reviewId ? () => openSession(reviewId) : undefined;

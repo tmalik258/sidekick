@@ -7,7 +7,7 @@ import type { NetNotice } from "@/lib/net";
 import { playSound } from "@/lib/sound";
 import { installUpdate, notePick, uiVolume, useDuskie } from "@/lib/store";
 import type { MascotState, Suggestion } from "@/lib/types";
-import { Icon } from "./Icon";
+import { Ic } from "./Icon";
 import { Glance, RoundButton } from "./IslandGlance";
 import { COMPACT, DETAIL, TITLE } from "./island-layout";
 import { MergeCard } from "./MergeCard";
@@ -26,26 +26,23 @@ export function CompactTrailing({
   waiting: string | null;
 }) {
   const later = useDuskie((s) => s.later);
-  const redesign = useDuskie((s) => s.settings.redesign.enabled);
-  const labelInk = redesign ? "text-(--c2)/85" : "text-white/85";
-  const h = redesign ? "h-[38px]" : "h-9";
   if (waiting) {
     return (
       <motion.div
-        className={`absolute top-0 right-0 flex ${h} items-center gap-2.5 pr-3.5`}
+        className="absolute top-0 right-0 flex h-[38px] items-center gap-2.5 pr-3.5"
         style={{ left: COMPACT.height + 4 }}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1, transition: { delay: 0.12, duration: 0.2 } }}
         exit={{ opacity: 0, transition: { duration: 0.08 } }}
       >
-        <span className={`min-w-0 flex-1 truncate text-[12.5px] font-medium ${labelInk}`}>Waiting for {waiting}</span>
+        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-(--c2)/85">Waiting for {waiting}</span>
         <Activity />
       </motion.div>
     );
   }
   return (
     <motion.div
-      className={`absolute top-0 right-0 flex ${h} items-center pr-3.5`}
+      className="absolute top-0 right-0 flex h-[38px] items-center pr-3.5"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1, transition: { delay: 0.12, duration: 0.2 } }}
       exit={{ opacity: 0, transition: { duration: 0.08 } }}
@@ -54,25 +51,18 @@ export function CompactTrailing({
         <Activity />
       ) : offline ? (
         <Tip label="Offline">
-          <span role="img" aria-label="Offline" className={redesign ? "text-(--warn)" : "text-[#ff9f0a]"}>
-            <Icon name="wifiOff" size={14} />
+          <span role="img" aria-label="Offline" className="text-(--warn)">
+            <Ic name="wifi" size={14} />
           </span>
         </Tip>
       ) : paused ? (
         <Tip label="Paused">
-          <span
-            className={`size-1.5 rounded-full ${redesign ? "bg-(--warn)" : "bg-[#ffd60a]"}`}
-            style={{ boxShadow: redesign ? "0 0 8px var(--warn)" : "0 0 8px #ffd60a" }}
-          />
+          <span className="size-1.5 rounded-full bg-(--warn)" style={{ boxShadow: "0 0 8px var(--warn)" }} />
         </Tip>
       ) : (
         later > 0 && (
           <Tip label={`${later} waiting for you`}>
-            <span
-              className={`grid h-4 min-w-4 place-items-center rounded-full px-1 text-[10px] leading-none font-semibold ${
-                redesign ? "bg-(--c3) text-(--c1)" : "bg-[#0a84ff] text-white"
-              }`}
-            >
+            <span className="grid h-4 min-w-4 place-items-center rounded-full bg-(--c3) px-1 text-[10px] leading-none font-semibold text-(--c1)">
               {later}
             </span>
           </Tip>
@@ -84,13 +74,12 @@ export function CompactTrailing({
 
 /** Three bars that breathe while the mascot is busy. */
 export function Activity() {
-  const redesign = useDuskie((s) => s.settings.redesign.enabled);
   return (
     <span className="flex h-3 items-center gap-0.75" role="img" aria-label="Busy">
       {[0, 1, 2].map((i) => (
         <motion.span
           key={i}
-          className={`w-0.75 rounded-full ${redesign ? "bg-(--listen)" : "bg-white/85"}`}
+          className="w-0.75 rounded-full bg-(--listen)"
           animate={{ height: [4, 12, 4] }}
           transition={{ duration: 0.9, repeat: Number.POSITIVE_INFINITY, delay: i * 0.15, ease: "easeInOut" }}
         />
@@ -182,7 +171,7 @@ export function ExpandedContent({
             {result.undoId != null && <UndoButton id={result.undoId} />}
             {result.path && (
               <RoundButton label="Show in folder" onClick={() => void api.revealPath(result.path ?? "")}>
-                <Icon name="folder" size={15} />
+                <Ic name="folder" size={15} />
               </RoundButton>
             )}
           </div>
@@ -212,7 +201,7 @@ export function NetNoticeCard({ notice }: { notice: NetNotice }) {
         }`}
         aria-hidden="true"
       >
-        <Icon name={notice.online ? "wifi" : "wifiOff"} size={16} />
+        <Ic name="wifi" size={16} />
       </span>
     </div>
   );
@@ -230,63 +219,17 @@ export function UndoButton({ id }: { id: number }) {
   };
   return (
     <RoundButton label="Undo" onClick={() => void undo()}>
-      <Icon name="undo" size={15} />
+      <Ic name="undo" size={15} />
     </RoundButton>
   );
 }
 
 export function Options({ suggestion }: { suggestion: Suggestion }) {
   const alwaysAt = suggestion.always?.findIndex(Boolean) ?? -1;
-  // Shift while hovered, or Shift+Alt anywhere — Rust polls; no hover required.
+  // Shift while hovered, or Shift+Alt anywhere, Rust polls; no hover required.
   const priv = useDuskie((s) => s.shiftHeld);
-  const redesign = useDuskie((s) => s.settings.redesign.enabled);
-  if (redesign) {
-    return (
-      <div className="mt-3 flex flex-col gap-1.5">
-        {suggestion.options.map((option, i) => {
-          const openUrl = suggestion.actions[i] === "open_url";
-          const label = priv && openUrl ? privateOpenLabel(option) : option;
-          return (
-            <motion.button
-              // biome-ignore lint/suspicious/noArrayIndexKey: labels can repeat and the list never reorders
-              key={`${i}-${option}`}
-              type="button"
-              onClick={(e) => choose(suggestion, i, e.shiftKey || (priv && openUrl))}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.22, delay: 0.08 + i * 0.03, ease: [0.23, 1, 0.32, 1] }}
-              className={`rd-opt chip justify-between gap-2 ${i === 0 ? "rd-opt-primary" : ""}`}
-            >
-              <span className="min-w-0 flex-1 leading-snug text-balance">{label}</span>
-              <kbd className={`shrink-0 font-sans text-[11px] leading-none ${i === 0 ? "opacity-40" : "opacity-45"}`}>
-                Alt {i + 1}
-              </kbd>
-            </motion.button>
-          );
-        })}
-        <div className="mt-1 flex flex-wrap items-center gap-2">
-          {alwaysAt >= 0 && (
-            <Tip label={`From now on, "${suggestion.options[alwaysAt]}" without asking. Undo in Settings > Skills.`}>
-              <button type="button" onClick={() => always(suggestion, alwaysAt)} className="rd-gfoot-btn chip">
-                Always {suggestion.options[alwaysAt].toLowerCase()}
-              </button>
-            </Tip>
-          )}
-          <button type="button" onClick={() => showLess(suggestion)} className="rd-gfoot-btn chip">
-            Show less
-          </button>
-          <button type="button" onClick={() => dismiss(suggestion)} className="rd-gfoot-btn chip">
-            Dismiss
-            <kbd className="ml-1.5 font-sans text-[11px] opacity-45">
-              <i className="alt-pre">Alt </i>0
-            </kbd>
-          </button>
-        </div>
-      </div>
-    );
-  }
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-1.5">
+    <div className="mt-3 flex flex-col gap-1.5">
       {suggestion.options.map((option, i) => {
         const openUrl = suggestion.actions[i] === "open_url";
         const label = priv && openUrl ? privateOpenLabel(option) : option;
@@ -296,56 +239,36 @@ export function Options({ suggestion }: { suggestion: Suggestion }) {
             key={`${i}-${option}`}
             type="button"
             onClick={(e) => choose(suggestion, i, e.shiftKey || (priv && openUrl))}
-            initial={{ opacity: 0, y: 6, filter: "blur(4px)" }}
-            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-            transition={{ duration: 0.26, delay: 0.12 + i * 0.04, ease: [0.23, 1, 0.32, 1] }}
-            className={`chip flex max-w-full min-h-8 items-center gap-2 rounded-full px-3 py-1.5 text-left text-[13px] font-medium tracking-[-0.01em] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0a84ff] ${
-              i === 0 ? "bg-white text-black hover:bg-white/90" : "bg-white/12 text-white hover:bg-white/20"
-            }`}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.22, delay: 0.08 + i * 0.03, ease: [0.23, 1, 0.32, 1] }}
+            className={`rd-opt chip justify-between gap-2 ${i === 0 ? "rd-opt-primary" : ""}`}
           >
-            <span className="max-w-60 leading-snug text-balance">{label}</span>
-            <kbd
-              className={`shrink-0 self-center font-sans text-[11px] leading-none ${
-                i === 0 ? "text-black/40" : "text-white/45"
-              }`}
-            >
+            <span className="min-w-0 flex-1 leading-snug text-balance">{label}</span>
+            <kbd className={`shrink-0 font-sans text-[11px] leading-none ${i === 0 ? "opacity-40" : "opacity-45"}`}>
               Alt {i + 1}
             </kbd>
           </motion.button>
         );
       })}
-      {alwaysAt >= 0 && (
-        <Tip label={`From now on, "${suggestion.options[alwaysAt]}" without asking. Undo in Settings > Skills.`}>
-          <motion.button
-            type="button"
-            onClick={() => always(suggestion, alwaysAt)}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.2, delay: 0.12 + suggestion.options.length * 0.04 }}
-            className="chip rounded-full px-2.5 py-1.5 text-[13px] text-[rgb(235_235_245/0.6)] hover:text-white"
-          >
-            Always {suggestion.options[alwaysAt].toLowerCase()}
-          </motion.button>
-        </Tip>
-      )}
-      <motion.button
-        type="button"
-        onClick={() => dismiss(suggestion)}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.2, delay: 0.12 + suggestion.options.length * 0.04 }}
-        className="ak-ignore chip rounded-full px-3 py-1.5 text-[13px] text-[rgb(235_235_245/0.7)] hover:text-white"
-      >
-        <span
-          className="ak-ignore-fill"
-          aria-hidden="true"
-          style={{ animationDuration: `${useDuskie.getState().settings.collapseAfterSecs}s` }}
-        />
-        <span className="relative">Ignore</span>
-        <kbd className="relative ml-1.5 font-sans text-[11px] text-white/45">
-          <i className="alt-pre">Alt </i>0
-        </kbd>
-      </motion.button>
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        {alwaysAt >= 0 && (
+          <Tip label={`From now on, "${suggestion.options[alwaysAt]}" without asking. Undo in Settings > Skills.`}>
+            <button type="button" onClick={() => always(suggestion, alwaysAt)} className="rd-gfoot-btn chip">
+              Always {suggestion.options[alwaysAt].toLowerCase()}
+            </button>
+          </Tip>
+        )}
+        <button type="button" onClick={() => showLess(suggestion)} className="rd-gfoot-btn chip">
+          Show less
+        </button>
+        <button type="button" onClick={() => dismiss(suggestion)} className="rd-gfoot-btn chip">
+          Dismiss
+          <kbd className="ml-1.5 font-sans text-[11px] opacity-45">
+            <i className="alt-pre">Alt </i>0
+          </kbd>
+        </button>
+      </div>
     </div>
   );
 }

@@ -201,6 +201,8 @@ fn offer_auto(skill_id: &str, label: &str) -> Proposal {
         trust: Trust::Suggest,
         remember: None,
         priority: 60,
+        compact: false,
+        silent: false,
     }
 }
 

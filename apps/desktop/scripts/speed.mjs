@@ -1,5 +1,6 @@
 // Speed targets as a test, on the static build with the browser mock: Ask
-// open to ready, and typing to instant results. Each runs several times and
+// open to ready, typing to instant results, cold start to first paint, and
+// the longest main-thread task while the island opens. Each runs several times and
 // the median must meet its target. Targets have headroom for CI machines;
 // the real ones (Ask's timing panel, Ctrl+Alt+Shift+T) are stricter.
 //
@@ -10,7 +11,9 @@ import { createServer } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { chromium } from "playwright";
 
-const TARGETS = { open_to_ready: 250, instant_results: 300 };
+// Real budgets: morph long tasks under 50 ms, cold start under 2 s. CI gets
+// headroom for slower machines.
+const TARGETS = { open_to_ready: 250, instant_results: 300, cold_start: 2000, morph_long_task: 100 };
 const RUNS = 5;
 
 const out = join(import.meta.dirname, "..", "out");
@@ -38,20 +41,35 @@ const url = `http://localhost:${server.address().port}/island/?onboarded`;
 
 const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
 const page = await browser.newPage({ viewport: { width: 760, height: 560 } });
+// Long tasks, collected from the start, so a morph can be checked.
+await page.addInitScript(() => {
+  window.__long = [];
+  try {
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) window.__long.push(e.duration);
+    }).observe({ type: "longtask", buffered: true });
+  } catch {}
+});
 await page.goto(url);
 await page.waitForTimeout(1500);
+// The island is transparent, so there is no contentful paint: page load
+// done is when it can be used.
+const firstPaint = await page.evaluate(() => performance.getEntriesByType("navigation")[0]?.loadEventEnd ?? 0);
+if (!firstPaint) throw new Error("No navigation timing: cold start was not measured");
 
 const median = (v) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)];
-const results = { open_to_ready: [], instant_results: [] };
+const results = { open_to_ready: [], instant_results: [], cold_start: [Math.round(firstPaint)], morph_long_task: [] };
 for (let i = 0; i < RUNS; i++) {
   await page.evaluate(() => {
     window.__timings = [];
+    window.__long = [];
   });
   await page.mouse.move(380, 25, { steps: 4 });
   await page.waitForTimeout(900);
   await page.getByRole("button", { name: /Ask Duskie/ }).click({ timeout: 4000 });
   await page.waitForFunction(() => window.__timings?.some((t) => t.name === "open_to_ready"), null, { timeout: 5000 });
   results.open_to_ready.push(await page.evaluate(() => window.__timings.find((t) => t.name === "open_to_ready").ms));
+  results.morph_long_task.push(Math.round(await page.evaluate(() => Math.max(0, ...window.__long))));
 
   // Typing shows apps by name before any model runs.
   const input = page.locator(".ak-q");

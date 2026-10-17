@@ -134,6 +134,10 @@ pub struct Suggestion {
     /// Why this showed, from how often you took this kind before. Empty
     /// for Duskie's own notices.
     pub why: String,
+    /// A small pill that opens into the card on hover or Alt.
+    pub compact: bool,
+    /// Shows without a sound.
+    pub silent: bool,
 }
 
 pub struct Active {

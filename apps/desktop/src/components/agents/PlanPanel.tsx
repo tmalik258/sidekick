@@ -5,7 +5,7 @@ import { type Session, sendToSession, setSessionMode, setSessionPlan } from "@/l
 import { Markdown } from "@/lib/markdown";
 import { claimsPlanReady, looksLikeQuestionPlan, parsePlanDocument, planFromSession } from "@/lib/plan";
 
-/** Full plan document for Plan mode — title, step write-ups, assumptions — not just todos. */
+/** Full plan document for Plan mode, title, step write-ups, assumptions, not just todos. */
 export function PlanPanel({ session: s, onDraft }: { session: Session; onDraft?: (text: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");

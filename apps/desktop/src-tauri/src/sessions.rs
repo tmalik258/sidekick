@@ -1783,10 +1783,17 @@ async fn run_codex(
     .await?;
     // Messages typed before the thread opened.
     let mut queued: Vec<String> = Vec::new();
+    // Codex's own open question: the next message answers it.
+    let mut open_input: Option<(Value, Vec<String>)> = None;
     loop {
         tokio::select! {
             cmd = rx.recv() => match cmd {
                 Some(Cmd::Send(text)) => {
+                    if let Some((rid, ids)) = open_input.take() {
+                        write_line(&mut stdin, json!({ "id": rid, "result": codex_input_answer(&ids, &text) })).await?;
+                        emit(app, id, json!({"kind":"working"}));
+                        continue;
+                    }
                     let Some(t) = thread.clone() else { queued.push(text); continue };
                     if pending.values().any(|m| m == "turn/start") { queued.push(text); continue; }
                     if turn.is_some() && selected_mode(id, mode) != active_mode { queued.push(text); continue; }
@@ -1888,6 +1895,13 @@ async fn run_codex(
                         Answer::Deny => "decline",
                     };
                     write_line(&mut stdin, json!({ "id": rid, "result": { "decision": decision } })).await?;
+                    continue;
+                }
+                // Codex asks the user a question with options.
+                if let (Some("item/tool/requestUserInput"), Some(rid)) = (v["method"].as_str(), v.get("id")) {
+                    let (ids, questions) = codex_questions(&v["params"]);
+                    open_input = Some((rid.clone(), ids));
+                    emit(app, id, json!({ "kind": "choose", "id": rid, "questions": questions }));
                     continue;
                 }
                 if v["method"] == "turn/started" {
@@ -2087,6 +2101,38 @@ pub fn cursor_events(v: &Value) -> Vec<Value> {
     }
 }
 
+/// Codex's question request as the same question shape Claude Code uses,
+/// with the ids to answer under.
+pub fn codex_questions(p: &Value) -> (Vec<String>, Vec<Value>) {
+    let mut ids = Vec::new();
+    let mut out = Vec::new();
+    for q in p["questions"].as_array().into_iter().flatten() {
+        ids.push(q["id"].as_str().unwrap_or_default().to_owned());
+        let options: Vec<Value> = q["options"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|o| json!({ "label": o["label"], "description": o["description"] }))
+            .collect();
+        out.push(json!({
+            "question": q["question"],
+            "header": q["header"],
+            "multiSelect": false,
+            "options": options,
+        }));
+    }
+    (ids, out)
+}
+
+/// The answer to a Codex question request: the user's reply for each question.
+pub fn codex_input_answer(ids: &[String], text: &str) -> Value {
+    let answers: serde_json::Map<String, Value> = ids
+        .iter()
+        .map(|i| (i.clone(), json!({ "answers": [text] })))
+        .collect();
+    json!({ "answers": answers })
+}
+
 /// What one app-server notification means for the island.
 pub fn codex_events(v: &Value) -> Vec<Value> {
     let p = &v["params"];
@@ -2130,7 +2176,7 @@ pub fn codex_events(v: &Value) -> Vec<Value> {
                     };
                     ("WebSearch", label, q)
                 }
-                // Plan-mode document from Codex — full markdown, not a tool step.
+                // Plan-mode document from Codex, full markdown, not a tool step.
                 Some("plan") => {
                     if done
                         && let Some(text) = item["text"].as_str().filter(|t| !t.trim().is_empty())
@@ -2793,5 +2839,25 @@ mod tests {
         assert_eq!(Mode::Edit.claude(), "acceptEdits");
         assert_eq!(Mode::Plan.codex(), ("read-only", "never"));
         assert_eq!(Mode::Ask.codex().1, "untrusted");
+    }
+    #[test]
+    fn codex_questions_read_like_claude_questions_and_answer_by_id() {
+        let p = json!({ "threadId": "t", "turnId": "u", "itemId": "i", "questions": [{
+            "id": "db", "header": "DB", "question": "Which database?",
+            "options": [{ "label": "SQLite", "description": "local" }, { "label": "Postgres", "description": "server" }],
+        }]});
+        let (ids, qs) = codex_questions(&p);
+        assert_eq!(ids, vec!["db".to_owned()]);
+        assert_eq!(qs[0]["question"], "Which database?");
+        assert_eq!(qs[0]["options"][1]["label"], "Postgres");
+        assert_eq!(
+            codex_input_answer(&ids, "SQLite"),
+            json!({ "answers": { "db": { "answers": ["SQLite"] } } })
+        );
+        // No options is a free-text question.
+        let (_, qs) = codex_questions(
+            &json!({ "questions": [{ "id": "n", "question": "Name?", "options": null }] }),
+        );
+        assert_eq!(qs[0]["options"], json!([]));
     }
 }

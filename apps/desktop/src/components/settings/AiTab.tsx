@@ -34,13 +34,22 @@ const NOT_READY: Record<AiProviderId, string> = {
   gemini: "No key",
   groq: "No key",
   openrouter: "No key",
+  openai: "No key",
+  xai: "No key",
 };
 
 export function AiTab({ onError }: { onError: (e: string) => void }) {
   const ai = useDuskie((s) => s.settings.ai);
   const voice = useDuskie((s) => s.settings.voice);
+  const { data: gpu } = useCached<number | null>("gpu-memory", api.gpuMemory);
   return (
     <>
+      {gpu !== undefined && gpu !== null && gpu < 4096 && (
+        <p className="text-[13px] text-(--muted)" role="note">
+          This PC has no graphics card with about 4 GB of memory, so local chat and Live mode use a cloud provider. Add
+          a key below or sign in to Claude Code.
+        </p>
+      )}
       <Section
         title="Models"
         hint="Ask tries them top to bottom. Drag to reorder."
@@ -89,6 +98,8 @@ const PROVIDER_HINTS: Record<AiProviderId, string> = {
   gemini: "Free with a Google account. Questions may be used to train Google's models.",
   groq: "Free and fast; takes over when Gemini is busy. Questions may be used for training.",
   openrouter: "One key for hundreds of models, each with its price. Some are free.",
+  openai: "Pay as you go with an OpenAI API key.",
+  xai: "Pay as you go with an xAI API key.",
 };
 
 /** Setup steps shown inside each provider's card, until they are done. */
@@ -100,6 +111,8 @@ const PROVIDER_SETUP: Record<AiProviderId, string[]> = {
   gemini: [],
   groq: [],
   openrouter: [],
+  openai: [],
+  xai: [],
 };
 
 /** Where each cloud provider hands out keys, and its default model. */
@@ -107,6 +120,8 @@ const CLOUD_KEYS: Record<CloudId, { url: string; site: string; model: string }> 
   gemini: { url: "https://aistudio.google.com/apikey", site: "Google AI Studio", model: "gemini-2.5-flash" },
   groq: { url: "https://console.groq.com/keys", site: "GroqCloud", model: "openai/gpt-oss-120b" },
   openrouter: { url: "https://openrouter.ai/settings/keys", site: "OpenRouter", model: "openrouter/auto" },
+  openai: { url: "https://platform.openai.com/api-keys", site: "OpenAI", model: "gpt-5-mini" },
+  xai: { url: "https://console.x.ai", site: "xAI", model: "grok-4-fast" },
 };
 
 const CODING_AGENTS: [string, string][] = [
@@ -790,6 +805,20 @@ function VoiceSection({ voice, onError }: { voice: VoiceSettings; onError: (e: s
         checked={voice.speakSuggestions}
         onChange={(speakSuggestions) => void set({ speakSuggestions })}
       />
+      <Toggle
+        label="Live answers"
+        hint="Start answering when you pause. Changes still need a tap."
+        checked={voice.live ?? false}
+        onChange={(live) => void set({ live })}
+      />
+      {voice.live && (
+        <Toggle
+          label="Keep Live in history"
+          hint="Saved as text in Ask history. Audio is never kept."
+          checked={voice.liveHistory ?? true}
+          onChange={(liveHistory) => void set({ liveHistory })}
+        />
+      )}
       <Field label="Voice">
         <div className="flex items-center gap-2">
           <Select

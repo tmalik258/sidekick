@@ -2,7 +2,7 @@
 
 // Stale-while-revalidate for data the island shows: the last answer paints
 // at once (kept in memory and in localStorage). Remounts reuse that cache
-// without fetching again — Hide then open welcome must not look like
+// without fetching again, Hide then open welcome must not look like
 // "Check again". An explicit refresh() (Check again, after a Run) fetches
 // in the background and only marks busy when nothing was on screen yet,
 // or when the caller asks for it.
@@ -59,7 +59,7 @@ function writeJson(key: string, json: string) {
   for (const notify of subscribers.get(key) ?? []) notify(json);
 }
 
-/** Load into the cache if empty — e.g. while welcome speech plays on the prior step. */
+/** Load into the cache if empty, e.g. while welcome speech plays on the prior step. */
 export function prefetch<T>(key: string, load: () => Promise<T>): void {
   if (readJson(key) !== null) return;
   void loadOnce(key, load)

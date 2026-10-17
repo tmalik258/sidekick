@@ -414,6 +414,157 @@ impl MailSource for Gmail {
     }
 }
 
+// ---- Gmail through Composio --------------------------------------------------
+
+/// How many message ids to remember as already shown.
+const SEEN_CAP: usize = 500;
+
+/// Mail from the user's Composio Gmail connection, used until Gmail is
+/// connected directly. Same reduced [`Mail`], same rules: only unread mail
+/// that arrives after it starts.
+pub struct ComposioMail {
+    settings: duskie_core::ComposioSettings,
+    seen: std::collections::VecDeque<String>,
+    started: bool,
+}
+
+impl ComposioMail {
+    pub fn new(settings: duskie_core::ComposioSettings) -> Self {
+        Self {
+            settings,
+            seen: std::collections::VecDeque::new(),
+            started: false,
+        }
+    }
+}
+
+/// One `GMAIL_FETCH_EMAILS` message as a [`Mail`]. Composio does not say
+/// which address is the user's, so a message with a single recipient
+/// counts as sent to them.
+pub fn parse_composio_message(m: &Value, now_ms: i64) -> Option<Mail> {
+    let str_of = |k: &str| m[k].as_str().unwrap_or_default();
+    let id = str_of("messageId");
+    let id = if id.is_empty() { str_of("id") } else { id };
+    if id.is_empty() {
+        return None;
+    }
+    let sender = str_of("sender");
+    let sender = if sender.is_empty() {
+        str_of("from")
+    } else {
+        sender
+    };
+    if sender.is_empty() {
+        return None;
+    }
+    let labels: Vec<&str> = m["labelIds"]
+        .as_array()
+        .map(|a| a.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    let to = str_of("to");
+    // Read once, here, for two yes or no answers. Not kept.
+    let subject = str_of("subject");
+    let preview = m["preview"]["body"].as_str().unwrap_or_default();
+    let sent_ms = chrono::DateTime::parse_from_rfc3339(str_of("messageTimestamp"))
+        .map(|t| t.timestamp_millis())
+        .unwrap_or(now_ms);
+    Some(Mail {
+        id: id.to_owned(),
+        from: address_of(sender),
+        unread: labels.is_empty() || labels.contains(&"UNREAD"),
+        to_me: !to.is_empty() && !to.contains(','),
+        question: subject.contains('?') || preview.contains('?'),
+        deadline: has_deadline(subject) || has_deadline(preview),
+        bulk: labels.iter().any(|l| {
+            matches!(
+                *l,
+                "CATEGORY_PROMOTIONS" | "CATEGORY_UPDATES" | "CATEGORY_SOCIAL" | "CATEGORY_FORUMS"
+            )
+        }),
+        age_mins: u32::try_from(((now_ms - sent_ms).max(0)) / 60_000).unwrap_or(u32::MAX),
+    })
+}
+
+/// The messages in `v` not seen before. The first call only remembers what
+/// is there, so mail that was waiting before Duskie started is not raised.
+pub fn fresh_mail(
+    v: &Value,
+    seen: &mut std::collections::VecDeque<String>,
+    first: bool,
+    now_ms: i64,
+) -> Vec<Mail> {
+    let mut out = Vec::new();
+    for m in crate::composio_api::find_array(v, &["messages"])
+        .into_iter()
+        .flatten()
+    {
+        let Some(mail) = parse_composio_message(m, now_ms) else {
+            continue;
+        };
+        if seen.contains(&mail.id) {
+            continue;
+        }
+        seen.push_back(mail.id.clone());
+        if seen.len() > SEEN_CAP {
+            seen.pop_front();
+        }
+        if !first && mail.unread && out.len() < MAX_PER_SYNC {
+            out.push(mail);
+        }
+    }
+    out
+}
+
+impl MailSource for ComposioMail {
+    async fn poll(&mut self) -> Result<Vec<Mail>, MailError> {
+        let v = crate::composio::run_tool(
+            &self.settings,
+            "GMAIL_FETCH_EMAILS",
+            json!({
+                "query": "is:unread in:inbox newer_than:1d",
+                "max_results": 20,
+                "include_payload": false,
+                "verbose": false,
+            }),
+        )
+        .await
+        .map_err(|e| {
+            if e.contains("could not reach") || e.contains("connect") {
+                MailError::Offline("could not reach Composio".into())
+            } else {
+                MailError::Other("Composio could not read Gmail".into())
+            }
+        })?;
+        let first = !self.started;
+        self.started = true;
+        Ok(fresh_mail(
+            &v,
+            &mut self.seen,
+            first,
+            chrono::Utc::now().timestamp_millis(),
+        ))
+    }
+
+    /// The Composio connection belongs to the user's account; nothing here
+    /// to revoke.
+    async fn disconnect(&mut self) {
+        self.seen.clear();
+        self.started = false;
+    }
+}
+
+/// Whether new mail can come through Composio right now.
+async fn composio_gmail(app: &AppHandle) -> Option<duskie_core::ComposioSettings> {
+    let c = lock(&app.state::<AppState>().settings).composio.clone();
+    if !c.enabled || !crate::composio::signed_in() {
+        return None;
+    }
+    let apps = crate::composio::apps(&c).await.ok()?;
+    apps.iter()
+        .any(|a| a.slug == "gmail" && a.connected)
+        .then_some(c)
+}
+
 /// Google sign-in in the browser. `open` shows the page. Returns the grant
 /// to keep (saved by the caller under [`SECRET`]).
 pub async fn sign_in<F, Fut>(open: F) -> Result<Grant, String>
@@ -517,6 +668,18 @@ fn card_id(id: &str) -> i64 {
     (h.finish() >> 2) as i64
 }
 
+/// The signal and score for one message. Logs the score only, never who
+/// it is from or what it says.
+fn score_mail(
+    mail: &Mail,
+    n: &duskie_core::NotificationSettings,
+) -> (Signal, duskie_core::attention::Scored) {
+    let signal = signal_of(mail, &n.vip);
+    let scored = duskie_core::attention::score(&signal, &n.lessons, chrono::Utc::now().timestamp());
+    log::debug!("mail scored {} ({:?})", scored.score, scored.level);
+    (signal, scored)
+}
+
 /// Scores one message and shows it if it is worth the interruption.
 fn handle(app: &AppHandle, mail: &Mail) {
     let settings = lock(&app.state::<AppState>().settings).clone();
@@ -524,9 +687,7 @@ fn handle(app: &AppHandle, mail: &Mail) {
     if !n.enabled || settings.pause.is_active(chrono::Utc::now()) {
         return;
     }
-    let signal = signal_of(mail, &n.vip);
-    let scored = duskie_core::attention::score(&signal, &n.lessons, chrono::Utc::now().timestamp());
-    log::debug!("mail scored {} ({:?})", scored.score, scored.level);
+    let (signal, scored) = score_mail(mail, n);
     use duskie_core::attention::{Context, Level, Shape};
     // Silent mail waits in the digest.
     if scored.level == Level::Silent {
@@ -537,17 +698,7 @@ fn handle(app: &AppHandle, mail: &Mail) {
         focus: crate::focus::active(),
         ..Default::default()
     };
-    let delivery = {
-        let mut guard = ATTENTION.lock().unwrap_or_else(|e| e.into_inner());
-        route(
-            guard.get_or_insert_with(Default::default),
-            &signal.key,
-            scored.level,
-            n.profile,
-            ctx,
-            now,
-        )
-    };
+    let delivery = routed(&signal.key, scored.level, n.profile, ctx, now);
     let Some(delivery) = delivery else {
         return;
     };
@@ -587,6 +738,26 @@ fn route(
     (batch == Batch::Show && delivery.shape != Shape::Held).then_some(delivery)
 }
 
+/// `route` through the batcher and counters shared by mail and app
+/// notifications, so a burst from anywhere counts against the same budget.
+pub(crate) fn routed(
+    key: &str,
+    level: duskie_core::attention::Level,
+    profile: duskie_core::attention::Profile,
+    ctx: duskie_core::attention::Context,
+    now: i64,
+) -> Option<duskie_core::attention::Delivery> {
+    let mut guard = ATTENTION.lock().unwrap_or_else(|e| e.into_inner());
+    route(
+        guard.get_or_insert_with(Default::default),
+        key,
+        level,
+        profile,
+        ctx,
+        now,
+    )
+}
+
 /// What the batcher and counters remember between messages.
 #[derive(Default)]
 struct Attention {
@@ -600,6 +771,7 @@ static ATTENTION: Mutex<Option<Attention>> = Mutex::new(None);
 enum Account {
     Gmail(Gmail),
     Imap(crate::imap::Imap),
+    Composio(ComposioMail),
 }
 
 impl Account {
@@ -607,6 +779,7 @@ impl Account {
         match self {
             Account::Gmail(g) => g.poll().await,
             Account::Imap(i) => i.poll().await,
+            Account::Composio(c) => c.poll().await,
         }
     }
 }
@@ -641,11 +814,20 @@ pub fn start(app: &AppHandle) {
                         source = Some(Account::Imap(i));
                     }
                     (None, None) => {
-                        set_provider(None);
-                        set_status(MailState::Disconnected, false, None);
-                        // Nothing to do until the user connects.
-                        WAKE.notified().await;
-                        continue;
+                        if let Some(c) = composio_gmail(&app).await {
+                            set_provider(Some("composio"));
+                            source = Some(Account::Composio(ComposioMail::new(c)));
+                        } else {
+                            set_provider(None);
+                            set_status(MailState::Disconnected, false, None);
+                            // Nothing to do until the user connects here or
+                            // connects Gmail in Composio.
+                            tokio::select! {
+                                _ = WAKE.notified() => {}
+                                _ = tokio::time::sleep(Duration::from_secs(300)) => {}
+                            }
+                            continue;
+                        }
                     }
                 }
             }
@@ -1107,5 +1289,125 @@ mod tests {
         assert_eq!(g.poll().await.unwrap_err(), MailError::AuthExpired);
         // The point did not move, so the message is looked at again.
         assert_eq!(g.history_id.as_deref(), Some("10"));
+    }
+    #[test]
+    fn composio_messages_reduce_to_the_same_record() {
+        let v = json!({ "data": { "messages": [{
+            "messageId": "c1",
+            "sender": "Sam <Sam@Client.com>",
+            "to": "me@mine.com",
+            "subject": "Can you check this by tomorrow?",
+            "labelIds": ["INBOX", "UNREAD"],
+            "messageTimestamp": "2027-01-15T08:00:00Z",
+            "preview": { "body": "hello" },
+        }]}});
+        let mut seen = std::collections::VecDeque::new();
+        // The first look only remembers what was already there.
+        assert!(fresh_mail(&v, &mut seen, true, NOW).is_empty());
+        assert!(fresh_mail(&v, &mut seen, false, NOW).is_empty());
+        let mut seen = std::collections::VecDeque::new();
+        let got = fresh_mail(&v, &mut seen, false, NOW);
+        assert_eq!(got.len(), 1);
+        let m = &got[0];
+        assert_eq!(m.from, "sam@client.com");
+        assert!(m.unread && m.to_me && m.question && m.deadline && !m.bulk);
+    }
+
+    #[test]
+    fn composio_read_or_bulk_mail_is_not_raised_as_direct() {
+        let v = json!({ "messages": [
+            { "messageId": "r", "sender": "a@b.c", "to": "me@x.y", "labelIds": ["INBOX"] },
+            { "messageId": "n", "sender": "news@shop.com", "to": "a@x.y, b@x.y",
+              "labelIds": ["INBOX", "UNREAD", "CATEGORY_PROMOTIONS"] },
+            { "messageId": "", "sender": "x@y.z" },
+        ]});
+        let mut seen = std::collections::VecDeque::new();
+        let got = fresh_mail(&v, &mut seen, false, NOW);
+        assert_eq!(got.len(), 1);
+        assert!(got[0].bulk && !got[0].to_me);
+        assert_eq!(seen.len(), 2);
+    }
+
+    /// Keeps every log line written while it is installed.
+    struct Capture(std::sync::Mutex<Vec<String>>);
+    impl log::Log for Capture {
+        fn enabled(&self, _: &log::Metadata) -> bool {
+            true
+        }
+        fn log(&self, r: &log::Record) {
+            self.0
+                .lock()
+                .unwrap()
+                .push(format!("{} {}", r.target(), r.args()));
+        }
+        fn flush(&self) {}
+    }
+    static CAPTURE: Capture = Capture(std::sync::Mutex::new(Vec::new()));
+
+    #[tokio::test]
+    async fn logs_never_hold_addresses_subjects_bodies_or_tokens() {
+        let _ = log::set_logger(&CAPTURE);
+        log::set_max_level(log::LevelFilter::Trace);
+        const ADDRESS: &str = "secret.sender@private-domain.test";
+        const SUBJECT: &str = "Quarterly salary figures?";
+        const SNIPPET: &str = "the confidential body text";
+        const TOKEN: &str = "tok-very-secret";
+        let routes = vec![
+            (
+                "/token",
+                200,
+                json!({ "access_token": TOKEN, "expires_in": 3600 }),
+            ),
+            (
+                "/profile",
+                200,
+                json!({ "emailAddress": "me@mine.com", "historyId": "1" }),
+            ),
+            (
+                "/history",
+                200,
+                json!({ "historyId": "2", "history": [{ "messagesAdded": [{ "message": { "id": "m1" } }]}] }),
+            ),
+            (
+                "/messages/m1",
+                200,
+                msg(
+                    "m1",
+                    &["INBOX", "UNREAD"],
+                    &[
+                        ("From", &format!("Secret <{ADDRESS}>")),
+                        ("To", "me@mine.com"),
+                        ("Subject", SUBJECT),
+                    ],
+                    SNIPPET,
+                    1,
+                ),
+            ),
+        ];
+        let (base, _) = fake(routes).await;
+        let mut g = Gmail::with_api(grant_for(&base), &base);
+        g.poll().await.unwrap();
+        let got = g.poll().await.unwrap();
+        assert_eq!(got.len(), 1);
+        let n = duskie_core::NotificationSettings::default();
+        for m in &got {
+            score_mail(m, &n);
+        }
+        // Failures are logged by the loop as they display.
+        let errors = [
+            MailError::Offline("x".into()),
+            MailError::AuthExpired,
+            MailError::Other("x".into()),
+        ];
+        for e in &errors {
+            log::warn!("mail: {e}");
+        }
+        let lines = CAPTURE.0.lock().unwrap().clone();
+        assert!(lines.iter().any(|l| l.contains("mail scored")), "{lines:?}");
+        for l in &lines {
+            for secret in [ADDRESS, SUBJECT, SNIPPET, TOKEN, "salary", "confidential"] {
+                assert!(!l.contains(secret), "log line leaks {secret:?}: {l}");
+            }
+        }
     }
 }

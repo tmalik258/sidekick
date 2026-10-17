@@ -10,7 +10,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, EVENTS, listen } from "@/lib/bridge";
 import { backgroundWaiting, cancelWaiting, minimizeWaiting, type Waiting } from "@/lib/store";
-import { Tip } from "./Tip";
 
 interface GuideButton {
   label: string;
@@ -77,84 +76,62 @@ export function useGuide(waiting: Waiting | null): Guide {
   return { buttons, copied };
 }
 
+/** One step at a time with a progress bar, the things to copy as mono rows,
+ * then Next, Minimize and Skip. */
 export function IslandGuide({ waiting, guide }: { waiting: Waiting; guide: Guide }) {
-  const { buttons, copied } = guide;
-
-  const copies = buttons.filter((b) => b.kind === "copy");
-  const actions = buttons.filter((b) => b.kind !== "copy");
-  const key = (b: GuideButton) => {
-    const i = buttons.indexOf(b);
-    return i < 9 ? `Alt ${i + 1}` : null;
-  };
-
+  const steps = waiting.steps?.length ? waiting.steps : [`Finish ${waiting.label}`];
+  const [k, setK] = useState(0);
+  const last = k >= steps.length - 1;
+  const copies = guide.buttons.filter((b) => b.kind === "copy");
   return (
-    <div className="flex flex-col">
-      <div className="flex items-center gap-2.5">
-        <span className="relative flex size-2.5 shrink-0" aria-hidden="true">
-          <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#0a84ff] opacity-60" />
-          <span className="relative inline-flex size-2.5 rounded-full bg-[#0a84ff]" />
-        </span>
-        <p className="min-w-0 flex-1 truncate font-display text-[15px] leading-5 font-semibold tracking-[-0.015em] text-white">
-          Waiting for {waiting.label}
+    <div className="rd-glance flex flex-col gap-2.5">
+      <div className="rd-card-head">
+        <p className="rd-eyebrow">
+          {waiting.label}, step {k + 1} of {steps.length}
+        </p>
+        <p className="rd-title">{steps[k]}</p>
+        <p className="rd-detail">
+          {copies.length ? "Copy the command, run it, then continue." : "Finish this, then continue."}
         </p>
       </div>
-      {waiting.steps && waiting.steps.length > 0 && (
-        <ol className="mt-2 list-decimal space-y-1 pl-4 text-[13px] leading-snug text-[rgb(235_235_245/0.75)]">
-          {waiting.steps.map((s) => (
-            <li key={s}>{s}</li>
-          ))}
-        </ol>
-      )}
-      {copies.length > 0 && (
-        <div className="mt-2.5 flex flex-wrap gap-1.5">
-          {copies.map((b, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: labels can repeat and the list never reorders
-            <GuideChip key={`copy-${i}-${b.label}`} button={b} hint={key(b)} done={copied === b.label} />
+      <div className="flex flex-col gap-1" style={{ marginLeft: "calc(var(--orb-indent, 0px) * -1)" }}>
+        <div
+          className="rd-steps"
+          role="progressbar"
+          aria-valuemin={1}
+          aria-valuemax={steps.length}
+          aria-valuenow={k + 1}
+        >
+          {steps.map((s, i) => (
+            <i key={s} data-s={i < k ? "done" : i === k ? "now" : undefined} />
           ))}
         </div>
-      )}
-      <div className="mt-3 flex flex-wrap items-center gap-1.5">
-        {actions.map((b, i) => (
+        {copies.map((b, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: labels can repeat and the list never reorders
-          <GuideChip key={`act-${i}-${b.label}`} button={b} hint={key(b)} />
+          <div key={`${i}-${b.label}`} className="rd-list-row mg-row">
+            <span className="t mono">{b.title ?? b.label}</span>
+            <button type="button" className="chip-s" onClick={b.run}>
+              {guide.copied === b.label ? "Copied" : "Copy"}
+            </button>
+          </div>
         ))}
-        <button
-          type="button"
-          onClick={cancelWaiting}
-          className="chip ml-auto rounded-full px-2.5 py-1.5 text-[12.5px] text-[rgb(235_235_245/0.6)] hover:text-white"
-        >
-          Cancel{" "}
-          <kbd className="ml-1 font-sans text-[11px] text-white/45">
-            <i className="alt-pre">Alt </i>0
-          </kbd>
-        </button>
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <button type="button" className="rd-btn primary" onClick={() => (last ? minimizeWaiting(true) : setK(k + 1))}>
+            {last ? "Done" : "Next"}
+          </button>
+          {waiting.again && (
+            <button type="button" className="rd-btn ghost" onClick={waiting.again}>
+              Open again
+            </button>
+          )}
+          <button type="button" className="rd-btn ghost" onClick={() => minimizeWaiting(true)}>
+            Minimize
+          </button>
+          <button type="button" className="rd-btn ghost ml-auto" onClick={cancelWaiting}>
+            Skip
+          </button>
+        </div>
       </div>
     </div>
   );
-}
-
-function GuideChip({ button, hint, done }: { button: GuideButton; hint: string | null; done?: boolean }) {
-  const style =
-    button.kind === "primary"
-      ? "bg-white text-black hover:bg-white/90"
-      : button.kind === "copy"
-        ? "max-w-full truncate bg-white/[0.08] text-white/90 ring-1 ring-white/10 ring-inset hover:bg-white/[0.14]"
-        : "bg-white/12 text-white/90 hover:bg-white/20";
-  const chip = (
-    <button
-      type="button"
-      onClick={button.run}
-      className={`chip rounded-full px-3 py-1.5 text-left text-[12.5px] font-medium ${style}`}
-    >
-      {done ? "Copied" : button.label}
-      {hint && (
-        <kbd
-          className={`ml-1.5 font-sans text-[11px] ${button.kind === "primary" ? "text-black/40" : "text-white/45"}`}
-        >
-          {hint}
-        </kbd>
-      )}
-    </button>
-  );
-  return button.title ? <Tip label={button.title}>{chip}</Tip> : chip;
 }

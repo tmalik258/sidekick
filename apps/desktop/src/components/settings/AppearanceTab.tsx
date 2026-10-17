@@ -122,13 +122,7 @@ export function AppearanceTab({ onError }: { onError: (e: string) => void }) {
           ))}
         </div>
       </Section>
-      <Section title="Behaviour" keywords="fullscreen hide alive idle collapse close suggestions redesign atelier">
-        <Toggle
-          label="New island look"
-          hint="Prototype shell: Take A mascot, grain wash, Atelier chrome. Off keeps the current island."
-          checked={settings.redesign.enabled}
-          onChange={(enabled) => save({ redesign: { enabled } })}
-        />
+      <Section title="Behaviour" keywords="fullscreen hide alive idle collapse close suggestions atelier">
         <Field label="Close suggestions after">
           <Select
             label="Close suggestions after"

@@ -37,7 +37,7 @@ export function MailCard({ onError }: { onError: (e: string) => void }) {
   };
 
   if (!status) return null;
-  const connected = status.state !== "disconnected";
+  const connected = status.state !== "disconnected" && status.provider !== "composio";
   return (
     <>
       <GmailRow status={status} busy={busy} run={run} connected={connected} />
@@ -63,9 +63,11 @@ function GmailRow({
     <Field
       label="Gmail"
       hint={
-        status.configured
-          ? "Reads who an email is from, never its text. Skips mail you already read elsewhere."
-          : "Google sign-in is not set up in this build yet."
+        status.provider === "composio"
+          ? "New mail comes through your Composio Gmail for now. Connect Gmail here for faster checks."
+          : status.configured
+            ? "Reads who an email is from, never its text. Skips mail you already read elsewhere."
+            : "Google sign-in is not set up in this build yet."
       }
     >
       <span className="text-[12px] text-(--muted)" role="status">

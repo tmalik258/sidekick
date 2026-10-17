@@ -39,8 +39,8 @@ export function Creature(props: {
   /** False while nothing is on screen: the creature stops drawing. */
   active?: boolean;
   /**
-   * Full-body vs bust crop. Prototype island always uses full body and CSS
-   * scale; pass false on the redesign path so Ask (small scale) keeps eyes.
+   * Full-body vs bust crop. The island always uses full body and CSS scale;
+   * pass false so Ask (small scale) keeps eyes.
    */
   bust?: boolean;
 }) {

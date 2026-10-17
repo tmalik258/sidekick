@@ -94,7 +94,7 @@ export function extractChoices(text: string, streaming = false): Choices {
       body.push(line);
       continue;
     }
-    // Drop the numbered line — choices render as the selectable UI only.
+    // Drop the numbered line, choices render as the selectable UI only.
     for (const part of parts) {
       if (options.length >= MAX) break;
       const label = `${title}: ${part}`;

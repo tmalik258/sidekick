@@ -84,7 +84,7 @@ function EditorPicker({ onError }: { onError: (e: string) => void }) {
   const choice = useDuskie((s) => s.settings.codeEditor);
   const { data, refresh } = useCached<EditorList>("editors", api.editorsList);
   const editors = data?.editors ?? [];
-  // One editor: no Auto — lock to that id. Two or more: Auto is the default.
+  // One editor: no Auto, lock to that id. Two or more: Auto is the default.
   useEffect(() => {
     if (!data || editors.length !== 1) return;
     const sole = editors[0].id;

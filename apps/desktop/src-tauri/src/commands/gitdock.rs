@@ -80,6 +80,39 @@ pub async fn git_last_commit_pushed(path: String) -> CmdResult<bool> {
     off_ui(move || gitflow::last_commit_pushed(&PathBuf::from(path))).await
 }
 
+/// The newest commits on the current branch, for the History tab.
+#[tauri::command]
+pub async fn git_log(path: String) -> CmdResult<Vec<gitflow::CommitRow>> {
+    off_ui(move || gitflow::log(&PathBuf::from(path), 50).map_err(err)).await?
+}
+
+#[tauri::command]
+pub async fn git_stashes(path: String) -> CmdResult<Vec<gitflow::StashRow>> {
+    off_ui(move || gitflow::stashes(&PathBuf::from(path)).map_err(err)).await?
+}
+
+/// Puts a stash back; `pop` also removes it from the list.
+#[tauri::command]
+pub async fn git_stash_apply(path: String, name: String, pop: bool) -> CmdResult<String> {
+    off_ui(move || {
+        gitflow::stash_apply(&PathBuf::from(path), &name, pop)
+            .map(|o| o.message)
+            .map_err(err)
+    })
+    .await?
+}
+
+/// Deletes a stash. The dock asks with a hold first.
+#[tauri::command]
+pub async fn git_stash_drop(path: String, name: String) -> CmdResult<String> {
+    off_ui(move || {
+        gitflow::stash_drop(&PathBuf::from(path), &name)
+            .map(|o| o.message)
+            .map_err(err)
+    })
+    .await?
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageDiff {

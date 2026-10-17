@@ -268,7 +268,7 @@ function CodeFolders({ chosen, onChange }: { chosen: string[]; onChange: (next: 
   );
 }
 
-/** Same chrome as TextField — live value so Add does not race blur. */
+/** Same chrome as TextField, live value so Add does not race blur. */
 const CLONE_INPUT =
   "min-w-0 rounded-md border border-(--border) bg-transparent px-2 py-1 text-[13px] outline-none placeholder:text-(--muted) focus:border-(--accent)";
 

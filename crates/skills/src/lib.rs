@@ -5,6 +5,7 @@
 //! - [`template`]: `{{field}}` rendering.
 
 pub mod engine;
+pub mod library;
 pub mod manifest;
 pub mod template;
 
@@ -316,6 +317,7 @@ pub const ACTIONS: &[&str] = &[
     "clean_downloads",
     "sort_downloads",
     "clean_installers",
+    "uninstall",
     "summarize_file",
     "restore_layout",
     "claude_allow",

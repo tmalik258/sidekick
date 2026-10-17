@@ -280,7 +280,7 @@ export function Field({
   label: string;
   hint?: ReactNode;
   children: ReactNode;
-  /** Label above the control — for wide forms that crush a side-by-side row. */
+  /** Label above the control, for wide forms that crush a side-by-side row. */
   stack?: boolean;
 }) {
   if (stack) {

@@ -21,11 +21,13 @@ mod attention;
 mod chat;
 mod cloud;
 mod data;
-mod diag;
+pub mod diag;
+mod editor;
 mod gitdock;
+mod library;
 mod mcp;
 mod notify;
-mod servers;
+pub(crate) mod servers;
 mod setup;
 mod voice;
 pub use attention::*;
@@ -33,7 +35,9 @@ pub use chat::*;
 pub use cloud::*;
 pub use data::*;
 pub use diag::*;
+pub use editor::*;
 pub use gitdock::*;
+pub use library::*;
 pub use mcp::*;
 pub use notify::*;
 pub use servers::*;
@@ -158,6 +162,33 @@ pub fn net_status() -> bool {
 #[tauri::command]
 pub async fn net_check(app: AppHandle, lost: bool) -> bool {
     crate::net::check(&app, lost).await
+}
+
+/// Graphics memory in MB, or None when Windows does not say.
+#[tauri::command]
+pub fn gpu_memory() -> Option<u64> {
+    duskie_sensors::graphics_memory().map(|b| b / (1 << 20))
+}
+
+/// Providers and connectors paused after repeated errors, for the usage popover.
+#[tauri::command]
+pub fn limits_paused() -> Vec<duskie_ai::limit::LimitState> {
+    duskie_ai::limit::paused()
+}
+
+/// Widens the island window for a dock beside it; 0 puts it back.
+#[tauri::command]
+pub fn island_width(app: AppHandle, width: f64) {
+    if let Some(w) = app.get_webview_window(crate::island::LABEL) {
+        let want = if width <= 0.0 {
+            crate::island::BASE_WIDTH
+        } else {
+            width
+        };
+        if let Err(e) = crate::island::set_width(&w, want) {
+            log::warn!("could not resize the island: {e}");
+        }
+    }
 }
 
 #[tauri::command]

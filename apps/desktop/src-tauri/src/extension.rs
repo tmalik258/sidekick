@@ -123,7 +123,7 @@ pub fn steps(firefox: bool) -> Vec<String> {
         vec![
             "Duskie opened the Temporary Extensions page.".into(),
             "Click Load Temporary Add-on.".into(),
-            "Paste the file path (Ctrl+V) into the file box and press Enter — it is copied.".into(),
+            "Paste the file path (Ctrl+V) into the file box and press Enter. It is copied.".into(),
             "Press Allow on Duskie's island when it asks.".into(),
             "Firefox forgets temporary add-ons when it restarts; do this again then, or use a signed build.".into(),
         ]

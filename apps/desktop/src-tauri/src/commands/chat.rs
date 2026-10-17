@@ -534,7 +534,7 @@ pub async fn pc_switch(name: String, on: bool) -> CmdResult<String> {
 }
 
 /// Result of opening a file from Ask. When `opened` is false, there is no
-/// default app — the UI should ask where to open it.
+/// default app, the UI should ask where to open it.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileOpenResult {

@@ -1115,7 +1115,7 @@ fn tracked_commands<'a>(
 }
 
 /// Copies `command` and opens PowerShell with paste instructions. Does not
-/// run the command — the user must put their own secret in first.
+/// run the command, the user must put their own secret in first.
 fn open_terminal_paste(command: &str) -> Result<(), String> {
     arboard::Clipboard::new()
         .and_then(|mut c| c.set_text(command.to_owned()))
@@ -1162,7 +1162,7 @@ fn open_terminal_window(script: &str) -> Result<(), String> {
     )
     .map_err(|e| format!("could not write setup script: {e}"))?;
     let script_file = script_path.to_string_lossy();
-    // `start "title" prog` — the quoted title is required so `start` does not
+    // `start "title" prog`, the quoted title is required so `start` does not
     // treat the first quoted arg as the window title and drop the program.
     std::process::Command::new("cmd.exe")
         .current_dir(&home)

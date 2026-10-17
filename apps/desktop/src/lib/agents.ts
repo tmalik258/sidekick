@@ -56,6 +56,8 @@ export interface Session extends AgentStarted {
   usage: { used: number; window: number; total?: number; at?: number } | null;
   /** The plan's usage limit, when the agent says it is close or reached. */
   limit?: { status: string; window: string; resetsAt: number | null; used: number | null } | null;
+  /** Paused from its card: stopped after the current step, resumes on request. */
+  paused?: boolean;
   /** "Not now" on the compact offer, until the context is compacted. */
   compactDismissed?: boolean;
   /** The agent's own multiple-choice question, waiting for an answer. */
@@ -114,6 +116,8 @@ interface AgentsState {
   draftPath?: string | null;
   /** What New's box starts with ("Ask an agent to fix it"). */
   draftPrompt?: string | null;
+  /** The repo open in the Git dock; "first" picks one once the list loads. */
+  dock?: string | null;
 }
 
 /** Sessions are kept in this window's storage, so the timeline comes back
@@ -261,7 +265,7 @@ if (typeof window !== "undefined") {
   window.addEventListener("pagehide", () => saveView());
   window.addEventListener("beforeunload", () => saveView());
 }
-/** Flush session view (draft/scroll) + localStorage immediately — island hide / unmount. */
+/** Flush session view (draft/scroll) + localStorage immediately, island hide / unmount. */
 export function flushAgentsView() {
   if (saveTimer) clearTimeout(saveTimer);
   saveView();
@@ -415,6 +419,7 @@ export function sendToSession(id: string, text: string) {
     // Sending anything answers or replaces the agent's open question.
     choose: null,
     status: "working",
+    paused: false,
     stuck: false,
     activeMode: s.status === "working" || s.status === "waiting" ? s.activeMode : s.mode,
     turnAt: Date.now(),
@@ -613,7 +618,7 @@ function onEvent(e: { session: string; kind: string } & Record<string, unknown>)
     case "turn":
       return update(id, (s) => {
         const entries = appendReview(s.entries, e.review);
-        // Plan mode often answers in prose without turn/plan/updated — lift the doc.
+        // Plan mode often answers in prose without turn/plan/updated, lift the doc.
         let plan = s.plan;
         let planDoc = s.planDoc;
         // Only the newest answer of this turn, and only when it says the plan
@@ -751,6 +756,18 @@ export function usageLine(agent: string, now = Date.now()): string | null {
   return `${pct(u)}% of ${span}, ${ago}`;
 }
 
+/** Pause: stop the turn but keep the session ready to pick up where it was. */
+export function pauseSession(id: string) {
+  interruptSession(id);
+  update(id, (s) => ({ ...s, paused: true }));
+}
+
+/** Resume a paused session by asking it to carry on. */
+export function resumePaused(id: string) {
+  update(id, (s) => ({ ...s, paused: false }));
+  sendToSession(id, "Continue where you left off.");
+}
+
 /** Esc / Stop: leave the session idle right away; Rust keeps it resumable on the next send. */
 export function interruptSession(id: string) {
   update(id, (s) => ({
@@ -762,4 +779,10 @@ export function interruptSession(id: string) {
     entries: entriesCancelRunning(s.entries),
   }));
   void api.agentStop(id);
+}
+
+/** Ctrl G: the Repos tab with the Git dock open on the repo that has changes. */
+export function openGit() {
+  useAgents.setState({ dock: useAgents.getState().dock ?? "first" });
+  setTab("repos");
 }

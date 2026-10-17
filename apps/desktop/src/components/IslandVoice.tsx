@@ -6,13 +6,11 @@ import { acceptActivities, activityElapsedSecs, activityLabel, dismissLocal } fr
 import { useAgents } from "@/lib/agents";
 import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
-import { REDESIGN_COMPACT } from "@/lib/redesign-layout";
-import { useDuskie } from "@/lib/store";
 import type { Activity as ActivityItem } from "@/lib/types";
 import { VoiceBars } from "./AskPanel";
-import { Icon } from "./Icon";
+import { Ic } from "./Icon";
 import { Activity } from "./IslandParts";
-import { COMPACT } from "./island-layout";
+import { COMPACT, SHELL_COMPACT } from "./island-layout";
 import { Tip } from "./Tip";
 
 export function tail(text: string): string {
@@ -102,7 +100,7 @@ export function statusTextWidth(label: string): number {
 export function voiceShellWidth(
   text: string,
   thinking: boolean,
-  opts?: { status?: boolean; cancel?: boolean; indicator?: boolean; redesign?: boolean },
+  opts?: { status?: boolean; cancel?: boolean; indicator?: boolean },
 ): number {
   const status = !!opts?.status;
   const label = voiceLabel(text, thinking, status);
@@ -118,9 +116,9 @@ export function voiceShellWidth(
 }
 
 /** Orb column + trailing controls for a compact status pill (gap-1.5 + pr-2). */
-export function statusChrome(opts?: { cancel?: boolean; indicator?: boolean; redesign?: boolean }): number {
-  // Redesign: the mascot column is the prototype's 48px (REDESIGN_COMPACT.padLeft).
-  let chrome = (opts?.redesign ? REDESIGN_COMPACT.padLeft : COMPACT.height + 4) + 8;
+export function statusChrome(opts?: { cancel?: boolean; indicator?: boolean }): number {
+  // Mascot column is the prototype's 48px (SHELL_COMPACT.padLeft).
+  let chrome = SHELL_COMPACT.padLeft + 8;
   if (opts?.indicator) chrome += 6 + 12;
   if (opts?.cancel) chrome += 6 + 24;
   return chrome;
@@ -200,7 +198,6 @@ export function VoicePill({
   onCancel?: () => void;
 }) {
   const now = useNow(1000);
-  const redesign = useDuskie((s) => s.settings.redesign.enabled);
   const elapsed = activity ? activityElapsedSecs(activity, now) : null;
   // Compact pill always offers icon actions when an activity is on screen.
   const showActions = !!activity;
@@ -217,23 +214,20 @@ export function VoicePill({
       cancel: !!onCancel || !!focus,
       indicator: !!(thinking || working || done || waiting || failed || asks || (dots && dots.length > 0)),
     });
-  const warn = redesign ? "bg-(--warn)" : "bg-[#ff9f0a]";
-  const inkStrong = redesign ? "text-(--ink)" : "text-white/90";
-  const inkSoft = redesign ? "text-(--ink-2)" : "text-white/62";
-  const iconBtn = redesign
-    ? "chip grid size-6 place-items-center rounded-[8px] text-(--ink-2) hover:bg-(--fill-2) hover:text-(--ink)"
-    : "chip grid size-6 place-items-center rounded-full text-white/55 hover:bg-white/10 hover:text-white";
-  const stopBtn = redesign
-    ? "chip grid size-6 shrink-0 place-items-center rounded-[8px] bg-(--fill-2) hover:bg-(--fill-3)"
-    : "chip grid size-6 shrink-0 place-items-center rounded-full bg-white/[0.09] hover:bg-white/[0.15]";
-  const stopMark = redesign ? "size-2 rounded-[2px] bg-(--ink)" : "size-2 rounded-[2px] bg-white";
+  const warn = "bg-(--warn)";
+  const inkStrong = "text-(--ink)";
+  const inkSoft = "text-(--ink-2)";
+  const iconBtn =
+    "chip grid size-6 place-items-center rounded-[8px] text-(--ink-2) hover:bg-(--fill-2) hover:text-(--ink)";
+  const stopBtn = "chip grid size-6 shrink-0 place-items-center rounded-[8px] bg-(--fill-2) hover:bg-(--fill-3)";
+  const stopMark = "size-2 rounded-[2px] bg-(--ink)";
   const indicator = failed ? (
     <span role="img" aria-label="Failed" className="size-2 shrink-0 rounded-full bg-red-400" />
   ) : waiting ? (
     <span role="img" aria-label="Waiting for confirmed progress" className={`size-2 shrink-0 rounded-full ${warn}`} />
   ) : done ? (
-    <span className={`shrink-0 ${redesign ? "text-(--ok,#30d158)" : "text-[#30d158]"}`}>
-      <Icon name="check" size={14} />
+    <span className="shrink-0 text-(--ok,#30d158)">
+      <Ic name="check" size={14} />
     </span>
   ) : asks ? (
     <span className="relative flex size-2 shrink-0" role="img" aria-label="Waiting for you">
@@ -245,7 +239,7 @@ export function VoicePill({
   ) : thinking || working ? (
     <Activity />
   ) : null;
-  const labelClass = `${redesign ? "text-[13px] tracking-[-0.005em]" : "text-[12.5px]"} font-medium ${
+  const labelClass = `text-[13px] tracking-[-0.005em] font-medium ${
     listening ? "min-w-0 flex-1 truncate" : clip ? "min-w-0 truncate" : "shrink-0"
   } ${text.trim() || thinking || working ? inkStrong : inkSoft}`;
   const labelInner = <span className="min-w-0 truncate">{label}</span>;
@@ -272,7 +266,7 @@ export function VoicePill({
           }}
           className={iconBtn}
         >
-          <Icon name="refresh" size={12} />
+          <Ic name="refresh" size={12} />
         </button>
       </Tip>
       <Tip label="Dismiss">
@@ -286,7 +280,7 @@ export function VoicePill({
           }}
           className={iconBtn}
         >
-          <Icon name="close" size={12} />
+          <Ic name="x" size={12} />
         </button>
       </Tip>
     </span>
@@ -297,13 +291,12 @@ export function VoicePill({
     if (focus) void api.focusStop();
     else onCancel?.();
   };
-  const pillH = redesign ? "h-[38px]" : "h-9";
   // Prototype .cmp: the label starts after the mascot (48px) on the compact pill.
-  const pillPad = redesign && !listening ? "pl-12" : "";
+  const pillPad = !listening ? "pl-12" : "";
   return (
     <motion.div
-      className={`absolute top-0 right-0 flex ${pillH} items-center ${listening ? "gap-2.5 pr-3.5" : redesign ? `${pillPad} pr-2` : "pr-2"}`}
-      style={{ left: redesign ? 0 : COMPACT.height + 4 }}
+      className={`absolute top-0 right-0 flex h-[38px] items-center ${listening ? "gap-2.5 pr-3.5" : `${pillPad} pr-2`}`}
+      style={{ left: 0 }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1, transition: { delay: 0.1, duration: 0.2 } }}
       exit={{ opacity: 0, transition: { duration: 0.08 } }}
@@ -328,7 +321,7 @@ export function VoicePill({
           </Tip>
         </>
       ) : (
-        <div className={`flex min-w-0 max-w-full items-center ${redesign ? "gap-2.5 pr-3" : "gap-1.5"}`}>
+        <div className="flex min-w-0 max-w-full items-center gap-2.5 pr-3">
           {labeled}
           {elapsed !== null && (
             <span className={`shrink-0 text-[12.5px] font-medium tabular-nums ${inkStrong}`}>· {elapsed}s</span>

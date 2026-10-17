@@ -126,12 +126,21 @@ pub(crate) fn local_model(ai: &AiSettings) -> OpenAiCompat {
     )
 }
 
+/// Any cloud model with a key is on.
+pub(crate) fn any_cloud(ai: &AiSettings) -> bool {
+    duskie_ai::CLOUD
+        .iter()
+        .any(|(id, _, _)| cloud_pref(ai, id).is_some_and(|p| p.enabled))
+}
+
 /// Settings for a cloud model reached with an API key.
 pub(crate) fn cloud_pref<'a>(ai: &'a AiSettings, id: &str) -> Option<&'a duskie_core::CloudPref> {
     match id {
         "gemini" => Some(&ai.gemini),
         "groq" => Some(&ai.groq),
         "openrouter" => Some(&ai.openrouter),
+        "openai" => Some(&ai.openai),
+        "xai" => Some(&ai.xai),
         _ => None,
     }
 }
@@ -170,8 +179,7 @@ async fn chat_router(
 ) -> Router {
     let settings = lock(&app.state::<AppState>().settings).clone();
     let ai = &settings.ai;
-    let any_compat =
-        ai.local.enabled || ai.gemini.enabled || ai.groq.enabled || ai.openrouter.enabled;
+    let any_compat = ai.local.enabled || any_cloud(ai);
     let server = if local_only || !any_compat {
         None
     } else {
@@ -206,6 +214,8 @@ pub(crate) fn first_enabled_provider(ai: &AiSettings) -> Option<&str> {
         "gemini" => ai.gemini.enabled,
         "groq" => ai.groq.enabled,
         "openrouter" => ai.openrouter.enabled,
+        "openai" => ai.openai.enabled,
+        "xai" => ai.xai.enabled,
         _ => false,
     })
 }
@@ -225,8 +235,7 @@ pub(crate) fn ask_warm_models(settings: &Settings) -> Vec<String> {
             out.push(vision.to_owned());
         }
     }
-    let need_embed =
-        first == Some("local") || ai.gemini.enabled || ai.groq.enabled || ai.openrouter.enabled;
+    let need_embed = first == Some("local") || any_cloud(ai);
     if need_embed && settings.semantic_search.enabled {
         let embed = settings.semantic_search.model.trim();
         if !embed.is_empty() {
@@ -388,7 +397,7 @@ fn configured(ai: &AiSettings, id: &str) -> bool {
             ai.anthropic.enabled
                 && std::env::var("ANTHROPIC_API_KEY").is_ok_and(|k| !k.trim().is_empty())
         }
-        "gemini" | "groq" | "openrouter" => {
+        "gemini" | "groq" | "openrouter" | "openai" | "xai" => {
             cloud_pref(ai, id).is_some_and(|p| p.enabled)
                 && crate::secrets::get(&key_name(id)).is_some()
         }
@@ -578,6 +587,9 @@ pub const FIXED_END: &str = "\n\nRight now:";
 /// Longest page text attached to a chat.
 const MAX_PAGE: usize = 20_000;
 
+/// Most of the prompt the skills list may take.
+const SKILL_INDEX_TOKENS: usize = 400;
+
 async fn system_prompt(app: &AppHandle, attach: &Attach) -> String {
     if attach.skill {
         return format!(
@@ -622,6 +634,14 @@ async fn system_prompt(app: &AppHandle, attach: &Attach) -> String {
     }
     for (label, text) in about.iter().filter(|(_, t)| !t.is_empty()) {
         system.push_str(&format!("\n{label}: {}", text.replace('\n', "; ")));
+    }
+    if let Ok(lib) = crate::commands::library_of(app) {
+        let entries: Vec<_> = lib.load().skills.into_values().collect();
+        let list = duskie_skills::library::index(&entries, "", SKILL_INDEX_TOKENS);
+        if !list.is_empty() {
+            system.push_str("\n\nSkills (call use_skill with a name before a task one covers):\n");
+            system.push_str(&list);
+        }
     }
     if !memory.is_empty() {
         system.push_str("\n\nAbout the user (they asked you to remember):\n");
@@ -805,6 +825,7 @@ pub fn chat(
             .map(|m| m.content.clone());
         if let Some(q) = question.as_deref() {
             log_ask_user(&id, q, &attach, local_only);
+            crate::ask_tools::begin_turn(&id, q);
         }
         let image = if attach.screen {
             match screenshot(&app).await {

@@ -41,8 +41,15 @@ impl Anthropic {
             "stream": true,
             "messages": req.messages,
         });
+        // The system prompt is the stable prefix: marked for prompt caching,
+        // so follow-ups in a chat read it from the cache. Volatile context
+        // rides in the messages after it.
         if !req.system.is_empty() {
-            body["system"] = json!(req.system);
+            body["system"] = json!([{
+                "type": "text",
+                "text": req.system,
+                "cache_control": { "type": "ephemeral" },
+            }]);
         }
         // The image goes with the latest question.
         if let (Some(data), Some(last)) = (
@@ -157,14 +164,15 @@ impl AiProvider for Anthropic {
     ) -> Result<String, AiError> {
         let key =
             Self::key().ok_or_else(|| AiError::Failed("ANTHROPIC_API_KEY is not set".into()))?;
-        let send = self
-            .client
-            .post(URL)
-            .header("x-api-key", key)
-            .header("anthropic-version", "2023-06-01")
-            .header("anthropic-beta", "server-side-fallback-2026-07-01")
-            .json(&self.body(req))
-            .send();
+        let body = self.body(req);
+        let send = crate::limit::send("Anthropic", || {
+            self.client
+                .post(URL)
+                .header("x-api-key", &key)
+                .header("anthropic-version", "2023-06-01")
+                .header("anthropic-beta", "server-side-fallback-2026-07-01")
+                .json(&body)
+        });
         let resp = tokio::select! {
             _ = cancel.cancelled() => return Err(AiError::Cancelled),
             resp = send => resp?,
@@ -195,6 +203,14 @@ impl AiProvider for Anthropic {
             Ok(true)
         })
         .await?;
+        let cached = used.cache_read as f64;
+        let total = used.input as f64 + used.cache_write as f64 + cached;
+        if total > 0.0 {
+            log::info!(
+                "anthropic: {:.0}% of the prompt read from cache",
+                cached / total * 100.0
+            );
+        }
         if let Some(usd) = cost(&self.model, used) {
             sink.set_cost(usd);
         }
@@ -260,7 +276,8 @@ mod tests {
             think: false,
         });
         assert_eq!(body["model"], DEFAULT_MODEL);
-        assert_eq!(body["system"], "Be brief.");
+        assert_eq!(body["system"][0]["text"], "Be brief.");
+        assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
         assert_eq!(body["messages"][0]["role"], "user");
         assert_eq!(body["stream"], true);
     }

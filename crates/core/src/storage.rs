@@ -458,7 +458,7 @@ impl Storage {
     }
 
     /// Per project from `day` on: (lowercase name, total secs, last day with time).
-    /// Newest activity first, then most time — for project pickers.
+    /// Newest activity first, then most time, for project pickers.
     pub fn time_by_project_since(
         &self,
         day: &str,

@@ -33,8 +33,8 @@ pub const WELCOME_EVENT: &str = "voice://welcome";
 /// Punctuation is the direction: the voice lifts on "!" and "?" and
 /// breathes at commas.
 pub const WELCOME_LINES: [&str; 5] = [
-    "Hey — I'm Duskie. I live up here with you on this PC. I notice things, I help when you want, and I stay put: nothing leaves this machine, and I wait for your okay.",
-    "First, how I think. If you want everything to stay on this PC, you can run a local model — only if your machine is up for it. Or use Claude Code or Codex with the plan you already have. You can use any of them, or all three, and set the order I try.",
+    "Hey, I'm Duskie. I live up here with you on this PC. I notice things, I help when you want, and I stay put: nothing leaves this machine, and I wait for your okay.",
+    "First, how I think. If you want everything to stay on this PC, you can run a local model, only if your machine is up for it. Or use Claude Code or Codex with the plan you already have. You can use any of them, or all three, and set the order I try.",
     "Now, your world. Connect your calendar, your mail and the tools you use, and I'll start noticing what matters.",
     "A few small helpers make me sharper. Install the ones you want, and I'll wait while they finish.",
     "Welcome aboard. Say Hey Duskie whenever you need me. Do Not Disturb is on so Windows stays quiet and alerts show once up here. Launch on login is already on, so I'm here when you sit down.",
@@ -791,7 +791,8 @@ fn on_heard(app: &AppHandle, heard: Heard) {
         // A choice ("open", "not now") is taken when it is final.
         Heard::Pause(text) if lock(&v.choosing).is_none() => {
             let text = fixed(app, strip_wake(&text));
-            if duskie_voice::text::looks_like_request(&text) {
+            let live = lock(&app.state::<AppState>().settings).voice.live;
+            if live && duskie_voice::text::looks_like_request(&text) {
                 emit_pause(app, text);
             }
         }
@@ -804,7 +805,7 @@ fn on_heard(app: &AppHandle, heard: Heard) {
                 // Clears what showed as heard; an empty answer asks nothing.
                 emit_heard(app, String::new(), true);
                 let result = match match_choice(&text, &labels) {
-                    Choice::Option(i) => crate::suggestions::choose(app, &id, i),
+                    Choice::Option(i) => crate::suggestions::choose_by_voice(app, &id, i),
                     Choice::Dismiss => crate::suggestions::dismiss(app, &id, "voice"),
                     Choice::Unclear => Ok(()),
                 };

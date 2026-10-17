@@ -25,7 +25,7 @@ pub struct OpenAiCompat {
 }
 
 /// Cloud providers with an OpenAI-compatible API: (id, base URL, default model).
-pub const CLOUD: [(&str, &str, &str); 3] = [
+pub const CLOUD: [(&str, &str, &str); 5] = [
     (
         "gemini",
         "https://generativelanguage.googleapis.com/v1beta/openai",
@@ -41,6 +41,8 @@ pub const CLOUD: [(&str, &str, &str); 3] = [
         "https://openrouter.ai/api/v1",
         "openrouter/auto",
     ),
+    ("openai", "https://api.openai.com/v1", "gpt-5-mini"),
+    ("xai", "https://api.x.ai/v1", "grok-4-fast"),
 ];
 
 /// Cloud models take far longer prompts than a laptop's local model.

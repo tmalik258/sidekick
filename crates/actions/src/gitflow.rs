@@ -498,6 +498,107 @@ pub fn delete_branches(path: &Path, branches: &[String]) -> Result<Outcome, Acti
     }))
 }
 
+/// One commit in the History tab.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct CommitRow {
+    pub hash: String,
+    pub subject: String,
+    pub author: String,
+    /// Relative time, as git words it ("2 hours ago").
+    pub when: String,
+}
+
+const FIELD: char = '\u{1f}';
+
+/// Parses `git log --format=%h<US>%s<US>%an<US>%ar`.
+pub fn parse_log(text: &str) -> Vec<CommitRow> {
+    text.lines()
+        .filter_map(|l| {
+            let mut p = l.split(FIELD);
+            Some(CommitRow {
+                hash: p.next()?.trim().to_owned(),
+                subject: p.next()?.to_owned(),
+                author: p.next()?.to_owned(),
+                when: p.next()?.to_owned(),
+            })
+        })
+        .filter(|c| !c.hash.is_empty())
+        .collect()
+}
+
+/// The newest `n` commits on the current branch.
+pub fn log(path: &Path, n: usize) -> Result<Vec<CommitRow>, ActionError> {
+    repo(path)?;
+    let count = format!("-{}", n.clamp(1, 200));
+    let text = git(
+        path,
+        &["log", &count, "--format=%h\u{1f}%s\u{1f}%an\u{1f}%ar"],
+    )
+    .unwrap_or_default();
+    Ok(parse_log(&text))
+}
+
+/// One stash in the Stashes tab.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct StashRow {
+    /// `stash@{0}` and so on.
+    pub name: String,
+    pub message: String,
+    pub when: String,
+}
+
+/// Parses `git stash list --format=%gd<US>%gs<US>%cr`.
+pub fn parse_stashes(text: &str) -> Vec<StashRow> {
+    text.lines()
+        .filter_map(|l| {
+            let mut p = l.split(FIELD);
+            Some(StashRow {
+                name: p.next()?.trim().to_owned(),
+                message: p.next()?.to_owned(),
+                when: p.next().unwrap_or_default().to_owned(),
+            })
+        })
+        .filter(|s| valid_stash(&s.name))
+        .collect()
+}
+
+/// Only names git itself gives a stash: `stash@{N}`.
+fn valid_stash(name: &str) -> bool {
+    name.strip_prefix("stash@{")
+        .and_then(|r| r.strip_suffix('}'))
+        .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+}
+
+pub fn stashes(path: &Path) -> Result<Vec<StashRow>, ActionError> {
+    repo(path)?;
+    let text = git(path, &["stash", "list", "--format=%gd\u{1f}%gs\u{1f}%cr"]).unwrap_or_default();
+    Ok(parse_stashes(&text))
+}
+
+/// Puts a stash's changes back. `pop` also removes it from the list.
+pub fn stash_apply(path: &Path, name: &str, pop: bool) -> Result<Outcome, ActionError> {
+    repo(path)?;
+    if !valid_stash(name) {
+        return Err(ActionError::Invalid(format!("not a stash: {name}")));
+    }
+    git(path, &["stash", if pop { "pop" } else { "apply" }, name])?;
+    Ok(Outcome::msg(if pop {
+        "Popped the stash"
+    } else {
+        "Applied the stash. A copy stays in Stashes."
+    }))
+}
+
+/// Deletes a stash. The caller asks first; this cannot be undone here.
+pub fn stash_drop(path: &Path, name: &str) -> Result<Outcome, ActionError> {
+    repo(path)?;
+    if !valid_stash(name) {
+        return Err(ActionError::Invalid(format!("not a stash: {name}")));
+    }
+    git(path, &["stash", "drop", name])?;
+    Ok(Outcome::msg("Dropped the stash"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -656,5 +757,55 @@ mod tests {
         let s = "é".repeat(10);
         assert!(cut(&s, 5).starts_with("éé"));
         assert_eq!(cut("short", 50), "short");
+    }
+    #[test]
+    fn log_and_stash_lines_parse_and_odd_stash_names_are_refused() {
+        let log = parse_log("abc123\u{1f}Fix the mic\u{1f}Ali\u{1f}2 hours ago\n\nbad line");
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].subject, "Fix the mic");
+        assert_eq!(log[0].when, "2 hours ago");
+        let st = parse_stashes(
+            "stash@{0}\u{1f}On main: wip\u{1f}5 minutes ago\nstash@{x}\u{1f}bad\u{1f}now",
+        );
+        assert_eq!(st.len(), 1);
+        assert_eq!(st[0].name, "stash@{0}");
+        assert!(!valid_stash("stash@{0}; rm -rf"));
+        assert!(!valid_stash("--all"));
+    }
+
+    #[test]
+    fn stashes_list_apply_pop_and_drop() {
+        let dir = std::env::temp_dir().join(format!("duskie-stash-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        run(&dir, &["init", "-q", "-b", "main"]);
+        run(&dir, &["config", "user.email", "t@example.com"]);
+        run(&dir, &["config", "user.name", "T"]);
+        std::fs::write(dir.join("a.txt"), "one\n").unwrap();
+        run(&dir, &["add", "."]);
+        run(&dir, &["commit", "-q", "-m", "first"]);
+        assert_eq!(log(&dir, 10).unwrap()[0].subject, "first");
+        std::fs::write(dir.join("a.txt"), "two\n").unwrap();
+        run(&dir, &["stash", "push", "-q", "-m", "wip"]);
+        let list = stashes(&dir).unwrap();
+        assert_eq!(list.len(), 1);
+        assert!(list[0].message.contains("wip"));
+        stash_apply(&dir, "stash@{0}", false).unwrap();
+        // Git for Windows may check the file out with CRLF.
+        assert_eq!(
+            std::fs::read_to_string(dir.join("a.txt"))
+                .unwrap()
+                .trim_end(),
+            "two"
+        );
+        assert_eq!(stashes(&dir).unwrap().len(), 1);
+        run(&dir, &["checkout", "-q", "--", "a.txt"]);
+        stash_apply(&dir, "stash@{0}", true).unwrap();
+        assert!(stashes(&dir).unwrap().is_empty());
+        run(&dir, &["stash", "push", "-q", "-m", "again"]);
+        stash_drop(&dir, "stash@{0}").unwrap();
+        assert!(stashes(&dir).unwrap().is_empty());
+        assert!(stash_drop(&dir, "--all").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

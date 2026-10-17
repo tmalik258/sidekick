@@ -13,6 +13,7 @@ import {
   handOff,
   interruptSession,
   listenToAgents,
+  openGit,
   type Session,
   setLayout,
   setTab,
@@ -57,7 +58,7 @@ import type { Command } from "./ask/Starters";
 import { ContextLine, contextStarters, soonestMeeting } from "./ask/Starters";
 import { FirstRun } from "./ask/States";
 import { Timings } from "./ask/Timings";
-import { Icon } from "./Icon";
+import { Ic, Icon } from "./Icon";
 import { markSeen } from "./IslandAgents";
 import { nextTab, type PanelTab, PanelTabs } from "./PanelTabs";
 import { SETTINGS_TABS } from "./SettingsPanel";
@@ -141,7 +142,6 @@ const WINDOWS_PAGES: { page: string; label: string; words: string[]; switch?: st
 ];
 
 export function AskPanel() {
-  const redesignOn = useDuskie((st) => st.settings.redesign.enabled);
   const assistant = useAssistantName();
   const ask = useDuskie((s) => s.ask);
   const turns = useDuskie((s) => s.turns);
@@ -180,6 +180,12 @@ export function AskPanel() {
       if (askTabRef.current && (e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "n" && !e.repeat) {
         e.preventDefault();
         newChatRef.current();
+        return;
+      }
+      // Ctrl G: the Git dock for the repo with changes, on the Repos tab.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "g" && !e.repeat) {
+        e.preventDefault();
+        openGit();
         return;
       }
       if (!e.altKey || e.ctrlKey || e.metaKey || e.repeat) return;
@@ -395,6 +401,7 @@ export function AskPanel() {
         },
         stay: true,
       },
+      { id: "git", label: "Open Git", icon: "branch", run: openGit, stay: true },
       { id: "settings", label: "Open settings", icon: "settings", run: () => setAsk({ view: "settings" }), stay: true },
       ...(turns.length
         ? [
@@ -487,7 +494,7 @@ export function AskPanel() {
       items.push({
         id: "open-editor",
         group,
-        icon: <Icon name="file" size={12} />,
+        icon: <Ic name="file" size={12} />,
         label: `Open in ${editorName}`,
         hint: "No default app",
         run: () => openFile(path, "editor"),
@@ -499,7 +506,7 @@ export function AskPanel() {
       {
         id: "open-reveal",
         group: editorName ? undefined : group,
-        icon: <Icon name="folder" size={12} />,
+        icon: <Ic name="folder" size={12} />,
         label: "Show in folder",
         hint: editorName ? undefined : "No default app",
         run: () => openFile(path, "reveal"),
@@ -508,7 +515,7 @@ export function AskPanel() {
       },
       {
         id: "open-default",
-        icon: <Icon name="file" size={12} />,
+        icon: <Ic name="file" size={12} />,
         label: "Open with…",
         hint: "Windows",
         run: () => openFile(path, "default"),
@@ -620,11 +627,11 @@ export function AskPanel() {
           items.push({
             id: `file:${f.path}`,
             group: n === 0 ? "Files" : undefined,
-            icon: <Icon name={f.folder ? "folder" : "file"} size={12} />,
+            icon: <Ic name={f.folder ? "folder" : "file"} size={12} />,
             label: f.name,
             hint: f.place,
             // Enter opens; for files, Ctrl Enter shows the parent folder.
-            // Folders are already folders — Enter alone is enough.
+            // Folders are already folders, Enter alone is enough.
             run: () => openFile(f.path),
             ...(f.folder
               ? {}
@@ -715,7 +722,7 @@ export function AskPanel() {
           {
             id: "search",
             group: "More",
-            icon: <Icon name="ask" size={12} />,
+            icon: <Ic name="spark" size={12} />,
             label: "Search my stuff",
             hint: "Files, pages, chats",
             run: () => {
@@ -728,7 +735,7 @@ export function AskPanel() {
           },
           {
             id: "skill",
-            icon: <Icon name="settings" size={12} />,
+            icon: <Ic name="gear" size={12} />,
             label: "Teach Duskie a skill",
             run: () => {
               startSkill(text.trim());
@@ -798,7 +805,8 @@ export function AskPanel() {
     }
   };
 
-  const pickTab = (next: PanelTab) => (next === "settings" ? setAsk({ view: "settings" }) : goTab(next));
+  const pickTab = (next: PanelTab) =>
+    next === "settings" ? setAsk({ view: "settings" }) : next === "repos" && tab !== "repos" ? openGit() : goTab(next);
 
   altKeys.current = {
     s: toggleSpeak,
@@ -864,7 +872,7 @@ export function AskPanel() {
       requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
       return;
     }
-    // Streaming: cancel only — Ctrl+N starts a new chat without aborting.
+    // Streaming: cancel only, Ctrl+N starts a new chat without aborting.
     if (current.chatId !== null) {
       cancelChat();
       return;
@@ -1012,7 +1020,7 @@ export function AskPanel() {
   }
 
   // First-run card only when nothing is set up yet. If a provider is
-  // configured but not running, the footer says so — not this picker.
+  // configured but not running, the footer says so, not this picker.
   const firstRun = !anySetUp && providersData !== null && !inChat && !asking && !slash && !inHistory && !showClips;
   const footer =
     !best && !firstRun ? (
@@ -1135,7 +1143,7 @@ export function AskPanel() {
                 hint="Alt V"
                 onClick={startListening}
               >
-                <Icon name="mic" size={14} />
+                <Ic name="mic" size={14} />
               </IconButton>
             )}
             {best && <ModelPicker choices={choices} best={best} picked={pickedModel} keys={alt} disabled={streaming} />}
@@ -1147,7 +1155,7 @@ export function AskPanel() {
               inChat &&
               !showChat && (
                 <IconButton label="New chat (Ctrl N)" keys={alt} hint="Ctrl N" onClick={() => resetChat()}>
-                  <Icon name="plus" size={15} />
+                  <Ic name="plus" size={15} />
                 </IconButton>
               )
             )}
@@ -1157,7 +1165,7 @@ export function AskPanel() {
     </div>
   );
 
-  const fieldLast = redesignOn && !showChat;
+  const fieldLast = !showChat;
   return (
     <>
       {agentsHost}
@@ -1184,7 +1192,7 @@ export function AskPanel() {
               hint="Ctrl N"
               onClick={() => resetChat({ cancel: !streaming })}
             >
-              <Icon name="plus" size={15} />
+              <Ic name="plus" size={15} />
             </IconButton>
           </div>
         )}
@@ -1323,11 +1331,7 @@ function commandItem(c: Command): Item {
   return {
     id: c.id,
     icon:
-      c.id === "starter:error" ? (
-        <span className="text-[11px] font-semibold">!</span>
-      ) : (
-        <Icon name={c.icon} size={12} />
-      ),
+      c.id === "starter:error" ? <span className="text-[11px] font-semibold">!</span> : <Ic name={c.icon} size={12} />,
     label: c.label,
     hint: c.hint,
     run: c.run,
@@ -1413,7 +1417,7 @@ function HistoryList({ rows, active, onHover }: { rows: HistoryRow[]; active: nu
             className="ak-row"
           >
             <span className="ak-ico">
-              <Icon name={r.agent ? "terminal" : "ask"} size={12} />
+              <Ic name={r.agent ? "cpu" : "spark"} size={12} />
             </span>
             <span className="min-w-0 flex-1 truncate">{r.title}</span>
             <span className="ak-hint">{r.meta}</span>

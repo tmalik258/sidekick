@@ -10,6 +10,8 @@ import { motionFor, SPRINGS } from "@/lib/spring";
 export interface BubbleItem {
   id: string;
   label: string;
+  /** Agent progress: a small ring and its initials before the label. */
+  ring?: { mark: string; done: number; total: number };
 }
 
 export function IslandBubbles({ items, onOpen }: { items: BubbleItem[]; onOpen?: (id: string) => void }) {
@@ -30,11 +32,42 @@ export function IslandBubbles({ items, onOpen }: { items: BubbleItem[]; onOpen?:
             transition={spring}
             onClick={() => onOpen?.(it.id)}
           >
-            {it.label}
+            {it.ring ? (
+              <span className="flex items-center gap-1.5">
+                <Ring {...it.ring} />
+                {it.label}
+              </span>
+            ) : (
+              it.label
+            )}
           </motion.button>
         </li>
       ))}
       {more > 0 && <li className="m-0 px-2 text-[11px] text-(--muted)">+{more} more</li>}
     </ul>
+  );
+}
+
+function Ring({ mark, done, total }: { mark: string; done: number; total: number }) {
+  const c = 2 * Math.PI * 9;
+  const p = total > 0 ? Math.min(1, done / total) : 0.3;
+  return (
+    <span className="relative grid size-[22px] place-items-center text-[8.5px] font-semibold">
+      <svg width="22" height="22" viewBox="0 0 22 22" className="absolute inset-0 -rotate-90" aria-hidden="true">
+        <circle cx="11" cy="11" r="9" fill="none" stroke="rgb(242 240 235 / 0.14)" strokeWidth="2" />
+        <circle
+          cx="11"
+          cy="11"
+          r="9"
+          fill="none"
+          stroke="#a8c0cc"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={c * (1 - p)}
+        />
+      </svg>
+      {mark}
+    </span>
   );
 }

@@ -38,16 +38,16 @@ pub const DEFAULT_VOICE: &str = "f4";
 /// switching voices is obvious, not the same clip on loop.
 pub fn test_line(voice: &str) -> &'static str {
     match voice {
-        "f1" => "This is Female 1 — clear, steady, and easy to follow.",
-        "f2" => "Hey! Female 2 here — lively, bright, and ready to jump in.",
+        "f1" => "This is Female 1: clear, steady, and easy to follow.",
+        "f2" => "Hey! Female 2 here, lively, bright, and ready to jump in.",
         "f3" => "Hello from Female 3. A calm voice for everyday questions.",
-        "f4" => "Hi — Female 4, bright and upbeat when you need a quick answer.",
-        "f5" => "Hi, I'm Duskie. Female 5 is warm — say hey Duskie anytime.",
-        "m1" => "Hello. Male 1 speaking — straightforward and clear.",
-        "m2" => "Hey there. Male 2 — deep, lively, and easy on the ears.",
-        "m3" => "Hi. Male 3 here — a solid everyday voice for Duskie.",
-        "m4" => "Hello. Male 4 — calm and measured when things get busy.",
-        "m5" => "Hi. Male 5 — deep and steady for longer answers.",
+        "f4" => "Hi, Female 4, bright and upbeat when you need a quick answer.",
+        "f5" => "Hi, I'm Duskie. Female 5 is warm. Say hey Duskie anytime.",
+        "m1" => "Hello. Male 1 speaking, straightforward and clear.",
+        "m2" => "Hey there. Male 2: deep, lively, and easy on the ears.",
+        "m3" => "Hi. Male 3 here, a solid everyday voice for Duskie.",
+        "m4" => "Hello. Male 4: calm and measured when things get busy.",
+        "m5" => "Hi. Male 5: deep and steady for longer answers.",
         _ => "Hi, I'm Duskie. Say hey Duskie whenever you need me.",
     }
 }
@@ -144,7 +144,7 @@ fn tts_punctuation(text: &str) -> String {
     out
 }
 
-/// Almost no injected silence between pieces — joins already reset prosody,
+/// Almost no injected silence between pieces, joins already reset prosody,
 /// and extra quiet made every cut feel like a stall. A tiny breath only after
 /// a full stop.
 fn pause_after(text: &str) -> f32 {

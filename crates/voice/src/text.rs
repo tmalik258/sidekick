@@ -514,7 +514,7 @@ impl Sentences {
                 return Some(end);
             }
             let after_ws = bytes.get(end).is_some_and(|b| b.is_ascii_whitespace());
-            // Only the opening clause splits on a comma — later ones made
+            // Only the opening clause splits on a comma, later ones made
             // every comma a synth boundary (and a pause).
             let clause = !self.started && c == ',' && end >= MIN_CLAUSE && after_ws;
             let punct = matches!(c, '.' | '!' | '?' | ':' | ';') && after_ws;

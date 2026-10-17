@@ -9,15 +9,13 @@ import {
 } from "@/lib/activities";
 import { api } from "@/lib/bridge";
 import { useNow } from "@/lib/hooks";
-import { useDuskie } from "@/lib/store";
-import { Icon } from "./Icon";
+import { Ic } from "./Icon";
 import { Tip } from "./Tip";
 
 export function ActivityProgress({ sources }: { sources?: string[] } = {}) {
   const state = useActivities();
   const now = useNow(1000);
-  const keepProblems = useDuskie((s) => s.settings.redesign.enabled);
-  const activities = visibleActivities([...state.activities, ...state.local], now, keepProblems).filter(
+  const activities = visibleActivities([...state.activities, ...state.local], now, true).filter(
     (a) => !sources || sources.includes(a.source),
   );
   if (activities.length === 0) return null;
@@ -47,7 +45,7 @@ export function ActivityProgress({ sources }: { sources?: string[] } = {}) {
                       .catch(() => {})
                   }
                 >
-                  <Icon name="refresh" size={12} />
+                  <Ic name="refresh" size={12} />
                 </button>
               </Tip>
               <Tip label="Dismiss">
@@ -60,7 +58,7 @@ export function ActivityProgress({ sources }: { sources?: string[] } = {}) {
                     void api.activityDismiss(a.id).catch(() => {});
                   }}
                 >
-                  <Icon name="close" size={12} />
+                  <Ic name="x" size={12} />
                 </button>
               </Tip>
             </span>

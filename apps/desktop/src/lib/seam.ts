@@ -38,3 +38,8 @@ export function nudge(key: string, shift: boolean, island: number, total: number
 export function restore(saved: number | null, total: number): number {
   return saved === null ? defaultIsland(total) : clampIsland(saved, total);
 }
+
+/** The panel's width with a dock beside the island, for a screen this wide. */
+export function dockTotal(screenWidth: number): number {
+  return Math.max(ISLAND_MIN + DOCK_MIN, Math.min(screenWidth - 48, 1240));
+}

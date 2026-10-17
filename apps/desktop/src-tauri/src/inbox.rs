@@ -704,6 +704,27 @@ async fn take(app: &AppHandle, settings: &duskie_core::Settings, t: Toast, think
     }
     let paused = settings.pause.is_active(chrono::Utc::now());
     if sorted.level == Level::Now && !paused {
+        // Login codes are urgent; everything else goes through the profile
+        // and the burst budget like mail does.
+        let urgent = item.code.is_some();
+        let level = if urgent {
+            duskie_core::attention::Level::Urgent
+        } else {
+            duskie_core::attention::Level::Normal
+        };
+        let ctx = duskie_core::attention::Context {
+            focus: crate::focus::active(),
+            ..Default::default()
+        };
+        let Some(delivery) = crate::mail::routed(
+            &item.source(),
+            level,
+            settings.notifications.profile,
+            ctx,
+            chrono::Utc::now().timestamp(),
+        ) else {
+            return;
+        };
         app.state::<AppState>().bus.publish(Event::new(
             NOW_EVENT,
             "notifications",
@@ -717,6 +738,8 @@ async fn take(app: &AppHandle, settings: &duskie_core::Settings, t: Toast, think
                 "code": item.code,
                 "share": sorted.share.then_some(true),
                 "link": first_link(&format!("{} {}", item.title, item.body)),
+                "compact": delivery.shape == duskie_core::attention::Shape::Compact,
+                "sound": delivery.sound,
             }),
         ));
     }

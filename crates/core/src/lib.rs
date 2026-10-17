@@ -10,6 +10,7 @@ pub mod attention;
 pub mod bus;
 pub mod connectors;
 pub mod event;
+pub mod live;
 pub mod mascot;
 pub mod migrate;
 pub mod names;

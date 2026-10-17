@@ -26,7 +26,7 @@ export function Extras() {
       <WelcomeChoice
         title="Keep Windows quiet"
         hint={
-          dnd.busy ? "Switching..." : "Do Not Disturb is on — I show what matters up here, not two alerts for one ping."
+          dnd.busy ? "Switching..." : "Do Not Disturb is on. I show what matters up here, not two alerts for one ping."
         }
         on={dnd.on}
         onChange={(want) => {
@@ -35,13 +35,13 @@ export function Extras() {
       />
       <WelcomeChoice
         title="Launch on login"
-        hint="On by default — so I'm here when you sit down."
+        hint="On by default, so I'm here when you sit down."
         on={settings.launchAtLogin}
         onChange={(launchAtLogin) => void updateSettings({ launchAtLogin })}
       />
       <Rename />
       <p className="px-1 pt-1 text-[12px] leading-relaxed text-[rgb(235_235_245/0.62)]">
-        Come back in Settings anytime — for these, or what's left to set up.
+        Come back in Settings anytime, for these, or what's left to set up.
       </p>
     </div>
   );
